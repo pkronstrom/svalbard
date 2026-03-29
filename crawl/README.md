@@ -39,6 +39,13 @@ defaults:
   timeout_minutes: 60                  # Per-site timeout
 ```
 
+## Disclaimer
+
+You are responsible for respecting each site's `robots.txt`, terms of service,
+and applicable copyright/licensing. Crawl configs in this directory are
+references only — they do not grant permission to redistribute crawled content.
+Public sector and open-licensed sites are generally safe to archive for personal use.
+
 ### Scope types
 
 - `page` — single page only
