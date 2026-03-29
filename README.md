@@ -34,11 +34,11 @@ Default presets are region-neutral and English-first.
 | `default-64` | English Wikipedia | English Wiktionary | WikiMed, iFixit, Outdoors & Survival Stack Exchange, DIY Stack Exchange, Practical Action | Wikibooks | CyberChef, Kiwix tools |
 | `default-128` | English Wikipedia | English Wiktionary, Project Gutenberg | WikiMed, WikiHow, iFixit, Outdoors & Survival, DIY, Gardening, Cooking Stack Exchange, Practical Action | Wikibooks, Khan Academy | CyberChef, Kiwix tools |
 | `default-256` | English Wikipedia with pictures | English Wiktionary, Project Gutenberg | WikiHow, iFixit, Outdoors & Survival, DIY, Gardening, Cooking, Amateur Radio, Electronics, Physics Stack Exchange, Practical Action | Wikibooks, Khan Academy | CyberChef, Kiwix tools |
-| `default-512` | English Wikipedia with pictures | English Wiktionary, Project Gutenberg | `default-256` plus Math Stack Exchange | Wikibooks, Khan Academy | CyberChef, Kiwix tools, Llama 3.2 3B |
-| `default-1tb` | English Wikipedia with pictures | English Wiktionary, Project Gutenberg | `default-512` plus Chemistry, Biology, Engineering Stack Exchange | Wikibooks, Khan Academy | CyberChef, Kiwix tools, Llama 3.1 70B |
-| `default-2tb` | Full English Wikipedia | English Wiktionary, Project Gutenberg | `default-1tb` plus Server Fault and Super User | Wikibooks, Khan Academy | CyberChef, Kiwix tools, Llama 3.1 70B + Llama 3.2 3B |
+| `default-512` | English Wikipedia with pictures | English Wiktionary, Project Gutenberg | `default-256` plus Math Stack Exchange | Wikibooks, Khan Academy | CyberChef, Kiwix tools, Qwen3.5 9B |
+| `default-1tb` | English Wikipedia with pictures | English Wiktionary, Project Gutenberg | `default-512` plus Chemistry, Biology, Engineering Stack Exchange | Wikibooks, Khan Academy | CyberChef, Kiwix tools, Qwen3.5 35B-A3B |
+| `default-2tb` | Full English Wikipedia | English Wiktionary, Project Gutenberg | `default-1tb` plus Server Fault and Super User | Wikibooks, Khan Academy | CyberChef, Kiwix tools, Qwen3.5 35B-A3B + Qwen3.5 9B |
 
-LLM downloads begin at the `512 GB` tiers in both preset families.
+LLM downloads begin at the `512 GB` tiers in both preset families. Bundled models are capped to portable quants that fit roughly within a `24 GB` RAM budget; anything larger should become an explicit optional add-on later.
 
 Finland presets add Finnish-language and Finland-focused content on top of that baseline.
 
@@ -68,8 +68,8 @@ These are the recurring data sources and tools that appear across the preset bun
 | Project Gutenberg (`gutenberg`, `gutenberg-subset`) | Public-domain book collection | Long-form reference, historical texts, and deeper background reading |
 | CyberChef (`cyberchef`) | Browser-based data transformation tool | Handy offline utility for encoding, decoding, text, and binary manipulation |
 | Kiwix tools (`kiwix-serve`) | Local server/runtime for ZIM archives | Makes the content actually browsable from the drive on supported desktops |
-| Llama 3.2 3B (`llama-3b`) | Small local GGUF model | First lightweight offline LLM tier for constrained drives |
-| Llama 3.1 70B (`llama-70b`) | Large local GGUF model | Higher-capability offline LLM for large tiers |
+| Qwen3.5 9B (`qwen-9b`) | Portable local GGUF model | First bundled offline LLM tier with a better current quality/size tradeoff than the old tiny defaults |
+| Qwen3.5 35B-A3B (`qwen-35b-a3b`) | Strong local GGUF model in a sub-24 GB quant | Higher-capability offline LLM that still fits sane laptop memory limits |
 | `llama-server-binaries` | Runtime for serving GGUF models locally | Lets the GGUF models be used directly from the drive on supported systems |
 
 ## Commands

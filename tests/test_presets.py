@@ -49,18 +49,31 @@ def test_default_64_is_region_neutral():
     assert all(source.group != "regional" for source in preset.sources)
 
 
-def test_default_512_includes_llm_sources():
+def test_default_512_includes_portable_qwen_model():
     preset = load_preset("default-512")
     ids = {source.id for source in preset.sources}
-    assert "llama-3b" in ids
+    assert "qwen-9b" in ids
     assert "llama-server-binaries" in ids
+    assert "llama-3b" not in ids
 
 
-def test_default_1tb_includes_large_llm_sources():
+def test_default_1tb_includes_large_qwen_model_under_24gb():
     preset = load_preset("default-1tb")
+    large_model = next(source for source in preset.sources if source.id == "qwen-35b-a3b")
+    assert large_model.size_gb < 24.0
     ids = {source.id for source in preset.sources}
-    assert "llama-70b" in ids
+    assert "qwen-35b-a3b" in ids
     assert "llama-server-binaries" in ids
+    assert "llama-70b" not in ids
+
+
+def test_default_2tb_uses_qwen_models_only():
+    preset = load_preset("default-2tb")
+    ids = {source.id for source in preset.sources}
+    assert "qwen-35b-a3b" in ids
+    assert "qwen-9b" in ids
+    assert "llama-70b" not in ids
+    assert "llama-3b" not in ids
 
 
 def test_default_2tb_stays_region_neutral():
