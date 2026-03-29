@@ -43,6 +43,7 @@ def init_drive(path: str, preset_name: str, enabled_groups: set[str] | None = No
         region=preset.region,
         target_path=str(drive_path),
         created=datetime.now().isoformat(timespec="seconds"),
+        enabled_groups=sorted(enabled_groups),
     )
     manifest.save(drive_path / "manifest.yaml")
 
@@ -69,8 +70,10 @@ def sync_drive(path: str):
     console.print(f"[bold]Syncing:[/bold] {manifest.preset} -> {drive_path}")
     console.print("\n[bold]Resolving latest versions...[/bold]")
 
+    active_sources = preset.sources_for_options(set(manifest.enabled_groups))
+
     downloads = []
-    for source in preset.sources:
+    for source in active_sources:
         try:
             url = resolve_url(source)
             dest_dir = drive_path / TYPE_DIRS.get(source.type, "other")
@@ -82,9 +85,12 @@ def sync_drive(path: str):
     console.print(f"\n[bold]Downloading {len(downloads)} files...[/bold]")
     results = download_sources(downloads)
 
+    # Build a lookup from source_id to resolved URL
+    resolved_urls = {sid: url for sid, url, _ in downloads}
+
     for r in results:
         if r.success and r.filepath:
-            source = next((s for s in preset.sources if s.id == r.source_id), None)
+            source = next((s for s in active_sources if s.id == r.source_id), None)
             if source:
                 entry = ManifestEntry(
                     id=r.source_id,
@@ -94,7 +100,7 @@ def sync_drive(path: str):
                     tags=source.tags,
                     depth=source.depth,
                     downloaded=datetime.now().isoformat(timespec="seconds"),
-                    url=str(r.filepath),
+                    url=resolved_urls.get(r.source_id, ""),
                 )
                 manifest.entries = [e for e in manifest.entries if e.id != r.source_id]
                 manifest.entries.append(entry)

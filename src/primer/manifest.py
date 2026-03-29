@@ -21,6 +21,7 @@ class Manifest:
     target_path: str
     created: str = ""
     last_synced: str = ""
+    enabled_groups: list[str] = field(default_factory=list)
     entries: list[ManifestEntry] = field(default_factory=list)
 
     def save(self, path: Path):
@@ -40,6 +41,7 @@ class Manifest:
             target_path=data["target_path"],
             created=data.get("created", ""),
             last_synced=data.get("last_synced", ""),
+            enabled_groups=data.get("enabled_groups", []),
             entries=entries,
         )
 

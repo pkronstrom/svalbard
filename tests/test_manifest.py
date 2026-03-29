@@ -19,6 +19,7 @@ def test_manifest_roundtrip(tmp_path):
         target_path="/mnt/drive",
         created="2026-03-29",
         last_synced="2026-03-29",
+        enabled_groups=["maps", "models"],
         entries=[entry],
     )
     path = tmp_path / "manifest.yaml"
@@ -30,6 +31,7 @@ def test_manifest_roundtrip(tmp_path):
     assert loaded.target_path == "/mnt/drive"
     assert loaded.created == "2026-03-29"
     assert loaded.last_synced == "2026-03-29"
+    assert loaded.enabled_groups == ["maps", "models"]
     assert len(loaded.entries) == 1
 
     e = loaded.entries[0]

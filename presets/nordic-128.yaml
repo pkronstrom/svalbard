@@ -6,7 +6,7 @@ region: nordic
 sources:
   - id: wikipedia-en-nopic
     type: zim
-    tags: [encyclopedia, english, reference]
+    tags: [general-reference, medicine, agriculture, electronics, mechanical, chemistry, physics, biology, history]
     depth: comprehensive
     size_gb: 25.0
     url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_nopic_{date}.zim"
@@ -14,7 +14,7 @@ sources:
 
   - id: wikipedia-fi-nopic
     type: zim
-    tags: [encyclopedia, finnish, reference]
+    tags: [general-reference, language]
     depth: comprehensive
     size_gb: 5.0
     url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_fi_all_nopic_{date}.zim"
@@ -22,7 +22,7 @@ sources:
 
   - id: wiktionary-en
     type: zim
-    tags: [dictionary, english, reference]
+    tags: [language, general-reference]
     depth: comprehensive
     size_gb: 5.0
     url_pattern: "https://download.kiwix.org/zim/wiktionary/wiktionary_en_all_nopic_{date}.zim"
@@ -30,7 +30,7 @@ sources:
 
   - id: wiktionary-fi
     type: zim
-    tags: [dictionary, finnish, reference]
+    tags: [language]
     depth: comprehensive
     size_gb: 2.0
     url_pattern: "https://download.kiwix.org/zim/wiktionary/wiktionary_fi_all_nopic_{date}.zim"
@@ -38,7 +38,7 @@ sources:
 
   - id: wikimed
     type: zim
-    tags: [medical, health, reference]
+    tags: [medicine, emergency-medicine, first-aid, pharmacy]
     depth: comprehensive
     size_gb: 2.0
     url_pattern: "https://download.kiwix.org/zim/other/mdwiki_en_all_{date}.zim"
@@ -46,7 +46,7 @@ sources:
 
   - id: wikihow-en
     type: zim
-    tags: [howto, practical, english]
+    tags: [water, fire-shelter, food-foraging, repair, cooking, general-reference]
     depth: comprehensive
     size_gb: 15.0
     url_pattern: "https://download.kiwix.org/zim/other/wikihow_en_all_{date}.zim"
@@ -54,7 +54,7 @@ sources:
 
   - id: ifixit
     type: zim
-    tags: [repair, practical, howto]
+    tags: [repair, electronics, mechanical]
     depth: comprehensive
     size_gb: 5.0
     url_pattern: "https://download.kiwix.org/zim/other/ifixit_en_all_{date}.zim"
@@ -62,7 +62,7 @@ sources:
 
   - id: stackexchange-survival
     type: zim
-    tags: [survival, qa, practical]
+    tags: [water, fire-shelter, food-foraging, navigation, first-aid, self-defense]
     depth: comprehensive
     size_gb: 0.5
     url_pattern: "https://download.kiwix.org/zim/stack_exchange/outdoors.stackexchange.com_en_all_{date}.zim"
@@ -70,7 +70,7 @@ sources:
 
   - id: stackexchange-diy
     type: zim
-    tags: [diy, home-improvement, qa, practical]
+    tags: [civil-construction, woodworking, mechanical, repair]
     depth: comprehensive
     size_gb: 3.0
     url_pattern: "https://download.kiwix.org/zim/stack_exchange/diy.stackexchange.com_en_all_{date}.zim"
@@ -78,7 +78,7 @@ sources:
 
   - id: stackexchange-gardening
     type: zim
-    tags: [gardening, qa, practical]
+    tags: [gardening, agriculture, food-preservation]
     depth: comprehensive
     size_gb: 1.0
     url_pattern: "https://download.kiwix.org/zim/stack_exchange/gardening.stackexchange.com_en_all_{date}.zim"
@@ -86,7 +86,7 @@ sources:
 
   - id: stackexchange-cooking
     type: zim
-    tags: [cooking, qa, practical]
+    tags: [cooking, food-preservation]
     depth: comprehensive
     size_gb: 1.5
     url_pattern: "https://download.kiwix.org/zim/stack_exchange/cooking.stackexchange.com_en_all_{date}.zim"
@@ -94,7 +94,7 @@ sources:
 
   - id: stackexchange-amateur-radio
     type: zim
-    tags: [radio, communications, qa]
+    tags: [radio-comms, electronics]
     depth: comprehensive
     size_gb: 0.5
     url_pattern: "https://download.kiwix.org/zim/stack_exchange/ham.stackexchange.com_en_all_{date}.zim"
@@ -102,7 +102,7 @@ sources:
 
   - id: practical-action
     type: zim
-    tags: [appropriate-technology, practical, development]
+    tags: [water, energy-power, agriculture, civil-construction]
     depth: comprehensive
     size_gb: 1.0
     url_pattern: "https://download.kiwix.org/zim/other/practical_action_en_all_{date}.zim"
@@ -110,7 +110,7 @@ sources:
 
   - id: wikibooks-en
     type: zim
-    tags: [textbooks, education, english]
+    tags: [education-pedagogy, mathematics, physics, chemistry, biology, computing]
     depth: comprehensive
     size_gb: 3.0
     url_pattern: "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_nopic_{date}.zim"
@@ -118,7 +118,7 @@ sources:
 
   - id: khan-academy-lite
     type: zim
-    tags: [education, math, science, video]
+    tags: [education-pedagogy, mathematics, physics, chemistry, biology]
     depth: comprehensive
     size_gb: 10.0
     url_pattern: "https://download.kiwix.org/zim/other/khan_academy_en_all_{date}.zim"
@@ -126,7 +126,7 @@ sources:
 
   - id: gutenberg-subset
     type: zim
-    tags: [literature, books, english]
+    tags: [general-reference, agriculture, mechanical, medicine, history]
     depth: overview
     size_gb: 10.0
     url_pattern: "https://download.kiwix.org/zim/gutenberg/gutenberg_en_all_{date}.zim"
@@ -134,7 +134,7 @@ sources:
 
   - id: osm-finland-nordics
     type: pmtiles
-    tags: [maps, finland, nordic, geography]
+    tags: [maps-geo, navigation]
     depth: comprehensive
     size_gb: 8.0
     url: "https://build.protomaps.com/20250101.pmtiles"
@@ -143,7 +143,7 @@ sources:
 
   - id: cyberchef
     type: app
-    tags: [tools, utility, encryption, encoding]
+    tags: [computing]
     depth: reference-only
     size_gb: 0.015
     url: "https://github.com/gchq/CyberChef/releases/latest/download/CyberChef.zip"
@@ -151,7 +151,7 @@ sources:
 
   - id: kiwix-serve-binaries
     type: binary
-    tags: [tools, server, zim]
+    tags: [general-reference]
     depth: reference-only
     size_gb: 0.05
     url: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-x86_64.tar.gz"
@@ -159,7 +159,7 @@ sources:
 
   - id: go-pmtiles-binaries
     type: binary
-    tags: [tools, server, maps]
+    tags: [maps-geo]
     depth: reference-only
     size_gb: 0.03
     url: "https://github.com/protomaps/go-pmtiles/releases/latest/download/go-pmtiles_Linux_x86_64.tar.gz"
