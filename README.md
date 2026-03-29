@@ -5,6 +5,11 @@ Assemble offline knowledge drives — Wikipedia, maps, books, and AI models on a
 ## Install
 
 ```bash
+# With uv (recommended)
+uv run primer --help          # Run directly, no install needed
+uv sync                       # Or install into a venv first
+
+# With pip
 pip install -e .
 ```
 
