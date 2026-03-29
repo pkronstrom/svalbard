@@ -40,13 +40,17 @@ def _show_menu(path: str):
     elif choice == "a":
         console.print("[yellow]audit:[/yellow] not yet implemented")
     elif choice == "w":
-        console.print("[yellow]wizard:[/yellow] not yet implemented")
+        from primer.wizard import run_wizard
+
+        run_wizard()
 
 
 @main.command()
 def wizard() -> None:
     """Interactive setup wizard."""
-    console.print("[yellow]wizard:[/yellow] not yet implemented")
+    from primer.wizard import run_wizard
+
+    run_wizard()
 
 
 @main.command()
