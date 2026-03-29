@@ -360,12 +360,87 @@ cask "lm-studio"
 - [Protomaps](https://protomaps.com/) — PMTiles format for offline maps.
 - [Zimit](https://github.com/openzim/zimit) — Turn any website into a ZIM file.
 
+## Custom Website Crawling (optional)
+
+Users can define custom websites to crawl and package as ZIM files. This is **optional** — requires Docker + Zimit + internet. Not a core dependency.
+
+### How it works
+
+- One YAML config file per output ZIM file, stored in `crawl/`
+- Each config lists sites to bundle into that ZIM, with crawl rules
+- `primer crawl` processes configs and outputs ZIMs to `zim/custom/` on the drive
+- Users can also just drop pre-made ZIM files into `zim/custom/` manually — no crawling needed
+- Custom ZIMs are auto-discovered by primer and served by kiwix-serve alongside standard ZIMs
+
+### Directory structure
+
+```
+primer/
+├── crawl/                            # Optional crawl configs
+│   ├── nordic-emergency.yaml         # → zim/custom/nordic-emergency.zim
+│   ├── radio-comms.yaml              # → zim/custom/radio-comms.zim
+│   └── nordic-agriculture.yaml       # → zim/custom/nordic-agriculture.zim
+```
+
+### Crawl config format
+
+```yaml
+# crawl/radio-comms.yaml
+name: Radio & Mesh Communications
+description: Meshtastic docs, amateur radio references
+tags: [radio-comms, networking-mesh]
+depth: comprehensive
+
+sites:
+  - url: https://meshtastic.org/docs
+    scope: prefix
+    page_limit: 1000
+  - url: https://www.arrl.org/ham-radio-101
+    scope: prefix
+    page_limit: 200
+
+defaults:
+  size_limit_mb: 512
+  timeout_minutes: 60
+```
+
+### CLI
+
+```bash
+primer crawl                     # Crawl all configs (requires Docker + internet)
+primer crawl radio-comms         # Crawl one bundle
+```
+
+### Drive layout
+
+Custom ZIMs live alongside standard ZIMs, auto-discovered:
+
+```
+PRIMER/
+├── zim/
+│   ├── wikipedia_en_all_nopic_2025-09.zim    # Standard
+│   ├── wikihow_en_all_maxi_2025-06.zim       # Standard
+│   └── custom/                                # Custom crawled ZIMs
+│       ├── nordic-emergency.zim
+│       ├── radio-comms.zim
+│       └── my-manually-added-site.zim         # Dropped in by user
+```
+
+### Technical details
+
+- Uses [Zimit](https://github.com/openzim/zimit) (Docker-based: Browsertrix Crawler → WARC → warc2zim → ZIM)
+- Multiple sites per config are crawled separately, WARCs merged, then converted to one ZIM
+- Zimit `--seeds` accepts multiple URLs, `--scopeType` controls crawl boundaries
+- Always applies limits (page count, size, timeout) to prevent runaway crawls
+- No incremental updates — full re-crawl produces new ZIM
+- Gotchas: Cloudflare/WAF blocks crawler, SPAs need special flags, no service worker support
+- If Docker/Zimit not available, primer gracefully skips crawl bundles
+
 ## Future Work (not in v1)
 
 - Regional presets: `us-128`, `us-256`, `us-1tb`, `global-*`
 - `max` preset — fill whatever drive you have
 - Custom preset builder — pick domains and budget, primer selects optimal sources
-- Zimit integration — archive custom websites into ZIM format
 - Meshtastic/ESP32 firmware + documentation bundles
 - 3D printing model libraries (Printables/Thingiverse dumps)
 - Nordic-specific content: Finnish Red Cross guides, MPK material, local flora/fauna
