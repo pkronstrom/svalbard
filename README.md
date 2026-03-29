@@ -26,11 +26,20 @@ The wizard walks you through choosing a region, selecting a preset tier, and ini
 
 ## Presets
 
+Default presets are region-neutral and English-first.
+
+| Preset | Wikipedia | Reference | Practical | Education | Tools |
+| ------ | --------- | --------- | --------- | --------- | ----- |
+| `default-32` | English Wikipedia | WikiMed | Practical Action, Outdoors & Survival Stack Exchange | - | CyberChef, Kiwix tools |
+| `default-64` | English Wikipedia | English Wiktionary | WikiMed, iFixit, Outdoors & Survival Stack Exchange, DIY Stack Exchange, Practical Action | Wikibooks | CyberChef, Kiwix tools |
+| `default-128` | English Wikipedia | English Wiktionary, Project Gutenberg | WikiMed, WikiHow, iFixit, Outdoors & Survival, DIY, Gardening, Cooking Stack Exchange, Practical Action | Wikibooks, Khan Academy | CyberChef, Kiwix tools |
+
+Finland presets add Finnish-language and Finland-focused content on top of that baseline.
+
 | Preset       | Size   | Focus                                               |
 | ------------ | ------ | --------------------------------------------------- |
-| default-64   | 64 GB  | Region-neutral English starter kit                  |
-| finland-128  | 128 GB | Finnish + English reference and practical guides    |
-| finland-1tb  | 1 TB   | Full Finnish-first archive with larger models/tools |
+| `finland-128`  | 128 GB | Finnish + English reference and practical guides    |
+| `finland-1tb`  | 1 TB   | Full Finnish-first archive with larger models/tools |
 
 ## Commands
 
