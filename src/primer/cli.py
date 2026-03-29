@@ -11,43 +11,74 @@ console = Console()
 def main(ctx: click.Context) -> None:
     """Primer — Offline knowledge kit provisioner."""
     if ctx.invoked_subcommand is None:
-        console.print(
-            "\n[bold]Welcome to Primer![/bold]\n"
-            "\nGet started by running [cyan]primer wizard[/cyan] "
-            "to set up your first knowledge kit.\n"
-        )
+        from pathlib import Path
+
+        from primer.manifest import Manifest
+
+        cwd = Path.cwd()
+        if Manifest.exists(cwd):
+            from primer.commands import show_status
+
+            show_status(str(cwd))
+            _show_menu(str(cwd))
+        else:
+            console.print("[bold]Primer[/bold] -- Offline knowledge kit provisioner")
+            console.print("\nNo drive found. Run [bold]primer wizard[/bold] to get started.")
+            console.print("Run [bold]primer --help[/bold] for all commands.")
+
+
+def _show_menu(path: str):
+    console.print("\n  [bold][s][/bold] Sync (check for updates)")
+    console.print("  [bold][a][/bold] Audit report")
+    console.print("  [bold][w][/bold] Wizard (reconfigure)")
+    console.print("  [bold][q][/bold] Quit")
+    choice = console.input("\n  > ")
+    if choice == "s":
+        from primer.commands import sync_drive
+
+        sync_drive(path)
+    elif choice == "a":
+        console.print("[yellow]audit:[/yellow] not yet implemented")
+    elif choice == "w":
+        console.print("[yellow]wizard:[/yellow] not yet implemented")
 
 
 @main.command()
 def wizard() -> None:
-    """Interactive setup wizard for a new knowledge kit."""
+    """Interactive setup wizard."""
     console.print("[yellow]wizard:[/yellow] not yet implemented")
 
 
 @main.command()
 @click.argument("path")
-@click.option("--preset", default=None, help="Preset configuration to use.")
-def init(path: str, preset: str | None) -> None:
-    """Initialise a new knowledge kit at PATH."""
-    console.print("[yellow]init:[/yellow] not yet implemented")
+@click.option("--preset", required=True, help="Preset name (e.g. nordic-128)")
+def init(path: str, preset: str) -> None:
+    """Initialize a drive with a preset."""
+    from primer.commands import init_drive
+
+    init_drive(path, preset)
 
 
 @main.command()
 @click.argument("path", default=".")
 def sync(path: str) -> None:
-    """Download / update assets for the kit at PATH."""
-    console.print("[yellow]sync:[/yellow] not yet implemented")
+    """Download/update content on initialized drive."""
+    from primer.commands import sync_drive
+
+    sync_drive(path)
 
 
 @main.command()
 @click.argument("path", default=".")
 def status(path: str) -> None:
-    """Show status of the kit at PATH."""
-    console.print("[yellow]status:[/yellow] not yet implemented")
+    """Show what's downloaded, what's stale."""
+    from primer.commands import show_status
+
+    show_status(path)
 
 
 @main.command()
 @click.argument("path", default=".")
 def audit(path: str) -> None:
-    """Audit the kit at PATH for integrity and freshness."""
+    """Generate LLM-ready gap analysis report."""
     console.print("[yellow]audit:[/yellow] not yet implemented")
