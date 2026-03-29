@@ -32,10 +32,43 @@ def test_list_presets_contains_finland_and_default_families():
     assert "default-128" in presets
 
 
+def test_list_presets_contains_full_default_family():
+    presets = list_presets()
+    assert "default-32" in presets
+    assert "default-64" in presets
+    assert "default-128" in presets
+    assert "default-256" in presets
+    assert "default-512" in presets
+    assert "default-1tb" in presets
+    assert "default-2tb" in presets
+
+
 def test_default_64_is_region_neutral():
     preset = load_preset("default-64")
     assert preset.region == "default"
     assert all(source.group != "regional" for source in preset.sources)
+
+
+def test_default_512_includes_llm_sources():
+    preset = load_preset("default-512")
+    ids = {source.id for source in preset.sources}
+    assert "llama-3b" in ids
+    assert "llama-server-binaries" in ids
+
+
+def test_default_1tb_includes_large_llm_sources():
+    preset = load_preset("default-1tb")
+    ids = {source.id for source in preset.sources}
+    assert "llama-70b" in ids
+    assert "llama-server-binaries" in ids
+
+
+def test_default_2tb_stays_region_neutral():
+    preset = load_preset("default-2tb")
+    ids = {source.id for source in preset.sources}
+    assert "wikipedia-fi-all" not in ids
+    assert "wiktionary-fi" not in ids
+    assert "wikipedia-sv-all" not in ids
 
 
 def test_finland_128_uses_standalone_sources_only():

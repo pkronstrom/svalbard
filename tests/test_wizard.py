@@ -42,6 +42,15 @@ def test_presets_for_space_filters_by_region_family():
     assert "finland-64" not in names
 
 
+def test_presets_for_space_default_region_includes_large_tiers():
+    result = presets_for_space(2500, region="default")
+    names = [name for name, _, _ in result]
+    assert "default-256" in names
+    assert "default-512" in names
+    assert "default-1tb" in names
+    assert "default-2tb" in names
+
+
 def test_presets_for_space_sorted_by_size():
     """Presets should be sorted smallest first."""
     result = presets_for_space(500, region="finland")
