@@ -38,7 +38,11 @@ def _show_menu(path: str):
 
         sync_drive(path)
     elif choice == "a":
-        console.print("[yellow]audit:[/yellow] not yet implemented")
+        from pathlib import Path as P
+
+        from primer.audit import generate_audit
+
+        click.echo(generate_audit(P(path)))
     elif choice == "w":
         from primer.wizard import run_wizard
 
@@ -85,4 +89,15 @@ def status(path: str) -> None:
 @click.argument("path", default=".")
 def audit(path: str) -> None:
     """Generate LLM-ready gap analysis report."""
-    console.print("[yellow]audit:[/yellow] not yet implemented")
+    from pathlib import Path as P
+
+    from primer.manifest import Manifest
+
+    drive_path = P(path)
+    if not Manifest.exists(drive_path):
+        console.print("[red]No manifest found.[/red]")
+        return
+    from primer.audit import generate_audit
+
+    report = generate_audit(drive_path)
+    click.echo(report)
