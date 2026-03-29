@@ -1,0 +1,17 @@
+groups:
+  survival:
+    domains: [water, fire-shelter, food-foraging, navigation, first-aid, self-defense]
+  medical:
+    domains: [medicine, dentistry, pharmacy, emergency-medicine, mental-health]
+  food:
+    domains: [agriculture, gardening, animal-husbandry, food-preservation, cooking]
+  engineering:
+    domains: [electronics, mechanical, civil-construction, metalworking, woodworking, energy-power]
+  tech:
+    domains: [computing, radio-comms, networking-mesh, 3d-printing, drones-robotics]
+  science:
+    domains: [chemistry, physics, biology, earth-science, mathematics]
+  society:
+    domains: [education-pedagogy, governance-law, trade-economics, history, language]
+  reference:
+    domains: [general-reference, maps-geo, repair]
