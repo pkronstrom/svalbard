@@ -116,14 +116,22 @@ def detect_volumes() -> list[dict]:
     return volumes
 
 
-def find_best_preset(size_gb: float, region: str = "nordic") -> str | None:
-    """Find the largest preset that fits the given size."""
+def presets_for_space(free_gb: float, region: str = "nordic") -> list[tuple[str, float, bool]]:
+    """Return all presets for region, sorted smallest first.
+
+    Uses actual content size (not label) so a 122 GB drive can fit nordic-128.
+    Returns [(preset_name, content_size_gb, fits), ...].
+    """
     available = list_presets()
-    best = None
-    for size, preset_name in sorted(SIZE_PRESETS.items()):
-        if preset_name in available and size <= size_gb:
-            best = preset_name
-    return best
+    result = []
+    for preset_name in available:
+        if not preset_name.startswith(region):
+            continue
+        preset = load_preset(preset_name)
+        content_gb = sum(s.size_gb for s in preset.sources)
+        result.append((preset_name, content_gb, content_gb <= free_gb))
+    result.sort(key=lambda x: x[1])
+    return result
 
 
 def run_wizard():
@@ -135,19 +143,20 @@ def run_wizard():
     ))
 
     # Step 1: Target
-    console.print("\n[bold]Step 1/5 — Target[/bold]")
+    console.print("\n[bold]Step 1/4 — Target[/bold]")
     console.print("Where should the kit be provisioned?\n")
 
     volumes = detect_volumes()
     choices = {}
     idx = 1
     for v in volumes:
+        svalbard_path = str(Path(v["path"]) / "svalbard")
         size_info = f"{v['total_gb']:.0f} GB total, {v['free_gb']:.0f} GB free"
         if v["network"]:
-            console.print(f"  [dim][bold]{idx}[/bold]) {v['path']}  [network]  ({size_info})[/dim]")
+            console.print(f"  [dim][bold]{idx}[/bold]) {svalbard_path}  [network]  ({size_info})[/dim]")
         else:
-            console.print(f"  [bold]{idx}[/bold]) {v['path']}  ({size_info})")
-        choices[str(idx)] = v["path"]
+            console.print(f"  [bold]{idx}[/bold]) {svalbard_path}  ({size_info})")
+        choices[str(idx)] = svalbard_path
         idx += 1
 
     # Home directory option — always present
@@ -174,37 +183,61 @@ def run_wizard():
     else:
         target_path = choices[choice]
 
-    # Step 2: Budget
-    console.print("\n[bold]Step 2/5 — Budget[/bold]")
+    # Step 2: Preset
+    console.print("\n[bold]Step 2/4 — Preset[/bold]")
+    # Check free space — use parent if target doesn't exist yet
+    space_check = Path(target_path)
+    while not space_check.exists() and space_check.parent != space_check:
+        space_check = space_check.parent
     try:
-        usage = shutil.disk_usage(target_path)
-        default_gb = int(usage.total / 1e9 * 0.9)
+        usage = shutil.disk_usage(space_check)
+        free_gb = usage.free / 1e9
     except OSError:
-        default_gb = 128
-    budget_gb = int(Prompt.ask(
-        f"  How much space to use (GB)?", default=str(default_gb),
-    ))
+        free_gb = 0
 
-    # Step 3: Region
-    console.print("\n[bold]Step 3/5 — Region[/bold]")
-    console.print("  [bold]1[/bold]) Nordic (Finland, Nordics, Northern Europe)")
-    console.print("  [dim]2) US (coming soon)[/dim]")
-    console.print("  [dim]3) Global (coming soon)[/dim]")
-    Prompt.ask("  Select", default="1", choices=["1"])
+    all_presets = presets_for_space(free_gb) if free_gb > 0 else []
 
-    # Find best preset
-    preset_name = find_best_preset(budget_gb)
-    if not preset_name:
-        console.print(f"[red]No preset found for {budget_gb} GB. Minimum is 32 GB.[/red]")
+    if not all_presets:
+        if free_gb > 0:
+            console.print(f"[red]No presets available.[/red]")
+        else:
+            console.print("[red]Could not determine free space at target.[/red]")
         return
+
+    console.print(f"  Presets ({free_gb:.0f} GB free):\n")
+    preset_choices = {}
+    recommended = None
+    for i, (name, content_gb, fits) in enumerate(all_presets, 1):
+        p = load_preset(name)
+        preset_choices[str(i)] = name
+        if fits:
+            recommended = str(i)
+            over = ""
+            marker = ""
+        else:
+            over = f"  (needs ~{content_gb - free_gb:.0f} GB more)"
+            marker = "[dim]"
+
+        line = f"  [bold]{i}[/bold]) {marker}{name:15s}  ~{content_gb:.0f} GB  — {p.description}{over}"
+        if marker:
+            line += "[/dim]"
+        console.print(line)
+
+    # Mark recommended after printing all lines
+    if recommended:
+        console.print(f"\n  [green]Enter = {preset_choices[recommended]} (recommended)[/green]")
+
+    default_choice = recommended or "1"
+    choice = Prompt.ask("\n  Select", choices=list(preset_choices.keys()), default=default_choice)
+    preset_name = preset_choices[choice]
     preset = load_preset(preset_name)
 
-    # Step 4: Options
-    console.print(f"\n[bold]Step 4/5 — Options[/bold] (preset: {preset.name})")
+    # Step 3: Options
+    console.print(f"\n[bold]Step 3/4 — Options[/bold] (preset: {preset.name})")
     enabled_groups = set()
     if Confirm.ask("  Include offline maps?", default=True):
         enabled_groups.add("maps")
-    if budget_gb >= 512:
+    if preset.target_size_gb >= 512:
         if Confirm.ask("  Include LLM models?", default=True):
             enabled_groups.add("models")
         if Confirm.ask("  Include app installers (Kiwix.dmg, etc.)?", default=False):
@@ -212,25 +245,32 @@ def run_wizard():
         if Confirm.ask("  Include Linux ISO + package cache?", default=False):
             enabled_groups.add("infra")
 
-    # Step 5: Review
+    # Step 4: Review
     sources = preset.sources_for_options(enabled_groups)
     total_gb = sum(s.size_gb for s in sources)
 
-    console.print(f"\n[bold]Step 5/5 — Review[/bold]")
-    table = Table()
-    table.add_column("Category")
-    table.add_column("Sources", justify="right")
+    console.print(f"\n[bold]Step 4/4 — Review[/bold]")
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Source")
+    table.add_column("Type")
     table.add_column("Size", justify="right")
+    table.add_column("Description")
+
     by_type: dict[str, list] = {}
     for s in sources:
         by_type.setdefault(s.type, []).append(s)
-    for type_name, type_sources in sorted(by_type.items()):
-        size = sum(s.size_gb for s in type_sources)
-        table.add_row(type_name.upper(), str(len(type_sources)), f"{size:.1f} GB")
+
+    for type_name in sorted(by_type):
+        type_sources = by_type[type_name]
+        for s in sorted(type_sources, key=lambda s: s.id):
+            size_str = f"{s.size_gb:.1f} GB" if s.size_gb >= 1 else f"{s.size_gb * 1024:.0f} MB"
+            table.add_row(s.id, s.type.upper(), size_str, s.description or "")
+
     console.print(table)
     console.print(f"\n  [bold]Target:[/bold]  {target_path}")
-    console.print(f"  [bold]Preset:[/bold]  {preset.name}")
-    console.print(f"  [bold]Total:[/bold]   {total_gb:.1f} GB / {budget_gb} GB")
+    console.print(f"  [bold]Preset:[/bold]  {preset.name} — {preset.description}")
+    console.print(f"  [bold]Total:[/bold]   {len(sources)} sources, {total_gb:.1f} GB / {free_gb:.0f} GB free")
 
     if not Confirm.ask("\n  Proceed?", default=True):
         console.print("[dim]Cancelled.[/dim]")
