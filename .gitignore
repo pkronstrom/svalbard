@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+
+*.zim
+*.pmtiles
+*.gguf
+.DS_Store
