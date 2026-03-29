@@ -1,0 +1,20 @@
+# Example: Radio & mesh networking documentation
+# Output: zim/custom/radio-comms.zim
+
+name: Radio & Mesh Communications
+description: Meshtastic docs, amateur radio basics, LoRa networking
+tags: [radio-comms, networking-mesh]
+depth: comprehensive
+
+sites:
+  - url: https://meshtastic.org/docs
+    scope: prefix
+    page_limit: 1000
+
+  - url: https://www.arrl.org/ham-radio-101
+    scope: prefix
+    page_limit: 200
+
+defaults:
+  size_limit_mb: 512
+  timeout_minutes: 60
