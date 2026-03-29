@@ -1,7 +1,7 @@
-name: nordic-256
-description: Rich coverage — Wikipedia with pictures, Nordic languages, expanded references
+name: finland-256
+description: Rich coverage with Finnish focus, Nordic languages, and expanded references
 target_size_gb: 256
-region: nordic
+region: finland
 
 sources:
   - id: wikipedia-en-maxi
@@ -10,10 +10,9 @@ sources:
     depth: comprehensive
     size_gb: 100.0
     url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_maxi_{date}.zim"
-    replaces: wikipedia-en-nopic
     description: English Wikipedia with pictures
 
-  - id: wikipedia-fi-nopic
+  - id: wikipedia-fi
     type: zim
     tags: [general-reference, language]
     depth: comprehensive
@@ -21,7 +20,7 @@ sources:
     url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_fi_all_nopic_{date}.zim"
     description: Finnish Wikipedia without pictures
 
-  - id: wikipedia-sv-nopic
+  - id: wikipedia-sv
     type: zim
     tags: [general-reference, language]
     depth: overview
@@ -29,7 +28,7 @@ sources:
     url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_sv_all_nopic_{date}.zim"
     description: Swedish Wikipedia without pictures
 
-  - id: wikipedia-no-nopic
+  - id: wikipedia-no
     type: zim
     tags: [general-reference, language]
     depth: overview
@@ -163,39 +162,26 @@ sources:
     depth: comprehensive
     size_gb: 10.0
     url_pattern: "https://download.kiwix.org/zim/gutenberg/gutenberg_en_all_{date}.zim"
-    replaces: gutenberg-subset
     description: Project Gutenberg book collection
-
-  - id: osm-finland-nordics
-    type: pmtiles
-    tags: [maps-geo, navigation]
-    depth: comprehensive
-    size_gb: 8.0
-    url: "https://build.protomaps.com/20250101.pmtiles"
-    optional_group: maps
-    description: OpenStreetMap tiles for Finland and Nordic region
 
   - id: cyberchef
     type: app
+    group: tools
     tags: [computing]
     depth: reference-only
     size_gb: 0.015
     url: "https://github.com/gchq/CyberChef/releases/latest/download/CyberChef.zip"
     description: CyberChef web-based data analysis tool
 
-  - id: kiwix-serve-binaries
+  - id: kiwix-serve
     type: binary
+    group: tools
     tags: [general-reference]
     depth: reference-only
-    size_gb: 0.05
-    url: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-x86_64.tar.gz"
-    description: Kiwix server binaries for serving ZIM files
-
-  - id: go-pmtiles-binaries
-    type: binary
-    tags: [maps-geo]
-    depth: reference-only
-    size_gb: 0.03
-    url: "https://github.com/protomaps/go-pmtiles/releases/latest/download/go-pmtiles_Linux_x86_64.tar.gz"
-    optional_group: maps
-    description: PMTiles server for serving map tiles
+    size_gb: 0.2
+    platforms:
+      linux-x86_64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-x86_64.tar.gz"
+      linux-arm64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-aarch64.tar.gz"
+      macos-x86_64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_macos-x86_64.tar.gz"
+      macos-arm64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_macos-arm64.tar.gz"
+    description: Kiwix tools archive for all supported desktop platforms

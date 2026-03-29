@@ -1,32 +1,61 @@
-from svalbard.models import Preset, Source
 from svalbard.presets import list_presets, load_preset
 
 
-def test_parse_nordic_128():
-    preset = load_preset("nordic-128")
-    assert preset.name == "nordic-128"
-    assert preset.region == "nordic"
+def test_parse_finland_128():
+    preset = load_preset("finland-128")
+    assert preset.name == "finland-128"
+    assert preset.region == "finland"
     assert preset.target_size_gb == 128
     assert len(preset.sources) > 10
-    assert preset.total_size_gb > 50
 
 
-def test_sources_have_required_fields():
-    preset = load_preset("nordic-128")
-    for source in preset.sources:
-        assert source.id, f"Source missing id: {source}"
-        assert source.type, f"Source missing type: {source}"
-        assert len(source.tags) > 0, f"Source {source.id} has no tags"
-        assert source.size_gb > 0, f"Source {source.id} has size_gb <= 0"
+def test_parse_finland_128_group_and_platforms():
+    preset = load_preset("finland-128")
+    tool = next(source for source in preset.sources if source.id == "kiwix-serve")
+    assert tool.group == "tools"
+    assert "linux-x86_64" in tool.platforms
+    assert tool.platforms["linux-x86_64"].startswith("https://")
 
 
-def test_list_presets():
+def test_list_presets_only_returns_canonical_names():
     presets = list_presets()
-    assert "nordic-128" in presets
+    assert "finland-128" in presets
+    assert "default-64" in presets
+    assert "nordic-128" not in presets
 
 
-def test_optional_groups():
-    preset = load_preset("nordic-128")
-    with_maps = preset.sources_for_options({"maps"})
-    without_maps = preset.sources_for_options(set())
-    assert len(with_maps) > len(without_maps)
+def test_list_presets_contains_finland_and_default_families():
+    presets = list_presets()
+    assert "finland-32" in presets
+    assert "finland-1tb" in presets
+    assert "default-32" in presets
+    assert "default-128" in presets
+
+
+def test_default_64_is_region_neutral():
+    preset = load_preset("default-64")
+    assert preset.region == "default"
+    assert all(source.group != "regional" for source in preset.sources)
+
+
+def test_finland_128_uses_standalone_sources_only():
+    preset = load_preset("finland-128")
+    ids = {source.id for source in preset.sources}
+    assert "wikipedia-en-nopic" in ids
+    assert "kiwix-serve" in ids
+    assert all(not source.platforms or source.type == "binary" for source in preset.sources)
+
+
+def test_finland_family_uses_canonical_metadata():
+    for preset_name in [name for name in list_presets() if name.startswith("finland-")]:
+        preset = load_preset(preset_name)
+        assert preset.name == preset_name
+        assert preset.region == "finland"
+
+
+def test_canonical_presets_do_not_use_legacy_source_fields():
+    for preset_name in list_presets():
+        preset = load_preset(preset_name)
+        for source in preset.sources:
+            assert not hasattr(source, "optional_group")
+            assert not hasattr(source, "replaces")

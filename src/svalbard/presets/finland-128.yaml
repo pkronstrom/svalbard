@@ -1,17 +1,16 @@
-name: nordic-512
-description: Media + models — video content, small LLM, expanded coverage
-target_size_gb: 512
-region: nordic
+name: finland-128
+description: Finnish + English reference and practical guides for a 128GB drive
+target_size_gb: 128
+region: finland
 
 sources:
-  - id: wikipedia-en-maxi
+  - id: wikipedia-en-nopic
     type: zim
     tags: [general-reference, medicine, agriculture, electronics, mechanical, chemistry, physics, biology, history]
     depth: comprehensive
-    size_gb: 100.0
-    url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_maxi_{date}.zim"
-    replaces: wikipedia-en-nopic
-    description: English Wikipedia with pictures
+    size_gb: 25.0
+    url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_nopic_{date}.zim"
+    description: English Wikipedia without pictures
 
   - id: wikipedia-fi-nopic
     type: zim
@@ -20,30 +19,6 @@ sources:
     size_gb: 5.0
     url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_fi_all_nopic_{date}.zim"
     description: Finnish Wikipedia without pictures
-
-  - id: wikipedia-sv-nopic
-    type: zim
-    tags: [general-reference, language]
-    depth: overview
-    size_gb: 4.0
-    url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_sv_all_nopic_{date}.zim"
-    description: Swedish Wikipedia without pictures
-
-  - id: wikipedia-no-nopic
-    type: zim
-    tags: [general-reference, language]
-    depth: overview
-    size_gb: 3.0
-    url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_no_all_nopic_{date}.zim"
-    description: Norwegian Wikipedia without pictures
-
-  - id: wikipedia-da-nopic
-    type: zim
-    tags: [general-reference, language]
-    depth: overview
-    size_gb: 3.0
-    url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_da_all_nopic_{date}.zim"
-    description: Danish Wikipedia without pictures
 
   - id: wiktionary-en
     type: zim
@@ -125,30 +100,6 @@ sources:
     url_pattern: "https://download.kiwix.org/zim/stack_exchange/ham.stackexchange.com_en_all_{date}.zim"
     description: Amateur Radio Stack Exchange
 
-  - id: stackexchange-electronics
-    type: zim
-    tags: [electronics, computing]
-    depth: comprehensive
-    size_gb: 2.0
-    url_pattern: "https://download.kiwix.org/zim/stack_exchange/electronics.stackexchange.com_en_all_{date}.zim"
-    description: Electronics Stack Exchange
-
-  - id: stackexchange-physics
-    type: zim
-    tags: [physics, mathematics]
-    depth: comprehensive
-    size_gb: 2.0
-    url_pattern: "https://download.kiwix.org/zim/stack_exchange/physics.stackexchange.com_en_all_{date}.zim"
-    description: Physics Stack Exchange
-
-  - id: stackexchange-math
-    type: zim
-    tags: [mathematics]
-    depth: comprehensive
-    size_gb: 5.0
-    url_pattern: "https://download.kiwix.org/zim/stack_exchange/math.stackexchange.com_en_all_{date}.zim"
-    description: Mathematics Stack Exchange
-
   - id: practical-action
     type: zim
     tags: [water, energy-power, agriculture, civil-construction]
@@ -173,63 +124,32 @@ sources:
     url_pattern: "https://download.kiwix.org/zim/other/khan_academy_en_all_{date}.zim"
     description: Khan Academy educational content
 
-  - id: gutenberg
+  - id: gutenberg-subset
     type: zim
     tags: [general-reference, agriculture, mechanical, medicine, history]
-    depth: comprehensive
+    depth: overview
     size_gb: 10.0
     url_pattern: "https://download.kiwix.org/zim/gutenberg/gutenberg_en_all_{date}.zim"
-    replaces: gutenberg-subset
-    description: Project Gutenberg full book collection
-
-  - id: osm-finland-nordics
-    type: pmtiles
-    tags: [maps-geo, navigation]
-    depth: comprehensive
-    size_gb: 8.0
-    url: "https://build.protomaps.com/20250101.pmtiles"
-    optional_group: maps
-    description: OpenStreetMap tiles for Finland and Nordic region
-
-  - id: llama-3b
-    type: gguf
-    tags: [computing, general-reference, education-pedagogy]
-    depth: overview
-    size_gb: 2.0
-    url: "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
-    optional_group: models
-    description: Llama 3.2 3B Instruct (Q4_K_M) — small portable LLM
-
-  - id: llama-server-binaries
-    type: binary
-    tags: [computing]
-    depth: reference-only
-    size_gb: 0.005
-    url: "https://github.com/ggerganov/llama.cpp/releases/latest/download/llama-server-linux-x86_64"
-    optional_group: models
-    description: llama.cpp server binary for serving GGUF models
+    description: Project Gutenberg book collection
 
   - id: cyberchef
     type: app
+    group: tools
     tags: [computing]
     depth: reference-only
     size_gb: 0.015
     url: "https://github.com/gchq/CyberChef/releases/latest/download/CyberChef.zip"
     description: CyberChef web-based data analysis tool
 
-  - id: kiwix-serve-binaries
+  - id: kiwix-serve
     type: binary
+    group: tools
     tags: [general-reference]
     depth: reference-only
-    size_gb: 0.05
-    url: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-x86_64.tar.gz"
-    description: Kiwix server binaries for serving ZIM files
-
-  - id: go-pmtiles-binaries
-    type: binary
-    tags: [maps-geo]
-    depth: reference-only
-    size_gb: 0.03
-    url: "https://github.com/protomaps/go-pmtiles/releases/latest/download/go-pmtiles_Linux_x86_64.tar.gz"
-    optional_group: maps
-    description: PMTiles server for serving map tiles
+    size_gb: 0.2
+    platforms:
+      linux-x86_64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-x86_64.tar.gz"
+      linux-arm64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-aarch64.tar.gz"
+      macos-x86_64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_macos-x86_64.tar.gz"
+      macos-arm64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_macos-arm64.tar.gz"
+    description: Kiwix tools archive for all supported desktop platforms

@@ -8,6 +8,7 @@ class ManifestEntry:
     type: str
     filename: str
     size_bytes: int
+    platform: str = ""
     tags: list[str] = field(default_factory=list)
     depth: str = "comprehensive"
     downloaded: str = ""  # ISO date
@@ -21,7 +22,6 @@ class Manifest:
     target_path: str
     created: str = ""
     last_synced: str = ""
-    enabled_groups: list[str] = field(default_factory=list)
     entries: list[ManifestEntry] = field(default_factory=list)
 
     def save(self, path: Path):
@@ -41,7 +41,6 @@ class Manifest:
             target_path=data["target_path"],
             created=data.get("created", ""),
             last_synced=data.get("last_synced", ""),
-            enabled_groups=data.get("enabled_groups", []),
             entries=entries,
         )
 
@@ -49,8 +48,11 @@ class Manifest:
     def exists(cls, drive_path: Path) -> bool:
         return (drive_path / "manifest.yaml").exists()
 
-    def entry_by_id(self, source_id: str) -> ManifestEntry | None:
+    def entry_by_id(self, source_id: str, platform: str = "") -> ManifestEntry | None:
         for e in self.entries:
-            if e.id == source_id:
+            if e.id == source_id and e.platform == platform:
                 return e
         return None
+
+    def entries_by_id(self, source_id: str) -> list[ManifestEntry]:
+        return [entry for entry in self.entries if entry.id == source_id]

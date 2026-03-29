@@ -1,4 +1,5 @@
 import signal
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -28,23 +29,57 @@ TYPE_DIRS = {
 }
 
 
-def init_drive(path: str, preset_name: str, enabled_groups: set[str] | None = None):
+@dataclass
+class DownloadJob:
+    source_id: str
+    source_type: str
+    url: str
+    dest_dir: Path
+    source: Source
+    platform: str = ""
+
+
+def expand_source_downloads(source: Source, drive_path: Path) -> list[DownloadJob]:
+    """Expand one source into one or more concrete download jobs."""
+    if source.platforms:
+        jobs = []
+        for platform, url in sorted(source.platforms.items()):
+            jobs.append(
+                DownloadJob(
+                    source_id=source.id,
+                    source_type=source.type,
+                    url=url,
+                    dest_dir=drive_path / "bin" / platform,
+                    source=source,
+                    platform=platform,
+                )
+            )
+        return jobs
+
+    return [
+        DownloadJob(
+            source_id=source.id,
+            source_type=source.type,
+            url=resolve_url(source),
+            dest_dir=drive_path / TYPE_DIRS.get(source.type, "other"),
+            source=source,
+        )
+    ]
+
+
+def init_drive(path: str, preset_name: str):
     """Initialize a drive with a preset."""
     drive_path = Path(path)
     drive_path.mkdir(parents=True, exist_ok=True)
 
     preset = load_preset(preset_name)
-    if enabled_groups is None:
-        enabled_groups = {"maps"}
-
-    sources = preset.sources_for_options(enabled_groups)
+    sources = preset.sources
 
     manifest = Manifest(
-        preset=preset_name,
+        preset=preset.name,
         region=preset.region,
         target_path=str(drive_path),
         created=datetime.now().isoformat(timespec="seconds"),
-        enabled_groups=sorted(enabled_groups),
     )
     manifest.save(drive_path / "manifest.yaml")
 
@@ -71,52 +106,48 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
 
     console.print(f"[bold]Syncing:[/bold] {manifest.preset} → {drive_path}")
 
-    active_sources = preset.sources_for_options(set(manifest.enabled_groups))
+    active_sources = preset.sources
 
     # Determine what needs downloading
     console.print("\n[bold]Resolving latest versions...[/bold]")
-    downloads: list[tuple[str, str, Path, Source]] = []
+    downloads: list[DownloadJob] = []
     skipped = 0
     updated = 0
 
     for source in active_sources:
-        existing = manifest.entry_by_id(source.id)
-        dest_dir = drive_path / TYPE_DIRS.get(source.type, "other")
+        try:
+            jobs = expand_source_downloads(source, drive_path)
+        except Exception as e:
+            console.print(f"  [red]FAIL[/red] {source.id}: {e}")
+            continue
 
-        if existing and not force:
-            # File already downloaded — check if it still exists on disk
-            existing_path = dest_dir / existing.filename
-            if existing_path.exists():
-                if not update:
-                    # Default: skip already-downloaded sources
-                    skipped += 1
-                    continue
-                # --update: resolve URL and check for newer version
-                try:
-                    url = resolve_url(source)
-                    if url == existing.url:
-                        console.print(f"  [dim]Current:[/dim] {source.id}")
+        for job in jobs:
+            existing = manifest.entry_by_id(job.source_id, job.platform)
+
+            if existing and not force:
+                existing_path = job.dest_dir / existing.filename
+                if existing_path.exists():
+                    if not update:
                         skipped += 1
                         continue
-                    else:
-                        console.print(f"  [yellow]Update available:[/yellow] {source.id}")
-                        updated += 1
-                        downloads.append((source.id, url, dest_dir, source))
-                except Exception as e:
-                    console.print(f"  [red]FAIL[/red] {source.id}: {e}")
-                    continue
-            # File in manifest but missing from disk — re-download
-            elif not existing_path.exists():
-                console.print(f"  [yellow]Missing from disk:[/yellow] {source.id}")
+                    if job.url == existing.url:
+                        label = f"{source.id} [{job.platform}]" if job.platform else source.id
+                        console.print(f"  [dim]Current:[/dim] {label}")
+                        skipped += 1
+                        continue
 
-        # Resolve URL for new/missing sources
-        if not any(d[0] == source.id for d in downloads):
-            try:
-                url = resolve_url(source)
-                downloads.append((source.id, url, dest_dir, source))
-                console.print(f"  [green]OK[/green] {source.id}")
-            except Exception as e:
-                console.print(f"  [red]FAIL[/red] {source.id}: {e}")
+                    label = f"{source.id} [{job.platform}]" if job.platform else source.id
+                    console.print(f"  [yellow]Update available:[/yellow] {label}")
+                    updated += 1
+                    downloads.append(job)
+                    continue
+
+                label = f"{source.id} [{job.platform}]" if job.platform else source.id
+                console.print(f"  [yellow]Missing from disk:[/yellow] {label}")
+
+            downloads.append(job)
+            label = f"{source.id} [{job.platform}]" if job.platform else source.id
+            console.print(f"  [green]OK[/green] {label}")
 
     if skipped:
         console.print(f"  [dim]{skipped} already downloaded (use --update to check for newer versions)[/dim]")
@@ -129,14 +160,15 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
 
     # Collect checksums: from preset yaml or .sha256 sidecars
     checksums: dict[str, str] = {}
-    for source_id, url, dest_dir, source in downloads:
-        if source.sha256:
-            checksums[source_id] = source.sha256
-        elif source.type == "zim":
-            sidecar = fetch_sha256_sidecar(url)
+    for job in downloads:
+        checksum_key = f"{job.source_id}:{job.platform}"
+        if job.source.sha256:
+            checksums[checksum_key] = job.source.sha256
+        elif job.source.type == "zim":
+            sidecar = fetch_sha256_sidecar(job.url)
             if sidecar:
-                checksums[source_id] = sidecar
-                console.print(f"  [dim]Checksum fetched: {source_id}[/dim]")
+                checksums[checksum_key] = sidecar
+                console.print(f"  [dim]Checksum fetched: {job.source_id}[/dim]")
 
     console.print(f"\n[bold]Downloading {len(downloads)} file(s)...[/bold]")
 
@@ -151,41 +183,46 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
     old_handler = signal.signal(signal.SIGINT, _handle_interrupt)
 
     try:
-        for source_id, url, dest_dir, source in downloads:
+        for job in downloads:
             if interrupted:
                 break
 
             try:
                 source_checksums = {}
-                if source_id in checksums:
-                    source_checksums[source_id] = checksums[source_id]
+                checksum_key = f"{job.source_id}:{job.platform}"
+                if checksum_key in checksums:
+                    source_checksums[job.source_id] = checksums[checksum_key]
                 results = download_sources(
-                    [(source_id, url, dest_dir)],
+                    [(job.source_id, job.url, job.dest_dir)],
                     checksums=source_checksums,
                 )
                 r = results[0]
 
                 if r.success and r.filepath:
                     # Delete old file if this is an update with a different filename
-                    existing = manifest.entry_by_id(source_id)
+                    existing = manifest.entry_by_id(job.source_id, job.platform)
                     if existing and existing.filename != r.filepath.name:
-                        old_path = dest_dir / existing.filename
+                        old_path = job.dest_dir / existing.filename
                         if old_path.exists():
                             old_path.unlink()
                             console.print(f"  [dim]Removed old: {existing.filename}[/dim]")
 
                     entry = ManifestEntry(
-                        id=source_id,
-                        type=source.type,
+                        id=job.source_id,
+                        type=job.source.type,
                         filename=r.filepath.name,
                         size_bytes=r.filepath.stat().st_size,
-                        tags=source.tags,
-                        depth=source.depth,
+                        platform=job.platform,
+                        tags=job.source.tags,
+                        depth=job.source.depth,
                         downloaded=datetime.now().isoformat(timespec="seconds"),
-                        url=url,
+                        url=job.url,
                         checksum_sha256=r.sha256,
                     )
-                    manifest.entries = [e for e in manifest.entries if e.id != source_id]
+                    manifest.entries = [
+                        e for e in manifest.entries
+                        if not (e.id == job.source_id and e.platform == job.platform)
+                    ]
                     manifest.entries.append(entry)
 
                     # Save manifest after each successful download
@@ -193,7 +230,7 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
                     manifest.save(manifest_path)
 
             except Exception as e:
-                console.print(f"  [red]Failed: {source_id}: {e}[/red]")
+                console.print(f"  [red]Failed: {job.source_id}: {e}[/red]")
     finally:
         signal.signal(signal.SIGINT, old_handler)
         # Final save
@@ -202,9 +239,9 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
 
     succeeded = sum(
         1
-        for sid, _, _, _ in downloads
-        if manifest.entry_by_id(sid)
-        and manifest.entry_by_id(sid).downloaded >= manifest.last_synced[:10]
+        for job in downloads
+        if manifest.entry_by_id(job.source_id, job.platform)
+        and manifest.entry_by_id(job.source_id, job.platform).downloaded >= manifest.last_synced[:10]
     )
     total = len(downloads)
     failed = total - succeeded
@@ -223,7 +260,7 @@ def show_status(path: str, check_updates: bool = False):
 
     manifest = Manifest.load(drive_path / "manifest.yaml")
     preset = load_preset(manifest.preset)
-    active_sources = preset.sources_for_options(set(manifest.enabled_groups))
+    active_sources = preset.sources
 
     # Resolve URLs if checking for updates
     resolved_urls: dict[str, str] = {}
@@ -244,6 +281,33 @@ def show_status(path: str, check_updates: bool = False):
 
     total_bytes = 0
     for source in sorted(active_sources, key=lambda s: s.id):
+        if source.platforms:
+            entries = [manifest.entry_by_id(source.id, platform) for platform in sorted(source.platforms)]
+            present_entries = [entry for entry in entries if entry is not None]
+            total_entry_bytes = sum(entry.size_bytes for entry in present_entries)
+            total_bytes += total_entry_bytes
+            size_str = (
+                f"{total_entry_bytes / 1e9:.1f} GB"
+                if total_entry_bytes > 1e9
+                else f"{total_entry_bytes / 1e6:.0f} MB"
+            ) if present_entries else f"~{source.size_gb:.1f} GB"
+            date_str = max((entry.downloaded[:10] for entry in present_entries if entry.downloaded), default="--")
+            missing_platforms = []
+            for platform, entry in zip(sorted(source.platforms), entries):
+                if entry is None:
+                    missing_platforms.append(platform)
+                    continue
+                if not (drive_path / "bin" / platform / entry.filename).exists():
+                    missing_platforms.append(platform)
+
+            if missing_platforms:
+                status = f"[yellow]△ {len(missing_platforms)} missing[/yellow]"
+            else:
+                status = "[green]✓[/green]"
+
+            table.add_row(source.id, source.type, size_str, date_str, status)
+            continue
+
         entry = manifest.entry_by_id(source.id)
         if entry:
             size_str = f"{entry.size_bytes / 1e9:.1f} GB" if entry.size_bytes > 1e9 else f"{entry.size_bytes / 1e6:.0f} MB"

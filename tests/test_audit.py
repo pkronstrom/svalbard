@@ -7,7 +7,7 @@ from svalbard.manifest import Manifest, ManifestEntry
 
 def test_generate_audit_has_sections(tmp_path):
     """Audit report should contain all expected sections."""
-    init_drive(str(tmp_path), "nordic-128", {"maps"})
+    init_drive(str(tmp_path), "finland-128")
 
     # Add a fake entry so inventory isn't empty
     manifest = Manifest.load(tmp_path / "manifest.yaml")
@@ -33,7 +33,7 @@ def test_generate_audit_has_sections(tmp_path):
 
 def test_generate_audit_empty_drive(tmp_path):
     """Audit should work even with no downloaded content."""
-    init_drive(str(tmp_path), "nordic-128")
+    init_drive(str(tmp_path), "finland-128")
     report = generate_audit(tmp_path)
     assert "# Svalbard Audit Report" in report
     assert "## Coverage Matrix" in report

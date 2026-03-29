@@ -9,7 +9,7 @@ PRESETS_DIR = Path(str(files("svalbard") / "presets"))
 
 
 def load_preset(name: str) -> Preset:
-    """Load a preset by name (e.g. 'nordic-128')."""
+    """Load a preset by name (e.g. 'finland-128')."""
     path = PRESETS_DIR / f"{name}.yaml"
     if not path.exists():
         raise FileNotFoundError(f"Preset not found: {path}")

@@ -1,43 +1,30 @@
-name: nordic-64
-description: Broader coverage — Finnish + English reference, practical guides
+name: default-64
+description: Region-neutral reference and practical guides for a 64GB USB stick
 target_size_gb: 64
-region: nordic
+region: default
 
 sources:
-  - id: wikipedia-en-nopic
+  - id: wikipedia-en
     type: zim
+    group: reference
     tags: [general-reference, medicine, agriculture, electronics, mechanical, chemistry, physics, biology, history]
     depth: comprehensive
     size_gb: 25.0
     url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_nopic_{date}.zim"
     description: English Wikipedia without pictures
 
-  - id: wikipedia-fi-nopic
-    type: zim
-    tags: [general-reference, language]
-    depth: comprehensive
-    size_gb: 5.0
-    url_pattern: "https://download.kiwix.org/zim/wikipedia/wikipedia_fi_all_nopic_{date}.zim"
-    description: Finnish Wikipedia without pictures
-
   - id: wiktionary-en
     type: zim
+    group: reference
     tags: [language, general-reference]
     depth: comprehensive
     size_gb: 5.0
     url_pattern: "https://download.kiwix.org/zim/wiktionary/wiktionary_en_all_nopic_{date}.zim"
     description: English Wiktionary
 
-  - id: wiktionary-fi
-    type: zim
-    tags: [language]
-    depth: comprehensive
-    size_gb: 2.0
-    url_pattern: "https://download.kiwix.org/zim/wiktionary/wiktionary_fi_all_nopic_{date}.zim"
-    description: Finnish Wiktionary
-
   - id: wikimed
     type: zim
+    group: practical
     tags: [medicine, emergency-medicine, first-aid, pharmacy]
     depth: comprehensive
     size_gb: 2.0
@@ -46,6 +33,7 @@ sources:
 
   - id: ifixit
     type: zim
+    group: practical
     tags: [repair, electronics, mechanical]
     depth: comprehensive
     size_gb: 5.0
@@ -54,6 +42,7 @@ sources:
 
   - id: stackexchange-survival
     type: zim
+    group: practical
     tags: [water, fire-shelter, food-foraging, navigation, first-aid, self-defense]
     depth: comprehensive
     size_gb: 0.5
@@ -62,22 +51,16 @@ sources:
 
   - id: stackexchange-diy
     type: zim
+    group: practical
     tags: [civil-construction, woodworking, mechanical, repair]
     depth: comprehensive
     size_gb: 3.0
     url_pattern: "https://download.kiwix.org/zim/stack_exchange/diy.stackexchange.com_en_all_{date}.zim"
     description: DIY & Home Improvement Stack Exchange
 
-  - id: stackexchange-gardening
-    type: zim
-    tags: [gardening, agriculture, food-preservation]
-    depth: comprehensive
-    size_gb: 1.0
-    url_pattern: "https://download.kiwix.org/zim/stack_exchange/gardening.stackexchange.com_en_all_{date}.zim"
-    description: Gardening Stack Exchange
-
   - id: practical-action
     type: zim
+    group: practical
     tags: [water, energy-power, agriculture, civil-construction]
     depth: comprehensive
     size_gb: 1.0
@@ -86,6 +69,7 @@ sources:
 
   - id: wikibooks-en
     type: zim
+    group: education
     tags: [education-pedagogy, mathematics, physics, chemistry, biology, computing]
     depth: comprehensive
     size_gb: 3.0
@@ -94,34 +78,22 @@ sources:
 
   - id: cyberchef
     type: app
+    group: tools
     tags: [computing]
     depth: reference-only
     size_gb: 0.015
     url: "https://github.com/gchq/CyberChef/releases/latest/download/CyberChef.zip"
     description: CyberChef web-based data analysis tool
 
-  - id: kiwix-serve-binaries
+  - id: kiwix-serve
     type: binary
+    group: tools
     tags: [general-reference]
     depth: reference-only
-    size_gb: 0.05
-    url: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-x86_64.tar.gz"
-    description: Kiwix server binaries for serving ZIM files
-
-  - id: osm-finland-nordics
-    type: pmtiles
-    tags: [maps-geo, navigation]
-    depth: comprehensive
-    size_gb: 8.0
-    url: "https://build.protomaps.com/20250101.pmtiles"
-    optional_group: maps
-    description: OpenStreetMap tiles for Finland and Nordic region
-
-  - id: go-pmtiles-binaries
-    type: binary
-    tags: [maps-geo]
-    depth: reference-only
-    size_gb: 0.03
-    url: "https://github.com/protomaps/go-pmtiles/releases/latest/download/go-pmtiles_Linux_x86_64.tar.gz"
-    optional_group: maps
-    description: PMTiles server for serving map tiles
+    size_gb: 0.2
+    platforms:
+      linux-x86_64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-x86_64.tar.gz"
+      linux-arm64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-aarch64.tar.gz"
+      macos-x86_64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_macos-x86_64.tar.gz"
+      macos-arm64: "https://download.kiwix.org/release/kiwix-tools/kiwix-tools_macos-arm64.tar.gz"
+    description: Kiwix tools archive for all supported desktop platforms

@@ -71,7 +71,7 @@ def wizard() -> None:
 
 @main.command()
 @click.argument("path")
-@click.option("--preset", required=True, help="Preset name (e.g. nordic-128)")
+@click.option("--preset", required=True, help="Preset name (e.g. finland-128)")
 def init(path: str, preset: str) -> None:
     """Initialize a drive with a preset."""
     from svalbard.commands import init_drive

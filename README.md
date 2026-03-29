@@ -22,15 +22,15 @@ pip install -e .
 svalbard wizard
 ```
 
-The wizard walks you through choosing a preset, selecting content, and initializing a drive.
+The wizard walks you through choosing a region, selecting a preset tier, and initializing a drive.
 
 ## Presets
 
-| Preset       | Size   | Focus                                       |
-| ------------ | ------ | ------------------------------------------- |
-| nordic-128   | 128 GB | Finnish + English reference, Nordic maps     |
-| nordic-256   | 256 GB | Adds pictures, more languages, local models  |
-| nordic-1tb   | 1 TB   | Full coverage — video, full maps, large LLMs |
+| Preset       | Size   | Focus                                               |
+| ------------ | ------ | --------------------------------------------------- |
+| default-64   | 64 GB  | Region-neutral English starter kit                  |
+| finland-128  | 128 GB | Finnish + English reference and practical guides    |
+| finland-1tb  | 1 TB   | Full Finnish-first archive with larger models/tools |
 
 ## Commands
 

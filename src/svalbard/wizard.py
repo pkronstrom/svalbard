@@ -14,16 +14,6 @@ from svalbard.presets import list_presets, load_preset
 
 console = Console()
 
-SIZE_PRESETS = {
-    32: "nordic-32",
-    64: "nordic-64",
-    128: "nordic-128",
-    256: "nordic-256",
-    512: "nordic-512",
-    1024: "nordic-1tb",
-    2048: "nordic-2tb",
-}
-
 # Filesystem types that indicate network mounts
 NETWORK_FS_TYPES = {"smbfs", "nfs", "nfs4", "afpfs", "cifs", "9p", "fuse.sshfs"}
 
@@ -116,22 +106,27 @@ def detect_volumes() -> list[dict]:
     return volumes
 
 
-def presets_for_space(free_gb: float, region: str = "nordic") -> list[tuple[str, float, bool]]:
+def presets_for_space(free_gb: float, region: str = "finland") -> list[tuple[str, float, bool]]:
     """Return all presets for region, sorted smallest first.
 
-    Uses actual content size (not label) so a 122 GB drive can fit nordic-128.
+    Uses actual content size (not label) so a 122 GB drive can fit finland-128.
     Returns [(preset_name, content_size_gb, fits), ...].
     """
     available = list_presets()
     result = []
     for preset_name in available:
-        if not preset_name.startswith(region):
-            continue
         preset = load_preset(preset_name)
+        if preset.region != region:
+            continue
         content_gb = sum(s.size_gb for s in preset.sources)
         result.append((preset_name, content_gb, content_gb <= free_gb))
     result.sort(key=lambda x: x[1])
     return result
+
+
+def available_regions() -> list[str]:
+    """Return canonical preset regions discovered from preset files."""
+    return sorted({load_preset(name).region for name in list_presets()})
 
 
 def run_wizard():
@@ -183,8 +178,8 @@ def run_wizard():
     else:
         target_path = choices[choice]
 
-    # Step 2: Preset
-    console.print("\n[bold]Step 2/4 — Preset[/bold]")
+    # Step 2: Region
+    console.print("\n[bold]Step 2/4 — Region[/bold]")
     # Check free space — use parent if target doesn't exist yet
     space_check = Path(target_path)
     while not space_check.exists() and space_check.parent != space_check:
@@ -195,11 +190,33 @@ def run_wizard():
     except OSError:
         free_gb = 0
 
-    all_presets = presets_for_space(free_gb) if free_gb > 0 else []
+    regions = available_regions()
+    if not regions:
+        console.print("[red]No preset regions available.[/red]")
+        return
+
+    region_choices = {str(i): region for i, region in enumerate(regions, 1)}
+    for key, region in region_choices.items():
+        console.print(f"  [bold]{key}[/bold]) {region}")
+
+    default_region = "finland" if "finland" in regions else regions[0]
+    default_region_key = next(
+        key for key, region in region_choices.items() if region == default_region
+    )
+    region_choice = Prompt.ask(
+        "\n  Select",
+        choices=list(region_choices.keys()),
+        default=default_region_key,
+    )
+    selected_region = region_choices[region_choice]
+
+    # Step 3: Preset
+    console.print("\n[bold]Step 3/4 — Preset[/bold]")
+    all_presets = presets_for_space(free_gb, region=selected_region) if free_gb > 0 else []
 
     if not all_presets:
         if free_gb > 0:
-            console.print(f"[red]No presets available.[/red]")
+            console.print(f"[red]No presets available for region '{selected_region}'.[/red]")
         else:
             console.print("[red]Could not determine free space at target.[/red]")
         return
@@ -232,21 +249,8 @@ def run_wizard():
     preset_name = preset_choices[choice]
     preset = load_preset(preset_name)
 
-    # Step 3: Options
-    console.print(f"\n[bold]Step 3/4 — Options[/bold] (preset: {preset.name})")
-    enabled_groups = set()
-    if Confirm.ask("  Include offline maps?", default=True):
-        enabled_groups.add("maps")
-    if preset.target_size_gb >= 512:
-        if Confirm.ask("  Include LLM models?", default=True):
-            enabled_groups.add("models")
-        if Confirm.ask("  Include app installers (Kiwix.dmg, etc.)?", default=False):
-            enabled_groups.add("installers")
-        if Confirm.ask("  Include Linux ISO + package cache?", default=False):
-            enabled_groups.add("infra")
-
     # Step 4: Review
-    sources = preset.sources_for_options(enabled_groups)
+    sources = preset.sources
     total_gb = sum(s.size_gb for s in sources)
 
     console.print(f"\n[bold]Step 4/4 — Review[/bold]")
@@ -276,6 +280,6 @@ def run_wizard():
         console.print("[dim]Cancelled.[/dim]")
         return
 
-    init_drive(target_path, preset_name, enabled_groups)
+    init_drive(target_path, preset_name)
     if Confirm.ask("\n  Start downloading now?", default=True):
         sync_drive(target_path)
