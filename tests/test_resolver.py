@@ -1,5 +1,5 @@
-from primer.models import Source
-from primer.resolver import resolve_url
+from svalbard.models import Source
+from svalbard.resolver import resolve_url
 
 
 class MockResponse:
@@ -26,7 +26,7 @@ def test_resolve_url_pattern(monkeypatch):
     def mock_get(url, **kwargs):
         return MockResponse(html)
 
-    monkeypatch.setattr("primer.resolver.httpx.get", mock_get)
+    monkeypatch.setattr("svalbard.resolver.httpx.get", mock_get)
 
     source = Source(
         id="wikipedia",

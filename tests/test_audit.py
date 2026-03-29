@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from primer.audit import generate_audit
-from primer.commands import init_drive
-from primer.manifest import Manifest, ManifestEntry
+from svalbard.audit import generate_audit
+from svalbard.commands import init_drive
+from svalbard.manifest import Manifest, ManifestEntry
 
 
 def test_generate_audit_has_sections(tmp_path):
@@ -24,7 +24,7 @@ def test_generate_audit_has_sections(tmp_path):
     manifest.save(tmp_path / "manifest.yaml")
 
     report = generate_audit(tmp_path)
-    assert "# Primer Audit Report" in report
+    assert "# Svalbard Audit Report" in report
     assert "## Inventory" in report
     assert "## Coverage Matrix" in report
     assert "## Format Accessibility Matrix" in report
@@ -35,5 +35,5 @@ def test_generate_audit_empty_drive(tmp_path):
     """Audit should work even with no downloaded content."""
     init_drive(str(tmp_path), "nordic-128")
     report = generate_audit(tmp_path)
-    assert "# Primer Audit Report" in report
+    assert "# Svalbard Audit Report" in report
     assert "## Coverage Matrix" in report

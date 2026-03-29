@@ -9,3 +9,5 @@ build/
 *.pmtiles
 *.gguf
 .DS_Store
+
+docs/plans/archive/

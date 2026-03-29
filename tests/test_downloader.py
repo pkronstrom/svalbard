@@ -1,5 +1,5 @@
 from pathlib import Path
-from primer.downloader import DownloadResult, find_downloader
+from svalbard.downloader import DownloadResult, find_downloader
 
 
 def test_find_downloader():

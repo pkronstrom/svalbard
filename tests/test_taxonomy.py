@@ -1,5 +1,5 @@
-from primer.models import Source
-from primer.taxonomy import compute_coverage, load_taxonomy
+from svalbard.models import Source
+from svalbard.taxonomy import compute_coverage, load_taxonomy
 
 
 def test_load_taxonomy():

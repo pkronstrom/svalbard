@@ -1,8 +1,8 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from primer.commands import init_drive, show_status, sync_drive
-from primer.manifest import Manifest
+from svalbard.commands import init_drive, show_status, sync_drive
+from svalbard.manifest import Manifest
 
 
 def test_init_drive_creates_files(tmp_path):
@@ -37,7 +37,7 @@ def test_sync_drive_skips_downloaded(tmp_path):
     manifest = Manifest.load(tmp_path / "manifest.yaml")
 
     # Fake a downloaded entry
-    from primer.manifest import ManifestEntry
+    from svalbard.manifest import ManifestEntry
 
     zim_dir = tmp_path / "zim"
     zim_dir.mkdir()
@@ -57,8 +57,8 @@ def test_sync_drive_skips_downloaded(tmp_path):
     manifest.save(tmp_path / "manifest.yaml")
 
     # Sync with mocked resolver/downloader to avoid network calls
-    with patch("primer.commands.resolve_url", return_value="https://example.com/test.zim"), \
-         patch("primer.commands.download_sources", return_value=[]):
+    with patch("svalbard.commands.resolve_url", return_value="https://example.com/test.zim"), \
+         patch("svalbard.commands.download_sources", return_value=[]):
         sync_drive(str(tmp_path))
 
     # Should still have the entry

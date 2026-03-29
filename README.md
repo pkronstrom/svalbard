@@ -1,4 +1,6 @@
-# Primer
+# Svalbard
+
+Seed vault for human knowledge — civilization on a stick.
 
 Assemble offline knowledge drives — Wikipedia, maps, books, and AI models on a single USB stick.
 
@@ -6,8 +8,8 @@ Assemble offline knowledge drives — Wikipedia, maps, books, and AI models on a
 
 ```bash
 # With uv (recommended)
-uv run primer --help          # Run directly, no install needed
-uv sync                       # Or install into a venv first
+uv run svalbard --help          # Run directly, no install needed
+uv sync                        # Or install into a venv first
 
 # With pip
 pip install -e .
@@ -16,7 +18,7 @@ pip install -e .
 ## Quick Start
 
 ```bash
-primer wizard
+svalbard wizard
 ```
 
 The wizard walks you through choosing a preset, selecting content, and initializing a drive.
@@ -31,13 +33,13 @@ The wizard walks you through choosing a preset, selecting content, and initializ
 
 ## Commands
 
-| Command                              | Description                          |
-| ------------------------------------ | ------------------------------------ |
-| `primer wizard`                      | Interactive setup                    |
-| `primer init <path> --preset <name>` | Initialize a drive with a preset     |
-| `primer sync <path>`                 | Download/update content              |
-| `primer status <path>`               | Show drive contents and sync status  |
-| `primer audit <path>`                | Coverage report against taxonomy     |
+| Command                                | Description                          |
+| -------------------------------------- | ------------------------------------ |
+| `svalbard wizard`                      | Interactive setup                    |
+| `svalbard init <path> --preset <name>` | Initialize a drive with a preset     |
+| `svalbard sync <path>`                 | Download/update content              |
+| `svalbard status <path>`               | Show drive contents and sync status  |
+| `svalbard audit <path>`                | Coverage report against taxonomy     |
 
 ## Design
 

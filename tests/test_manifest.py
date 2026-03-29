@@ -1,4 +1,4 @@
-from primer.manifest import Manifest, ManifestEntry
+from svalbard.manifest import Manifest, ManifestEntry
 
 
 def test_manifest_roundtrip(tmp_path):

@@ -2,7 +2,7 @@
 
 ## Problem
 
-Someone with the Primer drive wants to extract specific articles and share them as a single file (HTML/PDF/EPUB) with someone who doesn't have the kit or Kiwix.
+Someone with the Svalbard drive wants to extract specific articles and share them as a single file (HTML/PDF/EPUB) with someone who doesn't have the kit or Kiwix.
 
 ## Key constraint
 
@@ -29,7 +29,7 @@ Start with CLI (Option A), add a browser bookmarklet that sends the current page
 
 ## Technical approach
 
-A custom **Go static binary** (`primer-export`) included in `bin/`:
+A custom **Go static binary** (`svalbard-export`) included in `bin/`:
 - Fetches pages from running kiwix-serve via HTTP
 - Strips navigation/chrome, keeps article content + images
 - Concatenates into single file with table of contents

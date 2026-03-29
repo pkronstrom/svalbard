@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "primer"
+name = "svalbard"
 version = "0.1.0"
-description = "Offline knowledge kit provisioner"
+description = "Seed vault for human knowledge — civilization on a stick"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1",
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-primer = "primer.cli:main"
+svalbard = "svalbard.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/primer"]
+packages = ["src/svalbard"]

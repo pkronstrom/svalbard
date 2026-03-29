@@ -8,7 +8,7 @@ Place YAML configs here to crawl websites into ZIM files.
 
 1. Copy an example: `cp nordic-emergency.yaml.example my-sites.yaml`
 2. Edit the sites list and crawl rules
-3. Run: `primer crawl my-sites`
+3. Run: `svalbard crawl my-sites`
 
 ## Requirements
 
@@ -24,7 +24,7 @@ You can skip crawling entirely and drop pre-made `.zim` files directly into `zim
 ```yaml
 name: Human-readable name
 description: What this bundle contains
-tags: [domain-tag-1, domain-tag-2]    # From primer taxonomy
+tags: [domain-tag-1, domain-tag-2]    # From svalbard taxonomy
 depth: comprehensive                   # comprehensive | overview | reference-only
 
 sites:

@@ -1,5 +1,5 @@
-from primer.models import Preset, Source
-from primer.presets import list_presets, load_preset
+from svalbard.models import Preset, Source
+from svalbard.presets import list_presets, load_preset
 
 
 def test_parse_nordic_128():

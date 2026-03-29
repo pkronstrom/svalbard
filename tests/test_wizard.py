@@ -1,4 +1,4 @@
-from primer.wizard import detect_volumes, find_best_preset
+from svalbard.wizard import detect_volumes, find_best_preset
 
 
 def test_detect_volumes_returns_list():
