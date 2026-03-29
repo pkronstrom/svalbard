@@ -5,6 +5,21 @@ def test_detect_volumes_returns_list():
     """detect_volumes should return a list (may be empty in CI)."""
     result = detect_volumes()
     assert isinstance(result, list)
+    # Every volume must have the network classification field
+    for v in result:
+        assert "network" in v
+        assert isinstance(v["network"], bool)
+
+
+def test_detect_volumes_sorted_local_first():
+    """Local volumes should appear before network volumes."""
+    result = detect_volumes()
+    saw_network = False
+    for v in result:
+        if v["network"]:
+            saw_network = True
+        elif saw_network:
+            assert False, "Local volume appeared after network volume"
 
 
 def test_find_best_preset_128():

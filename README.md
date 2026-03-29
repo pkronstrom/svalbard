@@ -9,6 +9,7 @@ Assemble offline knowledge drives — Wikipedia, maps, books, and AI models on a
 ```bash
 # With uv (recommended)
 uv run svalbard --help          # Run directly, no install needed
+uv run svb --help               # Short alias
 uv sync                        # Or install into a venv first
 
 # With pip

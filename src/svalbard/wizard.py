@@ -1,4 +1,7 @@
+import os
+import platform
 import shutil
+import subprocess
 from pathlib import Path
 
 from rich.console import Console
@@ -21,26 +24,95 @@ SIZE_PRESETS = {
     2048: "nordic-2tb",
 }
 
+# Filesystem types that indicate network mounts
+NETWORK_FS_TYPES = {"smbfs", "nfs", "nfs4", "afpfs", "cifs", "9p", "fuse.sshfs"}
+
+# Directories/names to skip entirely
+SKIP_NAMES_MACOS = {"Macintosh HD", "com.apple.TimeMachine.localsnapshots"}
+SKIP_MARKERS = {"Backups.backupdb", ".timemachine"}
+
+
+def _parse_mount_types() -> dict[str, str]:
+    """Parse mount output to get {mount_point: fs_type} mapping."""
+    result = {}
+    try:
+        output = subprocess.check_output(["mount"], text=True, stderr=subprocess.DEVNULL)
+        for line in output.splitlines():
+            # macOS: /dev/disk4s1 on /Volumes/KINGSTON (msdos, local, nodev, ...)
+            # Linux: /dev/sdb1 on /media/user/KINGSTON type vfat (rw,nosuid,...)
+            if " on " not in line:
+                continue
+            rest = line.split(" on ", 1)[1]
+            if " type " in rest:
+                # Linux format
+                mount_point, remainder = rest.split(" type ", 1)
+                fs_type = remainder.split()[0].rstrip(",")
+            elif " (" in rest:
+                # macOS format
+                mount_point = rest.rsplit(" (", 1)[0]
+                fs_type = rest.rsplit(" (", 1)[1].split(",")[0].rstrip(")")
+            else:
+                continue
+            result[mount_point.strip()] = fs_type.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    return result
+
+
+def _is_time_machine(path: Path) -> bool:
+    """Check if a volume looks like a Time Machine backup."""
+    return any((path / marker).exists() for marker in SKIP_MARKERS)
+
 
 def detect_volumes() -> list[dict]:
-    """Detect mounted volumes with size info."""
+    """Detect mounted volumes with size info and classification.
+
+    Returns volumes sorted: local/USB first (ascending by size), network last.
+    """
+    mount_types = _parse_mount_types()
+    candidates: list[Path] = []
+
+    system = platform.system()
+    if system == "Darwin":
+        volumes_path = Path("/Volumes")
+        if volumes_path.exists():
+            for v in volumes_path.iterdir():
+                if v.name in SKIP_NAMES_MACOS:
+                    continue
+                candidates.append(v)
+    else:
+        # Linux: check /media/$USER/ and /mnt/
+        media_user = Path(f"/media/{os.getenv('USER', '')}")
+        if media_user.exists():
+            candidates.extend(media_user.iterdir())
+        mnt = Path("/mnt")
+        if mnt.exists():
+            for v in mnt.iterdir():
+                if v.is_mount():
+                    candidates.append(v)
+
     volumes = []
-    volumes_path = Path("/Volumes")
-    if not volumes_path.exists():
-        return volumes
-    for v in sorted(volumes_path.iterdir()):
-        if v.name == "Macintosh HD":
+    for v in candidates:
+        if _is_time_machine(v):
             continue
         try:
             usage = shutil.disk_usage(v)
-            volumes.append({
-                "path": str(v),
-                "name": v.name,
-                "total_gb": usage.total / 1e9,
-                "free_gb": usage.free / 1e9,
-            })
         except (PermissionError, OSError):
             continue
+
+        fs_type = mount_types.get(str(v), "")
+        is_network = fs_type in NETWORK_FS_TYPES
+
+        volumes.append({
+            "path": str(v),
+            "name": v.name,
+            "total_gb": usage.total / 1e9,
+            "free_gb": usage.free / 1e9,
+            "network": is_network,
+        })
+
+    # Sort: local drives first (ascending by size), then network drives
+    volumes.sort(key=lambda v: (v["network"], v["total_gb"]))
     return volumes
 
 
@@ -68,10 +140,31 @@ def run_wizard():
 
     volumes = detect_volumes()
     choices = {}
-    for i, v in enumerate(volumes, 1):
-        label = f"{v['name']} ({v['total_gb']:.0f} GB total, {v['free_gb']:.0f} GB free)"
-        console.print(f"  [bold]{i}[/bold]) {v['path']}  [dim]{label}[/dim]")
-        choices[str(i)] = v["path"]
+    idx = 1
+    for v in volumes:
+        size_info = f"{v['total_gb']:.0f} GB total, {v['free_gb']:.0f} GB free"
+        if v["network"]:
+            console.print(f"  [dim][bold]{idx}[/bold]) {v['path']}  [network]  ({size_info})[/dim]")
+        else:
+            console.print(f"  [bold]{idx}[/bold]) {v['path']}  ({size_info})")
+        choices[str(idx)] = v["path"]
+        idx += 1
+
+    # Home directory option — always present
+    home_svalbard = Path.home() / "svalbard"
+    home_label = "~/svalbard/"
+    if home_svalbard.exists():
+        try:
+            usage = shutil.disk_usage(home_svalbard)
+            home_label += f"  ({usage.free / 1e9:.0f} GB free)"
+        except OSError:
+            pass
+    else:
+        home_label += "  (home directory)"
+    console.print(f"  [bold]{idx}[/bold]) {home_label}")
+    choices[str(idx)] = str(home_svalbard)
+    idx += 1
+
     console.print(f"  [bold]c[/bold]) Custom path...")
 
     valid_choices = list(choices.keys()) + ["c"]

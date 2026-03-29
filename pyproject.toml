@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 svalbard = "svalbard.cli:main"
+svb = "svalbard.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/svalbard"]
