@@ -1,11 +1,12 @@
 from dataclasses import dataclass
+from importlib.resources import files
 from pathlib import Path
 
 import yaml
 
 from primer.models import Source
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+DATA_DIR = Path(str(files("primer") / "data"))
 
 DEPTH_SCORES = {
     "comprehensive": 30,

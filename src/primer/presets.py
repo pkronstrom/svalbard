@@ -1,10 +1,11 @@
+from importlib.resources import files
 from pathlib import Path
 
 import yaml
 
 from primer.models import Preset, Source
 
-PRESETS_DIR = Path(__file__).parent.parent.parent / "presets"
+PRESETS_DIR = Path(str(files("primer") / "presets"))
 
 
 def load_preset(name: str) -> Preset:

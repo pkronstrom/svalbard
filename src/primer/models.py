@@ -13,6 +13,7 @@ class Source:
     replaces: str = ""  # id of source this replaces in higher tiers
     optional_group: str = ""  # maps, models, installers, infra
     description: str = ""
+    sha256: str = ""  # expected hash (if empty, try fetching .sha256 sidecar)
 
 
 @dataclass
