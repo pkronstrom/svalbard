@@ -8,7 +8,9 @@ from primer.downloader import download_sources
 from primer.manifest import Manifest, ManifestEntry
 from primer.models import Source
 from primer.presets import load_preset
+from primer.readme_generator import generate_drive_readme
 from primer.resolver import resolve_url
+from primer.serve_generator import generate_serve_sh
 from primer.taxonomy import compute_coverage, load_taxonomy
 
 console = Console()
@@ -43,6 +45,9 @@ def init_drive(path: str, preset_name: str, enabled_groups: set[str] | None = No
         created=datetime.now().isoformat(timespec="seconds"),
     )
     manifest.save(drive_path / "manifest.yaml")
+
+    generate_serve_sh(drive_path)
+    generate_drive_readme(drive_path)
 
     console.print(f"[bold green]Initialized:[/bold green] {drive_path}")
     console.print(f"  Preset: {preset.name}")
