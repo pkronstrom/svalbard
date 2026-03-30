@@ -93,7 +93,38 @@ for aid, score in scores[:20]:
 }
 
 EMBED_PID=""
-cleanup() { [ -n "$EMBED_PID" ] && kill "$EMBED_PID" 2>/dev/null; }
+KIWIX_PID=""
+KIWIX_PORT=8080
+
+# Start kiwix-serve if not already running
+_ensure_kiwix() {
+    # Already running?
+    curl -s "http://127.0.0.1:$KIWIX_PORT/" >/dev/null 2>&1 && return 0
+
+    KIWIX_BIN="$(find_binary kiwix-serve 2>/dev/null || true)"
+    [ -z "$KIWIX_BIN" ] && return 1
+
+    zim_files=()
+    if [ -d "$DRIVE_ROOT/zim" ]; then
+        while IFS= read -r f; do
+            [ -n "$f" ] && zim_files+=("$f")
+        done < <(find "$DRIVE_ROOT/zim" -name "*.zim" -type f 2>/dev/null | sort)
+    fi
+    [ ${#zim_files[@]} -eq 0 ] && return 1
+
+    source "$DRIVE_ROOT/.svalbard/lib/ports.sh"
+    KIWIX_PORT="$(find_free_port 8080)"
+    echo "  Starting kiwix-serve on port $KIWIX_PORT..."
+    "$KIWIX_BIN" --port "$KIWIX_PORT" "${zim_files[@]}" >/dev/null 2>&1 &
+    KIWIX_PID=$!
+    sleep 2
+    curl -s "http://127.0.0.1:$KIWIX_PORT/" >/dev/null 2>&1
+}
+
+cleanup() {
+    [ -n "$EMBED_PID" ] && kill "$EMBED_PID" 2>/dev/null
+    [ -n "$KIWIX_PID" ] && kill "$KIWIX_PID" 2>/dev/null
+}
 trap cleanup EXIT
 
 # Search loop
@@ -188,9 +219,13 @@ while true; do
         idx=$((choice - 1))
         filename="${filenames[$idx]}"
         book="${filename%.zim}"
-        url="http://localhost:8080/viewer#/search?books=${book}&pattern=$(printf '%s' "$query" | sed 's/ /+/g')"
-        echo "  Opening: $url"
-        open_browser "$url"
+        if _ensure_kiwix; then
+            url="http://localhost:${KIWIX_PORT}/viewer#/search?books=${book}&pattern=$(printf '%s' "$query" | sed 's/ /+/g')"
+            echo "  Opening: $url"
+            open_browser "$url"
+        else
+            echo "  kiwix-serve not available. Article: $book / ${paths[$idx]}"
+        fi
     elif [ -n "$choice" ]; then
         query="$choice"
         continue
