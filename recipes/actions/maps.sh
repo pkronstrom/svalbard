@@ -26,8 +26,8 @@ SVALBARD_PIDS+=($!)
 sleep 1
 
 if [ -f "$DRIVE_ROOT/apps/map/index.html" ]; then
-    open_browser "http://localhost:$port/apps/map/"
-    ui_status "Map viewer: http://localhost:$port/apps/map/"
+    open_browser "http://localhost:$port/apps/map/index.html"
+    ui_status "Map viewer: http://localhost:$port/apps/map/index.html"
 fi
 ui_status "Files: http://localhost:$port"
 wait_for_services
