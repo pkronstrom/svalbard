@@ -238,7 +238,7 @@ def local_add(path: str, workspace: str | None, source_type: str | None) -> None
 
 @main.command()
 @click.argument("path", default=".")
-@click.option("--strategy", type=click.Choice(["fast", "standard", "semantic"]), default="fast", help="Indexing strategy tier")
+@click.option("--strategy", type=click.Choice(["fast", "standard"]), default="fast", help="Indexing strategy tier (semantic coming soon)")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 def index(path, strategy, yes):
     """Build search index over ZIM files on a drive."""
