@@ -1,0 +1,17 @@
+id: go-pmtiles
+type: binary
+group: tools
+tags:
+- maps
+- navigation
+depth: reference-only
+size_gb: 0.01
+platforms:
+  linux-x86_64: https://github.com/protomaps/go-pmtiles/releases/download/v1.30.1/go-pmtiles_1.30.1_Linux_x86_64.tar.gz
+  linux-arm64: https://github.com/protomaps/go-pmtiles/releases/download/v1.30.1/go-pmtiles_1.30.1_Linux_arm64.tar.gz
+  macos-arm64: https://github.com/protomaps/go-pmtiles/releases/download/v1.30.1/go-pmtiles-1.30.1_Darwin_arm64.zip
+  macos-x86_64: https://github.com/protomaps/go-pmtiles/releases/download/v1.30.1/go-pmtiles-1.30.1_Darwin_x86_64.zip
+description: go-pmtiles — PMTiles CLI for serving and extracting map tiles
+license:
+  id: BSD-3-Clause
+  attribution: Protomaps
