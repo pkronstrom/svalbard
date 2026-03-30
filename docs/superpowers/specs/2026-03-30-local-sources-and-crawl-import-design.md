@@ -2,9 +2,9 @@
 
 ## Summary
 
-Svalbard should support user-generated and user-provided content as first-class local sources without making built-in presets machine-dependent. The primary use case is crawling a website into a ZIM file, caching that artifact in the workspace, and later selecting it for one or more drives.
+Svalbard should support user-generated and user-provided content as first-class local sources without making built-in presets machine-dependent. The primary use case is crawling a website into a ZIM file, storing that generated artifact in the workspace, and later selecting it for one or more drives.
 
-The design introduces a workspace-local source catalog under `local/`. Each local source is defined by a sidecar YAML recipe such as `local/example-docs.yaml`. That sidecar points at a canonical local file or directory path. For crawled sources, the generated artifact will normally live inside a managed workspace cache directory. For manually added sources, the sidecar may point to any local file or directory path.
+The design introduces a workspace-local source catalog under `local/`. Each local source is defined by a sidecar YAML recipe such as `local/example-docs.yaml`. That sidecar points at a canonical local file or directory path. For crawled sources, the generated artifact will normally live inside a managed workspace-generated directory. For manually added sources, the sidecar may point to any local file or directory path.
 
 The sidecar acts as the source definition. Svalbard scans local sidecars automatically, exposes them as available sources, and lets each drive opt into a selected subset through its manifest and the setup wizard.
 
@@ -51,27 +51,28 @@ local/
 
 The sidecar is the canonical entrypoint for discovery. It points at a local file or directory path, which may live inside or outside the workspace.
 
-For crawled sources, Svalbard should write generated artifacts into a managed workspace cache directory. One acceptable default is:
+For crawled sources, Svalbard should write generated artifacts into a managed workspace-generated directory. One acceptable default is:
 
 ```text
+generated/
+  example-docs.zim
+  example-docs.crawl.yaml
 local/
   example-docs.yaml
-  cache/
-    example-docs.zim
 ```
 
-The exact cache subdirectory name is an implementation detail, but crawled outputs should remain workspace-local rather than being written to a drive first.
+The exact directory naming can still be adjusted, but it should describe generated durable artifacts rather than a disposable cache. Crawled outputs should remain workspace-local rather than being written to a drive first.
 
 ### Sidecar Schema
 
-The sidecar is a normal source recipe with local-specific fields. Minimum expected fields:
+The sidecar should follow the same conventions as other source recipes. It is a normal source recipe with local-specific fields added only where needed. Minimum expected fields:
 
 ```yaml
 id: example-docs
 type: zim
 group: practical
 strategy: local
-path: local/cache/example-docs.zim
+path: generated/example-docs.zim
 description: Example Docs crawled from example.com
 tags: [docs]
 depth: comprehensive
@@ -89,9 +90,10 @@ description: Local repair manuals and static app bundle
 size_bytes: 123456789
 ```
 
-Optional metadata for crawled artifacts:
+For crawled sources, crawl provenance should be stored separately from the recipe metadata. One acceptable structure is an adjacent crawl metadata file:
 
 ```yaml
+artifact: generated/example-docs.zim
 origin_url: https://example.com/docs
 created: 2026-03-30T12:00:00
 tool: zimit
@@ -103,7 +105,7 @@ checksum_sha256: ...
 size_bytes: ...
 ```
 
-The sidecar is both metadata and recipe. No second registry is required.
+This keeps the recipe clean and recipe-like while preserving crawl-specific provenance and execution settings. No second source registry is required: the recipe remains the local source definition, and the crawl metadata is an auxiliary record for generated sources only.
 
 ### Path Policy
 
@@ -175,11 +177,12 @@ svalbard crawl https://example.com/docs -o example-docs.zim
 Behavior:
 
 1. Run Zimit against the requested URL.
-2. Write the resulting artifact into a managed workspace cache path.
-3. Generate a matching sidecar YAML recipe in `local/`.
-4. Report the created local source ID and how to include it in a drive.
+2. Write the resulting artifact into `generated/`.
+3. Write crawl provenance metadata alongside it, for example `generated/<id>.crawl.yaml`.
+4. Register the output as a local source by generating a matching recipe in `local/`.
+5. Report the created local source ID and how to include it in a drive.
 
-Advanced mode may still support YAML crawl configs for reusable multi-site jobs, but those configs are secondary to the direct-url flow and should produce the same `local/` sidecar-managed outputs.
+Advanced mode may still support YAML crawl configs for reusable multi-site jobs, but those configs are secondary to the direct-url flow and should produce the same generated artifact plus local recipe outputs.
 
 ## Local Add Behavior
 
@@ -198,6 +201,8 @@ Behavior:
 5. Record the original local path in the recipe.
 
 This is the primary way to register existing local content. It is simpler than requiring symlinks and works for both files and directories.
+
+`svalbard crawl` should reuse the same registration path after generating its ZIM output. In other words, crawl generates a ready-made artifact and then registers it locally in the same way that `svalbard local add` registers an existing file or directory.
 
 Future commands such as `svalbard local list` or `svalbard local validate` are reasonable follow-ups but not required for the first implementation.
 
@@ -284,7 +289,7 @@ Add tests for:
 - manifest support for `local_sources`
 - sync copying selected local sources onto the drive
 - wizard behavior when local sources are present
-- crawl generating artifact path plus sidecar recipe metadata
+- crawl generating artifact path, separate crawl metadata, and local recipe registration
 - local add for file paths
 - local add for directory paths with recursive size calculation
 
@@ -310,5 +315,5 @@ Keep tests isolated from Docker by mocking crawl execution where appropriate.
 3. Teach sync to copy selected local sources to the drive.
 4. Add wizard selection of local sources.
 5. Add `svalbard local add <path>` for file and directory-backed sources.
-6. Refactor `crawl` to emit local cached artifacts plus sidecars.
+6. Refactor `crawl` to emit generated artifacts, separate crawl metadata, and local recipe registration.
 7. Optionally preserve or rework advanced YAML crawl configs on top of the same model.
