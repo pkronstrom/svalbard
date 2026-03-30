@@ -160,22 +160,26 @@ while true; do
          ORDER BY rank
          LIMIT ${fts_limit};" 2>/dev/null || true)"
 
-    # Semantic rerank if available
-    if [ -n "$results" ] && [ "$mode" = "semantic" ]; then
+    # Semantic search (rerank if FTS found results, pure semantic if not)
+    if [ "$mode" = "semantic" ]; then
         # Ensure embedding server is running
         if ! _embed_server_running; then
             _start_embed_server || { echo "  (semantic unavailable, using keyword)"; mode="keyword"; }
         fi
 
         if _embed_server_running; then
-            echo "  Reranking with semantic search..."
-            # Get candidate IDs
-            candidate_ids=$(echo "$results" | cut -f1 | tr '\n' ',' | sed 's/,$//')
+            if [ -n "$results" ]; then
+                echo "  Reranking with semantic search..."
+                candidate_ids=$(echo "$results" | cut -f1 | tr '\n' ',' | sed 's/,$//')
+            else
+                echo "  No keyword matches, trying semantic search..."
+                # Get all article IDs as candidates for pure semantic search
+                candidate_ids=$("$SQLITE_BIN" "$DB" "SELECT id FROM articles LIMIT 500;" | tr '\n' ',' | sed 's/,$//')
+            fi
+
             ranked_ids=$(_semantic_rerank "$query" "$candidate_ids" || true)
 
             if [ -n "$ranked_ids" ]; then
-                # Re-fetch in ranked order
-                id_list=$(echo "$ranked_ids" | head -20 | tr '\n' ',' | sed 's/,$//')
                 results="$("$SQLITE_BIN" -separator $'\t' "$DB" \
                     "WITH ranked(aid, pos) AS (VALUES $(
                         i=0; echo "$ranked_ids" | head -20 | while read -r rid; do
