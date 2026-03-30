@@ -90,10 +90,16 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
         lines.append("")
 
     # ── AI ──────────────────────────────────────────────────────────────
+    # Exclude embedding models — they're not for chat
+    _EMBED_KEYWORDS = {"embed", "nomic-embed", "bge-", "e5-", "arctic-embed"}
     gguf_entries = [e for e in manifest.entries if e.type == "gguf"]
-    if gguf_entries:
+    chat_entries = [
+        e for e in gguf_entries
+        if not any(kw in e.id.lower() for kw in _EMBED_KEYWORDS)
+    ]
+    if chat_entries:
         lines.append("[ai]")
-        for entry in gguf_entries:
+        for entry in chat_entries:
             source = next((s for s in preset.sources if s.id == entry.id), None)
             desc = source.description if source else entry.id
             model_path = f"{TYPE_DIRS['gguf']}/{entry.filename}"
@@ -104,11 +110,15 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
         lines.append("")
 
     # ── Apps ────────────────────────────────────────────────────────────
+    # Exclude vendor/support libraries (maplibre-vendor etc.) — they're not user-facing
+    _VENDOR_KEYWORDS = {"vendor", "maplibre-vendor"}
     apps_dir = drive_path / TYPE_DIRS["app"]
     app_sources = [s for s in preset.sources if s.type == "app"]
     visible_apps = []
     if apps_dir.exists():
         for source in app_sources:
+            if source.id in _VENDOR_KEYWORDS:
+                continue
             app_dir = apps_dir / source.id
             if app_dir.exists():
                 visible_apps.append(source)
