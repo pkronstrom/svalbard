@@ -220,7 +220,8 @@ while true; do
         filename="${filenames[$idx]}"
         book="${filename%.zim}"
         if _ensure_kiwix; then
-            url="http://localhost:${KIWIX_PORT}/viewer#/search?books=${book}&pattern=$(printf '%s' "$query" | sed 's/ /+/g')"
+            article_path="${paths[$idx]}"
+            url="http://localhost:${KIWIX_PORT}/content/${book}/${article_path}"
             echo "  Opening: $url"
             open_browser "$url"
         else
