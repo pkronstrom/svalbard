@@ -41,7 +41,8 @@ def test_check_tools_detects_missing():
 def test_check_tools_accepts_docker_fallback():
     """When Docker is available, tools with Docker images should not be missing."""
     with patch("shutil.which", return_value=None), \
-         patch("svalbard.builder._has_docker", return_value=True):
+         patch("svalbard.builder._has_docker", return_value=True), \
+         patch("svalbard.builder._ensure_geodata_image", return_value=True):
         missing = check_tools(["vector-static"])
     # ogr2ogr and tippecanoe have Docker images, so neither should be missing
     assert "ogr2ogr" not in missing

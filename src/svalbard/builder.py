@@ -23,9 +23,8 @@ from svalbard.models import Source
 
 log = logging.getLogger(__name__)
 
-# ── Docker images for geodata tools ────────────────────────────────────────
-GDAL_IMAGE = "ghcr.io/osgeo/gdal:ubuntu-small-latest"
-TIPPECANOE_IMAGE = "ghcr.io/felt/tippecanoe:latest"
+# ── Docker image for geodata tools (ogr2ogr + tippecanoe) ─────────────────
+GEODATA_IMAGE = "svalbard-geodata"  # built from docker/geodata/Dockerfile
 
 CACHE_ROOT = Path.home() / ".cache" / "svalbard" / "build"
 
@@ -50,8 +49,8 @@ TOOL_REQUIREMENTS: dict[str, list[str]] = {
 
 # Tools that can fall back to Docker when not installed locally
 DOCKER_TOOL_IMAGES: dict[str, str] = {
-    "ogr2ogr": GDAL_IMAGE,
-    "tippecanoe": TIPPECANOE_IMAGE,
+    "ogr2ogr": GEODATA_IMAGE,
+    "tippecanoe": GEODATA_IMAGE,
 }
 
 
@@ -86,7 +85,7 @@ def check_tools(families: list[str], drive_path: Path | None = None) -> list[str
         if shutil.which(tool) is not None:
             continue
         # Accept Docker fallback for supported tools
-        if tool in DOCKER_TOOL_IMAGES and _has_docker():
+        if tool in DOCKER_TOOL_IMAGES and _has_docker() and _ensure_geodata_image():
             continue
         missing.append(tool)
     return missing
@@ -161,6 +160,29 @@ def _has_docker() -> bool:
         return False
 
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _ensure_geodata_image() -> bool:
+    """Build the lightweight geodata Docker image if not already present."""
+    result = subprocess.run(
+        ["docker", "image", "inspect", GEODATA_IMAGE],
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return True
+    dockerfile = _PROJECT_ROOT / "docker" / "geodata" / "Dockerfile"
+    if not dockerfile.exists():
+        log.warning("Geodata Dockerfile not found at %s", dockerfile)
+        return False
+    log.info("Building %s Docker image...", GEODATA_IMAGE)
+    result = subprocess.run(
+        ["docker", "build", "-t", GEODATA_IMAGE, str(dockerfile.parent)],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
 def _run_docker(
     image: str,
     cmd: list[str],
@@ -187,7 +209,7 @@ def _resolve_tool(
     local = _find_tool(name, drive_path)
     if local:
         return local, None
-    if name in DOCKER_TOOL_IMAGES and _has_docker():
+    if name in DOCKER_TOOL_IMAGES and _has_docker() and _ensure_geodata_image():
         return None, DOCKER_TOOL_IMAGES[name]
     return None, None
 
