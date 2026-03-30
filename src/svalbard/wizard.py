@@ -157,7 +157,7 @@ def local_sources_for_space(
     return result
 
 
-def run_wizard():
+def run_wizard(target_path: str | None = None):
     """Run the interactive setup wizard."""
     console.print(Panel(
         "[bold]Svalbard — Seed Vault for Human Knowledge[/bold]\n\n"
@@ -166,45 +166,48 @@ def run_wizard():
     ))
 
     # Step 1: Target
-    console.print("\n[bold]Step 1/4 — Target[/bold]")
-    console.print("Where should the kit be provisioned?\n")
+    if target_path is None:
+        console.print("\n[bold]Step 1/4 — Target[/bold]")
+        console.print("Where should the kit be provisioned?\n")
 
-    volumes = detect_volumes()
-    choices = {}
-    idx = 1
-    for v in volumes:
-        svalbard_path = str(Path(v["path"]) / "svalbard")
-        size_info = f"{v['total_gb']:.0f} GB total, {v['free_gb']:.0f} GB free"
-        if v["network"]:
-            console.print(f"  [dim][bold]{idx}[/bold]) {svalbard_path}  [network]  ({size_info})[/dim]")
+        volumes = detect_volumes()
+        choices = {}
+        idx = 1
+        for v in volumes:
+            svalbard_path = str(Path(v["path"]) / "svalbard")
+            size_info = f"{v['total_gb']:.0f} GB total, {v['free_gb']:.0f} GB free"
+            if v["network"]:
+                console.print(f"  [dim][bold]{idx}[/bold]) {svalbard_path}  [network]  ({size_info})[/dim]")
+            else:
+                console.print(f"  [bold]{idx}[/bold]) {svalbard_path}  ({size_info})")
+            choices[str(idx)] = svalbard_path
+            idx += 1
+
+        # Home directory option — always present
+        home_svalbard = Path.home() / "svalbard"
+        home_label = "~/svalbard/"
+        if home_svalbard.exists():
+            try:
+                usage = shutil.disk_usage(home_svalbard)
+                home_label += f"  ({usage.free / 1e9:.0f} GB free)"
+            except OSError:
+                pass
         else:
-            console.print(f"  [bold]{idx}[/bold]) {svalbard_path}  ({size_info})")
-        choices[str(idx)] = svalbard_path
+            home_label += "  (home directory)"
+        console.print(f"  [bold]{idx}[/bold]) {home_label}")
+        choices[str(idx)] = str(home_svalbard)
         idx += 1
 
-    # Home directory option — always present
-    home_svalbard = Path.home() / "svalbard"
-    home_label = "~/svalbard/"
-    if home_svalbard.exists():
-        try:
-            usage = shutil.disk_usage(home_svalbard)
-            home_label += f"  ({usage.free / 1e9:.0f} GB free)"
-        except OSError:
-            pass
-    else:
-        home_label += "  (home directory)"
-    console.print(f"  [bold]{idx}[/bold]) {home_label}")
-    choices[str(idx)] = str(home_svalbard)
-    idx += 1
+        console.print(f"  [bold]c[/bold]) Custom path...")
 
-    console.print(f"  [bold]c[/bold]) Custom path...")
-
-    valid_choices = list(choices.keys()) + ["c"]
-    choice = Prompt.ask("\n  Select", choices=valid_choices)
-    if choice == "c":
-        target_path = Prompt.ask("  Enter path")
+        valid_choices = list(choices.keys()) + ["c"]
+        choice = Prompt.ask("\n  Select", choices=valid_choices)
+        if choice == "c":
+            target_path = Prompt.ask("  Enter path")
+        else:
+            target_path = choices[choice]
     else:
-        target_path = choices[choice]
+        console.print(f"\n  [bold]Target:[/bold] {target_path}")
 
     # Step 2: Region
     console.print("\n[bold]Step 2/4 — Region[/bold]")
@@ -346,3 +349,38 @@ def run_wizard():
     )
     if Confirm.ask("\n  Start downloading now?", default=True):
         sync_drive(target_path)
+
+        # Offer to build search index after sync
+        from pathlib import Path as P
+
+        zim_dir = P(target_path) / "zim"
+        zim_count = len(list(zim_dir.glob("*.zim"))) if zim_dir.exists() else 0
+        if zim_count > 0:
+            console.print(f"\n[bold]Search Index[/bold]")
+            console.print(f"  {zim_count} ZIM files available for cross-ZIM search.\n")
+            console.print("  [bold]1[/bold]) Fast — keyword search (quick, small index)")
+            console.print("  [bold]2[/bold]) Standard — full-text search (slower, better ranking)")
+            console.print("  [bold]3[/bold]) Skip for now (run [bold]svalbard index[/bold] later)")
+
+            from rich.prompt import Prompt as P2
+
+            index_choice = P2.ask("\n  Select", choices=["1", "2", "3"], default="3")
+            if index_choice in ("1", "2"):
+                from svalbard.indexer import run_index, scan_zim_files
+                from svalbard.search_db import SearchDB
+
+                strategy = "fast" if index_choice == "1" else "standard"
+                drive = P(target_path)
+                data_dir = drive / "data"
+                data_dir.mkdir(parents=True, exist_ok=True)
+                db = SearchDB(data_dir / "search.db")
+                try:
+                    console.print(f"\n  Indexing ({strategy})...")
+                    run_index(drive, db, strategy=strategy)
+                    stats = db.stats()
+                    console.print(
+                        f"  [green]Done.[/green] {stats['sources']} sources, "
+                        f"{stats['articles']} articles indexed."
+                    )
+                finally:
+                    db.close()

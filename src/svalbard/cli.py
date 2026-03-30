@@ -71,11 +71,12 @@ def _show_menu(path: str):
 
 
 @main.command()
-def wizard() -> None:
+@click.option("--path", default=None, help="Target drive path (skip target selection)")
+def wizard(path: str | None) -> None:
     """Interactive setup wizard."""
     from svalbard.wizard import run_wizard
 
-    run_wizard()
+    run_wizard(target_path=path)
 
 
 @main.command()
