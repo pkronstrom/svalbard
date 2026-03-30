@@ -152,7 +152,7 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
 # ── run.sh template ─────────────────────────────────────────────────────────
 
 RUN_SH = r'''#!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 DRIVE_ROOT="$(cd "$(dirname "$0")" && pwd)"
 export DRIVE_ROOT
@@ -163,79 +163,80 @@ if [ ! -f "$ENTRIES_FILE" ]; then
     exit 1
 fi
 
-source "$DRIVE_ROOT/.svalbard/lib/ui.sh"
+# Colors
+if [ -t 1 ]; then
+    B=$'\033[1m'; D=$'\033[2m'; C=$'\033[36m'; R=$'\033[31m'; N=$'\033[0m'
+else
+    B="" D="" C="" R="" N=""
+fi
 
-# Parse entries into arrays
-declare -a LABELS SCRIPTS ARGS GROUPS
-current_group=""
-while IFS= read -r line || [ -n "$line" ]; do
-    [[ -z "$line" || "$line" == \#* ]] && continue
-    if [[ "$line" =~ ^\[(.+)\]$ ]]; then
-        current_group="${BASH_REMATCH[1]}"
+# Parse entries from tab file
+LABELS=()
+SCRIPTS=()
+ARGS=()
+GROUPS=()
+grp=""
+while IFS=$'\t' read -r lbl scr arg <&3; do
+    [ -z "$lbl" ] && continue
+    [[ "$lbl" = \#* ]] && continue
+    if [[ "$lbl" = \[*\] ]]; then
+        grp="${lbl:1:${#lbl}-2}"
         continue
     fi
-    IFS=$'\t' read -r label script args <<< "$line"
-    LABELS+=("$label")
-    SCRIPTS+=("$script")
-    ARGS+=("${args:-}")
-    GROUPS+=("$current_group")
-done < "$ENTRIES_FILE"
+    LABELS+=("$lbl")
+    SCRIPTS+=("${scr:-}")
+    ARGS+=("${arg:-}")
+    GROUPS+=("$grp")
+done 3< "$ENTRIES_FILE"
+
+n=${#LABELS[@]}
+if [ "$n" -eq 0 ]; then
+    echo "No menu entries found."
+    exit 1
+fi
 
 # Main loop
 while true; do
-    clear 2>/dev/null || true
-    echo "${BOLD}Svalbard${NC}"
-    echo "─────────────────────────────────"
-    prev_group=""
-    for i in "${!LABELS[@]}"; do
-        if [ "${GROUPS[$i]}" != "$prev_group" ]; then
-            [ -n "$prev_group" ] && echo ""
-            prev_group="${GROUPS[$i]}"
-        fi
-        printf " ${CYAN}%x${NC}) %s\n" "$((i + 1))" "${LABELS[$i]}"
+    echo ""
+    echo "${B}Svalbard${N}"
+    echo "────────────────────────────────"
+    pg=""
+    for (( i=0; i<n; i++ )); do
+        [ "${GROUPS[$i]}" != "$pg" ] && { [ -n "$pg" ] && echo ""; pg="${GROUPS[$i]}"; }
+        printf " ${C}%2d${N}) %s\n" "$((i+1))" "${LABELS[$i]}"
     done
-    echo ""
-    printf " ${DIM}q) Quit${NC}\n"
-    printf "\n > "
+    printf "\n ${D} q) Quit${N}\n\n"
+    read -rp " > " choice
 
-    # Single keypress, no enter needed
-    read -rsn1 choice
-    echo ""
     case "${choice:-}" in
-        q|Q) exit 0 ;;
+        q|Q|"") exit 0 ;;
     esac
-    # Convert hex a-c to 10-12 for menus with >9 items
-    case "$choice" in
-        a) num=10 ;; b) num=11 ;; c) num=12 ;;
-        *) num="$choice" ;;
-    esac
-    if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] 2>/dev/null && [ "$num" -le "${#LABELS[@]}" ]; then
-        idx=$((num - 1))
-    else
+    [[ "$choice" =~ ^[0-9]+$ ]] || continue
+    (( choice >= 1 && choice <= n )) || continue
+    idx=$((choice - 1))
+
+    scr="$DRIVE_ROOT/${SCRIPTS[$idx]}"
+    if [ ! -f "$scr" ]; then
+        echo "${R}Not found: ${SCRIPTS[$idx]}${N}"
+        read -rp "Enter to continue..."
         continue
     fi
 
-    script="${SCRIPTS[$idx]}"
-    args="${ARGS[$idx]}"
+    source "$DRIVE_ROOT/.svalbard/lib/platform.sh"
+    source "$DRIVE_ROOT/.svalbard/lib/binaries.sh"
+    source "$DRIVE_ROOT/.svalbard/lib/ports.sh"
+    source "$DRIVE_ROOT/.svalbard/lib/process.sh"
 
-    if [ ! -f "$DRIVE_ROOT/$script" ]; then
-        echo "${RED}Script not found: $script${NC}"
-        read -rsn1 -p "Press any key..."
-        continue
-    fi
-
-    chmod +x "$DRIVE_ROOT/$script" 2>/dev/null || true
-    # Run action script, tolerating non-zero exit (e.g. Ctrl+C stops a service)
+    chmod +x "$scr" 2>/dev/null || true
     set +e
-    if [ -n "$args" ]; then
-        "$DRIVE_ROOT/$script" "$args"
+    if [ -n "${ARGS[$idx]}" ]; then
+        "$scr" "${ARGS[$idx]}"
     else
-        "$DRIVE_ROOT/$script"
+        "$scr"
     fi
     set -e
-
     echo ""
-    read -rsn1 -p "Press any key to return..."
+    read -rp "Enter to return..."
 done
 '''
 
