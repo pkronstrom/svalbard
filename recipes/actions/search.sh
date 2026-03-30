@@ -135,6 +135,8 @@ while true; do
         read -r query
     fi
     [[ "$query" = q || "$query" = Q || -z "$query" ]] && exit 0
+    clear 2>/dev/null || true
+    echo "Searching: $query"
 
     safe_query="${query//\'/\'\'}"
     # Prefix matching: "printer" -> "printer*"
@@ -200,8 +202,7 @@ while true; do
 
     # Display results
     ids=(); filenames=(); paths=(); num=0
-    clear 2>/dev/null || true
-    echo "Results for: $query"
+    echo ""
     echo "────────────────────────────────"
     while IFS=$'\t' read -r id filename path title snippet; do
         num=$((num + 1))
