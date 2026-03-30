@@ -20,7 +20,7 @@ from svalbard.models import Source
 from svalbard.presets import builtin_recipe_ids, load_preset
 from svalbard.readme_generator import generate_drive_readme
 from svalbard.resolver import resolve_url
-from svalbard.serve_generator import generate_serve_sh
+from svalbard.toolkit_generator import generate_toolkit
 from svalbard.taxonomy import compute_coverage, load_taxonomy
 from svalbard.viewer_generator import generate_map_viewer
 
@@ -228,12 +228,13 @@ def _init_drive(path: str, preset_name: str, workspace_root_path: str = "", loca
     )
     manifest.save(drive_path / "manifest.yaml")
 
-    generate_serve_sh(drive_path)
     generate_drive_readme(drive_path)
 
     # Generate map viewer if preset has pmtiles sources
     if any(s.type == "pmtiles" for s in sources):
         generate_map_viewer(drive_path, preset_name)
+
+    generate_toolkit(drive_path, preset_name)
 
     console.print(f"[bold green]Initialized:[/bold green] {drive_path}")
     console.print(f"  Preset: {preset.name}")
@@ -526,12 +527,12 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
         manifest.last_synced = datetime.now().isoformat(timespec="seconds")
         manifest.save(manifest_path)
 
-    # Regenerate map viewer and serve script after sync
+    # Regenerate map viewer and toolkit after sync
     active_sources = active_sources_for_manifest(manifest, preset)
     if any(s.type == "pmtiles" for s in active_sources):
         generate_map_viewer(drive_path, manifest.preset)
-    generate_serve_sh(drive_path)
     generate_drive_readme(drive_path)
+    generate_toolkit(drive_path, manifest.preset)
 
     total = len(downloads) + len(build_sources) + len(selected_local_sources) - skipped
     if interrupted:

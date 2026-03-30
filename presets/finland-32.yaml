@@ -18,3 +18,7 @@ sources:
 - stackexchange-survival
 - cyberchef
 - kiwix-serve
+- toybox
+- dufs
+- fzf
+- 7z

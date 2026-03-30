@@ -67,3 +67,8 @@ sources:
 - sqliteviz
 - duckdb-wasm
 - maplibre-vendor
+- toybox
+- dufs
+- fzf
+- 7z
+- zstd

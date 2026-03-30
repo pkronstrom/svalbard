@@ -28,3 +28,7 @@ sources:
 - cyberchef
 - age
 - kiwix-serve
+- toybox
+- dufs
+- fzf
+- 7z

@@ -1,0 +1,16 @@
+id: zstd
+type: binary
+group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.002
+platforms:
+  linux-x86_64: https://github.com/facebook/zstd/releases/latest/download/zstd-v1.5.7-linux-x86_64-musl.tar.gz
+  linux-arm64: https://github.com/facebook/zstd/releases/latest/download/zstd-v1.5.7-linux-arm64-musl.tar.gz
+  macos-arm64: https://github.com/facebook/zstd/releases/latest/download/zstd-v1.5.7-macos-arm64.tar.gz
+  macos-x86_64: https://github.com/facebook/zstd/releases/latest/download/zstd-v1.5.7-macos-x86_64.tar.gz
+description: Zstandard — fast real-time compression
+license:
+  id: BSD-3-Clause
+  attribution: Meta / Yann Collet
