@@ -183,28 +183,34 @@ done < "$ENTRIES_FILE"
 
 # Main loop
 while true; do
-    echo ""
+    clear 2>/dev/null || true
     echo "${BOLD}Svalbard${NC}"
-    echo "─────────────────────────────────────────"
+    echo "─────────────────────────────────"
     prev_group=""
     for i in "${!LABELS[@]}"; do
         if [ "${GROUPS[$i]}" != "$prev_group" ]; then
-            echo ""
+            [ -n "$prev_group" ] && echo ""
             prev_group="${GROUPS[$i]}"
         fi
-        printf "  ${CYAN}%2d${NC}) %s\n" "$((i + 1))" "${LABELS[$i]}"
+        printf " ${CYAN}%x${NC}) %s\n" "$((i + 1))" "${LABELS[$i]}"
     done
     echo ""
-    printf "  ${DIM} q) Quit${NC}\n"
-    echo ""
+    printf " ${DIM}q) Quit${NC}\n"
+    printf "\n > "
 
-    read -rp "  > " choice
+    # Single keypress, no enter needed
+    read -rsn1 choice
+    echo ""
     case "${choice:-}" in
-        q|Q|"") exit 0 ;;
-        *[!0-9]*) continue ;;
+        q|Q) exit 0 ;;
     esac
-    if [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le "${#LABELS[@]}" ]; then
-        idx=$((choice - 1))
+    # Convert hex a-c to 10-12 for menus with >9 items
+    case "$choice" in
+        a) num=10 ;; b) num=11 ;; c) num=12 ;;
+        *) num="$choice" ;;
+    esac
+    if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] 2>/dev/null && [ "$num" -le "${#LABELS[@]}" ]; then
+        idx=$((num - 1))
     else
         continue
     fi
@@ -214,7 +220,7 @@ while true; do
 
     if [ ! -f "$DRIVE_ROOT/$script" ]; then
         echo "${RED}Script not found: $script${NC}"
-        read -rp "Press Enter to continue..."
+        read -rsn1 -p "Press any key..."
         continue
     fi
 
@@ -229,7 +235,7 @@ while true; do
     set -e
 
     echo ""
-    read -rp "Press Enter to return to menu..."
+    read -rsn1 -p "Press any key to return..."
 done
 '''
 
