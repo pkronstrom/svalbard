@@ -216,8 +216,6 @@ while true; do
     else
         "$target" || true
     fi
-    echo ""
-    read -rp "  Enter to return..."
 done
 '''
 
