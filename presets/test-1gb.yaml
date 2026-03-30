@@ -1,7 +1,7 @@
 name: test-1gb
 description: Manual smoke-test bundle with tiny Wikipedia, maps, video, and a compact local model
 target_size_gb: 1
-region: test
+region: finland
 sources:
 - wikipedia-en-100-mini
 - based-cooking

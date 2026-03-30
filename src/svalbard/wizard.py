@@ -19,8 +19,19 @@ console = Console()
 NETWORK_FS_TYPES = {"smbfs", "nfs", "nfs4", "afpfs", "cifs", "9p", "fuse.sshfs"}
 
 # Directories/names to skip entirely
-SKIP_NAMES_MACOS = {"Macintosh HD", "com.apple.TimeMachine.localsnapshots"}
+SKIP_NAMES_MACOS = {
+    "Macintosh HD",
+    "com.apple.TimeMachine.localsnapshots",
+    ".timemachine",
+    ".MobileBackups",
+}
 SKIP_MARKERS = {"Backups.backupdb", ".timemachine"}
+SKIP_PATH_PARTS = {
+    ".timemachine",
+    ".MobileBackups",
+    "Backups.backupdb",
+    "com.apple.TimeMachine.localsnapshots",
+}
 
 
 def _parse_mount_types() -> dict[str, str]:
@@ -50,8 +61,12 @@ def _parse_mount_types() -> dict[str, str]:
     return result
 
 
-def _is_time_machine(path: Path) -> bool:
-    """Check if a volume looks like a Time Machine backup."""
+def _should_skip_volume(path: Path) -> bool:
+    """Check if a volume looks like a system or Time Machine mount."""
+    if path.name in SKIP_NAMES_MACOS:
+        return True
+    if any(part in SKIP_PATH_PARTS for part in path.parts):
+        return True
     return any((path / marker).exists() for marker in SKIP_MARKERS)
 
 
@@ -68,7 +83,7 @@ def detect_volumes() -> list[dict]:
         volumes_path = Path("/Volumes")
         if volumes_path.exists():
             for v in volumes_path.iterdir():
-                if v.name in SKIP_NAMES_MACOS:
+                if _should_skip_volume(v):
                     continue
                 candidates.append(v)
     else:
@@ -84,7 +99,7 @@ def detect_volumes() -> list[dict]:
 
     volumes = []
     for v in candidates:
-        if _is_time_machine(v):
+        if _should_skip_volume(v):
             continue
         try:
             usage = shutil.disk_usage(v)

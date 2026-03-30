@@ -1,3 +1,7 @@
+from collections import namedtuple
+from pathlib import Path
+
+import svalbard.wizard as wizard
 from svalbard.wizard import detect_volumes, local_sources_for_space, presets_for_space
 
 
@@ -20,6 +24,35 @@ def test_detect_volumes_sorted_local_first():
             saw_network = True
         elif saw_network:
             assert False, "Local volume appeared after network volume"
+
+
+def test_detect_volumes_skips_time_machine_mount_names(monkeypatch):
+    """Time Machine mount names should not be suggested as targets."""
+    usage = namedtuple("usage", "total used free")
+    volumes_root = Path("/Volumes")
+    candidates = [
+        volumes_root / ".timemachine",
+        volumes_root / ".MobileBackups",
+        volumes_root / "KINGSTON",
+    ]
+
+    monkeypatch.setattr(wizard.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(wizard, "_parse_mount_types", lambda: {})
+    monkeypatch.setattr(
+        wizard.Path,
+        "exists",
+        lambda self: self == volumes_root,
+    )
+    monkeypatch.setattr(
+        wizard.Path,
+        "iterdir",
+        lambda self: iter(candidates) if self == volumes_root else iter(()),
+    )
+    monkeypatch.setattr(wizard.shutil, "disk_usage", lambda _: usage(128 * 10**9, 0, 64 * 10**9))
+
+    result = detect_volumes()
+
+    assert [volume["name"] for volume in result] == ["KINGSTON"]
 
 
 def test_presets_for_space_122gb():
