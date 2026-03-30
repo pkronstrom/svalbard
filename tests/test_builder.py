@@ -4,6 +4,7 @@ from unittest.mock import patch, MagicMock
 from svalbard.builder import (
     BuildResult,
     HANDLERS,
+    _find_tool,
     check_tools,
     run_build,
 )
@@ -21,7 +22,8 @@ def test_handler_registry_has_all_families():
 
 
 def test_check_tools_returns_empty_when_all_present():
-    with patch("shutil.which", return_value="/usr/bin/tool"):
+    with patch("shutil.which", return_value="/usr/bin/tool"), \
+         patch("svalbard.builder._has_docker", return_value=False):
         missing = check_tools(["reference-static", "app-bundle"])
     assert missing == []
 
@@ -30,9 +32,53 @@ def test_check_tools_detects_missing():
     def fake_which(name):
         return None if name == "tippecanoe" else f"/usr/bin/{name}"
 
-    with patch("shutil.which", side_effect=fake_which):
+    with patch("shutil.which", side_effect=fake_which), \
+         patch("svalbard.builder._has_docker", return_value=False):
         missing = check_tools(["vector-static"])
     assert "tippecanoe" in missing
+
+
+def test_check_tools_accepts_docker_fallback():
+    """When Docker is available, tools with Docker images should not be missing."""
+    with patch("shutil.which", return_value=None), \
+         patch("svalbard.builder._has_docker", return_value=True):
+        missing = check_tools(["vector-static"])
+    # ogr2ogr and tippecanoe have Docker images, so neither should be missing
+    assert "ogr2ogr" not in missing
+    assert "tippecanoe" not in missing
+
+
+def test_check_tools_finds_binary_on_drive(tmp_path):
+    """Binaries on the drive should satisfy tool requirements."""
+    import platform as _platform
+    os_name = "macos" if _platform.system() == "Darwin" else "linux"
+    arch = "arm64" if _platform.machine() in ("aarch64", "arm64") else "x86_64"
+    bin_dir = tmp_path / "bin" / f"{os_name}-{arch}"
+    bin_dir.mkdir(parents=True)
+    pmtiles_bin = bin_dir / "pmtiles"
+    pmtiles_bin.write_bytes(b"#!/bin/sh\n")
+    pmtiles_bin.chmod(0o755)
+
+    with patch("shutil.which", return_value=None), \
+         patch("svalbard.builder._has_docker", return_value=False):
+        missing = check_tools(["osm-extract"], drive_path=tmp_path)
+    assert "pmtiles" not in missing
+
+
+def test_find_tool_prefers_drive_over_path(tmp_path):
+    """_find_tool should return the drive binary even when PATH has the tool."""
+    import platform as _platform
+    os_name = "macos" if _platform.system() == "Darwin" else "linux"
+    arch = "arm64" if _platform.machine() in ("aarch64", "arm64") else "x86_64"
+    bin_dir = tmp_path / "bin" / f"{os_name}-{arch}"
+    bin_dir.mkdir(parents=True)
+    pmtiles_bin = bin_dir / "pmtiles"
+    pmtiles_bin.write_bytes(b"#!/bin/sh\n")
+    pmtiles_bin.chmod(0o755)
+
+    with patch("shutil.which", return_value="/usr/local/bin/pmtiles"):
+        result = _find_tool("pmtiles", tmp_path)
+    assert result == str(pmtiles_bin)
 
 
 def test_run_build_unknown_family(tmp_path):

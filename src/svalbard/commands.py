@@ -440,13 +440,14 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
             if pending_builds:
                 # Check required tools
                 families = list({s.build.get("family", "") for s in pending_builds})
-                missing_tools = check_tools(families)
+                missing_tools = check_tools(families, drive_path=drive_path)
                 if missing_tools:
                     console.print(
                         f"\n[red]Missing build tools:[/red] {', '.join(missing_tools)}"
                     )
                     console.print("  Install with: brew install tippecanoe gdal")
-                    console.print("  For pmtiles: go install github.com/protomaps/go-pmtiles@latest")
+                    console.print("  Or use Docker (auto-detected if available)")
+                    console.print("  For pmtiles: include go-pmtiles in your preset or go install github.com/protomaps/go-pmtiles@latest")
                 else:
                     console.print(f"\n[bold]Building {len(pending_builds)} source(s)...[/bold]")
                     for source in pending_builds:

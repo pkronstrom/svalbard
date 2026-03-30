@@ -8,6 +8,7 @@ the final artifact that lives on the drive.
 from __future__ import annotations
 
 import logging
+import platform as _platform
 import shutil
 import subprocess
 import tempfile
@@ -21,6 +22,10 @@ import httpx
 from svalbard.models import Source
 
 log = logging.getLogger(__name__)
+
+# ── Docker images for geodata tools ────────────────────────────────────────
+GDAL_IMAGE = "ghcr.io/osgeo/gdal:ubuntu-small-latest"
+TIPPECANOE_IMAGE = "ghcr.io/felt/tippecanoe:latest"
 
 CACHE_ROOT = Path.home() / ".cache" / "svalbard" / "build"
 
@@ -43,13 +48,47 @@ TOOL_REQUIREMENTS: dict[str, list[str]] = {
     "app-bundle": [],
 }
 
+# Tools that can fall back to Docker when not installed locally
+DOCKER_TOOL_IMAGES: dict[str, str] = {
+    "ogr2ogr": GDAL_IMAGE,
+    "tippecanoe": TIPPECANOE_IMAGE,
+}
 
-def check_tools(families: list[str]) -> list[str]:
-    """Return list of missing tools needed by the given build families."""
+
+def _find_tool(name: str, drive_path: Path) -> str | None:
+    """Find a tool binary: first on the drive, then on system PATH."""
+    os_name = "macos" if _platform.system() == "Darwin" else "linux"
+    arch = "arm64" if _platform.machine() in ("aarch64", "arm64") else "x86_64"
+    platform_dir = f"{os_name}-{arch}"
+
+    for search_dir in [drive_path / "bin" / platform_dir, drive_path / "bin"]:
+        candidate = search_dir / name
+        if candidate.exists() and candidate.stat().st_mode & 0o111:
+            return str(candidate)
+
+    # Fall back to system PATH
+    return shutil.which(name)
+
+
+def check_tools(families: list[str], drive_path: Path | None = None) -> list[str]:
+    """Return list of missing tools needed by the given build families.
+
+    Searches drive bin directories first, then system PATH, then checks
+    whether Docker can provide the tool as a last resort.
+    """
     needed: set[str] = set()
     for family in families:
         needed.update(TOOL_REQUIREMENTS.get(family, []))
-    missing = [tool for tool in sorted(needed) if shutil.which(tool) is None]
+    missing = []
+    for tool in sorted(needed):
+        if drive_path and _find_tool(tool, drive_path):
+            continue
+        if shutil.which(tool) is not None:
+            continue
+        # Accept Docker fallback for supported tools
+        if tool in DOCKER_TOOL_IMAGES and _has_docker():
+            continue
+        missing.append(tool)
     return missing
 
 
@@ -111,7 +150,69 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, capture_output=True, text=True, **kwargs)
 
 
+def _has_docker() -> bool:
+    """Return True if Docker is available and the daemon is running."""
+    try:
+        result = subprocess.run(
+            ["docker", "info"], capture_output=True, timeout=10,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _run_docker(
+    image: str,
+    cmd: list[str],
+    mounts: dict[str, str],
+    **kwargs,
+) -> subprocess.CompletedProcess:
+    """Run command in a Docker container with volume mounts."""
+    docker_cmd = ["docker", "run", "--rm"]
+    for host_path, container_path in mounts.items():
+        docker_cmd.extend(["-v", f"{host_path}:{container_path}"])
+    docker_cmd.append(image)
+    docker_cmd.extend(cmd)
+    return _run(docker_cmd, **kwargs)
+
+
+def _resolve_tool(
+    name: str, drive_path: Path,
+) -> tuple[str | None, str | None]:
+    """Resolve a tool to either a local binary path or a Docker image.
+
+    Returns (binary_path, docker_image).  Exactly one will be non-None when
+    the tool is available, or both None when it cannot be found.
+    """
+    local = _find_tool(name, drive_path)
+    if local:
+        return local, None
+    if name in DOCKER_TOOL_IMAGES and _has_docker():
+        return None, DOCKER_TOOL_IMAGES[name]
+    return None, None
+
+
 # ── vector-static ───────────────────────────────────────────────────────────
+
+def _run_ogr2ogr(args: list[str], drive_path: Path, mounts: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    """Run ogr2ogr using local binary or Docker fallback."""
+    binary, image = _resolve_tool("ogr2ogr", drive_path)
+    if binary:
+        return _run([binary, *args])
+    if image:
+        return _run_docker(image, ["ogr2ogr", *args], mounts or {})
+    raise RuntimeError("ogr2ogr not found. Install GDAL or Docker.")
+
+
+def _run_tippecanoe(args: list[str], drive_path: Path, mounts: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    """Run tippecanoe using local binary or Docker fallback."""
+    binary, image = _resolve_tool("tippecanoe", drive_path)
+    if binary:
+        return _run([binary, *args])
+    if image:
+        return _run_docker(image, ["tippecanoe", *args], mounts or {})
+    raise RuntimeError("tippecanoe not found. Install tippecanoe or Docker.")
+
 
 @_register("vector-static")
 def build_vector_static(source: Source, drive_path: Path, cache: Path) -> BuildResult:
@@ -149,14 +250,16 @@ def build_vector_static(source: Source, drive_path: Path, cache: Path) -> BuildR
     gpkg_dir.mkdir(parents=True, exist_ok=True)
     gpkg = gpkg_dir / f"{source.id}.gpkg"
 
+    docker_mounts = {str(cache): "/data", str(drive_path): "/drive"}
+
     if not gpkg.exists():
-        _run([
-            "ogr2ogr", "-f", "GPKG",
+        _run_ogr2ogr([
+            "-f", "GPKG",
             "-t_srs", "EPSG:4326",
             "-s_srs", source_srs,
             str(gpkg), str(shp),
             "-nln", layer_name,
-        ])
+        ], drive_path, docker_mounts)
 
     # Convert to PMTiles via tippecanoe
     dest_dir = drive_path / "maps"
@@ -167,16 +270,15 @@ def build_vector_static(source: Source, drive_path: Path, cache: Path) -> BuildR
         with tempfile.NamedTemporaryFile(suffix=".geojsonseq", delete=False) as tmp:
             tmp_geojson = Path(tmp.name)
         try:
-            _run(["ogr2ogr", "-f", "GeoJSONSeq", str(tmp_geojson), str(gpkg)])
-            _run([
-                "tippecanoe",
+            _run_ogr2ogr(["-f", "GeoJSONSeq", str(tmp_geojson), str(gpkg)], drive_path, docker_mounts)
+            _run_tippecanoe([
                 "-o", str(pmtiles_path),
                 f"-z{max_zoom}",
                 "--drop-densest-as-needed",
                 "-P",
                 "-l", layer_name,
                 str(tmp_geojson),
-            ])
+            ], drive_path, docker_mounts)
         finally:
             tmp_geojson.unlink(missing_ok=True)
 
@@ -198,11 +300,13 @@ def build_vector_service(source: Source, drive_path: Path, cache: Path) -> Build
     gpkg_dir.mkdir(parents=True, exist_ok=True)
     gpkg = gpkg_dir / f"{source.id}.gpkg"
 
+    docker_mounts = {str(cache): "/data", str(drive_path): "/drive"}
+
     if not gpkg.exists():
         wfs_url = f"WFS:{service_url}"
         for i, layer_def in enumerate(layers):
             cmd = [
-                "ogr2ogr", "-f", "GPKG",
+                "-f", "GPKG",
                 "-t_srs", "EPSG:4326",
                 str(gpkg), wfs_url,
                 layer_def["name"],
@@ -213,7 +317,7 @@ def build_vector_service(source: Source, drive_path: Path, cache: Path) -> Build
             filt = layer_def.get("filter")
             if filt:
                 cmd.extend(["-where", filt])
-            _run(cmd)
+            _run_ogr2ogr(cmd, drive_path, docker_mounts)
 
     # Convert to PMTiles
     dest_dir = drive_path / "maps"
@@ -224,16 +328,15 @@ def build_vector_service(source: Source, drive_path: Path, cache: Path) -> Build
         with tempfile.NamedTemporaryFile(suffix=".geojsonseq", delete=False) as tmp:
             tmp_geojson = Path(tmp.name)
         try:
-            _run(["ogr2ogr", "-f", "GeoJSONSeq", str(tmp_geojson), str(gpkg)])
-            _run([
-                "tippecanoe",
+            _run_ogr2ogr(["-f", "GeoJSONSeq", str(tmp_geojson), str(gpkg)], drive_path, docker_mounts)
+            _run_tippecanoe([
                 "-o", str(pmtiles_path),
                 f"-z{max_zoom}",
                 "--drop-densest-as-needed",
                 "-P",
                 "-l", layer_name,
                 str(tmp_geojson),
-            ])
+            ], drive_path, docker_mounts)
         finally:
             tmp_geojson.unlink(missing_ok=True)
 
@@ -279,8 +382,9 @@ def build_osm_extract(source: Source, drive_path: Path, cache: Path) -> BuildRes
     if not pmtiles_path.exists():
         daily_url = _resolve_protomaps_url()
         log.info("Extracting from %s", daily_url)
+        pmtiles_bin = _find_tool("pmtiles", drive_path) or "pmtiles"
         _run([
-            "pmtiles", "extract",
+            pmtiles_bin, "extract",
             daily_url,
             str(pmtiles_path),
             f"--bbox={bbox}",
