@@ -2,6 +2,17 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 import yaml
 
+
+@dataclass
+class LocalSourceSnapshot:
+    id: str
+    path: str
+    kind: str
+    size_bytes: int
+    mtime: float = 0.0
+    checksum_sha256: str = ""
+
+
 @dataclass
 class ManifestEntry:
     id: str
@@ -14,6 +25,9 @@ class ManifestEntry:
     downloaded: str = ""  # ISO date
     url: str = ""
     checksum_sha256: str = ""
+    relative_path: str = ""
+    kind: str = "file"
+    source_strategy: str = ""
 
 @dataclass
 class Manifest:
@@ -22,6 +36,9 @@ class Manifest:
     target_path: str
     created: str = ""
     last_synced: str = ""
+    workspace_root: str = ""
+    local_sources: list[str] = field(default_factory=list)
+    local_source_snapshots: list[LocalSourceSnapshot] = field(default_factory=list)
     entries: list[ManifestEntry] = field(default_factory=list)
 
     def save(self, path: Path):
@@ -36,11 +53,15 @@ class Manifest:
         with open(path) as f:
             data = yaml.safe_load(f)
         entries = [ManifestEntry(**e) for e in data.get("entries", [])]
+        snapshots = [LocalSourceSnapshot(**e) for e in data.get("local_source_snapshots", [])]
         return cls(
             preset=data["preset"], region=data["region"],
             target_path=data["target_path"],
             created=data.get("created", ""),
             last_synced=data.get("last_synced", ""),
+            workspace_root=data.get("workspace_root", ""),
+            local_sources=data.get("local_sources", []),
+            local_source_snapshots=snapshots,
             entries=entries,
         )
 

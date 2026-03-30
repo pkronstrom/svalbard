@@ -1,14 +1,11 @@
-# Example: Bundle multiple Finnish emergency/safety sites into one ZIM
-# Output: zim/custom/nordic-emergency.zim
+# Example: Crawl one site into generated/nordic-emergency.zim and register it locally
 #
 # Usage:
-#   primer crawl nordic-emergency    # Requires Docker + internet
-#
-# Or crawl all configs at once:
-#   primer crawl
+#   svalbard crawl config crawl/nordic-emergency.yaml.example
+#   # or copy to .yaml first and edit as needed
 
 name: Nordic Emergency Services
-description: Finnish rescue services, emergency info, weather warnings
+description: Finnish rescue service guidance
 tags: [first-aid, fire-shelter, navigation]
 depth: comprehensive
 
@@ -16,14 +13,6 @@ sites:
   - url: https://www.pelastustoimi.fi
     scope: domain
     page_limit: 500
-
-  - url: https://www.112.fi
-    scope: domain
-    page_limit: 200
-
-  - url: https://www.ilmatieteenlaitos.fi/varoitukset
-    scope: prefix
-    page_limit: 300
 
 # Default limits applied per-site (override per-site if needed)
 defaults:

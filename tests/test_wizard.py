@@ -1,4 +1,4 @@
-from svalbard.wizard import detect_volumes, presets_for_space
+from svalbard.wizard import detect_volumes, local_sources_for_space, presets_for_space
 
 
 def test_detect_volumes_returns_list():
@@ -70,3 +70,35 @@ def test_presets_for_space_defaults_to_finland_family():
     names = [name for name, _, _ in result]
     assert "finland-64" in names
     assert "default-64" not in names
+
+
+def test_local_sources_for_space_marks_fit_and_overflow(tmp_path):
+    generated = tmp_path / "generated"
+    local = tmp_path / "local"
+    generated.mkdir()
+    local.mkdir()
+    (generated / "small.zim").write_bytes(b"x" * 100)
+    (generated / "large.zim").write_bytes(b"x" * 200)
+    (local / "small.yaml").write_text(
+        """id: local:small
+type: zim
+group: practical
+strategy: local
+path: generated/small.zim
+size_bytes: 100000000
+"""
+    )
+    (local / "large.yaml").write_text(
+        """id: local:large
+type: zim
+group: practical
+strategy: local
+path: generated/large.zim
+size_bytes: 3000000000
+"""
+    )
+
+    result = local_sources_for_space(1.0, root=tmp_path)
+    by_id = {source.id: fits for source, _, fits in result}
+    assert by_id["local:small"] is True
+    assert by_id["local:large"] is False

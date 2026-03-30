@@ -1,4 +1,5 @@
-from svalbard.manifest import Manifest, ManifestEntry
+from svalbard.manifest import LocalSourceSnapshot, Manifest, ManifestEntry
+from svalbard.models import Source
 
 
 def test_manifest_roundtrip(tmp_path):
@@ -87,3 +88,43 @@ def test_manifest_roundtrip_preserves_platform(tmp_path):
     manifest.save(path)
     loaded = Manifest.load(path)
     assert loaded.entries[0].platform == "linux-x86_64"
+
+
+def test_manifest_roundtrip_preserves_workspace_and_local_sources(tmp_path):
+    manifest = Manifest(
+        preset="default-64",
+        region="default",
+        target_path="/mnt/drive",
+        workspace_root="/tmp/workspace",
+        local_sources=["local:example-docs"],
+        local_source_snapshots=[
+            LocalSourceSnapshot(
+                id="local:example-docs",
+                path="generated/example-docs.zim",
+                kind="file",
+                size_bytes=123,
+                mtime=456.0,
+            )
+        ],
+    )
+    path = tmp_path / "manifest.yaml"
+    manifest.save(path)
+
+    loaded = Manifest.load(path)
+    assert loaded.workspace_root == "/tmp/workspace"
+    assert loaded.local_sources == ["local:example-docs"]
+    assert loaded.local_source_snapshots[0].kind == "file"
+
+
+def test_source_accepts_local_path_and_size_bytes():
+    source = Source(
+        id="local:example-docs",
+        type="zim",
+        group="practical",
+        strategy="local",
+        path="generated/example-docs.zim",
+        size_bytes=123456789,
+    )
+    assert source.path == "generated/example-docs.zim"
+    assert source.size_bytes == 123456789
+    assert round(source.size_gb, 3) == round(123456789 / 1e9, 3)

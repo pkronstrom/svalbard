@@ -1,4 +1,6 @@
 import signal
+import shutil
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -8,9 +10,14 @@ from rich.table import Table
 
 from svalbard.builder import BuildResult, check_tools, run_build
 from svalbard.downloader import download_sources, fetch_sha256_sidecar
-from svalbard.manifest import Manifest, ManifestEntry
+from svalbard.local_sources import (
+    active_sources_for_manifest,
+    load_local_sources,
+    workspace_root as resolve_workspace_root,
+)
+from svalbard.manifest import LocalSourceSnapshot, Manifest, ManifestEntry
 from svalbard.models import Source
-from svalbard.presets import load_preset
+from svalbard.presets import builtin_recipe_ids, load_preset
 from svalbard.readme_generator import generate_drive_readme
 from svalbard.resolver import resolve_url
 from svalbard.serve_generator import generate_serve_sh
@@ -31,6 +38,18 @@ TYPE_DIRS = {
     "sqlite": "data",
 }
 
+TYPE_GROUPS = {
+    "zim": "reference",
+    "pdf": "books",
+    "epub": "books",
+    "pmtiles": "maps",
+    "gguf": "models",
+    "binary": "tools",
+    "app": "tools",
+    "iso": "tools",
+    "sqlite": "regional",
+}
+
 
 @dataclass
 class DownloadJob:
@@ -40,6 +59,127 @@ class DownloadJob:
     dest_dir: Path
     source: Source
     platform: str = ""
+
+
+def _normalized_source_slug(source_id: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", source_id.lower()).strip("-")
+    return slug or "local-source"
+
+
+def _resolve_local_source_path(source: Source, root: Path) -> Path:
+    path = Path(source.path)
+    if not path.is_absolute():
+        path = root / path
+    return path
+
+
+def _local_source_kind(path: Path) -> str:
+    return "dir" if path.is_dir() else "file"
+
+
+def _directory_size_bytes(path: Path) -> int:
+    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+
+
+def _has_nested_symlink(path: Path) -> bool:
+    return any(child.is_symlink() for child in path.rglob("*"))
+
+
+def _local_dest_path(source: Source, source_path: Path, drive_path: Path) -> Path:
+    dest_dir = drive_path / TYPE_DIRS.get(source.type, "other")
+    slug = _normalized_source_slug(source.id)
+    if source_path.is_dir():
+        return dest_dir / slug
+    suffix = source_path.suffix or {
+        "zim": ".zim",
+        "pdf": ".pdf",
+        "epub": ".epub",
+        "pmtiles": ".pmtiles",
+        "gguf": ".gguf",
+        "sqlite": ".sqlite",
+        "iso": ".iso",
+    }.get(source.type, "")
+    return dest_dir / f"{slug}{suffix}"
+
+
+def _record_local_snapshot(manifest: Manifest, source: Source, source_path: Path) -> None:
+    snapshot = LocalSourceSnapshot(
+        id=source.id,
+        path=source.path,
+        kind=_local_source_kind(source_path),
+        size_bytes=source.size_bytes or (
+            _directory_size_bytes(source_path) if source_path.is_dir() else source_path.stat().st_size
+        ),
+        mtime=source_path.stat().st_mtime,
+    )
+    manifest.local_source_snapshots = [s for s in manifest.local_source_snapshots if s.id != source.id]
+    manifest.local_source_snapshots.append(snapshot)
+
+
+def add_local_source(
+    path: Path | str,
+    workspace_root: Path | str | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+) -> str:
+    """Register a local file or directory as a workspace local source."""
+    root = Path(workspace_root).resolve() if workspace_root else resolve_workspace_root()
+    artifact = Path(path).resolve()
+    if not artifact.exists():
+        raise FileNotFoundError(f"Local source path does not exist: {artifact}")
+
+    inferred_type = source_type
+    if inferred_type is None:
+        suffix_map = {
+            ".zim": "zim",
+            ".pdf": "pdf",
+            ".epub": "epub",
+            ".pmtiles": "pmtiles",
+            ".gguf": "gguf",
+            ".sqlite": "sqlite",
+            ".iso": "iso",
+        }
+        inferred_type = suffix_map.get(artifact.suffix.lower())
+    if inferred_type is None:
+        raise ValueError("Could not infer local source type; pass source_type explicitly")
+    if artifact.is_dir() and _has_nested_symlink(artifact):
+        raise ValueError("Directory-backed local sources cannot contain nested symlinks")
+
+    raw_name = source_id or artifact.stem
+    slug = _normalized_source_slug(raw_name)
+    normalized_id = f"local:{slug.removeprefix('local-')}" if not raw_name.startswith("local:") else f"local:{slug.split('local-', 1)[-1]}"
+    if normalized_id in builtin_recipe_ids():
+        raise ValueError(f"Local source id '{normalized_id}' collides with built-in source id")
+    local_dir = root / "local"
+    local_dir.mkdir(parents=True, exist_ok=True)
+    sidecar = local_dir / f"{slug.removeprefix('local-')}.yaml"
+    for existing in local_dir.glob("*.yaml"):
+        if existing == sidecar:
+            continue
+        if f"id: {normalized_id}\n" in existing.read_text():
+            raise ValueError(f"Local source id '{normalized_id}' already exists")
+    size_bytes = _directory_size_bytes(artifact) if artifact.is_dir() else artifact.stat().st_size
+    try:
+        rel_path = artifact.relative_to(root)
+        stored_path = rel_path.as_posix()
+    except ValueError:
+        stored_path = str(artifact)
+
+    sidecar.write_text(
+        "\n".join(
+            [
+                f"id: {normalized_id}",
+                f"type: {inferred_type}",
+                f"group: {TYPE_GROUPS.get(inferred_type, 'practical')}",
+                "strategy: local",
+                f"path: {stored_path}",
+                f"description: {artifact.stem}",
+                f"size_bytes: {size_bytes}",
+                "",
+            ]
+        )
+    )
+    return normalized_id
 
 
 def expand_source_downloads(source: Source, drive_path: Path) -> list[DownloadJob]:
@@ -70,7 +210,7 @@ def expand_source_downloads(source: Source, drive_path: Path) -> list[DownloadJo
     ]
 
 
-def init_drive(path: str, preset_name: str):
+def _init_drive(path: str, preset_name: str, workspace_root_path: str = "", local_sources: list[str] | None = None):
     """Initialize a drive with a preset."""
     drive_path = Path(path)
     drive_path.mkdir(parents=True, exist_ok=True)
@@ -83,6 +223,8 @@ def init_drive(path: str, preset_name: str):
         region=preset.region,
         target_path=str(drive_path),
         created=datetime.now().isoformat(timespec="seconds"),
+        workspace_root=workspace_root_path,
+        local_sources=local_sources or [],
     )
     manifest.save(drive_path / "manifest.yaml")
 
@@ -98,6 +240,11 @@ def init_drive(path: str, preset_name: str):
     console.print(f"  Sources: {len(sources)}")
     console.print(f"  Estimated size: {sum(s.size_gb for s in sources):.1f} GB")
     console.print(f"\nRun [bold]svalbard sync[/bold] to download content.")
+    return manifest
+
+
+def init_drive(path: str, preset_name: str, workspace_root: str = "", local_sources: list[str] | None = None):
+    return _init_drive(path, preset_name, workspace_root_path=workspace_root, local_sources=local_sources)
 
 
 def _artifact_path_for_build(source: Source, drive_path: Path) -> Path | None:
@@ -124,6 +271,18 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
     manifest = Manifest.load(drive_path / "manifest.yaml")
     preset = load_preset(manifest.preset)
     manifest_path = drive_path / "manifest.yaml"
+    local_source_map = {
+        source.id: source for source in load_local_sources(manifest.workspace_root or resolve_workspace_root())
+    }
+    selected_local_sources: list[Source] = []
+    local_failures = 0
+    for source_id in manifest.local_sources:
+        source = local_source_map.get(source_id)
+        if source is None:
+            console.print(f"  [red]Missing local source:[/red] {source_id}")
+            local_failures += 1
+            continue
+        selected_local_sources.append(source)
 
     console.print(f"[bold]Syncing:[/bold] {manifest.preset} → {drive_path}")
 
@@ -177,8 +336,9 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
 
     has_downloads = bool(downloads)
     has_builds = bool(build_sources)
+    has_locals = bool(selected_local_sources)
 
-    if not has_downloads and not has_builds:
+    if not has_downloads and not has_builds and not has_locals:
         console.print("\n[bold green]Everything up to date.[/bold green]")
         manifest.last_synced = datetime.now().isoformat(timespec="seconds")
         manifest.save(manifest_path)
@@ -321,6 +481,45 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
                         else:
                             download_failed += 1
                             console.print(f"  [red]FAIL[/red] {source.id}: {result.error}")
+
+        if selected_local_sources and not interrupted:
+            console.print(f"\n[bold]Importing {len(selected_local_sources)} local source(s)...[/bold]")
+            root = Path(manifest.workspace_root).resolve() if manifest.workspace_root else resolve_workspace_root()
+            for source in selected_local_sources:
+                source_path = _resolve_local_source_path(source, root)
+                dest_path = _local_dest_path(source, source_path, drive_path)
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                if source_path.is_dir():
+                    if dest_path.exists():
+                        shutil.rmtree(dest_path)
+                    shutil.copytree(source_path, dest_path, symlinks=False)
+                    size_bytes = _directory_size_bytes(dest_path)
+                    filename = dest_path.name
+                    kind = "dir"
+                else:
+                    shutil.copy2(source_path, dest_path)
+                    size_bytes = dest_path.stat().st_size
+                    filename = dest_path.name
+                    kind = "file"
+
+                entry = ManifestEntry(
+                    id=source.id,
+                    type=source.type,
+                    filename=filename,
+                    size_bytes=size_bytes,
+                    tags=source.tags,
+                    depth=source.depth,
+                    downloaded=datetime.now().isoformat(timespec="seconds"),
+                    relative_path=dest_path.relative_to(drive_path).as_posix(),
+                    kind=kind,
+                    source_strategy="local",
+                )
+                manifest.entries = [e for e in manifest.entries if e.id != source.id]
+                manifest.entries.append(entry)
+                _record_local_snapshot(manifest, source, source_path)
+                manifest.last_synced = datetime.now().isoformat(timespec="seconds")
+                manifest.save(manifest_path)
+                console.print(f"  [green]OK[/green] {source.id}")
     finally:
         signal.signal(signal.SIGINT, old_handler)
         # Final save
@@ -328,14 +527,16 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
         manifest.save(manifest_path)
 
     # Regenerate map viewer and serve script after sync
-    if any(s.type == "pmtiles" for s in preset.sources):
+    active_sources = active_sources_for_manifest(manifest, preset)
+    if any(s.type == "pmtiles" for s in active_sources):
         generate_map_viewer(drive_path, manifest.preset)
     generate_serve_sh(drive_path)
+    generate_drive_readme(drive_path)
 
-    total = len(downloads) + len(build_sources) - skipped
+    total = len(downloads) + len(build_sources) + len(selected_local_sources) - skipped
     if interrupted:
         console.print(f"\n[yellow]Interrupted.[/yellow] Run svalbard sync to continue.")
-    elif download_failed:
+    elif download_failed or local_failures:
         console.print(f"\n[bold green]Done:[/bold green] {download_failed} failed.")
     else:
         console.print(f"\n[bold green]Done:[/bold green] all sources synced.")
@@ -350,7 +551,7 @@ def show_status(path: str, check_updates: bool = False):
 
     manifest = Manifest.load(drive_path / "manifest.yaml")
     preset = load_preset(manifest.preset)
-    active_sources = preset.sources
+    active_sources = active_sources_for_manifest(manifest, preset)
 
     # Resolve URLs if checking for updates
     resolved_urls: dict[str, str] = {}

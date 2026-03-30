@@ -1,8 +1,11 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from svalbard.commands import expand_source_downloads, init_drive, show_status, sync_drive
 from svalbard.manifest import Manifest, ManifestEntry
+from svalbard.models import Preset
 from svalbard.presets import load_preset
 
 
@@ -104,3 +107,78 @@ def test_show_status_handles_platformed_binary_sources(tmp_path):
     manifest.save(tmp_path / "manifest.yaml")
 
     show_status(str(tmp_path))
+
+
+def test_add_local_file_writes_sidecar(tmp_path):
+    from svalbard.commands import add_local_source
+
+    artifact = tmp_path / "manual.zim"
+    artifact.write_bytes(b"data")
+
+    source_id = add_local_source(artifact, workspace_root=tmp_path, source_type="zim")
+    sidecar = tmp_path / "local" / "manual.yaml"
+
+    assert source_id == "local:manual"
+    assert sidecar.exists()
+    text = sidecar.read_text()
+    assert "id: local:manual" in text
+    assert "path:" in text
+
+
+def test_sync_copies_selected_local_source(tmp_path):
+    generated = tmp_path / "generated"
+    local = tmp_path / "local"
+    drive = tmp_path / "drive"
+    generated.mkdir()
+    local.mkdir()
+    drive.mkdir()
+
+    (generated / "example.zim").write_bytes(b"data")
+    (local / "example.yaml").write_text(
+        """id: local:example
+type: zim
+group: practical
+strategy: local
+path: generated/example.zim
+size_bytes: 4
+"""
+    )
+
+    manifest = Manifest(
+        preset="default-32",
+        region="default",
+        target_path=str(drive),
+        workspace_root=str(tmp_path),
+        local_sources=["local:example"],
+    )
+    manifest.save(drive / "manifest.yaml")
+
+    empty_preset = Preset(
+        name="default-32",
+        description="test",
+        target_size_gb=32,
+        region="default",
+        sources=[],
+    )
+    with patch("svalbard.commands.load_preset", return_value=empty_preset):
+        sync_drive(str(drive))
+
+    assert (drive / "zim" / "local-example.zim").exists()
+    reloaded = Manifest.load(drive / "manifest.yaml")
+    entry = reloaded.entry_by_id("local:example")
+    assert entry is not None
+    assert entry.filename == "local-example.zim"
+    assert entry.relative_path == "zim/local-example.zim"
+    assert entry.source_strategy == "local"
+
+
+def test_add_local_directory_rejects_nested_symlinks(tmp_path):
+    from svalbard.commands import add_local_source
+
+    root = tmp_path / "appdir"
+    root.mkdir()
+    (root / "real.txt").write_text("data")
+    (root / "link.txt").symlink_to(root / "real.txt")
+
+    with pytest.raises(ValueError, match="nested symlinks"):
+        add_local_source(root, workspace_root=tmp_path, source_type="app")

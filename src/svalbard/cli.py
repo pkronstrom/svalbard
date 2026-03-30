@@ -3,6 +3,15 @@
 import click
 from rich.console import Console
 
+from svalbard.crawler import (
+    check_docker,
+    ensure_zimit_image,
+    register_crawled_zim,
+    run_config_crawl,
+    run_url_crawl,
+)
+from svalbard.local_sources import workspace_root as resolve_workspace_root
+
 console = Console()
 
 
@@ -72,11 +81,12 @@ def wizard() -> None:
 @main.command()
 @click.argument("path")
 @click.option("--preset", required=True, help="Preset name (e.g. finland-128)")
-def init(path: str, preset: str) -> None:
+@click.option("--workspace", default=None, help="Workspace root")
+def init(path: str, preset: str, workspace: str | None) -> None:
     """Initialize a drive with a preset."""
     from svalbard.commands import init_drive
 
-    init_drive(path, preset)
+    init_drive(path, preset, workspace_root=str(resolve_workspace_root(workspace)))
 
 
 @main.command()
@@ -126,57 +136,69 @@ def audit(path: str) -> None:
     click.echo(report)
 
 
-@main.command()
-@click.argument("config", required=False)
-@click.option("--all", "crawl_all", is_flag=True, help="Run all configs in crawl/")
-@click.option("--drive", default=".", help="Drive path for output")
-def crawl(config: str | None, crawl_all: bool, drive: str) -> None:
-    """Crawl websites into ZIM files using Zimit (requires Docker)."""
-    from pathlib import Path as P
+@main.group()
+def crawl() -> None:
+    """Crawl websites into workspace-local ZIM files using Zimit."""
 
-    from svalbard.crawler import (
-        check_docker,
-        ensure_zimit_image,
-        list_crawl_configs,
-        load_crawl_config,
-        run_crawl,
-    )
+
+@crawl.command("url")
+@click.argument("url")
+@click.option("-o", "--output", "output_name", required=True, help="Output ZIM filename")
+@click.option("--workspace", default=None, help="Workspace root")
+def crawl_url(url: str, output_name: str, workspace: str | None) -> None:
+    """Crawl one URL and register the generated ZIM locally."""
+    from pathlib import Path as P
 
     if not check_docker():
         console.print("[red]Docker is not available. Install Docker to use svalbard crawl.[/red]")
         return
-
     if not ensure_zimit_image():
         console.print("[red]Failed to pull Zimit image.[/red]")
         return
 
-    drive_path = P(drive)
-    crawl_dir = P.cwd() / "crawl"
+    root = resolve_workspace_root(workspace)
+    artifact = run_url_crawl(url, output_name, root)
+    source_id = register_crawled_zim(root, artifact, url)
+    console.print(f"[green]Created local source:[/green] {source_id}")
 
-    if crawl_all:
-        configs = list_crawl_configs(crawl_dir)
-        if not configs:
-            console.print("[yellow]No crawl configs found in crawl/[/yellow]")
-            console.print("[dim]Copy a .yaml.example to .yaml and edit it.[/dim]")
-            return
-        for cfg_path in configs:
-            cfg = load_crawl_config(cfg_path)
-            console.print(f"\n[bold]Crawling: {cfg.name}[/bold]")
-            run_crawl(cfg, drive_path)
-    elif config:
-        cfg_path = P(config)
-        if not cfg_path.exists():
-            cfg_path = crawl_dir / config
-        if not cfg_path.exists():
-            console.print(f"[red]Config not found: {config}[/red]")
-            return
-        cfg = load_crawl_config(cfg_path)
-        console.print(f"[bold]Crawling: {cfg.name}[/bold]")
-        run_crawl(cfg, drive_path)
-    else:
-        console.print("Usage: svalbard crawl <config.yaml> or svalbard crawl --all")
-        configs = list_crawl_configs(crawl_dir)
-        if configs:
-            console.print(f"\nAvailable configs in crawl/:")
-            for c in configs:
-                console.print(f"  {c.name}")
+
+@crawl.command("config")
+@click.argument("config")
+@click.option("--workspace", default=None, help="Workspace root")
+def crawl_config(config: str, workspace: str | None) -> None:
+    """Run a crawl config and register the resulting local sources."""
+    from pathlib import Path as P
+
+    if not check_docker():
+        console.print("[red]Docker is not available. Install Docker to use svalbard crawl.[/red]")
+        return
+    if not ensure_zimit_image():
+        console.print("[red]Failed to pull Zimit image.[/red]")
+        return
+
+    root = resolve_workspace_root(workspace)
+    config_path = P(config)
+    if not config_path.exists():
+        console.print(f"[red]Config not found: {config}[/red]")
+        return
+    artifacts = run_config_crawl(config_path, root)
+    console.print(f"[green]Generated {len(artifacts)} artifact(s).[/green]")
+
+
+@main.group()
+def local() -> None:
+    """Manage workspace-local sources."""
+
+
+@local.command("add")
+@click.argument("path")
+@click.option("--workspace", default=None, help="Workspace root")
+@click.option("--type", "source_type", default=None, help="Source type override")
+def local_add(path: str, workspace: str | None, source_type: str | None) -> None:
+    """Register a local file or directory as a reusable local source."""
+    from pathlib import Path as P
+
+    from svalbard.commands import add_local_source
+
+    source_id = add_local_source(P(path), workspace_root=resolve_workspace_root(workspace), source_type=source_type)
+    console.print(f"[green]Registered:[/green] {source_id}")

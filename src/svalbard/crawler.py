@@ -1,5 +1,6 @@
 """Website-to-ZIM crawler using Zimit (Docker-based)."""
 
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,6 +13,11 @@ console = Console()
 ZIMIT_IMAGE = "ghcr.io/openzim/zimit:3.0"
 
 
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "crawl"
+
+
 @dataclass
 class CrawlSite:
     url: str
@@ -22,7 +28,7 @@ class CrawlSite:
 @dataclass
 class CrawlConfig:
     name: str
-    output: str  # relative path, e.g. "zim/custom/nordic-emergency.zim"
+    output: str  # relative path, e.g. "generated/nordic-emergency.zim"
     description: str = ""
     tags: list[str] = field(default_factory=list)
     sites: list[CrawlSite] = field(default_factory=list)
@@ -35,17 +41,23 @@ def load_crawl_config(path: Path) -> CrawlConfig:
     with open(path) as f:
         data = yaml.safe_load(f)
 
-    sites = [CrawlSite(**s) for s in data.get("sites", [])]
+    sites = []
+    for site in data.get("sites", []):
+        site_data = dict(site)
+        if "page_limit" in site_data and "max_pages" not in site_data:
+            site_data["max_pages"] = site_data.pop("page_limit")
+        sites.append(CrawlSite(**{k: v for k, v in site_data.items() if k in CrawlSite.__dataclass_fields__}))
 
-    limits = data.get("limits", {})
+    limits = data.get("limits") or data.get("defaults", {})
+    output = data.get("output") or f"generated/{_slugify(data['name'])}.zim"
     return CrawlConfig(
         name=data["name"],
-        output=data["output"],
+        output=output,
         description=data.get("description", ""),
         tags=data.get("tags", []),
         sites=sites,
-        max_size_mb=limits.get("max_size_mb", 0),
-        time_limit_minutes=limits.get("time_limit_minutes", 0),
+        max_size_mb=limits.get("max_size_mb", limits.get("size_limit_mb", 0)),
+        time_limit_minutes=limits.get("time_limit_minutes", limits.get("timeout_minutes", 0)),
     )
 
 
@@ -111,6 +123,93 @@ def run_crawl(config: CrawlConfig, drive_path: Path) -> bool:
             success = False
 
     return success
+
+
+def run_url_crawl(
+    url: str,
+    output_name: str,
+    workspace_root: Path,
+    *,
+    scope: str = "domain",
+    page_limit: int = 0,
+    size_limit_mb: int = 0,
+    time_limit_minutes: int = 0,
+) -> Path:
+    """Run a single direct URL crawl and return the generated artifact path."""
+    output_path = workspace_root / "generated" / output_name
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "docker", "run", "--rm",
+        "-v", f"{output_path.parent}:/output",
+        ZIMIT_IMAGE,
+        "--url", url,
+        "--output", f"/output/{output_path.name}",
+    ]
+    if scope != "domain":
+        cmd.extend(["--scopeType", scope])
+    if page_limit > 0:
+        cmd.extend(["--limit", str(page_limit)])
+    if size_limit_mb > 0:
+        cmd.extend(["--sizeLimit", str(size_limit_mb * 1024 * 1024)])
+    if time_limit_minutes > 0:
+        cmd.extend(["--timeLimit", str(time_limit_minutes * 60)])
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        raise RuntimeError(f"Crawl failed for {url}")
+    return output_path
+
+
+def register_crawled_zim(
+    workspace_root: Path,
+    artifact_path: Path,
+    origin_url: str,
+    source_id: str | None = None,
+) -> str:
+    """Register a generated ZIM as a local source and write crawl metadata."""
+    from svalbard.commands import add_local_source
+
+    source_id = add_local_source(
+        artifact_path,
+        workspace_root=workspace_root,
+        source_type="zim",
+        source_id=source_id or artifact_path.stem,
+    )
+    slug = source_id.split(":", 1)[1]
+    metadata_path = artifact_path.parent / f"{slug}.crawl.yaml"
+    relative_artifact = artifact_path.relative_to(workspace_root).as_posix()
+    metadata_path.write_text(
+        "\n".join(
+            [
+                f"artifact: {relative_artifact}",
+                f"origin_url: {origin_url}",
+                "tool: zimit",
+                "",
+            ]
+        )
+    )
+    return source_id
+
+
+def run_config_crawl(config_path: Path, workspace_root: Path) -> list[Path]:
+    """Run crawl config jobs and return generated artifacts."""
+    config = load_crawl_config(config_path)
+    if len(config.sites) != 1:
+        raise ValueError("Config crawl currently supports single-site configs only")
+    artifacts: list[Path] = []
+    output_name = Path(config.output).name
+    for site in config.sites:
+        artifact = run_url_crawl(
+            site.url,
+            output_name,
+            workspace_root,
+            scope=site.scope,
+            page_limit=site.max_pages,
+            size_limit_mb=config.max_size_mb,
+            time_limit_minutes=config.time_limit_minutes,
+        )
+        register_crawled_zim(workspace_root, artifact, site.url)
+        artifacts.append(artifact)
+    return artifacts
 
 
 def list_crawl_configs(crawl_dir: Path) -> list[Path]:

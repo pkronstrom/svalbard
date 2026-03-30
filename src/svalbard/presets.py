@@ -34,6 +34,11 @@ def _build_recipe_index() -> dict[str, dict]:
     return index
 
 
+def builtin_recipe_ids() -> set[str]:
+    """Return built-in recipe ids from checked-in recipe files."""
+    return set(_build_recipe_index())
+
+
 def load_preset(name: str) -> Preset:
     """Load a preset by name (e.g. 'finland-128'), resolving recipe references."""
     path = PRESETS_DIR / f"{name}.yaml"

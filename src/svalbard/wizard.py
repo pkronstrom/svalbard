@@ -10,6 +10,7 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from svalbard.commands import init_drive, sync_drive
+from svalbard.local_sources import load_local_sources, workspace_root as resolve_workspace_root
 from svalbard.presets import list_presets, load_preset
 
 console = Console()
@@ -127,6 +128,18 @@ def presets_for_space(free_gb: float, region: str = "finland") -> list[tuple[str
 def available_regions() -> list[str]:
     """Return canonical preset regions discovered from preset files."""
     return sorted({load_preset(name).region for name in list_presets()})
+
+
+def local_sources_for_space(
+    free_gb: float, root: Path | str | None = None
+) -> list[tuple[object, float, bool]]:
+    """Return discovered local sources with fit information."""
+    result = []
+    for source in load_local_sources(root):
+        size_gb = source.size_bytes / 1e9 if source.size_bytes else source.size_gb
+        result.append((source, size_gb, size_gb <= free_gb))
+    result.sort(key=lambda item: item[1])
+    return result
 
 
 def run_wizard():
@@ -249,11 +262,41 @@ def run_wizard():
     preset_name = preset_choices[choice]
     preset = load_preset(preset_name)
 
-    # Step 4: Review
-    sources = preset.sources
+    selected_local_ids: list[str] = []
+    selected_local_sources = []
+    workspace = resolve_workspace_root()
+    remaining_gb = max(free_gb - sum(s.size_gb for s in preset.sources), 0)
+    local_candidates = local_sources_for_space(remaining_gb, root=workspace)
+    if local_candidates:
+        console.print("\n[bold]Step 4/5 — Local Sources[/bold]")
+        console.print(f"  Optional local sources ({remaining_gb:.1f} GB remaining):\n")
+        local_choices: dict[str, str] = {}
+        for i, (source, size_gb, fits) in enumerate(local_candidates, 1):
+            status = "" if fits else "  [dim](too large)[/dim]"
+            console.print(
+                f"  [bold]{i}[/bold]) {source.id:20s} ~{size_gb:.1f} GB — {source.description or source.id}{status}"
+            )
+            local_choices[str(i)] = source.id
+
+        raw = Prompt.ask(
+            "\n  Select extra local sources (comma-separated, blank for none)",
+            default="",
+            show_default=False,
+        ).strip()
+        if raw:
+            for part in [p.strip() for p in raw.split(",") if p.strip()]:
+                source_id = local_choices.get(part)
+                if source_id:
+                    selected_local_ids.append(source_id)
+            selected_local_sources = [
+                source for source, _, _ in local_candidates if source.id in selected_local_ids
+            ]
+
+    # Step 5: Review
+    sources = [*preset.sources, *selected_local_sources]
     total_gb = sum(s.size_gb for s in sources)
 
-    console.print(f"\n[bold]Step 4/4 — Review[/bold]")
+    console.print(f"\n[bold]Step 5/5 — Review[/bold]")
 
     table = Table(show_header=True, header_style="bold")
     table.add_column("Source")
@@ -280,6 +323,11 @@ def run_wizard():
         console.print("[dim]Cancelled.[/dim]")
         return
 
-    init_drive(target_path, preset_name)
+    init_drive(
+        target_path,
+        preset_name,
+        workspace_root=str(workspace),
+        local_sources=selected_local_ids,
+    )
     if Confirm.ask("\n  Start downloading now?", default=True):
         sync_drive(target_path)
