@@ -167,6 +167,58 @@ class SearchDB:
             for r in rows
         ]
 
+    # ── Embeddings ────────────────────────────────────────────────────
+
+    def ensure_embeddings_table(self) -> None:
+        """Create embeddings table if it doesn't exist."""
+        self.conn.executescript(
+            "CREATE TABLE IF NOT EXISTS embeddings ("
+            "    article_id INTEGER PRIMARY KEY REFERENCES articles(id),"
+            "    vector     BLOB NOT NULL"
+            ");"
+        )
+
+    def insert_embeddings_batch(self, embeddings: list[tuple]) -> None:
+        """Insert (article_id, vector_blob) tuples."""
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO embeddings (article_id, vector) VALUES (?, ?)",
+            embeddings,
+        )
+        self.conn.commit()
+
+    def get_embeddings(self, article_ids: list[int]) -> dict[int, bytes]:
+        """Fetch embedding vectors for given article IDs."""
+        if not article_ids:
+            return {}
+        placeholders = ",".join("?" for _ in article_ids)
+        rows = self.conn.execute(
+            f"SELECT article_id, vector FROM embeddings "
+            f"WHERE article_id IN ({placeholders})",
+            article_ids,
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+    def embed_resume_point(self) -> int:
+        """Return the last embedded article_id, or 0."""
+        self.ensure_embeddings_table()
+        row = self.conn.execute(
+            "SELECT MAX(article_id) FROM embeddings"
+        ).fetchone()
+        return row[0] if row[0] is not None else 0
+
+    def unembedded_articles(
+        self, after_id: int = 0, limit: int = 1000
+    ) -> list[tuple]:
+        """Return (id, title, body) for articles not yet embedded."""
+        self.ensure_embeddings_table()
+        return self.conn.execute(
+            "SELECT a.id, a.title, a.body FROM articles a "
+            "LEFT JOIN embeddings e ON a.id = e.article_id "
+            "WHERE e.article_id IS NULL AND a.id > ? "
+            "ORDER BY a.id LIMIT ?",
+            (after_id, limit),
+        ).fetchall()
+
     # ── Stats ─────────────────────────────────────────────────────────
 
     def stats(self) -> dict[str, int]:

@@ -1,5 +1,6 @@
 """Tests for svalbard.search_db — SQLite FTS5 cross-ZIM search index."""
 
+import struct
 from pathlib import Path
 
 import pytest
@@ -159,3 +160,72 @@ def test_stats(db: SearchDB):
     s = db.stats()
     assert s["source_count"] == 1
     assert s["article_count"] == 3
+
+
+# ── Embeddings ────────────────────────────────────────────────────────
+
+
+def _make_vector(dims: int, value: float = 0.5) -> bytes:
+    """Create a float32 blob of *dims* dimensions filled with *value*."""
+    return struct.pack(f"{dims}f", *([value] * dims))
+
+
+def test_ensure_embeddings_table(db: SearchDB):
+    """ensure_embeddings_table creates the embeddings table."""
+    db.ensure_embeddings_table()
+    cursor = db.conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='embeddings'"
+    )
+    assert cursor.fetchone() is not None
+
+
+def test_insert_and_query_embeddings(db: SearchDB):
+    """Insert articles + embeddings, then query them back."""
+    source_id = _seed_articles(db)
+    db.ensure_embeddings_table()
+
+    # Get article IDs
+    rows = db.conn.execute("SELECT id FROM articles ORDER BY id").fetchall()
+    ids = [r[0] for r in rows]
+
+    vec = _make_vector(8)
+    db.insert_embeddings_batch([(ids[0], vec), (ids[1], vec)])
+
+    result = db.get_embeddings([ids[0], ids[1], ids[2]])
+    assert ids[0] in result
+    assert ids[1] in result
+    assert ids[2] not in result
+    assert result[ids[0]] == vec
+
+
+def test_embed_resume_point(db: SearchDB):
+    """embed_resume_point returns the max embedded article_id, or 0."""
+    _seed_articles(db)
+    db.ensure_embeddings_table()
+
+    # No embeddings yet
+    assert db.embed_resume_point() == 0
+
+    # Insert one embedding for the first article
+    first_id = db.conn.execute("SELECT MIN(id) FROM articles").fetchone()[0]
+    db.insert_embeddings_batch([(first_id, _make_vector(8))])
+    assert db.embed_resume_point() == first_id
+
+
+def test_unembedded_articles(db: SearchDB):
+    """unembedded_articles returns articles that have no embedding row."""
+    _seed_articles(db)
+    db.ensure_embeddings_table()
+
+    # All 3 should be unembedded
+    unembedded = db.unembedded_articles()
+    assert len(unembedded) == 3
+
+    # Embed the first one
+    first_id = unembedded[0][0]
+    db.insert_embeddings_batch([(first_id, _make_vector(8))])
+
+    # Now only 2 should be unembedded
+    unembedded = db.unembedded_articles()
+    assert len(unembedded) == 2
+    assert all(row[0] != first_id for row in unembedded)
