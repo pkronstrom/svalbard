@@ -12,6 +12,19 @@ from pathlib import Path
 from svalbard.manifest import Manifest
 from svalbard.presets import load_preset
 
+# Canonical type→directory mapping (shared with commands.py)
+TYPE_DIRS = {
+    "zim": "zim",
+    "pmtiles": "maps",
+    "pdf": "books",
+    "epub": "books",
+    "gguf": "models",
+    "binary": "bin",
+    "app": "apps",
+    "iso": "infra",
+    "sqlite": "data",
+}
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ACTIONS_DIR = _PROJECT_ROOT / "recipes" / "actions"
 LIB_DIR = ACTIONS_DIR / "lib"
@@ -43,28 +56,17 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
     preset = load_preset(preset_name)
 
     # ── Browse ──────────────────────────────────────────────────────────
-    zim_count = _count_files(drive_path / "zim", "*.zim")
+    zim_count = _count_files(drive_path / TYPE_DIRS["zim"], "*.zim")
     if zim_count > 0:
         lines.append("[browse]")
         lines.append(
             f"Browse encyclopedias — {zim_count} ZIM files"
             f"\t.svalbard/actions/browse.sh"
         )
-
-        # Individual ZIM entries
-        zim_entries = [e for e in manifest.entries if e.type == "zim"]
-        for entry in sorted(zim_entries, key=lambda e: e.id):
-            source = next((s for s in preset.sources if s.id == entry.id), None)
-            desc = source.description if source else entry.id
-            size = _human_size(entry.size_bytes)
-            lines.append(
-                f"  {desc}  {size}"
-                f"\t.svalbard/actions/browse.sh\t{entry.filename}"
-            )
         lines.append("")
 
     # ── Maps ────────────────────────────────────────────────────────────
-    pmtiles_count = _count_files(drive_path / "maps", "*.pmtiles")
+    pmtiles_count = _count_files(drive_path / TYPE_DIRS["pmtiles"], "*.pmtiles")
     if pmtiles_count > 0:
         lines.append("[maps]")
         lines.append(
@@ -80,7 +82,7 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
         for entry in gguf_entries:
             source = next((s for s in preset.sources if s.id == entry.id), None)
             desc = source.description if source else entry.id
-            model_path = f"models/{entry.filename}"
+            model_path = f"{TYPE_DIRS['gguf']}/{entry.filename}"
             lines.append(
                 f"Chat with {desc}"
                 f"\t.svalbard/actions/chat.sh\t{model_path}"
@@ -88,7 +90,7 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
         lines.append("")
 
     # ── Apps ────────────────────────────────────────────────────────────
-    apps_dir = drive_path / "apps"
+    apps_dir = drive_path / TYPE_DIRS["app"]
     app_sources = [s for s in preset.sources if s.type == "app"]
     visible_apps = []
     if apps_dir.exists():
@@ -129,7 +131,9 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
     # ── Info ─────────────────────────────────────────────────────────────
     lines.append("[info]")
     lines.append("List drive contents\t.svalbard/actions/inspect.sh")
-    lines.append("Verify checksums\t.svalbard/actions/verify.sh")
+    has_checksums = any(e.checksum_sha256 for e in manifest.entries)
+    if has_checksums:
+        lines.append("Verify checksums\t.svalbard/actions/verify.sh")
     lines.append("")
 
     return "\n".join(lines)
@@ -160,8 +164,6 @@ while IFS= read -r line || [ -n "$line" ]; do
         current_group="${BASH_REMATCH[1]}"
         continue
     fi
-    # Skip indented lines (submenu items for browse)
-    [[ "$line" == \ * ]] && continue
     IFS=$'\t' read -r label script args <<< "$line"
     LABELS+=("$label")
     SCRIPTS+=("$script")
@@ -228,11 +230,14 @@ while true; do
     fi
 
     chmod +x "$DRIVE_ROOT/$script" 2>/dev/null || true
+    # Run action script, tolerating non-zero exit (e.g. Ctrl+C stops a service)
+    set +e
     if [ -n "$args" ]; then
         "$DRIVE_ROOT/$script" "$args"
     else
         "$DRIVE_ROOT/$script"
     fi
+    set -e
 
     echo ""
     read -rp "Press Enter to return to menu..."
@@ -241,6 +246,26 @@ done
 
 
 # ── Public API ──────────────────────────────────────────────────────────────
+
+
+def _generate_checksums(svalbard_dir: Path, manifest: Manifest) -> None:
+    """Write checksums.sha256 from manifest entries that have checksums."""
+    lines = []
+    for entry in sorted(manifest.entries, key=lambda e: e.id):
+        if not entry.checksum_sha256:
+            continue
+        # Build relative path from drive root
+        if entry.relative_path:
+            rel_path = entry.relative_path
+        elif entry.platform:
+            rel_path = f"bin/{entry.platform}/{entry.filename}"
+        else:
+            type_dir = TYPE_DIRS.get(entry.type, "other")
+            rel_path = f"{type_dir}/{entry.filename}"
+        lines.append(f"{entry.checksum_sha256}  {rel_path}")
+
+    if lines:
+        (svalbard_dir / "checksums.sha256").write_text("\n".join(lines) + "\n")
 
 
 def _make_executable(path: Path) -> None:
@@ -282,6 +307,9 @@ def generate_toolkit(drive_path: Path, preset_name: str) -> Path:
     manifest = Manifest.load(drive_path / "manifest.yaml")
     tab_content = _build_entries(drive_path, manifest, preset_name)
     (svalbard_dir / "entries.tab").write_text(tab_content)
+
+    # Generate checksums.sha256 from manifest entries
+    _generate_checksums(svalbard_dir, manifest)
 
     # Write run.sh
     run_sh = drive_path / "run.sh"

@@ -127,7 +127,8 @@ def test_entries_tab_always_has_info(tmp_path):
     tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
     assert "[info]" in tab_content
     assert "List drive contents" in tab_content
-    assert "Verify checksums" in tab_content
+    # Verify checksums only appears when manifest has entries with checksums
+    assert "Verify checksums" not in tab_content  # no entries = no checksums
 
 
 def test_regeneration_cleans_old_svalbard_dir(tmp_path):

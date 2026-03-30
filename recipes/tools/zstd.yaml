@@ -5,12 +5,10 @@ tags:
 - computing
 depth: reference-only
 size_gb: 0.002
-platforms:
-  linux-x86_64: https://github.com/facebook/zstd/releases/latest/download/zstd-v1.5.7-linux-x86_64-musl.tar.gz
-  linux-arm64: https://github.com/facebook/zstd/releases/latest/download/zstd-v1.5.7-linux-arm64-musl.tar.gz
-  macos-arm64: https://github.com/facebook/zstd/releases/latest/download/zstd-v1.5.7-macos-arm64.tar.gz
-  macos-x86_64: https://github.com/facebook/zstd/releases/latest/download/zstd-v1.5.7-macos-x86_64.tar.gz
-description: Zstandard — fast real-time compression
+# Deferred: zstd does not ship prebuilt static binaries for Linux/macOS.
+# Needs a build handler to compile from source tarball, or use system package.
+# url: https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
+description: Zstandard — fast real-time compression (deferred — needs build from source)
 license:
   id: BSD-3-Clause
   attribution: Meta / Yann Collet
