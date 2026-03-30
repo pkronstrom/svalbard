@@ -9,6 +9,8 @@ sources:
 - ted-3d-printing
 - joukahainen
 - osm-uusimaa
+- virtavesien-lohikalakannat
+- pohjavesialueet
 - qwen-0.8b
 - llama-server
 - kiwix-serve

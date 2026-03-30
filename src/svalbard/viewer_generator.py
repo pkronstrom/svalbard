@@ -106,7 +106,7 @@ _MAP_VIEWER_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Svalbard Map Viewer</title>
+<title>Offline Map Viewer</title>
 <link rel="stylesheet" href="../maplibre-vendor/vendor/maplibre-gl.css">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -138,7 +138,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 <div id="map"></div>
 <button id="toggle-btn" onclick="toggleSidebar()">&#9776;</button>
 <div id="sidebar">
-  <h2>Svalbard Map</h2>
+  <h2>Offline Map</h2>
   <div id="layer-list"></div>
 </div>
 
@@ -296,6 +296,11 @@ Object.keys(CATEGORIES).forEach((cat) => {
   });
   listEl.appendChild(div);
 });
+
+// Hide sidebar if no overlay layers
+if (LAYERS.length === 0) {
+  document.getElementById("sidebar").style.display = "none";
+}
 
 // Sidebar toggle for mobile
 function toggleSidebar() {
