@@ -68,3 +68,5 @@ sources:
 - dufs
 - fzf
 - 7z
+- sqlite3
+- nomic-embed-text-v1.5
