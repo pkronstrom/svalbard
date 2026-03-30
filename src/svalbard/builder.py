@@ -51,6 +51,7 @@ TOOL_REQUIREMENTS: dict[str, list[str]] = {
 DOCKER_TOOL_IMAGES: dict[str, str] = {
     "ogr2ogr": GEODATA_IMAGE,
     "tippecanoe": GEODATA_IMAGE,
+    "pmtiles": GEODATA_IMAGE,
 }
 
 
@@ -404,14 +405,19 @@ def build_osm_extract(source: Source, drive_path: Path, cache: Path) -> BuildRes
     if not pmtiles_path.exists():
         daily_url = _resolve_protomaps_url()
         log.info("Extracting from %s", daily_url)
-        pmtiles_bin = _find_tool("pmtiles", drive_path) or "pmtiles"
-        _run([
-            pmtiles_bin, "extract",
-            daily_url,
-            str(pmtiles_path),
-            f"--bbox={bbox}",
-            f"--maxzoom={maxzoom}",
-        ])
+        binary, image = _resolve_tool("pmtiles", drive_path)
+        cmd_args = [
+            "extract", daily_url, str(pmtiles_path),
+            f"--bbox={bbox}", f"--maxzoom={maxzoom}",
+        ]
+        if binary:
+            _run([binary, *cmd_args])
+        elif image:
+            _run_docker(image, ["pmtiles", *cmd_args], {
+                str(dest_dir): str(dest_dir),
+            })
+        else:
+            raise RuntimeError("pmtiles not found. Install go-pmtiles or Docker.")
 
     return BuildResult(source.id, True, artifact=pmtiles_path)
 
