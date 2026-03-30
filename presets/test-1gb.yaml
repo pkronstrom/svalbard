@@ -18,3 +18,4 @@ sources:
 - 7z
 - sqlite3
 - nomic-embed-text-v1.5
+- dufs
