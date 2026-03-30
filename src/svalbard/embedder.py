@@ -16,6 +16,36 @@ from pathlib import Path
 import httpx
 
 
+def _extract_archive_to(archive: Path, dest_dir: Path) -> None:
+    """Extract full archive contents into dest_dir, flattening one level of nesting."""
+    import tarfile
+    import tempfile
+    import zipfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        name = archive.name.lower()
+        if name.endswith(".zip"):
+            with zipfile.ZipFile(archive) as zf:
+                zf.extractall(tmp_path)
+        else:
+            with tarfile.open(archive) as tf:
+                tf.extractall(tmp_path, filter="data")
+
+        # Move all files to dest_dir, flattening one level of subdirectory
+        for item in tmp_path.rglob("*"):
+            if not item.is_file():
+                continue
+            dest = dest_dir / item.name
+            if not dest.exists():
+                shutil.copy2(item, dest)
+
+    # Make executables executable
+    for f in dest_dir.iterdir():
+        if f.is_file() and not f.suffix:
+            f.chmod(f.stat().st_mode | 0o755)
+
+
 def _find_llama_server(drive_path: str | Path | None = None) -> str:
     """Find llama-server binary: drive bin/, then system PATH."""
     if drive_path:
@@ -27,27 +57,13 @@ def _find_llama_server(drive_path: str | Path | None = None) -> str:
             return str(candidate)
         # Try extracting archives if binary not found
         if bin_dir.exists():
-            import tarfile
-            import zipfile
             for archive in bin_dir.iterdir():
                 name = archive.name.lower()
                 if not any(name.endswith(s) for s in (".tar.gz", ".tar.xz", ".zip")):
                     continue
-                import tempfile
-                with tempfile.TemporaryDirectory() as tmp:
-                    if name.endswith(".zip"):
-                        with zipfile.ZipFile(archive) as zf:
-                            zf.extractall(tmp)
-                    else:
-                        with tarfile.open(archive) as tf:
-                            tf.extractall(tmp, filter="data")
-                    # Search for llama-server in extracted content
-                    for f in Path(tmp).rglob("llama-server"):
-                        if f.is_file():
-                            dest = bin_dir / "llama-server"
-                            shutil.copy2(f, dest)
-                            dest.chmod(dest.stat().st_mode | 0o755)
-                            return str(dest)
+                _extract_archive_to(archive, bin_dir)
+                if (bin_dir / "llama-server").exists():
+                    return str(bin_dir / "llama-server")
     path = shutil.which("llama-server")
     if path:
         return path
@@ -114,7 +130,14 @@ def embed_batch(
     resp = httpx.post(url, json=payload, timeout=120)
     resp.raise_for_status()
     data = resp.json()
-    return [item["embedding"] for item in data]
+    results = []
+    for item in data:
+        emb = item["embedding"]
+        # llama-server may wrap embeddings in an extra list
+        if emb and isinstance(emb[0], list):
+            emb = emb[0]
+        results.append(emb)
+    return results
 
 
 def vectors_to_blob(vectors: list[list[float]]) -> list[bytes]:
