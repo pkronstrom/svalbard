@@ -238,7 +238,7 @@ def local_add(path: str, workspace: str | None, source_type: str | None) -> None
 
 @main.command()
 @click.argument("path", default=".")
-@click.option("--strategy", type=click.Choice(["fast", "standard"]), default="fast", help="Indexing strategy tier (semantic coming soon)")
+@click.option("--strategy", type=click.Choice(["fast", "standard", "semantic"]), default="fast", help="Indexing strategy tier")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 def index(path, strategy, yes):
     """Build search index over ZIM files on a drive."""
@@ -264,21 +264,14 @@ def index(path, strategy, yes):
     plan = estimate_index(drive_path, db, strategy=strategy)
 
     # 4. Display plan summary
-    console.print(f"\n[bold]Index plan[/bold]")
-    console.print(f"  Total ZIMs:       {plan.total_zims}")
-    console.print(f"  New:              {plan.new_zims}")
-    console.print(f"  Already indexed:  {plan.already_indexed}")
-    console.print(f"  Changed:          {plan.changed_zims}")
-    console.print(f"  Missing from disk:{plan.missing_zims}")
+    has_text_work = bool(plan.files_to_index)
+    has_embed_work = plan.needs_embedding and plan.articles_to_embed > 0
 
-    # 5. Nothing to do?
-    if not plan.files_to_index:
+    if not has_text_work and not has_embed_work:
         console.print("\n[green]Index is up to date.[/green]")
         return
 
-    # 6. Show estimated DB size
-    est_mb = plan.estimated_db_bytes / (1024 * 1024)
-    console.print(f"\n  Estimated DB size: {est_mb:.1f} MB")
+    console.print(f"\n[bold]Index plan[/bold]")
     strategy_desc = {
         "fast": "indexes titles and article summaries — quick to build, good for simple keyword lookups",
         "standard": "indexes full article text — slower to build, finds matches deeper in content",
@@ -286,34 +279,51 @@ def index(path, strategy, yes):
     }
     console.print(f"  Strategy: [bold]{strategy}[/bold] — {strategy_desc[strategy]}")
 
-    # 7. Confirmation
+    if has_text_work:
+        console.print(f"\n  Text indexing:")
+        console.print(f"    ZIMs to index:  {len(plan.files_to_index)} of {plan.total_zims}")
+        if plan.new_zims:
+            console.print(f"    New:            {plan.new_zims}")
+        if plan.changed_zims:
+            console.print(f"    Re-index:       {plan.changed_zims}")
+        est_mb = plan.estimated_db_bytes / (1024 * 1024)
+        console.print(f"    Estimated size: {est_mb:.1f} MB")
+
+    if has_embed_work:
+        console.print(f"\n  Embedding:")
+        console.print(f"    Articles to embed: {plan.articles_to_embed}")
+
+    # 5. Confirmation
     if not yes:
         from rich.prompt import Confirm
 
-        if not Confirm.ask("\n  Proceed with indexing?", default=True):
+        if not Confirm.ask("\n  Proceed?", default=True):
             console.print("Aborted.")
             return
 
-    # 8. Index with progress bar
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskID
+    # 6. Index with progress bar
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
-        TextColumn("{task.completed}/{task.total} articles"),
+        TextColumn("{task.completed}/{task.total}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Indexing", total=plan.estimated_articles)
+        task = progress.add_task("Indexing", total=plan.estimated_articles or plan.articles_to_embed)
 
-        def on_progress(filename: str, articles_done: int, total_files: int):
-            progress.update(task, description=f"[cyan]{filename}[/cyan]")
-            progress.update(task, completed=articles_done)
+        def on_progress(phase: str, done: int, total: int):
+            progress.update(task, description=f"[cyan]{phase}[/cyan]", completed=done, total=total)
 
         result = run_index(drive_path, db, strategy=strategy, on_progress=on_progress)
 
-    # 9. Final stats
+    # 7. Final stats
     stats = db.stats()
     console.print(f"\n[green]Indexing complete.[/green]")
+    console.print(f"  Tier: {stats.get('tier', strategy)}")
     console.print(f"  Sources: {stats['source_count']}")
     console.print(f"  Articles: {stats['article_count']}")
+    if strategy == "semantic":
+        embed_count = db.embed_resume_point()
+        console.print(f"  Embeddings: {embed_count}")
