@@ -47,7 +47,7 @@ _embed_server_running() {
 }
 
 _start_embed_server() {
-    echo "  Starting embedding server..." >&2
+    echo "  Starting embedding server..."
     "$LLAMA_BIN" --model "$EMBED_MODEL" --embedding --port "$EMBED_PORT" --host 127.0.0.1 >/dev/null 2>&1 &
     EMBED_PID=$!
     for i in $(seq 1 30); do
@@ -162,11 +162,11 @@ while true; do
     if [ -n "$results" ] && [ "$mode" = "semantic" ]; then
         # Ensure embedding server is running
         if ! _embed_server_running; then
-            _start_embed_server || { echo "  (semantic unavailable, using keyword)" >&2; mode="keyword"; }
+            _start_embed_server || { echo "  (semantic unavailable, using keyword)"; mode="keyword"; }
         fi
 
         if _embed_server_running; then
-            echo "  Reranking with semantic search..." >&2
+            echo "  Reranking with semantic search..."
             # Get candidate IDs
             candidate_ids=$(echo "$results" | cut -f1 | tr '\n' ',' | sed 's/,$//')
             ranked_ids=$(_semantic_rerank "$query" "$candidate_ids" || true)
