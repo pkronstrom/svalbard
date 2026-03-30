@@ -133,9 +133,7 @@ trap cleanup EXIT
 query="${1:-}"
 while true; do
     if [ -z "$query" ]; then
-        mode_hint=""
-        [ "$best_mode" = "semantic" ] && mode_hint=" [tab=toggle $mode]"
-        printf "\n  Search (q quit${mode_hint}): "
+        printf "\n  [$mode] Search (/fts /sem q): "
         read -r query
     fi
     [[ "$query" = q || "$query" = Q || -z "$query" ]] && exit 0
