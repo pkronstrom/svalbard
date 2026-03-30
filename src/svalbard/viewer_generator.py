@@ -50,6 +50,7 @@ def _layer_defs_from_preset(
             continue
 
         viewer = recipe.get("viewer", {})
+        build = recipe.get("build", {})
         entry = {
             "id": source.id,
             "name": viewer.get("name", source.id),
@@ -57,6 +58,7 @@ def _layer_defs_from_preset(
             "category": viewer.get("category", "other"),
             "style": viewer.get("style", {}),
             "filename": f"{source.id}.pmtiles",
+            "source_layer": build.get("layer_name", source.id.replace("-", "_")),
         }
 
         if viewer.get("category") == "basemap":
@@ -218,7 +220,7 @@ LAYERS.forEach((layer) => {
       id: layer.id + "-fill",
       type: "fill",
       source: layer.id,
-      "source-layer": layer.id.replace(/-/g, "_"),
+      "source-layer": (layer.source_layer || layer.id.replace(/-/g, "_")),
       paint: {
         "fill-color": s.polygons["fill-color"] || "#888",
         "fill-opacity": s.polygons["fill-opacity"] || 0.3,
@@ -230,7 +232,7 @@ LAYERS.forEach((layer) => {
         id: layer.id + "-line",
         type: "line",
         source: layer.id,
-        "source-layer": layer.id.replace(/-/g, "_"),
+        "source-layer": (layer.source_layer || layer.id.replace(/-/g, "_")),
         paint: {
           "line-color": s.polygons["line-color"],
           "line-width": s.polygons["line-width"] || 1,
@@ -244,7 +246,7 @@ LAYERS.forEach((layer) => {
       id: layer.id + "-line",
       type: "line",
       source: layer.id,
-      "source-layer": layer.id.replace(/-/g, "_"),
+      "source-layer": (layer.source_layer || layer.id.replace(/-/g, "_")),
       paint: {
         "line-color": s.lines["line-color"] || "#888",
         "line-width": s.lines["line-width"] || 2,
@@ -257,7 +259,7 @@ LAYERS.forEach((layer) => {
       id: layer.id + "-circle",
       type: "circle",
       source: layer.id,
-      "source-layer": layer.id.replace(/-/g, "_"),
+      "source-layer": (layer.source_layer || layer.id.replace(/-/g, "_")),
       paint: {
         "circle-color": s.points["circle-color"] || "#888",
         "circle-radius": s.points["circle-radius"] || 5,
