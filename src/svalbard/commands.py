@@ -453,17 +453,11 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
                             old_path.unlink()
                             console.print(f"  [dim]Removed old: {existing.filename}[/dim]")
 
-                    # Extract binary-type archives into usable executables
-                    if job.source_type == "binary" and _is_archive(r.filepath):
-                        extracted = _extract_binaries(r.filepath, job.dest_dir, job.source_id)
-                        if extracted:
-                            console.print(f"  [dim]Extracted: {', '.join(e.name for e in extracted)}[/dim]")
-
                     entry = ManifestEntry(
                         id=job.source_id,
                         type=job.source.type,
                         filename=r.filepath.name,
-                        size_bytes=r.filepath.stat().st_size if r.filepath.exists() else sum(e.stat().st_size for e in job.dest_dir.iterdir() if e.is_file()),
+                        size_bytes=r.filepath.stat().st_size,
                         platform=job.platform,
                         tags=job.source.tags,
                         depth=job.source.depth,
