@@ -173,9 +173,7 @@ while true; do
     echo ""
     echo "Svalbard"
     echo "────────────────────────────────"
-    pg=""
     for (( i=0; i<total; i++ )); do
-        [[ "${groups[$i]}" != "$pg" ]] && { [[ -n "$pg" ]] && echo ""; pg="${groups[$i]}"; }
         printf "  %2d) %s\n" "$((i+1))" "${labels[$i]}"
     done
     echo ""
