@@ -9,7 +9,7 @@ strategy: build
 
 build:
   family: vector-static
-  source_url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/virtavesien_lohikalakannat.zip
+  source_url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/lohikalakannat.zip
   source_format: shapefile
   source_srs: "EPSG:3067"
   layer_name: lohikalakannat
