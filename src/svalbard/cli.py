@@ -282,7 +282,7 @@ def index(path, strategy, yes):
     strategy_desc = {
         "fast": "indexes titles and article summaries — quick to build, good for simple keyword lookups",
         "standard": "indexes full article text — slower to build, finds matches deeper in content",
-        "semantic": "adds AI-powered meaning search on top of standard — understands synonyms and related concepts, requires an embedding model",
+        "semantic": "adds AI-powered meaning search on top of standard — understands synonyms and related concepts",
     }
     console.print(f"  Strategy: [bold]{strategy}[/bold] — {strategy_desc[strategy]}")
 
