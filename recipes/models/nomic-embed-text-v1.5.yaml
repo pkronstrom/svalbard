@@ -1,0 +1,11 @@
+id: nomic-embed-text-v1.5
+type: gguf
+group: models
+tags: [embedding, search]
+depth: reference-only
+size_gb: 0.14
+url: https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf
+description: Nomic Embed Text v1.5 — small embedding model for semantic search
+license:
+  id: Apache-2.0
+  attribution: Nomic AI
