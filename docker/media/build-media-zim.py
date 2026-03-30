@@ -215,10 +215,11 @@ def _download_with_yle_dl(url: str, download_dir: Path, quality: str, audio_only
     return items
 
 
-def _download_with_yt_dlp(url: str, download_dir: Path, quality: str, audio_only: bool) -> list[MediaItem]:
+def _yt_dlp_download_cmd(url: str, quality: str, *, audio_only: bool) -> list[str]:
     cmd = [
         "yt-dlp",
         "--no-progress",
+        "--ignore-errors",
         "--restrict-filenames",
         "--write-info-json",
         "--write-thumbnail",
@@ -230,6 +231,8 @@ def _download_with_yt_dlp(url: str, download_dir: Path, quality: str, audio_only
         "vtt",
         "--sub-langs",
         "all,-live_chat",
+        "--extractor-args",
+        "youtube:skip=translated_subs",
         "-o",
         "%(playlist_index&{}- |)s%(title).120B [%(id)s].%(ext)s",
     ]
@@ -238,6 +241,11 @@ def _download_with_yt_dlp(url: str, download_dir: Path, quality: str, audio_only
     elif quality != "source":
         cmd.extend(["-S", f"res:{quality.removesuffix('p')}"])
     cmd.append(url)
+    return cmd
+
+
+def _download_with_yt_dlp(url: str, download_dir: Path, quality: str, audio_only: bool) -> list[MediaItem]:
+    cmd = _yt_dlp_download_cmd(url, quality, audio_only=audio_only)
     _run(cmd, cwd=download_dir)
     return _collect_yt_dlp_items(download_dir, url, audio_only=audio_only)
 

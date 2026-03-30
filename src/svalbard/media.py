@@ -6,7 +6,9 @@ import subprocess
 from pathlib import Path
 
 
-MEDIA_IMAGE = "svalbard-media"
+# Bump this tag when the media container contents change so local Docker
+# caches do not keep running stale ingest logic.
+MEDIA_IMAGE = "svalbard-media:v2"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
