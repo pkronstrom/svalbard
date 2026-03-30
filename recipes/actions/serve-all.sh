@@ -26,7 +26,7 @@ if [ -n "$KIWIX_BIN" ] && [ ${#zim_files[@]} -gt 0 ]; then
     ui_status "Kiwix:  http://$BIND:$port"
 fi
 
-PMTILES_BIN="$(find_binary go-pmtiles 2>/dev/null || true)"
+PMTILES_BIN="$(find_binary pmtiles 2>/dev/null || find_binary go-pmtiles 2>/dev/null || true)"
 if [ -n "$PMTILES_BIN" ] && [ -d "$DRIVE_ROOT/maps" ]; then
     port="$(find_free_port 8081)"
     "$PMTILES_BIN" serve "$DRIVE_ROOT/maps" --port "$port" &

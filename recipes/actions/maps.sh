@@ -6,9 +6,9 @@ source "$DRIVE_ROOT/.svalbard/lib/binaries.sh"
 source "$DRIVE_ROOT/.svalbard/lib/ports.sh"
 source "$DRIVE_ROOT/.svalbard/lib/process.sh"
 
-PMTILES_BIN="$(find_binary go-pmtiles 2>/dev/null || true)"
+PMTILES_BIN="$(find_binary pmtiles 2>/dev/null || find_binary go-pmtiles 2>/dev/null || true)"
 if [ -z "$PMTILES_BIN" ]; then
-    ui_error "go-pmtiles not found."
+    ui_error "pmtiles not found."
     exit 1
 fi
 
