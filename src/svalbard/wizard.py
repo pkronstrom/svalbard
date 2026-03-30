@@ -169,7 +169,7 @@ def local_sources_for_space(
     return result
 
 
-def run_wizard(target_path: str | None = None):
+def run_wizard(target_path: str | None = None, preset_name: str | None = None):
     """Run the interactive setup wizard."""
     console.print(Panel(
         "[bold]Svalbard — Seed Vault for Human Knowledge[/bold]\n\n"
@@ -221,9 +221,7 @@ def run_wizard(target_path: str | None = None):
     else:
         console.print(f"\n  [bold]Target:[/bold] {target_path}")
 
-    # Step 2: Region
-    console.print("\n[bold]Step 2/4 — Region[/bold]")
-    # Check free space — use parent if target doesn't exist yet
+    # Check free space
     space_check = Path(target_path)
     while not space_check.exists() and space_check.parent != space_check:
         space_check = space_check.parent
@@ -233,63 +231,70 @@ def run_wizard(target_path: str | None = None):
     except OSError:
         free_gb = 0
 
-    regions = available_regions()
-    if not regions:
-        console.print("[red]No preset regions available.[/red]")
-        return
+    if preset_name is None:
+        # Step 2: Region
+        console.print("\n[bold]Step 2/4 — Region[/bold]")
 
-    region_choices = {str(i): region for i, region in enumerate(regions, 1)}
-    for key, region in region_choices.items():
-        console.print(f"  [bold]{key}[/bold]) {region}")
+        regions = available_regions()
+        if not regions:
+            console.print("[red]No preset regions available.[/red]")
+            return
 
-    default_region = "finland" if "finland" in regions else regions[0]
-    default_region_key = next(
-        key for key, region in region_choices.items() if region == default_region
-    )
-    region_choice = Prompt.ask(
-        "\n  Select",
-        choices=list(region_choices.keys()),
-        default=default_region_key,
-    )
-    selected_region = region_choices[region_choice]
+        region_choices = {str(i): region for i, region in enumerate(regions, 1)}
+        for key, region in region_choices.items():
+            console.print(f"  [bold]{key}[/bold]) {region}")
 
-    # Step 3: Preset
-    console.print("\n[bold]Step 3/4 — Preset[/bold]")
-    all_presets = presets_for_space(free_gb, region=selected_region) if free_gb > 0 else []
+        default_region = "finland" if "finland" in regions else regions[0]
+        default_region_key = next(
+            key for key, region in region_choices.items() if region == default_region
+        )
+        region_choice = Prompt.ask(
+            "\n  Select",
+            choices=list(region_choices.keys()),
+            default=default_region_key,
+        )
+        selected_region = region_choices[region_choice]
 
-    if not all_presets:
-        if free_gb > 0:
-            console.print(f"[red]No presets available for region '{selected_region}'.[/red]")
-        else:
-            console.print("[red]Could not determine free space at target.[/red]")
-        return
+        # Step 3: Preset
+        console.print("\n[bold]Step 3/4 — Preset[/bold]")
+        all_presets = presets_for_space(free_gb, region=selected_region) if free_gb > 0 else []
 
-    console.print(f"  Presets ({free_gb:.0f} GB free):\n")
-    preset_choices = {}
-    recommended = None
-    for i, (name, content_gb, fits) in enumerate(all_presets, 1):
-        p = load_preset(name, workspace=resolve_workspace_root())
-        preset_choices[str(i)] = name
-        if fits:
-            recommended = str(i)
-            over = ""
-            marker = ""
-        else:
-            over = f"  (needs ~{content_gb - free_gb:.0f} GB more)"
-            marker = "[dim]"
+        if not all_presets:
+            if free_gb > 0:
+                console.print(f"[red]No presets available for region '{selected_region}'.[/red]")
+            else:
+                console.print("[red]Could not determine free space at target.[/red]")
+            return
 
-        line = f"  [bold]{i}[/bold]) {marker}{name:15s}  ~{content_gb:.0f} GB  — {p.description}{over}"
-        if marker:
-            line += "[/dim]"
-        console.print(line)
+        console.print(f"  Presets ({free_gb:.0f} GB free):\n")
+        preset_choices = {}
+        recommended = None
+        for i, (name, content_gb, fits) in enumerate(all_presets, 1):
+            p = load_preset(name, workspace=resolve_workspace_root())
+            preset_choices[str(i)] = name
+            if fits:
+                recommended = str(i)
+                over = ""
+                marker = ""
+            else:
+                over = f"  (needs ~{content_gb - free_gb:.0f} GB more)"
+                marker = "[dim]"
 
-    # Mark recommended after printing all lines
-    if recommended:
-        console.print(f"\n  [green]Enter = {preset_choices[recommended]} (recommended)[/green]")
+            line = f"  [bold]{i}[/bold]) {marker}{name:15s}  ~{content_gb:.0f} GB  — {p.description}{over}"
+            if marker:
+                line += "[/dim]"
+            console.print(line)
 
-    default_choice = recommended or "1"
-    choice = Prompt.ask("\n  Select", choices=list(preset_choices.keys()), default=default_choice)
-    preset_name = preset_choices[choice]
+        # Mark recommended after printing all lines
+        if recommended:
+            console.print(f"\n  [green]Enter = {preset_choices[recommended]} (recommended)[/green]")
+
+        default_choice = recommended or "1"
+        choice = Prompt.ask("\n  Select", choices=list(preset_choices.keys()), default=default_choice)
+        preset_name = preset_choices[choice]
+    else:
+        console.print(f"\n  [bold]Preset:[/bold] {preset_name}")
+
     preset = load_preset(preset_name, workspace=resolve_workspace_root())
 
     selected_local_ids: list[str] = []
