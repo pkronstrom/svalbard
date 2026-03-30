@@ -35,7 +35,9 @@ fi
 source_count="$("$SQLITE_BIN" "$DB" "SELECT count(*) FROM sources;")"
 article_count="$("$SQLITE_BIN" "$DB" "SELECT count(*) FROM articles;")"
 mode="keyword"
-[ -n "$LLAMA_BIN" ] && [ -n "$EMBED_MODEL" ] && mode="semantic"
+best_mode="keyword"
+[ -n "$LLAMA_BIN" ] && [ -n "$EMBED_MODEL" ] && best_mode="semantic"
+mode="$best_mode"
 
 echo ""
 echo "Cross-ZIM Search ($source_count sources, $article_count articles, $mode)"
@@ -131,12 +133,21 @@ trap cleanup EXIT
 query="${1:-}"
 while true; do
     if [ -z "$query" ]; then
-        printf "\n  Search (q to quit): "
+        mode_hint=""
+        [ "$best_mode" = "semantic" ] && mode_hint=" [tab=toggle $mode]"
+        printf "\n  Search (q quit${mode_hint}): "
         read -r query
     fi
     [[ "$query" = q || "$query" = Q || -z "$query" ]] && exit 0
+    # Tab key sends nothing useful via read, so use /fts and /sem commands
+    if [[ "$query" = "/fts" || "$query" = "/keyword" ]]; then
+        mode="keyword"; echo "  Switched to keyword search"; query=""; continue
+    fi
+    if [[ "$query" = "/sem" || "$query" = "/semantic" ]]; then
+        mode="$best_mode"; echo "  Switched to semantic search"; query=""; continue
+    fi
     clear 2>/dev/null || true
-    echo "Searching: $query"
+    echo "Searching ($mode): $query"
 
     results=""
 
