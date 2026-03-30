@@ -145,7 +145,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 <script src="../maplibre-vendor/vendor/maplibre-gl.js"></script>
 <script src="../maplibre-vendor/vendor/pmtiles.js"></script>
 <script>
-const PMTILES_PORT = 8081;
 const LAYERS = __LAYERS_JSON__;
 const BASEMAP = __BASEMAP_JSON__;
 const CATEGORIES = __CATEGORIES_JSON__;
@@ -154,9 +153,9 @@ const CATEGORIES = __CATEGORIES_JSON__;
 const protocol = new pmtiles.Protocol();
 maplibregl.addProtocol("pmtiles", protocol.tile);
 
-// Build map style
+// Build map style — use same origin so no CORS issues
 const pmtilesUrl = (filename) =>
-  `pmtiles://http://localhost:${PMTILES_PORT}/${filename}`;
+  `pmtiles://${window.location.origin}/maps/${filename}`;
 
 const style = {
   version: 8,

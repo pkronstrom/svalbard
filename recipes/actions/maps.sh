@@ -6,38 +6,28 @@ source "$DRIVE_ROOT/.svalbard/lib/binaries.sh"
 source "$DRIVE_ROOT/.svalbard/lib/ports.sh"
 source "$DRIVE_ROOT/.svalbard/lib/process.sh"
 
-PMTILES_BIN="$(find_binary pmtiles 2>/dev/null || find_binary go-pmtiles 2>/dev/null || true)"
-if [ -z "$PMTILES_BIN" ]; then
-    ui_error "pmtiles not found."
-    exit 1
-fi
-
 trap_cleanup
 
-tile_port="$(find_free_port 8081)"
-echo "Starting tile server on port $tile_port..."
-"$PMTILES_BIN" serve "$DRIVE_ROOT/maps" --port "$tile_port" &
+# Serve the entire drive root on one port — no CORS issues.
+# PMTiles JS reads /maps/*.pmtiles via byte-range requests,
+# map viewer loads from /apps/map/index.html on the same origin.
+port="$(find_free_port 8081)"
+
+DUFS_BIN="$(find_binary dufs 2>/dev/null || true)"
+if [ -n "$DUFS_BIN" ]; then
+    "$DUFS_BIN" --bind "127.0.0.1" --port "$port" --allow-all "$DRIVE_ROOT" &
+elif command -v python3 >/dev/null 2>&1; then
+    python3 -m http.server "$port" --bind 127.0.0.1 --directory "$DRIVE_ROOT" >/dev/null 2>&1 &
+else
+    ui_error "No file server available (install dufs or python3)."
+    exit 1
+fi
 SVALBARD_PIDS+=($!)
+sleep 1
 
 if [ -f "$DRIVE_ROOT/apps/map/index.html" ]; then
-    app_port="$(find_free_port 8083)"
-    DUFS_BIN="$(find_binary dufs 2>/dev/null || true)"
-    if [ -n "$DUFS_BIN" ]; then
-        "$DUFS_BIN" --bind "127.0.0.1" --port "$app_port" "$DRIVE_ROOT" &
-    elif command -v python3 >/dev/null 2>&1; then
-        python3 -m http.server "$app_port" --directory "$DRIVE_ROOT" >/dev/null 2>&1 &
-    else
-        ui_error "No file server available for map viewer."
-        wait_for_services
-        exit 1
-    fi
-    SVALBARD_PIDS+=($!)
-    sleep 1
-    open_browser "http://localhost:$app_port/apps/map/"
-    ui_status "Map viewer: http://localhost:$app_port/apps/map/"
-else
-    ui_status "Tile server: http://localhost:$tile_port"
+    open_browser "http://localhost:$port/apps/map/"
+    ui_status "Map viewer: http://localhost:$port/apps/map/"
 fi
-
-ui_status "Tiles: http://localhost:$tile_port"
+ui_status "Files: http://localhost:$port"
 wait_for_services
