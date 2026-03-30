@@ -27,6 +27,6 @@ viewer:
   search: true
 
 license:
-  attribution: Joukahainen / Puimula
-  url: https://joukahainen.puimula.org
-  note: Verify redistribution terms
+  id: GPL-2.0-or-later
+  attribution: Voikko project contributors
+  url: https://voikko.puimula.org/

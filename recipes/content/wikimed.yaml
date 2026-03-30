@@ -10,3 +10,6 @@ depth: comprehensive
 size_gb: 2.0
 url_pattern: https://download.kiwix.org/zim/other/mdwiki_en_all_{date}.zim
 description: WikiMed medical encyclopedia
+license:
+  id: CC-BY-SA-3.0
+  attribution: WikiProjectMed contributors

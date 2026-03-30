@@ -7,3 +7,8 @@ depth: comprehensive
 size_gb: 2.1
 url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_bio_{date}.zim
 description: LibreTexts Biology — open textbooks covering cell biology, ecology, genetics, and microbiology
+license:
+  id: CC-BY-NC-SA-4.0
+  attribution: LibreTexts contributors
+  url: https://libretexts.org/licensing
+  noncommercial: true

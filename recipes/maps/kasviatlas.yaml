@@ -34,6 +34,6 @@ viewer:
       fill-opacity: 0.2
 
 license:
+  id: CC-BY-4.0
   attribution: University of Helsinki, Finnish Museum of Natural History (LUOMUS)
-  url: https://kasviatlas.fi
-  note: Verify license terms before redistribution
+  url: https://laji.fi/about/845

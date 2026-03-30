@@ -2,6 +2,16 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class License:
+    id: str = ""  # SPDX identifier (e.g. CC-BY-SA-3.0, Apache-2.0)
+    attribution: str = ""
+    url: str = ""
+    noncommercial: bool = False
+    redistribution: str = ""  # "allowed" (default), "prohibited"
+    note: str = ""
+
+
+@dataclass
 class Source:
     id: str
     type: str  # zim, pmtiles, pdf, gguf, binary, app, iso
@@ -14,6 +24,7 @@ class Source:
     platforms: dict[str, str] = field(default_factory=dict)
     description: str = ""
     sha256: str = ""  # expected hash (if empty, try fetching .sha256 sidecar)
+    license: License | None = None
 
 
 @dataclass

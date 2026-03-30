@@ -10,3 +10,6 @@ depth: comprehensive
 size_gb: 1.0
 url_pattern: https://download.kiwix.org/zim/other/practical_action_en_all_{date}.zim
 description: Practical Action appropriate technology guides
+license:
+  id: CC-BY-SA-4.0
+  attribution: Practical Action via Appropedia

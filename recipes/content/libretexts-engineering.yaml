@@ -9,3 +9,8 @@ depth: comprehensive
 size_gb: 0.65
 url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_eng_{date}.zim
 description: LibreTexts Engineering — open textbooks covering civil, mechanical, electrical, and environmental engineering
+license:
+  id: CC-BY-NC-SA-4.0
+  attribution: LibreTexts contributors
+  url: https://libretexts.org/licensing
+  noncommercial: true

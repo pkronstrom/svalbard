@@ -7,3 +7,6 @@ depth: reference-only
 size_gb: 0.005
 url: https://github.com/ggerganov/llama.cpp/releases/latest/download/llama-server-linux-x86_64
 description: llama.cpp server binary for serving GGUF models
+license:
+  id: MIT
+  attribution: Georgi Gerganov and llama.cpp contributors

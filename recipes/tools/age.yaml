@@ -7,3 +7,6 @@ depth: reference-only
 size_gb: 0.005
 url: https://github.com/FiloSottile/age
 description: age — simple, modern file encryption tool (keygen + encrypt/decrypt)
+license:
+  id: BSD-3-Clause
+  attribution: Filippo Valsorda

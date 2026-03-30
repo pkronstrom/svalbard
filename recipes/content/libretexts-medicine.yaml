@@ -8,3 +8,8 @@ depth: comprehensive
 size_gb: 1.1
 url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_med_{date}.zim
 description: LibreTexts Medicine — open textbooks covering anatomy, physiology, pharmacology, and clinical sciences
+license:
+  id: CC-BY-NC-SA-4.0
+  attribution: LibreTexts contributors
+  url: https://libretexts.org/licensing
+  noncommercial: true

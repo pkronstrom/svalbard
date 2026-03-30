@@ -15,3 +15,6 @@ depth: comprehensive
 size_gb: 110.0
 url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_{date}.zim
 description: English Wikipedia — full with all pictures
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

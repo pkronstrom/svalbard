@@ -11,3 +11,6 @@ platforms:
   macos-x86_64: https://download.kiwix.org/release/kiwix-tools/kiwix-tools_macos-x86_64.tar.gz
   macos-arm64: https://download.kiwix.org/release/kiwix-tools/kiwix-tools_macos-arm64.tar.gz
 description: Kiwix tools archive for all supported desktop platforms
+license:
+  id: GPL-3.0-or-later
+  attribution: Kiwix

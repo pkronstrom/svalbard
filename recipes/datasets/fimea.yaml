@@ -32,6 +32,6 @@ viewer:
   search: true
 
 license:
+  id: CC-BY-4.0
   attribution: Finnish Medicines Agency (Fimea)
-  url: https://www.fimea.fi
-  note: Verify redistribution terms
+  url: https://fimea.fi/en/about_us/open-data

@@ -7,3 +7,6 @@ depth: overview
 size_gb: 0.02
 url_pattern: https://download.kiwix.org/zim/other/zimgit-water_en_{date}.zim
 description: Water sourcing, purification, and safety reference
+license:
+  id: CC-BY-SA-4.0
+  attribution: zimgit contributors
