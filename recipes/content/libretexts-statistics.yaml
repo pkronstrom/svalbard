@@ -1,0 +1,9 @@
+id: libretexts-statistics
+type: zim
+group: education
+tags:
+- mathematics
+depth: overview
+size_gb: 0.2
+url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_stats_{date}.zim
+description: LibreTexts Statistics — open textbooks covering probability, statistical methods, and data analysis

@@ -1,0 +1,12 @@
+id: zimgit-post-disaster
+type: zim
+group: practical
+tags:
+- emergency-medicine
+- fire-shelter
+- water
+- civil-construction
+depth: comprehensive
+size_gb: 0.6
+url_pattern: https://download.kiwix.org/zim/other/zimgit-post-disaster_en_{date}.zim
+description: Post-disaster response guides — shelter, water, sanitation, infrastructure recovery

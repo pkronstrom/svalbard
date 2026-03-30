@@ -1,0 +1,10 @@
+id: libretexts-medicine
+type: zim
+group: education
+tags:
+- medicine
+- biology
+depth: comprehensive
+size_gb: 1.1
+url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_med_{date}.zim
+description: LibreTexts Medicine — open textbooks covering anatomy, physiology, pharmacology, and clinical sciences

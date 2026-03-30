@@ -1,0 +1,10 @@
+id: libretexts-geosciences
+type: zim
+group: education
+tags:
+- agriculture
+- water
+depth: comprehensive
+size_gb: 1.1
+url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_geo_{date}.zim
+description: LibreTexts Geosciences — open textbooks covering geology, meteorology, oceanography, and soil science

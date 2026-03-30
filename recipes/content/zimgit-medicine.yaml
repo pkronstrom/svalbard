@@ -1,0 +1,10 @@
+id: zimgit-medicine
+type: zim
+group: practical
+tags:
+- medicine
+- first-aid
+depth: overview
+size_gb: 0.067
+url_pattern: https://download.kiwix.org/zim/other/zimgit-medicine_en_{date}.zim
+description: Practical medicine reference — supplements WikiMed with field-oriented content

@@ -1,0 +1,9 @@
+id: libretexts-physics
+type: zim
+group: education
+tags:
+- physics
+depth: comprehensive
+size_gb: 0.53
+url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_phys_{date}.zim
+description: LibreTexts Physics — open textbooks covering mechanics, thermodynamics, electromagnetism, and quantum physics

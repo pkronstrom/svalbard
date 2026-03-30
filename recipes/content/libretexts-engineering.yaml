@@ -1,0 +1,11 @@
+id: libretexts-engineering
+type: zim
+group: education
+tags:
+- civil-construction
+- energy-power
+- mechanical
+depth: comprehensive
+size_gb: 0.65
+url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_eng_{date}.zim
+description: LibreTexts Engineering — open textbooks covering civil, mechanical, electrical, and environmental engineering

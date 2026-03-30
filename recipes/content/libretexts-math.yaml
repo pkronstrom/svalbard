@@ -1,0 +1,9 @@
+id: libretexts-math
+type: zim
+group: education
+tags:
+- mathematics
+depth: comprehensive
+size_gb: 0.8
+url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_math_{date}.zim
+description: LibreTexts Mathematics — open textbooks covering algebra, calculus, linear algebra, and discrete math

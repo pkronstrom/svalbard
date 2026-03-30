@@ -1,0 +1,9 @@
+id: libretexts-chemistry
+type: zim
+group: education
+tags:
+- chemistry
+depth: comprehensive
+size_gb: 2.0
+url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_chem_{date}.zim
+description: LibreTexts Chemistry — open textbooks covering general, organic, analytical, and physical chemistry

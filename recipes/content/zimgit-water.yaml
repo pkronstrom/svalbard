@@ -1,0 +1,9 @@
+id: zimgit-water
+type: zim
+group: practical
+tags:
+- water
+depth: overview
+size_gb: 0.02
+url_pattern: https://download.kiwix.org/zim/other/zimgit-water_en_{date}.zim
+description: Water sourcing, purification, and safety reference

@@ -1,0 +1,9 @@
+id: age
+type: binary
+group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.005
+url: https://github.com/FiloSottile/age
+description: age — simple, modern file encryption tool (keygen + encrypt/decrypt)
