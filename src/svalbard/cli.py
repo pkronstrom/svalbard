@@ -3,6 +3,7 @@
 import click
 from rich.console import Console
 
+from svalbard.add import run_add
 from svalbard.crawler import (
     check_docker,
     ensure_zimit_image,
@@ -137,6 +138,36 @@ def audit(path: str) -> None:
     click.echo(report)
 
 
+@main.command("add")
+@click.argument("input_value")
+@click.option("--kind", type=click.Choice(["auto", "local", "web", "media"]), default="auto", show_default=True)
+@click.option("--runner", type=click.Choice(["auto", "docker", "host"]), default="auto", show_default=True)
+@click.option("--quality", type=click.Choice(["1080p", "720p", "480p", "360p", "source"]), default="720p", show_default=True)
+@click.option("--audio-only", is_flag=True, help="Ingest as audio-only media where supported")
+@click.option("-o", "--output", "output_name", default=None, help="Output artifact name")
+@click.option("--workspace", default=None, help="Workspace root")
+def add_command(
+    input_value: str,
+    kind: str,
+    runner: str,
+    quality: str,
+    audio_only: bool,
+    output_name: str | None,
+    workspace: str | None,
+) -> None:
+    """Add local content or remote URLs as workspace-local sources."""
+    source_id = run_add(
+        input_value,
+        workspace_root=resolve_workspace_root(workspace),
+        kind=kind,
+        runner=runner,
+        quality=quality,
+        audio_only=audio_only,
+        output_name=output_name,
+    )
+    console.print(f"[green]Registered:[/green] {source_id}")
+
+
 @main.group()
 def crawl() -> None:
     """Crawl websites into workspace-local ZIM files using Zimit."""
@@ -248,7 +279,12 @@ def index(path, strategy, yes):
     # 6. Show estimated DB size
     est_mb = plan.estimated_db_bytes / (1024 * 1024)
     console.print(f"\n  Estimated DB size: {est_mb:.1f} MB")
-    console.print(f"  Strategy: {strategy}")
+    strategy_desc = {
+        "fast": "keyword search — titles + first ~500 chars per article",
+        "standard": "full-text search — complete article bodies, better ranking",
+        "semantic": "keyword + meaning — full text + embedding vectors for reranking",
+    }
+    console.print(f"  Strategy: [bold]{strategy}[/bold] — {strategy_desc[strategy]}")
 
     # 7. Confirmation
     if not yes:
