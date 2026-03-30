@@ -181,24 +181,8 @@ while IFS= read -r line || [ -n "$line" ]; do
     GROUPS+=("$current_group")
 done < "$ENTRIES_FILE"
 
-# Try fzf for menu, fall back to numbered list
+# Numbered menu
 show_menu() {
-    local FZF_BIN
-    FZF_BIN="$(source "$DRIVE_ROOT/.svalbard/lib/platform.sh" && source "$DRIVE_ROOT/.svalbard/lib/binaries.sh" && find_binary fzf 2>/dev/null || true)"
-
-    if [ -n "$FZF_BIN" ]; then
-        local choice
-        choice="$(printf '%s\n' "${LABELS[@]}" | "$FZF_BIN" --prompt="Svalbard> " --height=~20 --reverse)" || return 1
-        for i in "${!LABELS[@]}"; do
-            if [ "${LABELS[$i]}" = "$choice" ]; then
-                echo "$i"
-                return 0
-            fi
-        done
-        return 1
-    fi
-
-    # Fallback: numbered menu
     echo ""
     echo "${BOLD}Svalbard${NC}"
     echo "─────────────────────────────────────────"

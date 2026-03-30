@@ -1,6 +1,10 @@
 import signal
 import shutil
 import re
+import stat
+import subprocess
+import tarfile
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -49,6 +53,57 @@ TYPE_GROUPS = {
     "iso": "tools",
     "sqlite": "regional",
 }
+
+# Archive suffixes that need extraction for binary-type sources
+_ARCHIVE_SUFFIXES = {".tar.gz", ".tar.xz", ".tar.bz2", ".tgz", ".zip"}
+
+
+def _is_archive(path: Path) -> bool:
+    name = path.name.lower()
+    return any(name.endswith(s) for s in _ARCHIVE_SUFFIXES)
+
+
+def _extract_binaries(archive_path: Path, dest_dir: Path, source_id: str) -> list[Path]:
+    """Extract executable binaries from an archive into dest_dir.
+
+    Returns list of extracted binary paths.
+    """
+    import tempfile
+
+    extracted = []
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+
+        if archive_path.name.endswith(".zip"):
+            with zipfile.ZipFile(archive_path) as zf:
+                zf.extractall(tmp_path)
+        else:
+            with tarfile.open(archive_path) as tf:
+                tf.extractall(tmp_path, filter="data")
+
+        # Find executables or known binary names in extracted content
+        for candidate in tmp_path.rglob("*"):
+            if not candidate.is_file():
+                continue
+            # Skip shared libraries, docs, licenses
+            if candidate.suffix in (".so", ".dylib", ".dll", ".md", ".txt", ".html"):
+                continue
+            name = candidate.name
+            # Skip files that look like shared libraries (libfoo.so.1.2.3)
+            if ".so." in name or name.startswith("lib"):
+                continue
+            # Check if it's executable or matches the source id
+            is_exec = candidate.stat().st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            name_match = source_id.replace("-", "") in name.replace("-", "").lower()
+            if is_exec or name_match:
+                dest = dest_dir / name
+                shutil.copy2(candidate, dest)
+                dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                extracted.append(dest)
+
+    # Remove the archive after successful extraction
+    archive_path.unlink(missing_ok=True)
+    return extracted
 
 
 @dataclass
@@ -398,11 +453,17 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
                             old_path.unlink()
                             console.print(f"  [dim]Removed old: {existing.filename}[/dim]")
 
+                    # Extract binary-type archives into usable executables
+                    if job.source_type == "binary" and _is_archive(r.filepath):
+                        extracted = _extract_binaries(r.filepath, job.dest_dir, job.source_id)
+                        if extracted:
+                            console.print(f"  [dim]Extracted: {', '.join(e.name for e in extracted)}[/dim]")
+
                     entry = ManifestEntry(
                         id=job.source_id,
                         type=job.source.type,
                         filename=r.filepath.name,
-                        size_bytes=r.filepath.stat().st_size,
+                        size_bytes=r.filepath.stat().st_size if r.filepath.exists() else sum(e.stat().st_size for e in job.dest_dir.iterdir() if e.is_file()),
                         platform=job.platform,
                         tags=job.source.tags,
                         depth=job.source.depth,
