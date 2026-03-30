@@ -15,7 +15,7 @@ port="$(find_free_port 8081)"
 
 DUFS_BIN="$(find_binary dufs 2>/dev/null || true)"
 if [ -n "$DUFS_BIN" ]; then
-    "$DUFS_BIN" --bind "127.0.0.1" --port "$port" --allow-all "$DRIVE_ROOT" &
+    "$DUFS_BIN" --bind "127.0.0.1" --port "$port" --allow-all --render-try-index "$DRIVE_ROOT" &
 elif command -v python3 >/dev/null 2>&1; then
     python3 -m http.server "$port" --bind 127.0.0.1 --directory "$DRIVE_ROOT" >/dev/null 2>&1 &
 else
@@ -26,8 +26,8 @@ SVALBARD_PIDS+=($!)
 sleep 1
 
 if [ -f "$DRIVE_ROOT/apps/map/index.html" ]; then
-    open_browser "http://localhost:$port/apps/map/index.html"
-    ui_status "Map viewer: http://localhost:$port/apps/map/index.html"
+    open_browser "http://localhost:$port/apps/map/"
+    ui_status "Map viewer: http://localhost:$port/apps/map/"
 fi
 ui_status "Files: http://localhost:$port"
 wait_for_services
