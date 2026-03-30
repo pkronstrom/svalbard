@@ -131,8 +131,7 @@ trap cleanup EXIT
 query="${1:-}"
 while true; do
     if [ -z "$query" ]; then
-        echo ""
-        printf "  Search (q to quit): "
+        printf "\n  Search (q to quit): "
         read -r query
     fi
     [[ "$query" = q || "$query" = Q || -z "$query" ]] && exit 0
@@ -163,10 +162,11 @@ while true; do
     if [ -n "$results" ] && [ "$mode" = "semantic" ]; then
         # Ensure embedding server is running
         if ! _embed_server_running; then
-            _start_embed_server || mode="keyword"
+            _start_embed_server || { echo "  (semantic unavailable, using keyword)" >&2; mode="keyword"; }
         fi
 
         if _embed_server_running; then
+            echo "  Reranking with semantic search..." >&2
             # Get candidate IDs
             candidate_ids=$(echo "$results" | cut -f1 | tr '\n' ',' | sed 's/,$//')
             ranked_ids=$(_semantic_rerank "$query" "$candidate_ids" || true)
@@ -200,7 +200,9 @@ while true; do
 
     # Display results
     ids=(); filenames=(); paths=(); num=0
-    echo ""
+    clear 2>/dev/null || true
+    echo "Results for: $query"
+    echo "────────────────────────────────"
     while IFS=$'\t' read -r id filename path title snippet; do
         num=$((num + 1))
         ids+=("$id"); filenames+=("$filename"); paths+=("$path")
