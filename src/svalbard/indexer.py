@@ -284,8 +284,10 @@ def _run_embedding_phase(
     if done >= total:
         return  # all embedded
 
-    # Start llama-server in embedding mode
-    proc = start_embedding_server(str(model_path))
+    # Start llama-server in embedding mode (find on drive or system PATH)
+    from svalbard.embedder import _find_llama_server
+    llama_bin = _find_llama_server(drive_path)
+    proc = start_embedding_server(str(model_path), llama_server_path=llama_bin)
     try:
         while True:
             rows = db.unembedded_articles(after_id=done, limit=_EMBED_BATCH_SIZE)

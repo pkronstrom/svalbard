@@ -6,17 +6,61 @@ helpers to batch-embed text and convert vectors to compact binary blobs.
 
 from __future__ import annotations
 
+import platform as _platform
+import shutil
 import struct
 import subprocess
 import time
+from pathlib import Path
 
 import httpx
+
+
+def _find_llama_server(drive_path: str | Path | None = None) -> str:
+    """Find llama-server binary: drive bin/, then system PATH."""
+    if drive_path:
+        os_name = "macos" if _platform.system() == "Darwin" else "linux"
+        arch = "arm64" if _platform.machine() in ("aarch64", "arm64") else "x86_64"
+        bin_dir = Path(drive_path) / "bin" / f"{os_name}-{arch}"
+        candidate = bin_dir / "llama-server"
+        if candidate.exists() and candidate.stat().st_mode & 0o111:
+            return str(candidate)
+        # Try extracting archives if binary not found
+        if bin_dir.exists():
+            import tarfile
+            import zipfile
+            for archive in bin_dir.iterdir():
+                name = archive.name.lower()
+                if not any(name.endswith(s) for s in (".tar.gz", ".tar.xz", ".zip")):
+                    continue
+                import tempfile
+                with tempfile.TemporaryDirectory() as tmp:
+                    if name.endswith(".zip"):
+                        with zipfile.ZipFile(archive) as zf:
+                            zf.extractall(tmp)
+                    else:
+                        with tarfile.open(archive) as tf:
+                            tf.extractall(tmp, filter="data")
+                    # Search for llama-server in extracted content
+                    for f in Path(tmp).rglob("llama-server"):
+                        if f.is_file():
+                            dest = bin_dir / "llama-server"
+                            shutil.copy2(f, dest)
+                            dest.chmod(dest.stat().st_mode | 0o755)
+                            return str(dest)
+    path = shutil.which("llama-server")
+    if path:
+        return path
+    raise FileNotFoundError(
+        "llama-server not found. Ensure it is on your drive (bin/) or system PATH."
+    )
 
 
 def start_embedding_server(
     model_path: str,
     port: int = 8085,
     host: str = "127.0.0.1",
+    llama_server_path: str | None = None,
 ) -> subprocess.Popen:
     """Start llama-server in embedding mode.
 
@@ -24,9 +68,10 @@ def start_embedding_server(
     HTTP 200 before returning.  Raises :class:`RuntimeError` if the server
     fails to become healthy in time.
     """
+    binary = llama_server_path or _find_llama_server()
     proc = subprocess.Popen(
         [
-            "llama-server",
+            binary,
             "--model", model_path,
             "--port", str(port),
             "--host", host,
