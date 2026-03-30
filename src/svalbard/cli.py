@@ -311,3 +311,14 @@ def index(path, strategy, yes):
     console.print(f"  Articles: {stats['article_count']}")
     if strategy == "semantic":
         console.print(f"  Embeddings: {db.embedding_count()}")
+
+    # Regenerate toolkit so search appears in run.sh menu
+    from svalbard.manifest import Manifest
+
+    manifest_path = drive_path / "manifest.yaml"
+    if manifest_path.exists():
+        from svalbard.toolkit_generator import generate_toolkit
+
+        manifest = Manifest.load(manifest_path)
+        generate_toolkit(drive_path, manifest.preset)
+        console.print(f"  [dim]Toolkit updated.[/dim]")
