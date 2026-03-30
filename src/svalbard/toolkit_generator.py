@@ -152,91 +152,60 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
 # ── run.sh template ─────────────────────────────────────────────────────────
 
 RUN_SH = r'''#!/usr/bin/env bash
-set -uo pipefail
-
 DRIVE_ROOT="$(cd "$(dirname "$0")" && pwd)"
 export DRIVE_ROOT
 
-ENTRIES_FILE="$DRIVE_ROOT/.svalbard/entries.tab"
-if [ ! -f "$ENTRIES_FILE" ]; then
-    echo "Error: entries.tab not found. Is this a Svalbard drive?"
-    exit 1
-fi
+ENTRIES="$DRIVE_ROOT/.svalbard/entries.tab"
+[ -f "$ENTRIES" ] || { echo "entries.tab not found"; exit 1; }
 
-# Colors
-if [ -t 1 ]; then
-    B=$'\033[1m'; D=$'\033[2m'; C=$'\033[36m'; R=$'\033[31m'; N=$'\033[0m'
-else
-    B="" D="" C="" R="" N=""
-fi
+# Parse
+labels=(); scripts=(); args=(); groups=(); g=""
+while IFS=$'\t' read -r l s a <&3 || [ -n "$l" ]; do
+    [[ -z "$l" || "$l" = \#* ]] && continue
+    [[ "$l" = \[*\] ]] && { g="${l:1:${#l}-2}"; continue; }
+    labels+=("$l"); scripts+=("${s:-}"); args+=("${a:-}"); groups+=("$g")
+done 3< "$ENTRIES"
 
-# Parse entries from tab file
-LABELS=()
-SCRIPTS=()
-ARGS=()
-GROUPS=()
-grp=""
-while IFS=$'\t' read -r lbl scr arg <&3; do
-    [ -z "$lbl" ] && continue
-    [[ "$lbl" = \#* ]] && continue
-    if [[ "$lbl" = \[*\] ]]; then
-        grp="${lbl:1:${#lbl}-2}"
-        continue
-    fi
-    LABELS+=("$lbl")
-    SCRIPTS+=("${scr:-}")
-    ARGS+=("${arg:-}")
-    GROUPS+=("$grp")
-done 3< "$ENTRIES_FILE"
+total=${#labels[@]}
+[ "$total" -eq 0 ] && { echo "No entries."; exit 1; }
 
-n=${#LABELS[@]}
-if [ "$n" -eq 0 ]; then
-    echo "No menu entries found."
-    exit 1
-fi
-
-# Main loop
 while true; do
     echo ""
-    echo "${B}Svalbard${N}"
+    echo "Svalbard"
     echo "────────────────────────────────"
     pg=""
-    for (( i=0; i<n; i++ )); do
-        [ "${GROUPS[$i]}" != "$pg" ] && { [ -n "$pg" ] && echo ""; pg="${GROUPS[$i]}"; }
-        printf " ${C}%2d${N}) %s\n" "$((i+1))" "${LABELS[$i]}"
+    for (( i=0; i<total; i++ )); do
+        [[ "${groups[$i]}" != "$pg" ]] && { [[ -n "$pg" ]] && echo ""; pg="${groups[$i]}"; }
+        printf "  %2d) %s\n" "$((i+1))" "${labels[$i]}"
     done
-    printf "\n ${D} q) Quit${N}\n\n"
-    read -rp " > " choice
+    echo ""
+    echo "   q) Quit"
+    echo ""
+    read -rp "  > " ch
 
-    case "${choice:-}" in
-        q|Q|"") exit 0 ;;
-    esac
-    [[ "$choice" =~ ^[0-9]+$ ]] || continue
-    (( choice >= 1 && choice <= n )) || continue
-    idx=$((choice - 1))
+    [[ "$ch" = q || "$ch" = Q || -z "$ch" ]] && exit 0
+    [[ "$ch" =~ ^[0-9]+$ ]] || continue
+    (( ch >= 1 && ch <= total )) 2>/dev/null || continue
+    idx=$((ch - 1))
 
-    scr="$DRIVE_ROOT/${SCRIPTS[$idx]}"
-    if [ ! -f "$scr" ]; then
-        echo "${R}Not found: ${SCRIPTS[$idx]}${N}"
-        read -rp "Enter to continue..."
-        continue
-    fi
+    target="$DRIVE_ROOT/${scripts[$idx]}"
+    [ -f "$target" ] || { echo "Not found: ${scripts[$idx]}"; read -rp "Enter..."; continue; }
 
+    export DRIVE_ROOT
+    source "$DRIVE_ROOT/.svalbard/lib/ui.sh"
     source "$DRIVE_ROOT/.svalbard/lib/platform.sh"
     source "$DRIVE_ROOT/.svalbard/lib/binaries.sh"
     source "$DRIVE_ROOT/.svalbard/lib/ports.sh"
     source "$DRIVE_ROOT/.svalbard/lib/process.sh"
 
-    chmod +x "$scr" 2>/dev/null || true
-    set +e
-    if [ -n "${ARGS[$idx]}" ]; then
-        "$scr" "${ARGS[$idx]}"
+    chmod +x "$target" 2>/dev/null || true
+    if [ -n "${args[$idx]}" ]; then
+        "$target" "${args[$idx]}" || true
     else
-        "$scr"
+        "$target" || true
     fi
-    set -e
     echo ""
-    read -rp "Enter to return..."
+    read -rp "  Enter to return..."
 done
 '''
 
