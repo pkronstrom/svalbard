@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from svalbard.drive_config import load_snapshot_preset
 from svalbard.presets import load_preset, RECIPES_DIRS
 
 
@@ -25,9 +26,18 @@ def _load_recipe(source_id: str) -> dict | None:
     return None
 
 
-def _layer_defs_from_preset(preset_name: str) -> tuple[dict | None, list[dict]]:
+def _layer_defs_from_preset(
+    preset_name: str,
+    *,
+    drive_path: Path | None = None,
+    workspace: Path | str | None = None,
+) -> tuple[dict | None, list[dict]]:
     """Return (basemap_def, overlay_defs) for all pmtiles sources in the preset."""
-    preset = load_preset(preset_name)
+    preset = None
+    if drive_path is not None:
+        preset = load_snapshot_preset(drive_path)
+    if preset is None:
+        preset = load_preset(preset_name, workspace=workspace)
     basemap = None
     overlays = []
 
@@ -59,7 +69,7 @@ def _layer_defs_from_preset(preset_name: str) -> tuple[dict | None, list[dict]]:
 
 def generate_map_viewer(drive_path: Path, preset_name: str) -> Path:
     """Generate apps/map/index.html with a MapLibre viewer for all pmtiles layers."""
-    basemap, overlays = _layer_defs_from_preset(preset_name)
+    basemap, overlays = _layer_defs_from_preset(preset_name, drive_path=drive_path)
 
     # Category display order and labels
     category_labels = {

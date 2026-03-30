@@ -3,6 +3,7 @@
 from collections import defaultdict
 from pathlib import Path
 
+from svalbard.drive_config import load_snapshot_preset
 from svalbard.local_sources import active_sources_for_manifest
 from svalbard.manifest import Manifest
 from svalbard.models import Source
@@ -67,7 +68,10 @@ def _generate_license_section(sources: list[Source]) -> list[str]:
 def generate_drive_readme(drive_path: Path) -> Path:
     """Write README.md to the drive root based on the manifest."""
     manifest = Manifest.load(drive_path / "manifest.yaml")
-    preset = load_preset(manifest.preset)
+    preset = load_snapshot_preset(drive_path) or load_preset(
+        manifest.preset,
+        workspace=manifest.workspace_root or None,
+    )
     active_sources = active_sources_for_manifest(manifest, preset)
 
     lines = [

@@ -1,32 +1,9 @@
-from pathlib import Path
 from unittest.mock import patch
 
 from click.testing import CliRunner
-import pytest
 
 from svalbard.cli import main
-from svalbard.crawler import load_crawl_config, register_generated_zim
-
-
-def test_load_crawl_config_accepts_documented_schema(tmp_path):
-    config_path = tmp_path / "crawl.yaml"
-    config_path.write_text(
-        """name: Example Docs
-sites:
-  - url: https://example.com/docs
-    scope: prefix
-    page_limit: 50
-defaults:
-  size_limit_mb: 128
-  timeout_minutes: 30
-"""
-    )
-
-    config = load_crawl_config(config_path)
-    assert config.output == "generated/example-docs.zim"
-    assert config.sites[0].max_pages == 50
-    assert config.max_size_mb == 128
-    assert config.time_limit_minutes == 30
+from svalbard.crawler import register_generated_zim
 
 
 def test_register_generated_zim_writes_recipe_and_source_metadata(tmp_path):
@@ -50,26 +27,6 @@ def test_register_generated_zim_writes_recipe_and_source_metadata(tmp_path):
     assert metadata_path.exists()
     assert "kind: web" in metadata_path.read_text()
     assert "tool: zimit" in metadata_path.read_text()
-
-
-def test_run_config_crawl_rejects_multi_site_configs(tmp_path):
-    from svalbard.crawler import run_config_crawl
-
-    config_path = tmp_path / "crawl.yaml"
-    config_path.write_text(
-        """name: Example Bundle
-sites:
-  - url: https://example.com/docs
-  - url: https://example.com/help
-"""
-    )
-
-    with patch("svalbard.crawler.run_url_crawl") as run_url_mock:
-        with patch("svalbard.crawler.register_generated_zim"):
-            with pytest.raises(ValueError, match="single-site"):
-                run_config_crawl(config_path, tmp_path)
-
-    run_url_mock.assert_not_called()
 
 
 def test_add_command_registers_local_file(tmp_path):
@@ -121,3 +78,17 @@ def test_add_command_passes_quality_and_audio_only_flags(tmp_path):
     assert result.exit_code == 0
     assert run_add_mock.call_args.kwargs["quality"] == "1080p"
     assert run_add_mock.call_args.kwargs["audio_only"] is True
+
+
+def test_legacy_crawl_command_is_not_available():
+    result = CliRunner().invoke(main, ["crawl"])
+
+    assert result.exit_code != 0
+    assert "No such command 'crawl'" in result.output
+
+
+def test_legacy_local_command_is_not_available():
+    result = CliRunner().invoke(main, ["local"])
+
+    assert result.exit_code != 0
+    assert "No such command 'local'" in result.output

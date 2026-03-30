@@ -4,14 +4,9 @@ import click
 from rich.console import Console
 
 from svalbard.add import run_add
-from svalbard.crawler import (
-    check_docker,
-    ensure_zimit_image,
-    register_crawled_zim,
-    run_config_crawl,
-    run_url_crawl,
-)
-from svalbard.local_sources import workspace_root as resolve_workspace_root
+from svalbard.attach import attach_local_source, detach_local_source, resolve_drive_path
+from svalbard.paths import workspace_root as resolve_workspace_root
+from svalbard.presets import copy_preset_to_workspace, list_presets
 
 console = Console()
 
@@ -168,72 +163,53 @@ def add_command(
     console.print(f"[green]Registered:[/green] {source_id}")
 
 
-@main.group()
-def crawl() -> None:
-    """Crawl websites into workspace-local ZIM files using Zimit."""
-
-
-@crawl.command("url")
-@click.argument("url")
-@click.option("-o", "--output", "output_name", required=True, help="Output ZIM filename")
+@main.command("attach")
+@click.argument("source_id")
+@click.argument("path", required=False, default=".")
 @click.option("--workspace", default=None, help="Workspace root")
-def crawl_url(url: str, output_name: str, workspace: str | None) -> None:
-    """Crawl one URL and register the generated ZIM locally."""
-    from pathlib import Path as P
-
-    if not check_docker():
-        console.print("[red]Docker is not available. Install Docker to use svalbard crawl.[/red]")
-        return
-    if not ensure_zimit_image():
-        console.print("[red]Failed to pull Zimit image.[/red]")
-        return
-
-    root = resolve_workspace_root(workspace)
-    artifact = run_url_crawl(url, output_name, root)
-    source_id = register_crawled_zim(root, artifact, url)
-    console.print(f"[green]Created local source:[/green] {source_id}")
+def attach_command(source_id: str, path: str, workspace: str | None) -> None:
+    """Attach a local source to an existing drive."""
+    drive_path = resolve_drive_path(path)
+    attach_local_source(drive_path, source_id, workspace=workspace)
+    console.print(f"[green]Attached:[/green] {source_id}")
 
 
-@crawl.command("config")
-@click.argument("config")
+@main.command("detach")
+@click.argument("source_id")
+@click.argument("path", required=False, default=".")
 @click.option("--workspace", default=None, help="Workspace root")
-def crawl_config(config: str, workspace: str | None) -> None:
-    """Run a crawl config and register the resulting local sources."""
-    from pathlib import Path as P
-
-    if not check_docker():
-        console.print("[red]Docker is not available. Install Docker to use svalbard crawl.[/red]")
-        return
-    if not ensure_zimit_image():
-        console.print("[red]Failed to pull Zimit image.[/red]")
-        return
-
-    root = resolve_workspace_root(workspace)
-    config_path = P(config)
-    if not config_path.exists():
-        console.print(f"[red]Config not found: {config}[/red]")
-        return
-    artifacts = run_config_crawl(config_path, root)
-    console.print(f"[green]Generated {len(artifacts)} artifact(s).[/green]")
+def detach_command(source_id: str, path: str, workspace: str | None) -> None:
+    """Detach a local source from an existing drive."""
+    drive_path = resolve_drive_path(path)
+    detach_local_source(drive_path, source_id)
+    console.print(f"[green]Detached:[/green] {source_id}")
 
 
-@main.group()
-def local() -> None:
-    """Manage workspace-local sources."""
+@main.group("preset")
+def preset_group() -> None:
+    """Manage presets."""
 
 
-@local.command("add")
-@click.argument("path")
+@preset_group.command("list")
 @click.option("--workspace", default=None, help="Workspace root")
-@click.option("--type", "source_type", default=None, help="Source type override")
-def local_add(path: str, workspace: str | None, source_type: str | None) -> None:
-    """Register a local file or directory as a reusable local source."""
-    from pathlib import Path as P
+def preset_list_command(workspace: str | None) -> None:
+    """List built-in and workspace-owned presets."""
+    for name in list_presets(workspace=resolve_workspace_root(workspace)):
+        console.print(name)
 
-    from svalbard.commands import add_local_source
 
-    source_id = add_local_source(P(path), workspace_root=resolve_workspace_root(workspace), source_type=source_type)
-    console.print(f"[green]Registered:[/green] {source_id}")
+@preset_group.command("copy")
+@click.argument("source_name")
+@click.argument("target_name")
+@click.option("--workspace", default=None, help="Workspace root")
+def preset_copy_command(source_name: str, target_name: str, workspace: str | None) -> None:
+    """Copy a preset into the active workspace."""
+    path = copy_preset_to_workspace(
+        source_name,
+        target_name,
+        workspace=resolve_workspace_root(workspace),
+    )
+    console.print(f"[green]Copied preset:[/green] {path}")
 
 
 @main.command()

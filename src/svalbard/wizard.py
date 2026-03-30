@@ -10,7 +10,8 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from svalbard.commands import init_drive, sync_drive
-from svalbard.local_sources import load_local_sources, workspace_root as resolve_workspace_root
+from svalbard.local_sources import load_local_sources
+from svalbard.paths import workspace_root as resolve_workspace_root
 from svalbard.presets import list_presets, load_preset
 
 console = Console()
@@ -32,6 +33,15 @@ SKIP_PATH_PARTS = {
     "Backups.backupdb",
     "com.apple.TimeMachine.localsnapshots",
 }
+
+
+def _wizard_preset_names() -> list[str]:
+    """Return user-facing preset names, excluding test-only presets."""
+    workspace = resolve_workspace_root()
+    return [
+        name for name in list_presets(workspace=workspace)
+        if not name.startswith("test-")
+    ]
 
 
 def _parse_mount_types() -> dict[str, str]:
@@ -128,10 +138,11 @@ def presets_for_space(free_gb: float, region: str = "finland") -> list[tuple[str
     Uses actual content size (not label) so a 122 GB drive can fit finland-128.
     Returns [(preset_name, content_size_gb, fits), ...].
     """
-    available = list_presets()
+    workspace = resolve_workspace_root()
+    available = _wizard_preset_names()
     result = []
     for preset_name in available:
-        preset = load_preset(preset_name)
+        preset = load_preset(preset_name, workspace=workspace)
         if preset.region != region:
             continue
         content_gb = sum(s.size_gb for s in preset.sources)
@@ -142,7 +153,8 @@ def presets_for_space(free_gb: float, region: str = "finland") -> list[tuple[str
 
 def available_regions() -> list[str]:
     """Return canonical preset regions discovered from preset files."""
-    return sorted({load_preset(name).region for name in list_presets()})
+    workspace = resolve_workspace_root()
+    return sorted({load_preset(name, workspace=workspace).region for name in _wizard_preset_names()})
 
 
 def local_sources_for_space(
@@ -256,7 +268,7 @@ def run_wizard(target_path: str | None = None):
     preset_choices = {}
     recommended = None
     for i, (name, content_gb, fits) in enumerate(all_presets, 1):
-        p = load_preset(name)
+        p = load_preset(name, workspace=resolve_workspace_root())
         preset_choices[str(i)] = name
         if fits:
             recommended = str(i)
@@ -278,7 +290,7 @@ def run_wizard(target_path: str | None = None):
     default_choice = recommended or "1"
     choice = Prompt.ask("\n  Select", choices=list(preset_choices.keys()), default=default_choice)
     preset_name = preset_choices[choice]
-    preset = load_preset(preset_name)
+    preset = load_preset(preset_name, workspace=resolve_workspace_root())
 
     selected_local_ids: list[str] = []
     selected_local_sources = []

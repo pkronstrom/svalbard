@@ -13,8 +13,8 @@ from svalbard.crawler import (
     register_generated_zim,
     run_url_crawl,
 )
-from svalbard.local_sources import workspace_root as resolve_workspace_root
 from svalbard.media import probe_media_url, run_media_ingest
+from svalbard.paths import workspace_root as resolve_workspace_root
 
 
 def _slugify(value: str) -> str:

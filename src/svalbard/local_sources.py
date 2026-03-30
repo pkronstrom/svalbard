@@ -4,14 +4,13 @@ import yaml
 
 from svalbard.manifest import Manifest
 from svalbard.models import License, Source
+from svalbard.paths import workspace_root as resolve_workspace_root
 from svalbard.presets import builtin_recipe_ids
 
 
 def workspace_root(explicit: Path | str | None = None) -> Path:
     """Return the canonical workspace root."""
-    if explicit is not None:
-        return Path(explicit).resolve()
-    return Path(__file__).resolve().parent.parent.parent
+    return resolve_workspace_root(explicit)
 
 
 def _source_from_recipe(recipe: dict) -> Source:

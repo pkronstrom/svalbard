@@ -13,10 +13,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def ensure_media_image() -> bool:
-    """Build the media Docker image if it does not already exist."""
-    result = subprocess.run(["docker", "image", "inspect", MEDIA_IMAGE], capture_output=True)
-    if result.returncode == 0:
-        return True
+    """Build or refresh the media Docker image."""
+    subprocess.run(["docker", "image", "inspect", MEDIA_IMAGE], capture_output=True)
     dockerfile = PROJECT_ROOT / "docker" / "media" / "Dockerfile"
     if not dockerfile.exists():
         return False

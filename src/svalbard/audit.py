@@ -4,6 +4,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from svalbard.drive_config import load_snapshot_preset
 from svalbard.manifest import Manifest
 from svalbard.models import Source
 from svalbard.presets import load_preset
@@ -23,7 +24,10 @@ FORMAT_ACCESSIBILITY = """| Format | macOS | iOS | Android | Linux | Viewer on d
 def generate_audit(drive_path: Path) -> str:
     """Generate a markdown audit report for AI analysis."""
     manifest = Manifest.load(drive_path / "manifest.yaml")
-    preset = load_preset(manifest.preset)
+    preset = load_snapshot_preset(drive_path) or load_preset(
+        manifest.preset,
+        workspace=manifest.workspace_root or None,
+    )
     taxonomy = load_taxonomy()
 
     try:

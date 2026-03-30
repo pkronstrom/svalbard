@@ -19,10 +19,18 @@ pip install -e .
 ## Quick Start
 
 ```bash
-svalbard wizard
+uv run svalbard wizard
 ```
 
 The wizard walks you through choosing a region, selecting a preset tier, and initializing a drive.
+
+For direct CLI use, the common flow is:
+
+```bash
+uv run svalbard add https://example.com/docs
+uv run svalbard attach local:example-docs /Volumes/MyDrive/svalbard
+uv run svalbard sync /Volumes/MyDrive/svalbard
+```
 
 ## Presets
 
@@ -84,9 +92,54 @@ These are the recurring data sources and tools that appear across the preset bun
 | `svalbard status <path>`               | Show drive contents and sync status  |
 | `svalbard audit <path>`                | Coverage report against taxonomy     |
 | `svalbard add <path-or-url>`           | Add a local artifact, website, or media URL as a reusable source |
-| `svalbard add <url> --quality 480p`    | Import remote media or websites with explicit ingest settings |
-| `svalbard add <url> --audio-only`      | Create an audio-first offline archive from a media source |
+| `svalbard attach <source-id> [path]`   | Attach a reusable local source to an existing drive |
+| `svalbard detach <source-id> [path]`   | Detach a previously attached local source from a drive |
+| `svalbard preset list`                 | List built-in and workspace-owned presets |
+| `svalbard preset copy <built-in> <name>` | Copy a built-in preset into the active workspace for editing |
 
-## Design
+## Workspace Model
 
-See [docs/plans/](docs/plans/) for the design document.
+- Built-in presets and recipes ship with the app as read-only defaults.
+- Workspace-owned state lives outside the package install: generated artifacts, local sources, and custom presets.
+- When Svalbard is not running inside a repo checkout, the default workspace is `~/.local/share/svalbard`.
+- In a source checkout, custom presets are kept under `.svalbard/presets/` so checked-in presets remain read-only.
+- `svalbard add` writes reusable sources into workspace `generated/` and `local/`.
+
+## Drive Model
+
+- Drives keep a snapshot of the exact preset and recipes they use under `.svalbard/config/`.
+- Attached local sources are also snapshotted under `.svalbard/config/local/`.
+- `attach`, `detach`, and `sync` default the drive path from the current directory when possible.
+
+## Adding Content
+
+`svalbard add <input>` is the single ingestion entrypoint:
+
+- Existing local file or directory: register it as a reusable workspace-local source
+- Website URL: crawl it into a ZIM with Zimit, then register it
+- Media URL supported by `yt-dlp` or `yle-dl`: download it, package it into a browsable ZIM, then register it
+
+Useful flags:
+
+- `--kind auto|local|web|media`
+- `--runner auto|docker|host`
+- `--quality 1080p|720p|480p|360p|source`
+- `--audio-only`
+- `--workspace <path>`
+
+Remote acquisition currently defaults to Docker-backed runners.
+
+## Custom Presets
+
+Built-in presets are intentionally read-only. To customize one:
+
+```bash
+uv run svalbard preset copy default-128 my-pack
+$EDITOR ~/.local/share/svalbard/presets/my-pack.yaml
+uv run svalbard init /Volumes/MyDrive/svalbard --preset my-pack
+```
+
+## Docs
+
+- User guide: [docs/usage.md](docs/usage.md)
+- Design history: [docs/plans/](docs/plans/) and [docs/superpowers/](docs/superpowers/)

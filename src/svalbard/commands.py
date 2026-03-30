@@ -14,13 +14,14 @@ from rich.table import Table
 
 from svalbard.builder import BuildResult, check_tools, run_build
 from svalbard.downloader import download_sources, fetch_sha256_sidecar
+from svalbard.drive_config import load_snapshot_preset, write_drive_snapshot
 from svalbard.local_sources import (
     active_sources_for_manifest,
     load_local_sources,
-    workspace_root as resolve_workspace_root,
 )
 from svalbard.manifest import LocalSourceSnapshot, Manifest, ManifestEntry
 from svalbard.models import Source
+from svalbard.paths import workspace_root as resolve_workspace_root
 from svalbard.presets import builtin_recipe_ids, load_preset
 from svalbard.readme_generator import generate_drive_readme
 from svalbard.resolver import resolve_url
@@ -270,7 +271,7 @@ def _init_drive(path: str, preset_name: str, workspace_root_path: str = "", loca
     drive_path = Path(path)
     drive_path.mkdir(parents=True, exist_ok=True)
 
-    preset = load_preset(preset_name)
+    preset = load_preset(preset_name, workspace=workspace_root_path or None)
     sources = preset.sources
 
     manifest = Manifest(
@@ -282,6 +283,13 @@ def _init_drive(path: str, preset_name: str, workspace_root_path: str = "", loca
         local_sources=local_sources or [],
     )
     manifest.save(drive_path / "manifest.yaml")
+    if workspace_root_path:
+        write_drive_snapshot(
+            drive_path,
+            preset_name=preset.name,
+            workspace_root=Path(workspace_root_path).resolve(),
+            local_source_ids=local_sources or [],
+        )
 
     generate_drive_readme(drive_path)
 
@@ -325,7 +333,10 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
         return
 
     manifest = Manifest.load(drive_path / "manifest.yaml")
-    preset = load_preset(manifest.preset)
+    preset = load_snapshot_preset(drive_path) or load_preset(
+        manifest.preset,
+        workspace=manifest.workspace_root or None,
+    )
     manifest_path = drive_path / "manifest.yaml"
     local_source_map = {
         source.id: source for source in load_local_sources(manifest.workspace_root or resolve_workspace_root())
@@ -607,7 +618,10 @@ def show_status(path: str, check_updates: bool = False):
         return
 
     manifest = Manifest.load(drive_path / "manifest.yaml")
-    preset = load_preset(manifest.preset)
+    preset = load_snapshot_preset(drive_path) or load_preset(
+        manifest.preset,
+        workspace=manifest.workspace_root or None,
+    )
     active_sources = active_sources_for_manifest(manifest, preset)
 
     # Resolve URLs if checking for updates

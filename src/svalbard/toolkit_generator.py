@@ -9,6 +9,7 @@ import shutil
 import stat
 from pathlib import Path
 
+from svalbard.drive_config import load_snapshot_preset
 from svalbard.manifest import Manifest
 from svalbard.presets import load_preset
 
@@ -53,7 +54,10 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
     lines.append("# Format: label\\tscript\\targs")
     lines.append("")
 
-    preset = load_preset(preset_name)
+    preset = load_snapshot_preset(drive_path) or load_preset(
+        preset_name,
+        workspace=manifest.workspace_root or None,
+    )
 
     # ── Browse ──────────────────────────────────────────────────────────
     zim_count = _count_files(drive_path / TYPE_DIRS["zim"], "*.zim")
@@ -246,10 +250,14 @@ def generate_toolkit(drive_path: Path, preset_name: str) -> Path:
     svalbard_dir = drive_path / ".svalbard"
     actions_dest = svalbard_dir / "actions"
     lib_dest = svalbard_dir / "lib"
+    entries_path = svalbard_dir / "entries.tab"
 
-    # Clean and recreate
-    if svalbard_dir.exists():
-        shutil.rmtree(svalbard_dir)
+    # Refresh toolkit-managed files but preserve config snapshots.
+    for managed_dir in (actions_dest, lib_dest):
+        if managed_dir.exists():
+            shutil.rmtree(managed_dir)
+    if entries_path.exists():
+        entries_path.unlink()
     actions_dest.mkdir(parents=True)
     lib_dest.mkdir(parents=True)
 
@@ -269,7 +277,7 @@ def generate_toolkit(drive_path: Path, preset_name: str) -> Path:
     # Generate entries.tab
     manifest = Manifest.load(drive_path / "manifest.yaml")
     tab_content = _build_entries(drive_path, manifest, preset_name)
-    (svalbard_dir / "entries.tab").write_text(tab_content)
+    entries_path.write_text(tab_content)
 
     # Generate checksums.sha256 from manifest entries
     _generate_checksums(svalbard_dir, manifest)
