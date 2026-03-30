@@ -83,9 +83,9 @@ These are the recurring data sources and tools that appear across the preset bun
 | `svalbard sync <path>`                 | Download/update content              |
 | `svalbard status <path>`               | Show drive contents and sync status  |
 | `svalbard audit <path>`                | Coverage report against taxonomy     |
-| `svalbard local add <path>`            | Register a local file or directory as a reusable source |
-| `svalbard crawl url <url> -o <file>`   | Crawl one site into `generated/` and register it locally |
-| `svalbard crawl config <path>`         | Run a single-site crawl config and register the output locally |
+| `svalbard add <path-or-url>`           | Add a local artifact, website, or media URL as a reusable source |
+| `svalbard add <url> --quality 480p`    | Import remote media or websites with explicit ingest settings |
+| `svalbard add <url> --audio-only`      | Create an audio-first offline archive from a media source |
 
 ## Design
 

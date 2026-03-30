@@ -3,6 +3,7 @@
 import re
 import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -159,13 +160,18 @@ def run_url_crawl(
     return output_path
 
 
-def register_crawled_zim(
+def register_generated_zim(
     workspace_root: Path,
     artifact_path: Path,
     origin_url: str,
+    kind: str,
+    runner: str,
+    tool: str,
+    quality: str = "",
+    audio_only: bool = False,
     source_id: str | None = None,
 ) -> str:
-    """Register a generated ZIM as a local source and write crawl metadata."""
+    """Register a generated ZIM as a local source and write source metadata."""
     from svalbard.commands import add_local_source
 
     source_id = add_local_source(
@@ -175,19 +181,41 @@ def register_crawled_zim(
         source_id=source_id or artifact_path.stem,
     )
     slug = source_id.split(":", 1)[1]
-    metadata_path = artifact_path.parent / f"{slug}.crawl.yaml"
+    metadata_path = artifact_path.parent / f"{slug}.source.yaml"
     relative_artifact = artifact_path.relative_to(workspace_root).as_posix()
-    metadata_path.write_text(
-        "\n".join(
-            [
-                f"artifact: {relative_artifact}",
-                f"origin_url: {origin_url}",
-                "tool: zimit",
-                "",
-            ]
-        )
-    )
+    metadata = {
+        "artifact": relative_artifact,
+        "origin_url": origin_url,
+        "kind": kind,
+        "runner": runner,
+        "tool": tool,
+        "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "size_bytes": artifact_path.stat().st_size,
+    }
+    if quality:
+        metadata["quality"] = quality
+    if audio_only:
+        metadata["audio_only"] = True
+    metadata_path.write_text(yaml.safe_dump(metadata, sort_keys=False))
     return source_id
+
+
+def register_crawled_zim(
+    workspace_root: Path,
+    artifact_path: Path,
+    origin_url: str,
+    source_id: str | None = None,
+) -> str:
+    """Register a generated crawl artifact using the legacy web-specific metadata."""
+    return register_generated_zim(
+        workspace_root=workspace_root,
+        artifact_path=artifact_path,
+        origin_url=origin_url,
+        kind="web",
+        runner="docker",
+        tool="zimit",
+        source_id=source_id,
+    )
 
 
 def run_config_crawl(config_path: Path, workspace_root: Path) -> list[Path]:

@@ -156,6 +156,25 @@ The remote Docker preference is deliberate:
 
 Host runners may still be supported for advanced users who already have the relevant tools installed, but host mode is not the primary path for remote ingestion.
 
+### Container Layout
+
+Svalbard should keep separate Docker images per backend family rather than collapsing everything into one general toolbox image.
+
+The initial layout should be:
+
+- `docker/geodata/Dockerfile`
+- `docker/media/Dockerfile`
+- existing website-crawl container use remains separate through Zimit upstream
+
+Container policy:
+
+- prefer the same lightweight base distribution across Svalbard-managed images where practical
+- Alpine is the preferred first choice because the current geodata image already uses it successfully
+- do not force a shared base image yet
+- if the media toolchain proves materially easier or more reliable on another minimal base such as Debian slim, that image may diverge
+
+This keeps images small and purpose-specific while still encouraging a consistent operational footprint.
+
 ## Media Pipeline
 
 ### Supported Scope

@@ -39,6 +39,8 @@ def test_sync_drive_skips_downloaded(tmp_path):
     """sync_drive should skip sources already in manifest with files on disk."""
     init_drive(str(tmp_path), "finland-128")
     manifest = Manifest.load(tmp_path / "manifest.yaml")
+    preset = load_preset("finland-128")
+    source = next(source for source in preset.sources if source.id == "wikipedia-en-nopic")
 
     # Fake a downloaded entry
     from svalbard.manifest import ManifestEntry
@@ -60,8 +62,18 @@ def test_sync_drive_skips_downloaded(tmp_path):
     ))
     manifest.save(tmp_path / "manifest.yaml")
 
-    # Sync with mocked resolver/downloader to avoid network calls
-    with patch("svalbard.commands.resolve_url", return_value="https://example.com/test.zim"), \
+    minimal_preset = Preset(
+        name="finland-128",
+        description="test",
+        target_size_gb=128,
+        region="finland",
+        sources=[source],
+    )
+
+    # Sync with mocked preset/downloader to avoid network calls
+    with patch("svalbard.commands.load_preset", return_value=minimal_preset), \
+         patch("svalbard.commands.resolve_url", return_value="https://example.com/test.zim"), \
+         patch("svalbard.commands.fetch_sha256_sidecar", return_value=""), \
          patch("svalbard.commands.download_sources", return_value=[]):
         sync_drive(str(tmp_path))
 
@@ -183,3 +195,32 @@ def test_add_local_directory_rejects_nested_symlinks(tmp_path):
 
     with pytest.raises(ValueError, match="nested symlinks"):
         add_local_source(root, workspace_root=tmp_path, source_type="app")
+
+
+def test_run_add_routes_youtube_urls_to_media_backend(tmp_path):
+    from svalbard.add import run_add
+
+    artifact = tmp_path / "generated" / "playlist.zim"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_bytes(b"data")
+
+    with patch("svalbard.add.run_media_ingest", return_value=artifact) as media_mock:
+        source_id = run_add("https://www.youtube.com/watch?v=abc", workspace_root=tmp_path)
+
+    assert source_id == "local:playlist"
+    media_mock.assert_called_once()
+
+
+def test_run_add_writes_media_provenance(tmp_path):
+    from svalbard.add import run_add
+
+    artifact = tmp_path / "generated" / "lecture.zim"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_bytes(b"data")
+
+    with patch("svalbard.add.run_media_ingest", return_value=artifact):
+        run_add("https://areena.yle.fi/1-12345", workspace_root=tmp_path, audio_only=True)
+
+    metadata = (tmp_path / "generated" / "lecture.source.yaml").read_text()
+    assert "kind: media" in metadata
+    assert "audio_only: true" in metadata
