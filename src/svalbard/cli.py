@@ -280,9 +280,9 @@ def index(path, strategy, yes):
     est_mb = plan.estimated_db_bytes / (1024 * 1024)
     console.print(f"\n  Estimated DB size: {est_mb:.1f} MB")
     strategy_desc = {
-        "fast": "keyword search — titles + first ~500 chars per article",
-        "standard": "full-text search — complete article bodies, better ranking",
-        "semantic": "keyword + meaning — full text + embedding vectors for reranking",
+        "fast": "indexes titles and article summaries — quick to build, good for simple keyword lookups",
+        "standard": "indexes full article text — slower to build, finds matches deeper in content",
+        "semantic": "adds AI-powered meaning search on top of standard — understands synonyms and related concepts, requires an embedding model",
     }
     console.print(f"  Strategy: [bold]{strategy}[/bold] — {strategy_desc[strategy]}")
 
