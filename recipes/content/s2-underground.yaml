@@ -1,0 +1,14 @@
+id: s2-underground
+type: zim
+group: video
+tags:
+- navigation
+- computing
+- self-defense
+depth: overview
+size_gb: 4.4
+url_pattern: https://download.kiwix.org/zim/videos/s2underground_en_all_{date}.zim
+description: S2 Underground — SIGINT, OSINT, intelligence tradecraft, and survival communications videos
+license:
+  id: YouTube
+  attribution: S2 Underground (YouTube)

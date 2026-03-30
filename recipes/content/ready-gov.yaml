@@ -1,0 +1,14 @@
+id: ready-gov
+type: zim
+group: practical
+tags:
+- emergency-medicine
+- fire-shelter
+- water
+depth: comprehensive
+size_gb: 2.3
+url_pattern: https://download.kiwix.org/zim/zimit/www.ready.gov_en_{date}.zim
+description: Ready.gov — FEMA emergency preparedness guides (disasters, planning, kits, alerts)
+license:
+  id: public-domain
+  attribution: Federal Emergency Management Agency (FEMA)

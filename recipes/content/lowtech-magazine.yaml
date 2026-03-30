@@ -1,0 +1,15 @@
+id: lowtech-magazine
+type: zim
+group: practical
+tags:
+- energy-power
+- civil-construction
+- agriculture
+depth: comprehensive
+size_gb: 0.67
+url_pattern: https://download.kiwix.org/zim/zimit/solar.lowtechmagazine.com_mul_all_{date}.zim
+description: Low-tech Magazine (solar-powered) — sustainable technology, energy, and pre-industrial engineering
+license:
+  id: CC-BY-NC-SA-4.0
+  attribution: Low-tech Magazine
+  url: https://solar.lowtechmagazine.com

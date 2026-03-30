@@ -1,0 +1,13 @@
+id: quick-guides-medicine
+type: zim
+group: video
+tags:
+- medicine
+- emergency-medicine
+depth: comprehensive
+size_gb: 0.5
+url_pattern: https://download.kiwix.org/zim/videos/quickguidesformedicine_en_all_{date}.zim
+description: Quick Guides for Medicine — video medical reference and procedures
+license:
+  id: YouTube
+  attribution: Quick Guides for Medicine

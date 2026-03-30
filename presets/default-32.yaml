@@ -5,12 +5,16 @@ region: default
 sources:
 - wikipedia-en-nopic
 - wikimed
+- wikem
 - practical-action
 - who-basic-emergency-care
 - zimgit-water
 - zimgit-knots
 - zimgit-medicine
 - zimgit-food-preparation
+- based-cooking
+- grimgrains
+- usda-nutrition
 - stackexchange-survival
 - cyberchef
 - kiwix-serve

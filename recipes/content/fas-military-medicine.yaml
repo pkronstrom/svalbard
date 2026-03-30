@@ -1,0 +1,14 @@
+id: fas-military-medicine
+type: zim
+group: practical
+tags:
+- medicine
+- emergency-medicine
+- first-aid
+depth: comprehensive
+size_gb: 0.078
+url_pattern: https://download.kiwix.org/zim/zimit/fas-military-medicine_en_{date}.zim
+description: FAS Military Medicine library — US military field medicine manuals and references
+license:
+  id: public-domain
+  attribution: Federation of American Scientists / US Government

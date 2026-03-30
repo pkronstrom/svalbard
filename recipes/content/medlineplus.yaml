@@ -1,0 +1,14 @@
+id: medlineplus
+type: zim
+group: practical
+tags:
+- medicine
+- first-aid
+- pharmacy
+depth: comprehensive
+size_gb: 1.8
+url_pattern: https://download.kiwix.org/zim/zimit/medlineplus.gov_en_all_{date}.zim
+description: MedlinePlus — NIH consumer health encyclopedia (conditions, drugs, lab tests, procedures)
+license:
+  id: public-domain
+  attribution: U.S. National Library of Medicine / NIH

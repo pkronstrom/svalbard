@@ -1,0 +1,13 @@
+id: energypedia
+type: zim
+group: practical
+tags:
+- energy-power
+depth: comprehensive
+size_gb: 0.76
+url_pattern: https://download.kiwix.org/zim/other/energypedia_en_all_maxi_{date}.zim
+description: Energypedia — renewable energy and energy access wiki
+license:
+  id: CC-BY-SA-4.0
+  attribution: Energypedia contributors
+  url: https://energypedia.info

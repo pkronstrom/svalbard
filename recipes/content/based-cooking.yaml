@@ -1,0 +1,12 @@
+id: based-cooking
+type: zim
+group: practical
+tags:
+- food-foraging
+depth: overview
+size_gb: 0.015
+url_pattern: https://download.kiwix.org/zim/zimit/based.cooking_en_all_{date}.zim
+description: Based.cooking — simple, no-nonsense recipe collection
+license:
+  id: public-domain
+  attribution: based.cooking contributors

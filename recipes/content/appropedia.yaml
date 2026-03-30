@@ -1,0 +1,16 @@
+id: appropedia
+type: zim
+group: practical
+tags:
+- energy-power
+- agriculture
+- water
+- civil-construction
+depth: comprehensive
+size_gb: 0.55
+url_pattern: https://download.kiwix.org/zim/other/appropedia_en_all_maxi_{date}.zim
+description: Appropedia — sustainability and appropriate technology wiki
+license:
+  id: CC-BY-SA-4.0
+  attribution: Appropedia contributors
+  url: https://www.appropedia.org
