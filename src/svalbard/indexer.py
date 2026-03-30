@@ -43,6 +43,9 @@ def _meta_key(filename: str) -> str:
 
 BYTES_PER_ARTICLE_ESTIMATE = 600  # rough average for fast strategy
 
+# Tier ordering for upgrade detection
+_TIER_RANK = {"fast": 0, "standard": 1, "semantic": 2}
+
 
 @dataclass
 class IndexPlan:
@@ -74,6 +77,11 @@ def estimate_index(
     plan = IndexPlan(total_zims=len(zim_files), strategy=strategy)
     on_disk_names: set[str] = set()
 
+    # Detect tier upgrade: if requested strategy is higher than current,
+    # re-index everything to get fuller content
+    current_tier = db.get_meta("tier") or "none"
+    upgrading = _TIER_RANK.get(strategy, 0) > _TIER_RANK.get(current_tier, -1)
+
     for zf in zim_files:
         name = zf.name
         on_disk_names.add(name)
@@ -83,6 +91,10 @@ def estimate_index(
         if name not in indexed:
             # Completely new file
             plan.new_zims += 1
+            plan.files_to_index.append(zf)
+        elif upgrading:
+            # Tier upgrade — re-index with fuller content
+            plan.changed_zims += 1
             plan.files_to_index.append(zf)
         elif stored_checksum != current_checksum:
             # File changed since last index

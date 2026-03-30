@@ -226,3 +226,33 @@ class TestRunIndex:
         plan = run_index(drive, db)
         assert isinstance(plan, IndexPlan)
         assert plan.total_zims == 2
+
+    @patch("svalbard.indexer.zim_article_count", side_effect=_fake_zim_article_count)
+    @patch("svalbard.indexer.extract_articles", side_effect=_fake_extract_articles)
+    def test_tier_upgrade_reindexes_all(
+        self, mock_extract, _mock_count, drive: Path, db: SearchDB
+    ):
+        """Upgrading from fast to standard should re-index all files."""
+        run_index(drive, db, strategy="fast")
+        assert db.get_meta("tier") == "fast"
+        mock_extract.reset_mock()
+
+        # Upgrade to standard — should re-index everything
+        plan = run_index(drive, db, strategy="standard")
+        assert plan.changed_zims == 2  # all files re-indexed
+        assert plan.already_indexed == 0
+        assert db.get_meta("tier") == "standard"
+        assert mock_extract.call_count == 2
+
+    @patch("svalbard.indexer.zim_article_count", side_effect=_fake_zim_article_count)
+    @patch("svalbard.indexer.extract_articles", side_effect=_fake_extract_articles)
+    def test_same_tier_skips(
+        self, mock_extract, _mock_count, drive: Path, db: SearchDB
+    ):
+        """Re-running the same tier should not re-index."""
+        run_index(drive, db, strategy="fast")
+        mock_extract.reset_mock()
+
+        plan = run_index(drive, db, strategy="fast")
+        assert plan.files_to_index == []
+        mock_extract.assert_not_called()
