@@ -16,6 +16,7 @@ sources:
 - kiwix-serve
 - maplibre-vendor
 - 7z
+- sqliteviz
 - sqlite3
 - nomic-embed-text-v1.5
 - dufs

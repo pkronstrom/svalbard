@@ -133,7 +133,8 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
 
     # ── Data ────────────────────────────────────────────────────────────
     db_entries = [e for e in manifest.entries if e.type == "sqlite"]
-    if db_entries:
+    sqliteviz_available = (drive_path / "apps" / "sqliteviz").exists()
+    if db_entries and sqliteviz_available:
         lines.append("[data]")
         for entry in sorted(db_entries, key=lambda e: e.id):
             source = next((s for s in preset.sources if s.id == entry.id), None)
