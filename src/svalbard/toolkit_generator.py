@@ -181,22 +181,22 @@ while IFS= read -r line || [ -n "$line" ]; do
     GROUPS+=("$current_group")
 done < "$ENTRIES_FILE"
 
-# Numbered menu
+# Numbered menu — prints UI to stderr, returns index on stdout
 show_menu() {
-    echo ""
-    echo "${BOLD}Svalbard${NC}"
-    echo "─────────────────────────────────────────"
+    echo "" >&2
+    echo "${BOLD}Svalbard${NC}" >&2
+    echo "─────────────────────────────────────────" >&2
     local prev_group=""
     for i in "${!LABELS[@]}"; do
         if [ "${GROUPS[$i]}" != "$prev_group" ]; then
-            echo ""
+            echo "" >&2
             prev_group="${GROUPS[$i]}"
         fi
-        printf "  ${CYAN}%2d${NC}) %s\n" "$((i + 1))" "${LABELS[$i]}"
+        printf "  ${CYAN}%2d${NC}) %s\n" "$((i + 1))" "${LABELS[$i]}" >&2
     done
-    echo ""
-    printf "  ${DIM} q) Quit${NC}\n"
-    echo ""
+    echo "" >&2
+    printf "  ${DIM} q) Quit${NC}\n" >&2
+    echo "" >&2
 
     local choice
     read -rp "  > " choice
