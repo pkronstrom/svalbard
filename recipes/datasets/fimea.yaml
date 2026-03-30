@@ -1,29 +1,20 @@
 id: fimea
-family: reference-static
-description: >
-  Finnish pharmaceutical registry (Fimea).
-  Medicine names, active ingredients, dosages, and substitution groups.
-  High practical value for identifying medicines and finding alternatives
-  when specific brands are unavailable.
+type: sqlite
+group: regional
+tags: [medical, pharmaceutical]
+depth: comprehensive
+size_gb: 0.01
+description: Finnish pharmaceutical registry — medicine names, ingredients, dosages (Fimea)
+strategy: build
 
-source:
-  # TODO: confirm current download URL and format
-  url: https://www.fimea.fi
-  format: xml
-  note: >
-    Fimea publishes medicine data as XML/TXT downloads.
-    Verify current URL and file format.
-
-normalize:
-  canonical_format: sqlite
+build:
+  family: reference-static
+  source_url: https://www.fimea.fi
+  source_format: xml
   tables:
     - name: medicines
       fts: true
       fts_columns: [name, active_ingredient, atc_code]
-
-package:
-  reference: true
-  raw: true
 
 viewer:
   name: Pharmaceutical Registry

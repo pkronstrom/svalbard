@@ -6,6 +6,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
+from svalbard.builder import BuildResult, check_tools, run_build
 from svalbard.downloader import download_sources, fetch_sha256_sidecar
 from svalbard.manifest import Manifest, ManifestEntry
 from svalbard.models import Source
@@ -14,6 +15,7 @@ from svalbard.readme_generator import generate_drive_readme
 from svalbard.resolver import resolve_url
 from svalbard.serve_generator import generate_serve_sh
 from svalbard.taxonomy import compute_coverage, load_taxonomy
+from svalbard.viewer_generator import generate_map_viewer
 
 console = Console()
 
@@ -26,6 +28,7 @@ TYPE_DIRS = {
     "binary": "bin",
     "app": "apps",
     "iso": "infra",
+    "sqlite": "data",
 }
 
 
@@ -86,11 +89,29 @@ def init_drive(path: str, preset_name: str):
     generate_serve_sh(drive_path)
     generate_drive_readme(drive_path)
 
+    # Generate map viewer if preset has pmtiles sources
+    if any(s.type == "pmtiles" for s in sources):
+        generate_map_viewer(drive_path, preset_name)
+
     console.print(f"[bold green]Initialized:[/bold green] {drive_path}")
     console.print(f"  Preset: {preset.name}")
     console.print(f"  Sources: {len(sources)}")
     console.print(f"  Estimated size: {sum(s.size_gb for s in sources):.1f} GB")
     console.print(f"\nRun [bold]svalbard sync[/bold] to download content.")
+
+
+def _artifact_path_for_build(source: Source, drive_path: Path) -> Path | None:
+    """Return the expected artifact path for a build source, or None."""
+    type_dir = TYPE_DIRS.get(source.type, "other")
+    dest_dir = drive_path / type_dir
+    if source.type == "app":
+        app_dir = dest_dir / source.id
+        if app_dir.exists() and any(app_dir.iterdir()):
+            return app_dir
+        return None
+    ext = {"pmtiles": "pmtiles", "sqlite": "sqlite"}.get(source.type, source.type)
+    path = dest_dir / f"{source.id}.{ext}"
+    return path if path.exists() else None
 
 
 def sync_drive(path: str, update: bool = False, force: bool = False):
@@ -106,15 +127,17 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
 
     console.print(f"[bold]Syncing:[/bold] {manifest.preset} → {drive_path}")
 
-    active_sources = preset.sources
+    # Split sources by strategy
+    download_sources_list = [s for s in preset.sources if s.strategy != "build"]
+    build_sources = [s for s in preset.sources if s.strategy == "build"]
 
-    # Determine what needs downloading
+    # ── Downloads ────────────────────────────────────────────────────────
     console.print("\n[bold]Resolving latest versions...[/bold]")
     downloads: list[DownloadJob] = []
     skipped = 0
     updated = 0
 
-    for source in active_sources:
+    for source in download_sources_list:
         try:
             jobs = expand_source_downloads(source, drive_path)
         except Exception as e:
@@ -152,7 +175,10 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
     if skipped:
         console.print(f"  [dim]{skipped} already downloaded (use --update to check for newer versions)[/dim]")
 
-    if not downloads:
+    has_downloads = bool(downloads)
+    has_builds = bool(build_sources)
+
+    if not has_downloads and not has_builds:
         console.print("\n[bold green]Everything up to date.[/bold green]")
         manifest.last_synced = datetime.now().isoformat(timespec="seconds")
         manifest.save(manifest_path)
@@ -170,8 +196,6 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
                 checksums[checksum_key] = sidecar
                 console.print(f"  [dim]Checksum fetched: {job.source_id}[/dim]")
 
-    console.print(f"\n[bold]Downloading {len(downloads)} file(s)...[/bold]")
-
     # Download with crash-safe manifest saving
     interrupted = False
 
@@ -182,7 +206,13 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
 
     old_handler = signal.signal(signal.SIGINT, _handle_interrupt)
 
+    download_succeeded = 0
+    download_failed = 0
+
     try:
+        if downloads:
+            console.print(f"\n[bold]Downloading {len(downloads)} file(s)...[/bold]")
+
         for job in downloads:
             if interrupted:
                 break
@@ -224,31 +254,91 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
                         if not (e.id == job.source_id and e.platform == job.platform)
                     ]
                     manifest.entries.append(entry)
+                    download_succeeded += 1
 
                     # Save manifest after each successful download
                     manifest.last_synced = datetime.now().isoformat(timespec="seconds")
                     manifest.save(manifest_path)
+                else:
+                    download_failed += 1
 
             except Exception as e:
+                download_failed += 1
                 console.print(f"  [red]Failed: {job.source_id}: {e}[/red]")
+
+        # ── Builds ───────────────────────────────────────────────────────
+        if build_sources and not interrupted:
+            # Check which builds are needed
+            pending_builds = []
+            for source in build_sources:
+                if force or _artifact_path_for_build(source, drive_path) is None:
+                    pending_builds.append(source)
+                else:
+                    skipped += 1
+
+            if pending_builds:
+                # Check required tools
+                families = list({s.build.get("family", "") for s in pending_builds})
+                missing_tools = check_tools(families)
+                if missing_tools:
+                    console.print(
+                        f"\n[red]Missing build tools:[/red] {', '.join(missing_tools)}"
+                    )
+                    console.print("  Install with: brew install tippecanoe gdal")
+                    console.print("  For pmtiles: go install github.com/protomaps/go-pmtiles@latest")
+                else:
+                    console.print(f"\n[bold]Building {len(pending_builds)} source(s)...[/bold]")
+                    for source in pending_builds:
+                        if interrupted:
+                            break
+                        console.print(f"  Building {source.id}...")
+                        result = run_build(source, drive_path)
+                        if result.success and result.artifact:
+                            artifact = result.artifact
+                            if artifact.is_dir():
+                                size_bytes = sum(f.stat().st_size for f in artifact.rglob("*") if f.is_file())
+                                filename = source.id
+                            else:
+                                size_bytes = artifact.stat().st_size
+                                filename = artifact.name
+
+                            entry = ManifestEntry(
+                                id=source.id,
+                                type=source.type,
+                                filename=filename,
+                                size_bytes=size_bytes,
+                                tags=source.tags,
+                                depth=source.depth,
+                                downloaded=datetime.now().isoformat(timespec="seconds"),
+                            )
+                            manifest.entries = [
+                                e for e in manifest.entries if e.id != source.id
+                            ]
+                            manifest.entries.append(entry)
+                            manifest.last_synced = datetime.now().isoformat(timespec="seconds")
+                            manifest.save(manifest_path)
+                            console.print(f"  [green]OK[/green] {source.id}")
+                        else:
+                            download_failed += 1
+                            console.print(f"  [red]FAIL[/red] {source.id}: {result.error}")
     finally:
         signal.signal(signal.SIGINT, old_handler)
         # Final save
         manifest.last_synced = datetime.now().isoformat(timespec="seconds")
         manifest.save(manifest_path)
 
-    succeeded = sum(
-        1
-        for job in downloads
-        if manifest.entry_by_id(job.source_id, job.platform)
-        and manifest.entry_by_id(job.source_id, job.platform).downloaded >= manifest.last_synced[:10]
-    )
-    total = len(downloads)
-    failed = total - succeeded
+    # Regenerate map viewer and serve script after sync
+    if any(s.type == "pmtiles" for s in preset.sources):
+        generate_map_viewer(drive_path, manifest.preset)
+    generate_serve_sh(drive_path)
+
+    total = len(downloads) + len(build_sources) - skipped
     if interrupted:
-        console.print(f"\n[yellow]Interrupted:[/yellow] {succeeded}/{total} downloaded. Run svalbard sync to continue.")
+        console.print(f"\n[yellow]Interrupted.[/yellow] Run svalbard sync to continue.")
+    elif download_failed:
+        console.print(f"\n[bold green]Done:[/bold green] {download_failed} failed.")
     else:
-        console.print(f"\n[bold green]Done:[/bold green] {succeeded} downloaded, {failed} failed.")
+        console.print(f"\n[bold green]Done:[/bold green] all sources synced.")
 
 
 def show_status(path: str, check_updates: bool = False):

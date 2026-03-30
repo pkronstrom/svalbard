@@ -86,13 +86,16 @@ count_files() {
 ZIM_COUNT=$(count_files "*.zim" "$DRIVE_ROOT/zim")
 PMTILES_COUNT=$(count_files "*.pmtiles" "$DRIVE_ROOT/maps")
 GGUF_COUNT=$(count_files "*.gguf" "$DRIVE_ROOT/models")
+HAS_APPS=0
+[ -d "$DRIVE_ROOT/apps" ] && [ "$(ls -A "$DRIVE_ROOT/apps" 2>/dev/null)" ] && HAS_APPS=1
 
 echo "Content found:"
 [ "$ZIM_COUNT" -gt 0 ] && echo "  ZIM files:    $ZIM_COUNT"
 [ "$PMTILES_COUNT" -gt 0 ] && echo "  PMTiles maps: $PMTILES_COUNT"
 [ "$GGUF_COUNT" -gt 0 ] && echo "  GGUF models:  $GGUF_COUNT"
+[ "$HAS_APPS" -eq 1 ] && echo "  Web apps:     $(ls -d "$DRIVE_ROOT/apps"/*/ 2>/dev/null | wc -l | tr -d ' ')"
 
-if [ "$ZIM_COUNT" -eq 0 ] && [ "$PMTILES_COUNT" -eq 0 ] && [ "$GGUF_COUNT" -eq 0 ]; then
+if [ "$ZIM_COUNT" -eq 0 ] && [ "$PMTILES_COUNT" -eq 0 ] && [ "$GGUF_COUNT" -eq 0 ] && [ "$HAS_APPS" -eq 0 ]; then
     echo "  (no content files found — run 'svalbard sync' first)"
     exit 0
 fi
@@ -162,6 +165,21 @@ start_llama() {
     echo "  LLM:    http://localhost:$port"
 }
 
+start_apps() {
+    local port="${1:-8083}"
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "Error: python3 not found"
+        return 1
+    fi
+    echo "Starting static file server on port $port..."
+    python3 -m http.server "$port" --directory "$DRIVE_ROOT" >/dev/null 2>&1 &
+    PIDS+=($!)
+    echo "  Apps:   http://localhost:$port/apps/"
+    [ -d "$DRIVE_ROOT/apps/map" ] && echo "  Map:    http://localhost:$port/apps/map/"
+    [ -d "$DRIVE_ROOT/apps/sqliteviz" ] && echo "  SQLite: http://localhost:$port/apps/sqliteviz/"
+    [ -d "$DRIVE_ROOT/apps/duckdb-wasm" ] && echo "  DuckDB: http://localhost:$port/apps/duckdb-wasm/"
+}
+
 # ── Menu ─────────────────────────────────────────────────────────────────────
 
 show_menu() {
@@ -180,6 +198,10 @@ show_menu() {
         echo "  3) LLM       — run local language model"
         n=$((n + 1))
     fi
+    if [ "$HAS_APPS" -eq 1 ]; then
+        echo "  4) Apps      — map viewer, SQLiteViz, DuckDB (needs python3)"
+        n=$((n + 1))
+    fi
     echo "  a) All available services"
     echo "  q) Quit"
     echo ""
@@ -194,10 +216,12 @@ show_menu() {
         1) start_kiwix ;;
         2) start_pmtiles ;;
         3) start_llama ;;
+        4) start_apps ;;
         a|A)
             [ "$ZIM_COUNT" -gt 0 ] && [ -n "$KIWIX_BIN" ] && start_kiwix
             [ "$PMTILES_COUNT" -gt 0 ] && [ -n "$PMTILES_BIN" ] && start_pmtiles
             [ "$GGUF_COUNT" -gt 0 ] && [ -n "$LLAMA_BIN" ] && start_llama
+            [ "$HAS_APPS" -eq 1 ] && start_apps
             ;;
         q|Q) exit 0 ;;
         *) echo "Invalid choice." ; show_menu ;;

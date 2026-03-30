@@ -1,24 +1,19 @@
 id: joukahainen
-family: reference-static
-description: >
-  Joukahainen Finnish language reference database.
-  Very small, nearly free to carry. Can support Finnish search,
-  labeling, and language-reference tooling.
+type: sqlite
+group: regional
+tags: [language, finnish]
+depth: reference-only
+size_gb: 0.005
+description: Joukahainen Finnish language reference database (Voikko)
+strategy: build
 
-source:
-  # TODO: confirm current download URL
-  url: https://joukahainen.puimula.org
-  format: xml
-
-normalize:
-  canonical_format: sqlite
+build:
+  family: reference-static
+  source_url: https://joukahainen.puimula.org
+  source_format: xml
   tables:
     - name: words
       fts: true
-
-package:
-  reference: true
-  raw: true
 
 viewer:
   name: Finnish Language Reference

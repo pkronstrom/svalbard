@@ -25,6 +25,8 @@ class Source:
     description: str = ""
     sha256: str = ""  # expected hash (if empty, try fetching .sha256 sidecar)
     license: License | None = None
+    strategy: str = "download"  # "download" or "build"
+    build: dict = field(default_factory=dict)  # opaque config for builder
 
 
 @dataclass

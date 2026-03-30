@@ -1,0 +1,23 @@
+id: maplibre-vendor
+type: app
+group: tools
+tags: [maps, viewer]
+depth: reference-only
+size_gb: 0.01
+description: MapLibre GL JS + PMTiles JS + Protomaps fonts and sprites
+strategy: build
+
+build:
+  family: app-bundle
+  assets:
+    - url: https://unpkg.com/maplibre-gl/dist/maplibre-gl.js
+      dest: vendor/maplibre-gl.js
+    - url: https://unpkg.com/maplibre-gl/dist/maplibre-gl.css
+      dest: vendor/maplibre-gl.css
+    - url: https://unpkg.com/pmtiles/dist/pmtiles.js
+      dest: vendor/pmtiles.js
+
+license:
+  id: BSD-3-Clause
+  attribution: MapLibre contributors / Protomaps
+  url: https://maplibre.org

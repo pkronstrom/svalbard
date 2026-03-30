@@ -1,42 +1,34 @@
 id: lipas-recreation
-family: vector-service
-description: >
-  Finnish outdoor recreation infrastructure from LIPAS (University of Jyvaskyla).
-  Lean-to shelters, huts, campfire sites, hiking trails, nature trails, canoe routes.
-  This is the openly-licensed subset of what Retkikartta.fi shows.
+type: pmtiles
+group: maps
+tags: [shelter, recreation, hiking]
+depth: comprehensive
+size_gb: 0.1
+description: Finnish outdoor recreation infrastructure from LIPAS (Jyvaskyla)
+strategy: build
 
-source:
-  type: wfs
-  url: https://lipas.fi/geoserver/lipas/ows
+build:
+  family: vector-service
+  service_type: wfs
+  service_url: https://lipas.fi/geoserver/lipas/ows
   layers:
     - name: lipas:lipas_kaikki_pisteet
       label: Recreation points
       filter: "tyyppikoodi IN (301,302,206,204,202,203,205)"
-      # 301=lean-to/goahti, 302=hut, 206=campfire, 204=nature tower,
-      # 202=camping, 203=rest area, 205=info point
     - name: lipas:lipas_kaikki_reitit
       label: Recreation routes
       filter: "tyyppikoodi IN (4405,4404,4403,4451,4452)"
-      # 4405=hiking trail, 4404=nature trail, 4403=walking route,
-      # 4451=canoe route, 4452=water route
     - name: lipas:lipas_kaikki_alueet
       label: Recreation areas
   output_format: application/json
-  srs: EPSG:4326
-
-normalize:
-  canonical_format: gpkg
+  srs: "EPSG:4326"
   layer_name: lipas_recreation
-
-package:
-  map: true
-  raw: true
+  max_zoom: 14
 
 viewer:
   name: Outdoor Recreation (LIPAS)
   name_fi: Ulkoilukohteet (LIPAS)
   category: shelter
-  icon: shelter
   style:
     points:
       circle-color: "#e67e22"
