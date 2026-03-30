@@ -4,8 +4,8 @@ group: tools
 tags:
 - computing
 depth: reference-only
-size_gb: 0.005
-url: https://github.com/ggerganov/llama.cpp/releases/latest/download/llama-server-linux-x86_64
+size_gb: 0.03
+url: https://github.com/ggml-org/llama.cpp/releases/download/b8586/llama-b8586-bin-ubuntu-x64.tar.gz
 description: llama.cpp server binary for serving GGUF models
 license:
   id: MIT
