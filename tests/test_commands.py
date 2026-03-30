@@ -200,15 +200,28 @@ def test_add_local_directory_rejects_nested_symlinks(tmp_path):
 def test_run_add_routes_youtube_urls_to_media_backend(tmp_path):
     from svalbard.add import run_add
 
-    artifact = tmp_path / "generated" / "playlist.zim"
+    artifact = tmp_path / "generated" / "youtube-video-abc123.zim"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_bytes(b"data")
 
     with patch("svalbard.add.run_media_ingest", return_value=artifact) as media_mock:
-        source_id = run_add("https://www.youtube.com/watch?v=abc", workspace_root=tmp_path)
+        source_id = run_add("https://www.youtube.com/watch?v=abc123", workspace_root=tmp_path)
 
-    assert source_id == "local:playlist"
+    assert source_id == "local:youtube-video-abc123"
     media_mock.assert_called_once()
+
+
+def test_run_add_uses_youtube_playlist_id_for_default_slug(tmp_path):
+    from svalbard.add import run_add
+
+    artifact = tmp_path / "generated" / "youtube-playlist-pl987.zim"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_bytes(b"data")
+
+    with patch("svalbard.add.run_media_ingest", return_value=artifact):
+        source_id = run_add("https://www.youtube.com/playlist?list=PL987", workspace_root=tmp_path)
+
+    assert source_id == "local:youtube-playlist-pl987"
 
 
 def test_run_add_writes_media_provenance(tmp_path):

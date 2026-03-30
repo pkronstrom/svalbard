@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from svalbard.commands import add_local_source
 from svalbard.crawler import (
@@ -60,6 +60,27 @@ def _normalize_output_name(value: str | None, fallback_slug: str) -> str:
     return f"{fallback_slug}.zim"
 
 
+def _youtube_slug(parsed) -> str | None:
+    host = parsed.netloc.lower().replace("www.", "")
+    query = parse_qs(parsed.query)
+    path = parsed.path.strip("/")
+
+    if host == "youtu.be" and path:
+        return _slugify(f"youtube-video-{path.split('/')[-1]}")
+
+    if "youtube.com" not in host:
+        return None
+
+    video_id = query.get("v", [None])[0]
+    playlist_id = query.get("list", [None])[0]
+
+    if video_id:
+        return _slugify(f"youtube-video-{video_id}")
+    if playlist_id:
+        return _slugify(f"youtube-playlist-{playlist_id}")
+    return None
+
+
 def _default_output_slug(value: str, kind: str) -> str:
     if kind == "local":
         return _slugify(Path(value).stem)
@@ -67,7 +88,11 @@ def _default_output_slug(value: str, kind: str) -> str:
     host = parsed.netloc.lower().replace("www.", "")
     path = parsed.path.strip("/")
     if kind == "media":
-        if "playlist" in parsed.query:
+        youtube_slug = _youtube_slug(parsed)
+        if youtube_slug:
+            return youtube_slug
+        query = parse_qs(parsed.query)
+        if query.get("list"):
             return _slugify(f"{host}-playlist")
         if path:
             return _slugify(path.split("/")[-1])
