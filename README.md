@@ -47,6 +47,8 @@ Finland presets add Finnish-language and Finland-focused content on top of that 
 | `finland-128`  | 128 GB | Finnish + English reference and practical guides    |
 | `finland-1tb`  | 1 TB   | Full Finnish-first archive with larger models/tools |
 
+For quick manual end-to-end checks, `test-1gb` is a visible smoke-test preset with a tiny Wikipedia ZIM, a compact local model, a small Uusimaa basemap, and a few lightweight support sources. It is meant for validation, not as a recommended archival tier.
+
 ## Source Catalog
 
 These are the recurring data sources and tools that appear across the preset bundles.
