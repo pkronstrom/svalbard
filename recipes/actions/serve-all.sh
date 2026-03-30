@@ -20,6 +20,7 @@ if [ -d "$DRIVE_ROOT/zim" ]; then
 fi
 if [ -n "$KIWIX_BIN" ] && [ ${#zim_files[@]} -gt 0 ]; then
     port="$(find_free_port 8080)"
+    kiwix_port="$port"
     "$KIWIX_BIN" --port "$port" --address "$BIND" "${zim_files[@]}" &
     SVALBARD_PIDS+=($!)
     ui_status "Kiwix:  http://$BIND:$port"
@@ -54,6 +55,15 @@ elif command -v python3 >/dev/null 2>&1; then
     python3 -m http.server "$port" --bind "$BIND" --directory "$DRIVE_ROOT" >/dev/null 2>&1 &
     SVALBARD_PIDS+=($!)
     ui_status "Files:  http://$BIND:$port"
+fi
+
+SQLITE_BIN="$(find_binary sqlite3 2>/dev/null || true)"
+if [ -n "$SQLITE_BIN" ] && [ -f "$DRIVE_ROOT/data/search.db" ]; then
+    port="$(find_free_port 8084)"
+    export DB="$DRIVE_ROOT/data/search.db" SQLITE_BIN KIWIX_PORT="${kiwix_port:-8080}"
+    "$DRIVE_ROOT/.svalbard/actions/search-server.sh" "$port" "$BIND" "${kiwix_port:-8080}" &
+    SVALBARD_PIDS+=($!)
+    ui_status "Search: http://$BIND:$port"
 fi
 
 wait_for_services

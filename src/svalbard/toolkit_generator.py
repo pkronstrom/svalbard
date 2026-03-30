@@ -65,6 +65,16 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
         )
         lines.append("")
 
+    # ── Search ──────────────────────────────────────────────────────────
+    search_db = drive_path / "data" / "search.db"
+    if search_db.exists():
+        lines.append("[search]")
+        lines.append(
+            f"Search all content"
+            f"\t.svalbard/actions/search.sh"
+        )
+        lines.append("")
+
     # ── Maps ────────────────────────────────────────────────────────────
     pmtiles_count = _count_files(drive_path / TYPE_DIRS["pmtiles"], "*.pmtiles")
     if pmtiles_count > 0:

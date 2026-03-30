@@ -147,3 +147,48 @@ def test_regeneration_cleans_old_svalbard_dir(tmp_path):
     generate_toolkit(tmp_path, "default-32")
 
     assert not (tmp_path / ".svalbard" / "stale.txt").exists()
+
+
+def test_entries_tab_includes_search_when_db_exists(tmp_path):
+    """Search entry should appear when search.db exists."""
+    _write_manifest(tmp_path, {
+        "preset": "default-32",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [
+            {"id": "wikipedia-en-nopic", "type": "zim",
+             "filename": "wikipedia-en-nopic.zim",
+             "size_bytes": 4_500_000_000, "tags": [], "depth": "comprehensive"},
+        ],
+    })
+    (tmp_path / "zim").mkdir()
+    (tmp_path / "zim" / "wikipedia-en-nopic.zim").touch()
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "search.db").touch()
+
+    generate_toolkit(tmp_path, "default-32")
+
+    entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
+    assert "[search]" in entries
+    assert "search.sh" in entries
+
+
+def test_entries_tab_omits_search_when_no_db(tmp_path):
+    """Search entry should NOT appear when search.db does not exist."""
+    _write_manifest(tmp_path, {
+        "preset": "default-32",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [
+            {"id": "wikipedia-en-nopic", "type": "zim",
+             "filename": "wikipedia-en-nopic.zim",
+             "size_bytes": 4_500_000_000, "tags": [], "depth": "comprehensive"},
+        ],
+    })
+    (tmp_path / "zim").mkdir()
+    (tmp_path / "zim" / "wikipedia-en-nopic.zim").touch()
+
+    generate_toolkit(tmp_path, "default-32")
+
+    entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
+    assert "[search]" not in entries
