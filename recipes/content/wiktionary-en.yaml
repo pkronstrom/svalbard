@@ -1,0 +1,10 @@
+id: wiktionary-en
+type: zim
+group: reference
+tags:
+- language
+- general-reference
+depth: comprehensive
+size_gb: 5.0
+url_pattern: https://download.kiwix.org/zim/wiktionary/wiktionary_en_all_nopic_{date}.zim
+description: English Wiktionary

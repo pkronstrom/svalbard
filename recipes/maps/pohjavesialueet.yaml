@@ -1,0 +1,36 @@
+id: pohjavesialueet
+family: vector-static
+description: >
+  Finnish groundwater areas classified by the Finnish Environment Institute (SYKE).
+  Shows areas where groundwater is accessible and protected. Directly relevant for
+  water sourcing in survival scenarios.
+
+source:
+  url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/pohjavesialueet.zip
+  format: shapefile
+
+normalize:
+  canonical_format: gpkg
+  source_srs: EPSG:3067
+  layer_name: pohjavesialueet
+
+package:
+  map: true
+  raw: true
+
+viewer:
+  name: Groundwater Areas
+  name_fi: Pohjavesialueet
+  category: water
+  icon: water
+  style:
+    polygons:
+      fill-color: "#3498db"
+      fill-opacity: 0.2
+      line-color: "#2980b9"
+      line-width: 1
+
+license:
+  id: CC-BY-4.0
+  attribution: Finnish Environment Institute (SYKE)
+  url: https://www.syke.fi

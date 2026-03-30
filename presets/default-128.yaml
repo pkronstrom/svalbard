@@ -1,0 +1,21 @@
+name: default-128
+description: Region-neutral broad reference, education, and practical guides for a
+  128GB drive
+target_size_gb: 128
+region: default
+sources:
+- wikipedia-en-nopic
+- wiktionary-en
+- wikimed
+- wikihow-en
+- ifixit
+- stackexchange-survival
+- stackexchange-diy
+- stackexchange-gardening
+- stackexchange-cooking
+- practical-action
+- wikibooks-en
+- khan-academy
+- gutenberg
+- cyberchef
+- kiwix-serve

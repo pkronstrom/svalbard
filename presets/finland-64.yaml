@@ -1,0 +1,18 @@
+name: finland-64
+description: Broader coverage with Finnish + English reference and practical guides
+target_size_gb: 64
+region: finland
+sources:
+- wikipedia-en-nopic
+- wikipedia-fi-nopic
+- wiktionary-en
+- wiktionary-fi
+- wikimed
+- ifixit
+- stackexchange-survival
+- stackexchange-diy
+- stackexchange-gardening
+- practical-action
+- wikibooks-en
+- cyberchef
+- kiwix-serve

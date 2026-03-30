@@ -1,0 +1,26 @@
+name: default-512
+description: Region-neutral large reference archive with a first local LLM tier
+target_size_gb: 512
+region: default
+sources:
+- wikipedia-en-maxi
+- wiktionary-en
+- wikimed
+- wikihow-en
+- ifixit
+- stackexchange-survival
+- stackexchange-diy
+- stackexchange-gardening
+- stackexchange-cooking
+- stackexchange-amateur-radio
+- stackexchange-electronics
+- stackexchange-physics
+- stackexchange-math
+- practical-action
+- wikibooks-en
+- khan-academy
+- gutenberg
+- qwen-9b
+- llama-server
+- cyberchef
+- kiwix-serve

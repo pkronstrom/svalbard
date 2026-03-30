@@ -1,15 +1,33 @@
-from importlib.resources import files
 from pathlib import Path
 
 import yaml
 
 from svalbard.models import Preset, Source
 
-PRESETS_DIR = Path(str(files("svalbard") / "presets"))
+# Resolve paths relative to the project root (two levels up from this file)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PRESETS_DIR = _PROJECT_ROOT / "presets"
+RECIPES_DIRS = [
+    _PROJECT_ROOT / "recipes",
+]
+
+
+def _build_recipe_index() -> dict[str, dict]:
+    """Scan all recipe directories and build an id-keyed index."""
+    index: dict[str, dict] = {}
+    for recipes_dir in RECIPES_DIRS:
+        if not recipes_dir.exists():
+            continue
+        for path in recipes_dir.rglob("*.yaml"):
+            with open(path) as f:
+                data = yaml.safe_load(f)
+            if data and "id" in data:
+                index[data["id"]] = data
+    return index
 
 
 def load_preset(name: str) -> Preset:
-    """Load a preset by name (e.g. 'finland-128')."""
+    """Load a preset by name (e.g. 'finland-128'), resolving recipe references."""
     path = PRESETS_DIR / f"{name}.yaml"
     if not path.exists():
         raise FileNotFoundError(f"Preset not found: {path}")
@@ -17,10 +35,39 @@ def load_preset(name: str) -> Preset:
 
 
 def parse_preset(path: Path) -> Preset:
-    """Parse a preset YAML file into a Preset object."""
+    """Parse a preset YAML file, resolving source IDs from recipes."""
     with open(path) as f:
         data = yaml.safe_load(f)
-    sources = [Source(**s) for s in data.get("sources", [])]
+
+    recipe_index = _build_recipe_index()
+    sources = []
+    for entry in data.get("sources", []):
+        if isinstance(entry, str):
+            # Simple ID reference
+            source_id = entry
+            recipe = recipe_index.get(source_id)
+            if recipe is None:
+                raise ValueError(
+                    f"Recipe '{source_id}' not found (referenced in preset '{data['name']}')"
+                )
+            sources.append(Source(**{k: v for k, v in recipe.items() if k in Source.__dataclass_fields__}))
+        elif isinstance(entry, dict):
+            if "id" in entry and "type" not in entry:
+                # ID reference with overrides
+                source_id = entry["id"]
+                recipe = recipe_index.get(source_id)
+                if recipe is None:
+                    raise ValueError(
+                        f"Recipe '{source_id}' not found (referenced in preset '{data['name']}')"
+                    )
+                merged = {k: v for k, v in recipe.items() if k in Source.__dataclass_fields__}
+                overrides = entry.get("override", {})
+                merged.update(overrides)
+                sources.append(Source(**merged))
+            else:
+                # Inline source definition (backwards compat)
+                sources.append(Source(**{k: v for k, v in entry.items() if k in Source.__dataclass_fields__}))
+
     return Preset(
         name=data["name"],
         description=data["description"],

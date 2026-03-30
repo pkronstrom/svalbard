@@ -1,0 +1,23 @@
+name: default-256
+description: Region-neutral expanded reference and practical archive for a 256GB drive
+target_size_gb: 256
+region: default
+sources:
+- wikipedia-en-maxi
+- wiktionary-en
+- wikimed
+- wikihow-en
+- ifixit
+- stackexchange-survival
+- stackexchange-diy
+- stackexchange-gardening
+- stackexchange-cooking
+- stackexchange-amateur-radio
+- stackexchange-electronics
+- stackexchange-physics
+- practical-action
+- wikibooks-en
+- khan-academy
+- gutenberg
+- cyberchef
+- kiwix-serve

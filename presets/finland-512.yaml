@@ -1,0 +1,31 @@
+name: finland-512
+description: Expanded Finnish-first coverage with media and larger reference sets
+target_size_gb: 512
+region: finland
+sources:
+- wikipedia-en-maxi
+- wikipedia-fi-nopic
+- wikipedia-sv-nopic
+- wikipedia-no-nopic
+- wikipedia-da-nopic
+- wiktionary-en
+- wiktionary-fi
+- wikimed
+- wikihow-en
+- ifixit
+- stackexchange-survival
+- stackexchange-diy
+- stackexchange-gardening
+- stackexchange-cooking
+- stackexchange-amateur-radio
+- stackexchange-electronics
+- stackexchange-physics
+- stackexchange-math
+- practical-action
+- wikibooks-en
+- khan-academy
+- gutenberg
+- qwen-9b
+- llama-server
+- cyberchef
+- kiwix-serve

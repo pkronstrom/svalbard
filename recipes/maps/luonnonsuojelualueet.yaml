@@ -1,0 +1,37 @@
+id: luonnonsuojelualueet
+family: vector-static
+description: >
+  Finnish nature conservation and wilderness areas (SYKE).
+  Protected areas, wilderness reserves, and national parks.
+  Useful for understanding where intact ecosystems are and where
+  game, fish, and forage expectations differ.
+
+source:
+  url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/luonnonsuojelualueet.zip
+  format: shapefile
+
+normalize:
+  canonical_format: gpkg
+  source_srs: EPSG:3067
+  layer_name: luonnonsuojelualueet
+
+package:
+  map: true
+  raw: true
+
+viewer:
+  name: Protected & Wilderness Areas
+  name_fi: Luonnonsuojelu- ja eramaa-alueet
+  category: context
+  icon: forest
+  style:
+    polygons:
+      fill-color: "#2ecc71"
+      fill-opacity: 0.15
+      line-color: "#27ae60"
+      line-width: 1
+
+license:
+  id: CC-BY-4.0
+  attribution: Finnish Environment Institute (SYKE)
+  url: https://www.syke.fi

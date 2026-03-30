@@ -1,0 +1,39 @@
+id: kasviatlas
+family: vector-service
+description: >
+  Finnish vascular plant distribution atlas (University of Helsinki / LUOMUS).
+  Species occurrence data across Finland by grid squares.
+  Use for identifying where edible and useful plants occur.
+  Note: distribution atlas, not a yield map.
+
+source:
+  # TODO: confirm the canonical service endpoint and snapshot method
+  type: wfs
+  url: https://kasviatlas.fi
+  note: >
+    Kasviatlas may require a custom snapshot workflow.
+    The service endpoint and bulk export path need verification.
+
+normalize:
+  canonical_format: gpkg
+  source_srs: EPSG:3067
+  layer_name: kasviatlas
+
+package:
+  map: true
+  raw: true
+
+viewer:
+  name: Plant Atlas
+  name_fi: Kasviatlas
+  category: food
+  icon: plant
+  style:
+    polygons:
+      fill-color: "#8e44ad"
+      fill-opacity: 0.2
+
+license:
+  attribution: University of Helsinki, Finnish Museum of Natural History (LUOMUS)
+  url: https://kasviatlas.fi
+  note: Verify license terms before redistribution

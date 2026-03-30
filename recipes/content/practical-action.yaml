@@ -1,0 +1,12 @@
+id: practical-action
+type: zim
+group: practical
+tags:
+- water
+- energy-power
+- agriculture
+- civil-construction
+depth: comprehensive
+size_gb: 1.0
+url_pattern: https://download.kiwix.org/zim/other/practical_action_en_all_{date}.zim
+description: Practical Action appropriate technology guides

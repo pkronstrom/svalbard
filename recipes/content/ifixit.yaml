@@ -1,0 +1,11 @@
+id: ifixit
+type: zim
+group: practical
+tags:
+- repair
+- electronics
+- mechanical
+depth: comprehensive
+size_gb: 5.0
+url_pattern: https://download.kiwix.org/zim/other/ifixit_en_all_{date}.zim
+description: iFixit repair guides

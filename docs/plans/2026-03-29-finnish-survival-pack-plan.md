@@ -505,10 +505,83 @@ This means:
 
 ## Open Questions
 
-- What is the cleanest bulk export path for `Retkikartta` data?
 - What is the cleanest canonical snapshot workflow for `Kasviatlas`?
 - Should practical plant layers be exposed as:
   - a generic atlas search interface, or
   - a curated list of preselected useful species first?
-- Should `Fimea` and `Joukahainen` ship in the same preset as the map pack, or as optional regional sidecars?
 - For future Luke berry data, can we identify a stable export/API path suitable for repeatable offline snapshots?
+
+---
+
+## Resolved Questions (2026-03-30)
+
+### Retkikartta Data Access
+
+Retkikartta aggregates two data sources with fundamentally different licensing:
+
+**LIPAS (University of Jyvaskyla) — CC BY 4.0, freely redistributable:**
+- WFS at `https://lipas.fi/geoserver/lipas/ows`
+- Covers ~66% of lean-to shelters, ~27% of campfire sites, significant trail coverage
+- Bulk download works — all features in a single WFS request with CQL_FILTER
+- Key type codes: 301 (lean-to), 302 (hut), 206 (campfire), 4405 (hiking trail), 4404 (nature trail), 4451 (canoe route)
+
+**Metsahallitus own data — restricted, redistribution prohibited:**
+- ~34% of lean-tos, ~73% of campfire places, ~81% of wilderness huts
+- Available via undocumented REST API at `retkikartta-api.anderscloud.com`
+- Terms of use prohibit distribution/publishing without written permission
+- Finnish Copyright Act Section 12 excludes databases from private copying exception
+
+**Decision:** LIPAS ships openly in presets. Metsahallitus structures are a user-fetched local recipe (`recipes/local/metsa-structures.yaml`, gitignored). Svalbard provides the recipe and tooling; the user runs the ingest themselves. Worth contacting Metsahallitus about data use agreement, but first pack does not block on it.
+
+### Architecture: Unified Pipeline, Not Parallel Systems
+
+The existing download system will be widened rather than replaced. Source gets a `strategy` field (`download` or `build`). Build sources declare their pipeline config. `sync_drive()` dispatches based on strategy. One system, one manifest, one preset format.
+
+### OSM Basemap
+
+Use `pmtiles extract` against the remote Protomaps daily build via HTTP range requests. No need to download the planet. Finland-only at z15 is ~700 MB-1 GB.
+
+Basemap coverage scales with preset tier:
+- 32-64 GB: Finland at z15 (~0.7-1 GB)
+- 128 GB: Finland + Estonia + border Karelia at z15 (~1.5-2.5 GB)
+- 256 GB: Nordics + Estonia + border Karelia/StPete at z15 (~4-8 GB)
+- 512 GB+: Nordics + Baltics + border regions at z15 (~5-10 GB)
+
+Basemap assets (MapLibre GL JS viewer, fonts/glyphs, sprites, style JSON) are ~15-20 MB total and ship in all tiers.
+
+### Map Viewer
+
+MapLibre GL JS + PMTiles protocol. ~250 KB JS payload. Supports toggleable layers, WebGL rendering, smooth interaction. Requires HTTP Range Request support from the local server.
+
+### Data Exploration Tooling
+
+All tiers get the core tooling stack (~50-65 MB total):
+- SQLiteViz (~5-15 MB) — SQL queries + charting for SQLite/CSV
+- DuckDB WASM Shell + spatial extension (~20-30 MB) — analytical SQL, reads GeoPackage/GeoJSON/CSV
+- MapLibre viewer + basemap assets (~15-20 MB)
+
+128 GB+ tiers additionally get:
+- JupyterLite or Marimo WASM (~200-300 MB) — full Python notebooks via Pyodide
+
+### Geodata Toolchain
+
+External tools (shell out from Python):
+- `ogr2ogr` (GDAL) — format conversion, reprojection (EPSG:3067 to EPSG:4326)
+- `tippecanoe` — PMTiles generation from GeoJSON/FlatGeobuf
+
+Python libraries:
+- `fiona` / `geopandas` — when filtering or joining before export
+- `lxml` — XML parsing for Fimea, Joukahainen
+- `sqlite3` (stdlib) — building reference databases with FTS5
+
+### Recipe System
+
+Dataset configurations live in `recipes/` as YAML files:
+- `recipes/*.yaml` — committed, open-data recipes (LIPAS, SYKE datasets, etc.)
+- `recipes/local/*.yaml` — gitignored, personal/restricted recipes (Metsahallitus)
+
+Svalbard auto-discovers from both directories. Local recipes produce artifacts that can be included in personal drive builds but are never distributed.
+
+### Fimea and Joukahainen
+
+Ship in the same preset as the map pack. They are tiny (sub-100 MB as SQLite) and directly useful. Not optional sidecars — core reference content.

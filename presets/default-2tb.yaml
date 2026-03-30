@@ -1,0 +1,33 @@
+name: default-2tb
+description: Maximum region-neutral archive with full English references and multiple
+  local LLMs
+target_size_gb: 2048
+region: default
+sources:
+- wikipedia-en-all
+- wiktionary-en
+- wikimed
+- wikihow-en
+- ifixit
+- stackexchange-survival
+- stackexchange-diy
+- stackexchange-gardening
+- stackexchange-cooking
+- stackexchange-amateur-radio
+- stackexchange-electronics
+- stackexchange-physics
+- stackexchange-math
+- stackexchange-chemistry
+- stackexchange-biology
+- stackexchange-engineering
+- stackexchange-serverfault
+- stackexchange-superuser
+- practical-action
+- wikibooks-en
+- khan-academy
+- gutenberg
+- qwen-35b-a3b
+- qwen-9b
+- llama-server
+- cyberchef
+- kiwix-serve

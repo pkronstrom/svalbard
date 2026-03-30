@@ -53,7 +53,7 @@ def test_default_512_includes_portable_qwen_model():
     preset = load_preset("default-512")
     ids = {source.id for source in preset.sources}
     assert "qwen-9b" in ids
-    assert "llama-server-binaries" in ids
+    assert "llama-server" in ids
     assert "llama-3b" not in ids
 
 
@@ -63,7 +63,7 @@ def test_default_1tb_includes_large_qwen_model_under_24gb():
     assert large_model.size_gb < 24.0
     ids = {source.id for source in preset.sources}
     assert "qwen-35b-a3b" in ids
-    assert "llama-server-binaries" in ids
+    assert "llama-server" in ids
     assert "llama-70b" not in ids
 
 
@@ -105,3 +105,21 @@ def test_canonical_presets_do_not_use_legacy_source_fields():
         for source in preset.sources:
             assert not hasattr(source, "optional_group")
             assert not hasattr(source, "replaces")
+
+
+def test_all_preset_sources_resolve_from_recipes():
+    """Every source ID in every preset must resolve to a recipe."""
+    for preset_name in list_presets():
+        preset = load_preset(preset_name)
+        assert len(preset.sources) > 0, f"{preset_name} has no sources"
+        for source in preset.sources:
+            assert source.id, f"Source in {preset_name} has no id"
+            assert source.type, f"Source {source.id} in {preset_name} has no type"
+
+
+def test_recipes_have_consistent_group_field():
+    """Every resolved source should have a group assigned."""
+    for preset_name in list_presets():
+        preset = load_preset(preset_name)
+        for source in preset.sources:
+            assert source.group, f"Source {source.id} in {preset_name} has no group"

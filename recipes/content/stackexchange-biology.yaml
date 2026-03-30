@@ -1,0 +1,10 @@
+id: stackexchange-biology
+type: zim
+group: practical
+tags:
+- biology
+- agriculture
+depth: comprehensive
+size_gb: 1.0
+url_pattern: https://download.kiwix.org/zim/stack_exchange/biology.stackexchange.com_en_all_{date}.zim
+description: Biology Stack Exchange

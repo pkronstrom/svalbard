@@ -1,0 +1,14 @@
+id: wikibooks-en
+type: zim
+group: education
+tags:
+- education-pedagogy
+- mathematics
+- physics
+- chemistry
+- biology
+- computing
+depth: comprehensive
+size_gb: 3.0
+url_pattern: https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_nopic_{date}.zim
+description: English Wikibooks textbooks

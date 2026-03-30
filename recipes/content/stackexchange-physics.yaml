@@ -1,0 +1,10 @@
+id: stackexchange-physics
+type: zim
+group: practical
+tags:
+- physics
+- mathematics
+depth: comprehensive
+size_gb: 2.0
+url_pattern: https://download.kiwix.org/zim/stack_exchange/physics.stackexchange.com_en_all_{date}.zim
+description: Physics Stack Exchange

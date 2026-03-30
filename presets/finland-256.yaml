@@ -1,0 +1,27 @@
+name: finland-256
+description: Rich coverage with Finnish focus, Nordic languages, and expanded references
+target_size_gb: 256
+region: finland
+sources:
+- wikipedia-en-maxi
+- wikipedia-fi-nopic
+- wikipedia-sv-nopic
+- wikipedia-no-nopic
+- wiktionary-en
+- wiktionary-fi
+- wikimed
+- wikihow-en
+- ifixit
+- stackexchange-survival
+- stackexchange-diy
+- stackexchange-gardening
+- stackexchange-cooking
+- stackexchange-amateur-radio
+- stackexchange-electronics
+- stackexchange-physics
+- practical-action
+- wikibooks-en
+- khan-academy
+- gutenberg
+- cyberchef
+- kiwix-serve

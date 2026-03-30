@@ -1,0 +1,13 @@
+id: gutenberg
+type: zim
+group: reference
+tags:
+- general-reference
+- agriculture
+- mechanical
+- medicine
+- history
+depth: overview
+size_gb: 10.0
+url_pattern: https://download.kiwix.org/zim/gutenberg/gutenberg_en_all_{date}.zim
+description: Project Gutenberg book collection

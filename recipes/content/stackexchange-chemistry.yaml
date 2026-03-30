@@ -1,0 +1,9 @@
+id: stackexchange-chemistry
+type: zim
+group: practical
+tags:
+- chemistry
+depth: comprehensive
+size_gb: 1.0
+url_pattern: https://download.kiwix.org/zim/stack_exchange/chemistry.stackexchange.com_en_all_{date}.zim
+description: Chemistry Stack Exchange

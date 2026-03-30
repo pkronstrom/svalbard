@@ -1,0 +1,11 @@
+name: finland-32
+description: Survival essentials with Finnish-language support for a 32GB USB stick
+target_size_gb: 32
+region: finland
+sources:
+- wikipedia-en-nopic
+- wikimed
+- practical-action
+- stackexchange-survival
+- cyberchef
+- kiwix-serve

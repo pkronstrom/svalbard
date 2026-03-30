@@ -1,0 +1,29 @@
+name: default-1tb
+description: Region-neutral full reference archive with a large local LLM tier
+target_size_gb: 1024
+region: default
+sources:
+- wikipedia-en-maxi
+- wiktionary-en
+- wikimed
+- wikihow-en
+- ifixit
+- stackexchange-survival
+- stackexchange-diy
+- stackexchange-gardening
+- stackexchange-cooking
+- stackexchange-amateur-radio
+- stackexchange-electronics
+- stackexchange-physics
+- stackexchange-math
+- stackexchange-chemistry
+- stackexchange-biology
+- stackexchange-engineering
+- practical-action
+- wikibooks-en
+- khan-academy
+- gutenberg
+- qwen-35b-a3b
+- llama-server
+- cyberchef
+- kiwix-serve

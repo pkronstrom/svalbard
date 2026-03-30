@@ -1,0 +1,34 @@
+id: virtavesien-lohikalakannat
+family: vector-static
+description: >
+  Salmonid populations in Finnish rivers and streams (Luke / SYKE).
+  Shows where salmon, trout, and other salmonids are present.
+  Direct fishing and protein-acquisition relevance.
+
+source:
+  url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/virtavesien_lohikalakannat.zip
+  format: shapefile
+
+normalize:
+  canonical_format: gpkg
+  source_srs: EPSG:3067
+  layer_name: lohikalakannat
+
+package:
+  map: true
+  raw: true
+
+viewer:
+  name: Salmonid Rivers
+  name_fi: Virtavesien lohikalakannat
+  category: food
+  icon: fish
+  style:
+    lines:
+      line-color: "#e74c3c"
+      line-width: 2
+
+license:
+  id: CC-BY-4.0
+  attribution: Natural Resources Institute Finland (Luke) / SYKE
+  url: https://www.luke.fi

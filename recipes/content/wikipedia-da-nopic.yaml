@@ -1,0 +1,10 @@
+id: wikipedia-da-nopic
+type: zim
+group: reference
+tags:
+- general-reference
+- language
+depth: overview
+size_gb: 3.0
+url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_da_all_nopic_{date}.zim
+description: Danish Wikipedia without pictures

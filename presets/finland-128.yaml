@@ -1,0 +1,23 @@
+name: finland-128
+description: Finnish + English reference and practical guides for a 128GB drive
+target_size_gb: 128
+region: finland
+sources:
+- wikipedia-en-nopic
+- wikipedia-fi-nopic
+- wiktionary-en
+- wiktionary-fi
+- wikimed
+- wikihow-en
+- ifixit
+- stackexchange-survival
+- stackexchange-diy
+- stackexchange-gardening
+- stackexchange-cooking
+- stackexchange-amateur-radio
+- practical-action
+- wikibooks-en
+- khan-academy
+- gutenberg
+- cyberchef
+- kiwix-serve

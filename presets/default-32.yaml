@@ -1,0 +1,11 @@
+name: default-32
+description: Region-neutral survival essentials for a 32GB USB stick
+target_size_gb: 32
+region: default
+sources:
+- wikipedia-en-nopic
+- wikimed
+- practical-action
+- stackexchange-survival
+- cyberchef
+- kiwix-serve

@@ -1,0 +1,9 @@
+id: stackexchange-superuser
+type: zim
+group: practical
+tags:
+- computing
+depth: comprehensive
+size_gb: 5.0
+url_pattern: https://download.kiwix.org/zim/stack_exchange/superuser.com_en_all_{date}.zim
+description: Super User — computer hardware/software
