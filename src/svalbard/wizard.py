@@ -377,16 +377,17 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
             console.print(f"  {zim_count} ZIM files available for cross-ZIM search.\n")
             console.print("  [bold]1[/bold]) Fast — keyword search (quick, small index)")
             console.print("  [bold]2[/bold]) Standard — full-text search (slower, better ranking)")
-            console.print("  [bold]3[/bold]) Skip for now (run [bold]svalbard index[/bold] later)")
+            console.print("  [bold]3[/bold]) Semantic — keyword + meaning (understands synonyms and related concepts)")
+            console.print("  [bold]4[/bold]) Skip for now (run [bold]svalbard index[/bold] later)")
 
             from rich.prompt import Prompt as P2
 
-            index_choice = P2.ask("\n  Select", choices=["1", "2", "3"], default="3")
-            if index_choice in ("1", "2"):
+            index_choice = P2.ask("\n  Select", choices=["1", "2", "3", "4"], default="4")
+            if index_choice in ("1", "2", "3"):
                 from svalbard.indexer import run_index, scan_zim_files
                 from svalbard.search_db import SearchDB
 
-                strategy = "fast" if index_choice == "1" else "standard"
+                strategy = {"1": "fast", "2": "standard", "3": "semantic"}[index_choice]
                 drive = P(target_path)
                 data_dir = drive / "data"
                 data_dir.mkdir(parents=True, exist_ok=True)

@@ -217,6 +217,15 @@ def _resolve_tool(
 
 # ── vector-static ───────────────────────────────────────────────────────────
 
+def _docker_path(host_path: Path | str, mounts: dict) -> str:
+    """Convert a host path to its Docker container equivalent."""
+    hp = str(host_path)
+    for host_mount, container_mount in mounts.items():
+        if hp.startswith(host_mount):
+            return hp.replace(host_mount, container_mount, 1)
+    return hp
+
+
 def _run_ogr2ogr(args: list[str], drive_path: Path, mounts: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     """Run ogr2ogr using local binary or Docker fallback."""
     binary, image = _resolve_tool("ogr2ogr", drive_path)
@@ -280,7 +289,8 @@ def build_vector_static(source: Source, drive_path: Path, cache: Path) -> BuildR
             "-f", "GPKG",
             "-t_srs", "EPSG:4326",
             "-s_srs", source_srs,
-            str(gpkg), str(shp),
+            _docker_path(gpkg, docker_mounts),
+            _docker_path(shp, docker_mounts),
             "-nln", layer_name,
         ], drive_path, docker_mounts)
 
@@ -290,17 +300,20 @@ def build_vector_static(source: Source, drive_path: Path, cache: Path) -> BuildR
     pmtiles_path = dest_dir / f"{source.id}.pmtiles"
 
     if not pmtiles_path.exists():
-        with tempfile.NamedTemporaryFile(suffix=".geojsonseq", delete=False) as tmp:
-            tmp_geojson = Path(tmp.name)
+        tmp_geojson = cache / f"{source.id}.geojsonseq"
         try:
-            _run_ogr2ogr(["-f", "GeoJSONSeq", str(tmp_geojson), str(gpkg)], drive_path, docker_mounts)
+            _run_ogr2ogr([
+                "-f", "GeoJSONSeq",
+                _docker_path(tmp_geojson, docker_mounts),
+                _docker_path(gpkg, docker_mounts),
+            ], drive_path, docker_mounts)
             _run_tippecanoe([
-                "-o", str(pmtiles_path),
+                "-o", _docker_path(pmtiles_path, docker_mounts),
                 f"-z{max_zoom}",
                 "--drop-densest-as-needed",
                 "-P",
                 "-l", layer_name,
-                str(tmp_geojson),
+                _docker_path(tmp_geojson, docker_mounts),
             ], drive_path, docker_mounts)
         finally:
             tmp_geojson.unlink(missing_ok=True)
@@ -331,7 +344,7 @@ def build_vector_service(source: Source, drive_path: Path, cache: Path) -> Build
             cmd = [
                 "-f", "GPKG",
                 "-t_srs", "EPSG:4326",
-                str(gpkg), wfs_url,
+                _docker_path(gpkg, docker_mounts), wfs_url,
                 layer_def["name"],
                 "-nln", layer_name,
             ]
@@ -348,17 +361,20 @@ def build_vector_service(source: Source, drive_path: Path, cache: Path) -> Build
     pmtiles_path = dest_dir / f"{source.id}.pmtiles"
 
     if not pmtiles_path.exists():
-        with tempfile.NamedTemporaryFile(suffix=".geojsonseq", delete=False) as tmp:
-            tmp_geojson = Path(tmp.name)
+        tmp_geojson = cache / f"{source.id}.geojsonseq"
         try:
-            _run_ogr2ogr(["-f", "GeoJSONSeq", str(tmp_geojson), str(gpkg)], drive_path, docker_mounts)
+            _run_ogr2ogr([
+                "-f", "GeoJSONSeq",
+                _docker_path(tmp_geojson, docker_mounts),
+                _docker_path(gpkg, docker_mounts),
+            ], drive_path, docker_mounts)
             _run_tippecanoe([
-                "-o", str(pmtiles_path),
+                "-o", _docker_path(pmtiles_path, docker_mounts),
                 f"-z{max_zoom}",
                 "--drop-densest-as-needed",
                 "-P",
                 "-l", layer_name,
-                str(tmp_geojson),
+                _docker_path(tmp_geojson, docker_mounts),
             ], drive_path, docker_mounts)
         finally:
             tmp_geojson.unlink(missing_ok=True)
