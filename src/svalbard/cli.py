@@ -202,3 +202,81 @@ def local_add(path: str, workspace: str | None, source_type: str | None) -> None
 
     source_id = add_local_source(P(path), workspace_root=resolve_workspace_root(workspace), source_type=source_type)
     console.print(f"[green]Registered:[/green] {source_id}")
+
+
+@main.command()
+@click.argument("path", default=".")
+@click.option("--strategy", type=click.Choice(["fast", "standard", "semantic"]), default="fast", help="Indexing strategy tier")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def index(path, strategy, yes):
+    """Build search index over ZIM files on a drive."""
+    from pathlib import Path as P
+
+    from svalbard.indexer import run_index, scan_zim_files, estimate_index
+    from svalbard.search_db import SearchDB
+
+    drive_path = P(path)
+
+    # 1. Check for ZIM files
+    zim_files = scan_zim_files(drive_path)
+    if not zim_files:
+        console.print("No ZIM files found.")
+        return
+
+    # 2. Create data/ directory and open SearchDB
+    data_dir = drive_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    db = SearchDB(data_dir / "search.db")
+
+    # 3. Estimate work
+    plan = estimate_index(drive_path, db, strategy=strategy)
+
+    # 4. Display plan summary
+    console.print(f"\n[bold]Index plan[/bold]")
+    console.print(f"  Total ZIMs:       {plan.total_zims}")
+    console.print(f"  New:              {plan.new_zims}")
+    console.print(f"  Already indexed:  {plan.already_indexed}")
+    console.print(f"  Changed:          {plan.changed_zims}")
+    console.print(f"  Missing from disk:{plan.missing_zims}")
+
+    # 5. Nothing to do?
+    if not plan.files_to_index:
+        console.print("\n[green]Index is up to date.[/green]")
+        return
+
+    # 6. Show estimated DB size
+    est_mb = plan.estimated_db_bytes / (1024 * 1024)
+    console.print(f"\n  Estimated DB size: {est_mb:.1f} MB")
+    console.print(f"  Strategy: {strategy}")
+
+    # 7. Confirmation
+    if not yes:
+        from rich.prompt import Confirm
+
+        if not Confirm.ask("\n  Proceed with indexing?", default=True):
+            console.print("Aborted.")
+            return
+
+    # 8. Index with progress bar
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskID
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total} articles"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Indexing", total=plan.estimated_articles)
+
+        def on_progress(filename: str, articles_done: int, total_files: int):
+            progress.update(task, description=f"[cyan]{filename}[/cyan]")
+            progress.update(task, completed=articles_done)
+
+        result = run_index(drive_path, db, strategy=strategy, on_progress=on_progress)
+
+    # 9. Final stats
+    stats = db.stats()
+    console.print(f"\n[green]Indexing complete.[/green]")
+    console.print(f"  Sources: {stats['source_count']}")
+    console.print(f"  Articles: {stats['article_count']}")
