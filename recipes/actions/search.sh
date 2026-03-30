@@ -138,47 +138,17 @@ while true; do
     clear 2>/dev/null || true
     echo "Searching: $query"
 
-    safe_query="${query//\'/\'\'}"
-    # Prefix matching: "printer" -> "printer*"
-    fts_query=""
-    for word in $safe_query; do
-        [ -n "$fts_query" ] && fts_query="$fts_query "
-        fts_query="${fts_query}${word}*"
-    done
+    results=""
 
-    # FTS5 search — get candidates (more if we'll rerank)
-    fts_limit=20
-    [ "$mode" = "semantic" ] && fts_limit=50
-
-    results="$("$SQLITE_BIN" -separator $'\t' "$DB" \
-        "SELECT a.id, s.filename, a.path, a.title,
-                snippet(articles_fts, 1, '»', '«', '...', 12)
-         FROM articles_fts
-         JOIN articles a ON a.id = articles_fts.rowid
-         JOIN sources  s ON s.id = a.source_id
-         WHERE articles_fts MATCH '${fts_query}'
-         ORDER BY rank
-         LIMIT ${fts_limit};" 2>/dev/null || true)"
-
-    # Semantic search (rerank if FTS found results, pure semantic if not)
-    if [ "$mode" = "semantic" ]; then
-        # Ensure embedding server is running
+    if [ "$mode" = "semantic" ] && [ "$article_count" -lt 500000 ]; then
+        # Pure semantic: embed query, dot-product against all articles
         if ! _embed_server_running; then
-            _start_embed_server || { echo "  (semantic unavailable, using keyword)"; mode="keyword"; }
+            _start_embed_server || mode="keyword"
         fi
-
         if _embed_server_running; then
-            if [ -n "$results" ]; then
-                echo "  Reranking with semantic search..."
-                candidate_ids=$(echo "$results" | cut -f1 | tr '\n' ',' | sed 's/,$//')
-            else
-                echo "  No keyword matches, trying semantic search..."
-                # Get all article IDs as candidates for pure semantic search
-                candidate_ids=$("$SQLITE_BIN" "$DB" "SELECT id FROM articles LIMIT 500;" | tr '\n' ',' | sed 's/,$//')
-            fi
-
-            ranked_ids=$(_semantic_rerank "$query" "$candidate_ids" || true)
-
+            echo "  Semantic search..."
+            all_ids=$("$SQLITE_BIN" "$DB" "SELECT id FROM articles;" | tr '\n' ',' | sed 's/,$//')
+            ranked_ids=$(_semantic_rerank "$query" "$all_ids" || true)
             if [ -n "$ranked_ids" ]; then
                 results="$("$SQLITE_BIN" -separator $'\t' "$DB" \
                     "WITH ranked(aid, pos) AS (VALUES $(
@@ -196,6 +166,63 @@ while true; do
                      ORDER BY r.pos;" 2>/dev/null || true)"
             fi
         fi
+    fi
+
+    if [ "$mode" = "semantic" ] && [ "$article_count" -ge 500000 ]; then
+        # Large archive: FTS prefilter + semantic rerank
+        safe_query="${query//\'/\'\'}"
+        fts_query=""
+        for word in $safe_query; do
+            [ -n "$fts_query" ] && fts_query="$fts_query "
+            fts_query="${fts_query}${word}*"
+        done
+        results="$("$SQLITE_BIN" -separator $'\t' "$DB" \
+            "SELECT a.id, s.filename, a.path, a.title,
+                    snippet(articles_fts, 1, '»', '«', '...', 12)
+             FROM articles_fts
+             JOIN articles a ON a.id = articles_fts.rowid
+             JOIN sources  s ON s.id = a.source_id
+             WHERE articles_fts MATCH '${fts_query}'
+             ORDER BY rank LIMIT 200;" 2>/dev/null || true)"
+        if [ -n "$results" ] && _embed_server_running; then
+            echo "  Reranking..."
+            candidate_ids=$(echo "$results" | cut -f1 | tr '\n' ',' | sed 's/,$//')
+            ranked_ids=$(_semantic_rerank "$query" "$candidate_ids" || true)
+            if [ -n "$ranked_ids" ]; then
+                results="$("$SQLITE_BIN" -separator $'\t' "$DB" \
+                    "WITH ranked(aid, pos) AS (VALUES $(
+                        i=0; echo "$ranked_ids" | head -20 | while read -r rid; do
+                            [ $i -gt 0 ] && printf ","
+                            printf "(%s,%s)" "$rid" "$i"
+                            i=$((i+1))
+                        done
+                    ))
+                     SELECT a.id, s.filename, a.path, a.title,
+                            substr(a.body, 1, 120)
+                     FROM ranked r
+                     JOIN articles a ON a.id = r.aid
+                     JOIN sources  s ON s.id = a.source_id
+                     ORDER BY r.pos;" 2>/dev/null || true)"
+            fi
+        fi
+    fi
+
+    if [ "$mode" = "keyword" ] && [ -z "$results" ]; then
+        # FTS only fallback
+        safe_query="${query//\'/\'\'}"
+        fts_query=""
+        for word in $safe_query; do
+            [ -n "$fts_query" ] && fts_query="$fts_query "
+            fts_query="${fts_query}${word}*"
+        done
+        results="$("$SQLITE_BIN" -separator $'\t' "$DB" \
+            "SELECT a.id, s.filename, a.path, a.title,
+                    snippet(articles_fts, 1, '»', '«', '...', 12)
+             FROM articles_fts
+             JOIN articles a ON a.id = articles_fts.rowid
+             JOIN sources  s ON s.id = a.source_id
+             WHERE articles_fts MATCH '${fts_query}'
+             ORDER BY rank LIMIT 20;" 2>/dev/null || true)"
     fi
 
     if [ -z "$results" ]; then
