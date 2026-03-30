@@ -206,6 +206,12 @@ class SearchDB:
         ).fetchone()
         return row[0] if row[0] is not None else 0
 
+    def embedding_count(self) -> int:
+        """Return number of embedded articles."""
+        self.ensure_embeddings_table()
+        row = self.conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()
+        return row[0]
+
     def unembedded_articles(
         self, after_id: int = 0, limit: int = 1000
     ) -> list[tuple]:

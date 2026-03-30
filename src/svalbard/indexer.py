@@ -130,9 +130,8 @@ def estimate_index(
     if strategy == "semantic":
         plan.needs_embedding = True
         total_articles = db.article_count() + plan.estimated_articles
-        existing_embeddings = db.embed_resume_point()  # 0 if no table
-        # Rough: articles_to_embed = total minus what we've done
-        plan.articles_to_embed = max(total_articles - existing_embeddings, 0)
+        already_embedded = db.embedding_count()
+        plan.articles_to_embed = max(total_articles - already_embedded, 0)
         if plan.articles_to_embed > 0 and not plan.files_to_index:
             # No text reindex needed but embeddings are — still work to do
             pass
@@ -309,8 +308,7 @@ def _run_embedding_phase(
             done = article_ids[-1]
 
             if on_progress:
-                embedded_count = db.embed_resume_point()
-                on_progress("embedding", embedded_count, total)
+                on_progress("Embedding", db.embedding_count(), total)
     finally:
         proc.kill()
         proc.wait()

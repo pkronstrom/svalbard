@@ -290,8 +290,17 @@ def index(path, strategy, yes):
         console.print(f"    Estimated size: {est_mb:.1f} MB")
 
     if has_embed_work:
+        # 768 dims * 4 bytes/float = ~3 KB per article
+        embed_size_mb = plan.articles_to_embed * 768 * 4 / (1024 * 1024)
+        # Rough: ~200-500 embeddings/sec on CPU, use 300 as conservative estimate
+        embed_eta_min = plan.articles_to_embed / 300 / 60
         console.print(f"\n  Embedding:")
         console.print(f"    Articles to embed: {plan.articles_to_embed}")
+        console.print(f"    Estimated size:    ~{embed_size_mb:.1f} MB")
+        if embed_eta_min < 1:
+            console.print(f"    Estimated time:    ~{plan.articles_to_embed / 300:.0f} seconds")
+        else:
+            console.print(f"    Estimated time:    ~{embed_eta_min:.0f} minutes")
 
     # 5. Confirmation
     if not yes:
@@ -325,5 +334,4 @@ def index(path, strategy, yes):
     console.print(f"  Sources: {stats['source_count']}")
     console.print(f"  Articles: {stats['article_count']}")
     if strategy == "semantic":
-        embed_count = db.embed_resume_point()
-        console.print(f"  Embeddings: {embed_count}")
+        console.print(f"  Embeddings: {db.embedding_count()}")
