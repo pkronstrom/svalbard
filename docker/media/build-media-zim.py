@@ -230,7 +230,7 @@ def _yt_dlp_download_cmd(url: str, quality: str, *, audio_only: bool) -> list[st
         "--sub-format",
         "vtt",
         "--sub-langs",
-        "all,-live_chat",
+        "en,fi,en-orig,fi-FI",
         "--extractor-args",
         "youtube:skip=translated_subs",
         "-o",

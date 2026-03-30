@@ -24,3 +24,5 @@ def test_yt_dlp_download_cmd_ignores_subtitle_failures_and_skips_translated_subs
     assert "youtube:skip=translated_subs" in cmd
     assert "--write-subs" in cmd
     assert "--write-auto-subs" in cmd
+    sub_langs_index = cmd.index("--sub-langs") + 1
+    assert cmd[sub_langs_index] == "en,fi,en-orig,fi-FI"
