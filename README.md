@@ -61,16 +61,10 @@ uv tool install git+https://github.com/pkronstrom/svalbard    # recommended
 pipx install git+https://github.com/pkronstrom/svalbard        # alternative
 pip install git+https://github.com/pkronstrom/svalbard          # classic
 
-# 2. Run the wizard — pick a region, preset, and target drive
+# 2. Run the wizard — walks you through region, preset, target drive, download, and indexing
 svalbard wizard
 
-# 3. Sync — downloads everything to the drive
-svalbard sync /Volumes/MyStick
-
-# 4. Check what's on it
-svalbard status /Volumes/MyStick
-
-# 5. Done — unplug and go
+# 3. Done — unplug and go
 cd /Volumes/MyStick && ./run.sh     # browse, search, maps, AI chat
 ```
 
@@ -101,7 +95,7 @@ svalbard sync /Volumes/MyStick
 ```bash
 svalbard preset copy default-128 my-pack
 $EDITOR ~/.local/share/svalbard/presets/my-pack.yaml
-svalbard init /Volumes/MyStick --preset my-pack
+svalbard wizard --preset my-pack
 ```
 
 ## Commands
