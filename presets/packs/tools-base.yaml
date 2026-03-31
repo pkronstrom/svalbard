@@ -1,4 +1,5 @@
 name: tools-base
+kind: pack
 description: Core drive tooling — search, file serving, encryption, compression
 target_size_gb: 1
 sources:

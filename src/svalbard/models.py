@@ -41,6 +41,7 @@ class Preset:
     description: str
     target_size_gb: float
     region: str
+    kind: str = "preset"  # preset | pack | test
     sources: list[Source] = field(default_factory=list)
 
     @property

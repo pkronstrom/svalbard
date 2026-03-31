@@ -150,6 +150,7 @@ def parse_preset(
         description=data.get("description", ""),
         target_size_gb=data.get("target_size_gb", 0),
         region=data.get("region", ""),
+        kind=data.get("kind", "preset"),
         sources=sources,
     )
 

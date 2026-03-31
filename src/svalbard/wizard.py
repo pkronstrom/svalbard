@@ -143,7 +143,7 @@ def presets_for_space(free_gb: float, region: str = "finland") -> list[tuple[str
     result = []
     for preset_name in available:
         preset = load_preset(preset_name, workspace=workspace)
-        if preset.region != region:
+        if preset.kind != "preset" or preset.region != region:
             continue
         content_gb = sum(s.size_gb for s in preset.sources)
         result.append((preset_name, content_gb, content_gb <= free_gb))
@@ -154,7 +154,10 @@ def presets_for_space(free_gb: float, region: str = "finland") -> list[tuple[str
 def available_regions() -> list[str]:
     """Return canonical preset regions discovered from preset files."""
     workspace = resolve_workspace_root()
-    return sorted({load_preset(name, workspace=workspace).region for name in _wizard_preset_names()})
+    return sorted({
+        p.region for name in _wizard_preset_names()
+        if (p := load_preset(name, workspace=workspace)).kind == "preset" and p.region
+    })
 
 
 def local_sources_for_space(

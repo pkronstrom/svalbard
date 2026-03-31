@@ -1,4 +1,5 @@
 name: fi-reference
+kind: pack
 description: Finnish + English reference — encyclopedias, dictionaries, textbooks
 region: finland
 target_size_gb: 30

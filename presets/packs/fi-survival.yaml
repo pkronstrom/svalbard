@@ -1,4 +1,5 @@
 name: fi-survival
+kind: pack
 description: Finnish survival essentials — medical, food, water, shelter, practical skills
 region: finland
 target_size_gb: 8
