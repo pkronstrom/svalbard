@@ -280,7 +280,7 @@ def _artifact_path_for_build(source: Source, drive_path: Path) -> Path | None:
     return path if path.exists() else None
 
 
-def sync_drive(path: str, update: bool = False, force: bool = False, parallel: int = 1):
+def sync_drive(path: str, update: bool = False, force: bool = False, parallel: int = 4):
     """Download/update content on an initialized drive."""
     drive_path = Path(path)
     if not Manifest.exists(drive_path):
