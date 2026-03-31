@@ -202,22 +202,27 @@ def run_index(
                 batch: list[dict] = []
                 file_articles = 0
 
-                for path, title, body in extract_articles(zf, max_body_chars=max_body):
-                    batch.append(
-                        {
-                            "source_id": source_id,
-                            "path": path,
-                            "title": title,
-                            "body": body,
-                        }
-                    )
-                    if len(batch) >= _BATCH_SIZE:
-                        db.insert_articles_batch(batch)
-                        file_articles += len(batch)
-                        cumulative_articles += len(batch)
-                        batch = []
-                        if on_progress:
-                            on_progress(filename, cumulative_articles, plan.estimated_articles)
+                try:
+                    for path, title, body in extract_articles(zf, max_body_chars=max_body):
+                        batch.append(
+                            {
+                                "source_id": source_id,
+                                "path": path,
+                                "title": title,
+                                "body": body,
+                            }
+                        )
+                        if len(batch) >= _BATCH_SIZE:
+                            db.insert_articles_batch(batch)
+                            file_articles += len(batch)
+                            cumulative_articles += len(batch)
+                            batch = []
+                            if on_progress:
+                                on_progress(filename, cumulative_articles, plan.estimated_articles)
+                except RuntimeError as e:
+                    from rich.console import Console as C
+                    C().print(f"  [yellow]Skipping {filename}: {e}[/yellow]")
+                    continue
 
                 # Flush remaining
                 if batch:
