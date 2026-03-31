@@ -201,10 +201,10 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         choices = {}
         idx = 1
 
-        vol_table = Table(show_header=False, box=None, padding=(0, 1), width=_width())
+        vol_table = Table(show_header=False, box=None, padding=(0, 1))
         vol_table.add_column("#", width=3, no_wrap=True)
-        vol_table.add_column("Path", ratio=1)
-        vol_table.add_column("Space", no_wrap=True, justify="right")
+        vol_table.add_column("Path", no_wrap=True)
+        vol_table.add_column("Space", no_wrap=True)
 
         for v in volumes:
             svalbard_path = str(Path(v["path"]) / "svalbard")
