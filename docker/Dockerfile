@@ -36,4 +36,4 @@ RUN pip install --no-cache-dir \
     yle-dl \
     yt-dlp
 
-COPY scripts/build-media-zim.py /usr/local/bin/build-media-zim.py
+COPY recipes/builders/media-zim.py /usr/local/bin/build-media-zim.py

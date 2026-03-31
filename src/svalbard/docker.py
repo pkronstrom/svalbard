@@ -37,7 +37,7 @@ def ensure_tools_image() -> bool:
         return False
     log.info("Building %s Docker image...", TOOLS_IMAGE)
     result = subprocess.run(
-        ["docker", "build", "-t", TOOLS_IMAGE, str(dockerfile.parent)],
+        ["docker", "build", "-t", TOOLS_IMAGE, "-f", str(dockerfile), str(_PROJECT_ROOT)],
         capture_output=True, text=True,
     )
     return result.returncode == 0
