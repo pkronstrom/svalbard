@@ -56,8 +56,10 @@ Finnish presets (`finland-*`) add Finnish-language Wikipedia, Wiktionary, Finnis
 <!-- [![asciicast](https://asciinema.org/a/XXXXX.svg)](https://asciinema.org/a/XXXXX) -->
 
 ```bash
-# 1. Install svalbard
-pip install -e .                    # or: uv sync
+# 1. Install svalbard (pick one)
+uv tool install git+https://github.com/pkronstrom/svalbard    # recommended
+pipx install git+https://github.com/pkronstrom/svalbard        # alternative
+pip install git+https://github.com/pkronstrom/svalbard          # classic
 
 # 2. Run the wizard — pick a region, preset, and target drive
 svalbard wizard
