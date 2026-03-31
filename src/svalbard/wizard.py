@@ -440,8 +440,8 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
                     run_index(drive, db, strategy=strategy)
                     stats = db.stats()
                     console.print(
-                        f"  [green]Done.[/green] {stats['sources']} sources, "
-                        f"{stats['articles']} articles indexed."
+                        f"  [green]Done.[/green] {stats['source_count']} sources, "
+                        f"{stats['article_count']} articles indexed."
                     )
                 except ImportError as e:
                     console.print(f"\n  [yellow]Indexing skipped:[/yellow] {e}")

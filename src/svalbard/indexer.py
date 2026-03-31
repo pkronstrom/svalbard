@@ -24,7 +24,10 @@ def scan_zim_files(drive_path: str | Path) -> list[Path]:
     zim_dir = Path(drive_path) / "zim"
     if not zim_dir.is_dir():
         return []
-    return sorted(p for p in zim_dir.iterdir() if p.suffix == ".zim" and p.is_file())
+    return sorted(
+        p for p in zim_dir.iterdir()
+        if p.suffix == ".zim" and p.is_file() and not p.name.startswith("._")
+    )
 
 
 # ── Checksum helpers ─────────────────────────────────────────────────
