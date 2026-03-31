@@ -2,145 +2,86 @@
 
 Seed vault for human knowledge — civilization on a stick.
 
-Assemble offline knowledge drives — Wikipedia, maps, books, and AI models on a single USB stick.
+> **Alpha (v0.1.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
 
-## Install
+## Why
 
-```bash
-# With uv (recommended)
-uv run svalbard --help          # Run directly, no install needed
-uv run svb --help               # Short alias
-uv sync                        # Or install into a venv first
+The information we take for granted today — encyclopedias, repair manuals, medical references, maps, how-to guides — might not always be a search away. Whether you're heading off-grid, preparing for disruptions, or just want a self-contained reference library that doesn't need a connection, having critical knowledge on a physical drive is surprisingly useful.
 
-# With pip
-pip install -e .
-```
+Svalbard is a one-shot provisioner for pre-built offline knowledge archives. A bugout stick. An off-grid reference library. A civilization reboot archive. Whatever you need it to be.
 
-## Quick Start
+The project ships with sanely curated presets built from open recipes, but it's designed to be extended and modified with your own data — and that's encouraged.
 
-```bash
-uv run svalbard wizard
-```
+## What's on a drive
 
-The wizard walks you through choosing a region, selecting a preset tier, and initializing a drive.
+- **Encyclopedias** — Wikipedia, Wiktionary, WikiMed, WikiHow
+- **Practical knowledge** — iFixit repair guides, Stack Exchange Q&A, Practical Action field guides
+- **Books and courses** — Project Gutenberg, Wikibooks, Khan Academy
+- **Maps** — OpenStreetMap regional extracts, geodata overlays
+- **AI models** — Portable LLMs that run locally from the drive
+- **Search** — Full-text and semantic search across all content — find answers, not just keywords
+- **Tools** — CyberChef, Kiwix server, everything self-contained
 
-For direct CLI use, the common flow is:
+Deploy a 2 GB emergency kit on your phone with a few apps and be offgrid-certified. Or build a complete over-the-top 2 TB doomsday vault if you feel like it.
 
-```bash
-uv run svalbard add https://example.com/docs
-uv run svalbard attach local:example-docs /Volumes/MyDrive/svalbard
-uv run svalbard sync /Volumes/MyDrive/svalbard
-```
+## How it works
+
+A svalbard drive is not a bootable image or a compressed archive — it's a plain directory of standard open formats (ZIM, PMTiles, GGUF, HTML). No extraction, no installation. The drive includes its own binaries and tools for viewing and accessing data.
+
+**On a computer** — plug in the drive, open a terminal, run `./run.sh`. A shell menu lets you browse encyclopedias, search across all content, view maps, chat with local AI, and launch bundled tools. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
+
+**On a phone or tablet** — carry a USB-C stick, plug it into your phone, and open the files directly with apps like Kiwix (encyclopedias), OsmAnd (maps), or any PDF/EPUB reader. See `provisioning/` for recommended apps on iOS and Android.
 
 ## Presets
 
-Default presets are region-neutral and English-first.
+Presets scale from pocket-sized emergency kits to full archives:
 
-| Preset | Wikipedia | Reference | Practical | Education | Tools |
-| ------ | --------- | --------- | --------- | --------- | ----- |
-| `default-32` | English Wikipedia | WikiMed | Practical Action, Outdoors & Survival Stack Exchange | - | CyberChef, Kiwix tools |
-| `default-64` | English Wikipedia | English Wiktionary | WikiMed, iFixit, Outdoors & Survival Stack Exchange, DIY Stack Exchange, Practical Action | Wikibooks | CyberChef, Kiwix tools |
-| `default-128` | English Wikipedia | English Wiktionary, Project Gutenberg | WikiMed, WikiHow, iFixit, Outdoors & Survival, DIY, Gardening, Cooking Stack Exchange, Practical Action | Wikibooks, Khan Academy | CyberChef, Kiwix tools |
-| `default-256` | English Wikipedia with pictures | English Wiktionary, Project Gutenberg | WikiHow, iFixit, Outdoors & Survival, DIY, Gardening, Cooking, Amateur Radio, Electronics, Physics Stack Exchange, Practical Action | Wikibooks, Khan Academy | CyberChef, Kiwix tools |
-| `default-512` | English Wikipedia with pictures | English Wiktionary, Project Gutenberg | `default-256` plus Math Stack Exchange | Wikibooks, Khan Academy | CyberChef, Kiwix tools, Qwen3.5 9B |
-| `default-1tb` | English Wikipedia with pictures | English Wiktionary, Project Gutenberg | `default-512` plus Chemistry, Biology, Engineering Stack Exchange | Wikibooks, Khan Academy | CyberChef, Kiwix tools, Qwen3.5 35B-A3B |
-| `default-2tb` | Full English Wikipedia | English Wiktionary, Project Gutenberg | `default-1tb` plus Server Fault and Super User | Wikibooks, Khan Academy | CyberChef, Kiwix tools, Qwen3.5 35B-A3B + Qwen3.5 9B |
+| Preset | Size | What you get |
+|--------|------|-------------|
+| `finland-2` | 2 GB | Emergency field kit — compact medical, water, food, and practical references |
+| `default-32` | 32 GB | Core reference — Wikipedia, WikiMed, survival guides, repair manuals |
+| `default-128` | 128 GB | Broad reference — adds WikiHow, dictionaries, books, Khan Academy, maps |
+| `default-512` | 512 GB | Deep archive — adds full-picture Wikipedia, AI models, more Stack Exchange |
+| `default-2tb` | 2 TB | Everything — full Wikipedia, large AI models, comprehensive coverage |
 
-LLM downloads begin at the `512 GB` tiers in both preset families. Bundled models are capped to portable quants that fit roughly within a `24 GB` RAM budget; anything larger should become an explicit optional add-on later.
+Finnish presets (`finland-*`) add Finnish-language Wikipedia, Wiktionary, Finnish maps, open geodata (recreation structures, nature reserves), and Finnish-specific guides on top of the English baseline.
 
-Finland presets add Finnish-language and Finland-focused content on top of that baseline.
+## Quick start
 
-| Preset       | Size   | Focus                                               |
-| ------------ | ------ | --------------------------------------------------- |
-| `finland-2`    | 2 GB   | Emergency field kit with compact medical, water, food, and low-tech practical references |
-| `finland-128`  | 128 GB | Finnish + English reference and practical guides    |
-| `finland-1tb`  | 1 TB   | Full Finnish-first archive with larger models/tools |
+```bash
+pip install -e .        # or: uv sync
+svalbard wizard         # pick a region, preset, and target drive
+svalbard sync           # download everything
+```
 
-For quick manual end-to-end checks, `test-1gb` is a visible smoke-test preset with a tiny Wikipedia ZIM, a compact local model, a small Uusimaa basemap, and a few lightweight support sources. It is meant for validation, not as a recommended archival tier.
+## Import your own content
 
-## Source Catalog
-
-These are the recurring data sources and tools that appear across the preset bundles.
-
-| Source | What it is | Why it is included |
-| ------ | ---------- | ------------------ |
-| English Wikipedia (`wikipedia-en`, `wikipedia-en-maxi`, `wikipedia-en-all`) | Offline encyclopedia in compact, pictured, or full variants | Broadest general reference base for science, medicine, engineering, history, and basic lookup |
-| Finnish Wikipedia (`wikipedia-fi`, `wikipedia-fi-all`) | Finnish-language encyclopedia | Local-language reference for Finland-focused presets |
-| Swedish / Norwegian / Danish / German / Russian / Estonian Wikipedia variants | Additional language encyclopedias in larger Finland tiers | Regional and multilingual context where the Finland family expands beyond English/Finnish |
-| English Wiktionary (`wiktionary-en`) | Offline dictionary and word reference | Language lookup, definitions, and translation support |
-| Finnish Wiktionary (`wiktionary-fi`) | Finnish dictionary and word reference | Finnish-language support in Finland presets |
-| WikiMed (`wikimed`) | Medical encyclopedia | High-value offline medical reference for first aid, medicine, and emergency use |
-| WikiHow (`wikihow-en`) | Practical step-by-step guides | Procedure-oriented survival and repair knowledge, not just reference articles |
-| iFixit (`ifixit`) | Repair manuals and teardown guides | Practical repair coverage for devices, tools, and household equipment |
-| Practical Action (`practical-action`) | Appropriate technology and field guides | Low-resource engineering, water, agriculture, and infrastructure knowledge |
-| Stack Exchange bundles | Topical Q&A archives such as survival, DIY, gardening, cooking, radio, electronics, physics, math, chemistry, biology, engineering, Server Fault, and Super User | Practical troubleshooting and niche technical knowledge that complements encyclopedia content |
-| Wikibooks (`wikibooks-en`) | Open textbooks | Structured learning material for science, math, computing, and technical topics |
-| Khan Academy (`khan-academy`, `khan-academy-lite`) | Educational course material | Offline teaching and self-study for core subjects |
-| Project Gutenberg (`gutenberg`, `gutenberg-subset`) | Public-domain book collection | Long-form reference, historical texts, and deeper background reading |
-| CyberChef (`cyberchef`) | Browser-based data transformation tool | Handy offline utility for encoding, decoding, text, and binary manipulation |
-| Kiwix tools (`kiwix-serve`) | Local server/runtime for ZIM archives | Makes the content actually browsable from the drive on supported desktops |
-| Qwen3.5 9B (`qwen-9b`) | Portable local GGUF model | First bundled offline LLM tier with a better current quality/size tradeoff than the old tiny defaults |
-| Qwen3.5 35B-A3B (`qwen-35b-a3b`) | Strong local GGUF model in a sub-24 GB quant | Higher-capability offline LLM that still fits sane laptop memory limits |
-| `llama-server-binaries` | Runtime for serving GGUF models locally | Lets the GGUF models be used directly from the drive on supported systems |
+```bash
+svalbard import manual.pdf                              # register a local file
+svalbard import https://youtube.com/watch?v=...         # download video into ZIM
+svalbard import https://example.com                     # crawl website into ZIM
+svalbard import --bundle my-library docs/*.pdf          # package documents into ZIM
+svalbard attach local:my-library /Volumes/MyDrive       # add to a drive
+```
 
 ## Commands
 
-| Command                                | Description                          |
-| -------------------------------------- | ------------------------------------ |
-| `svalbard wizard`                      | Interactive setup                    |
-| `svalbard init <path> --preset <name>` | Initialize a drive with a preset     |
-| `svalbard sync <path>`                 | Download/update content              |
-| `svalbard status <path>`               | Show drive contents and sync status  |
-| `svalbard audit <path>`                | Coverage report against taxonomy     |
-| `svalbard add <path-or-url>`           | Add a local artifact, website, or media URL as a reusable source |
-| `svalbard attach <source-id> [path]`   | Attach a reusable local source to an existing drive |
-| `svalbard detach <source-id> [path]`   | Detach a previously attached local source from a drive |
-| `svalbard preset list`                 | List built-in and workspace-owned presets |
-| `svalbard preset copy <built-in> <name>` | Copy a built-in preset into the active workspace for editing |
+| Command | Description |
+|---------|-------------|
+| `svalbard wizard` | Interactive setup |
+| `svalbard init <path> --preset <name>` | Initialize a drive |
+| `svalbard sync <path>` | Download and update content |
+| `svalbard status <path>` | Show drive contents |
+| `svalbard audit <path>` | Coverage gap report |
+| `svalbard import <input>` | Import files, URLs, or bundles |
+| `svalbard attach / detach` | Add or remove sources from a drive |
+| `svalbard index <path>` | Build cross-content search index |
+| `svalbard preset list / copy` | List or customize presets |
 
-## Workspace Model
+## Documentation
 
-- Built-in presets and recipes ship with the app as read-only defaults.
-- Workspace-owned state lives outside the package install: generated artifacts, local sources, and custom presets.
-- When Svalbard is not running inside a repo checkout, the default workspace is `~/.local/share/svalbard`.
-- In a source checkout, custom presets are kept under `.svalbard/presets/` so checked-in presets remain read-only.
-- `svalbard add` writes reusable sources into workspace `generated/` and `local/`.
+- [Usage guide](docs/usage.md) — detailed CLI reference, presets, workspace model
 
-## Drive Model
+## License
 
-- Drives keep a snapshot of the exact preset and recipes they use under `.svalbard/config/`.
-- Attached local sources are also snapshotted under `.svalbard/config/local/`.
-- `attach`, `detach`, and `sync` default the drive path from the current directory when possible.
-
-## Adding Content
-
-`svalbard add <input>` is the single ingestion entrypoint:
-
-- Existing local file or directory: register it as a reusable workspace-local source
-- Website URL: crawl it into a ZIM with Zimit, then register it
-- Media URL supported by `yt-dlp` or `yle-dl`: download it, package it into a browsable ZIM, then register it
-
-Useful flags:
-
-- `--kind auto|local|web|media`
-- `--runner auto|docker|host`
-- `--quality 1080p|720p|480p|360p|source`
-- `--audio-only`
-- `--workspace <path>`
-
-Remote acquisition currently defaults to Docker-backed runners.
-
-## Custom Presets
-
-Built-in presets are intentionally read-only. To customize one:
-
-```bash
-uv run svalbard preset copy default-128 my-pack
-$EDITOR ~/.local/share/svalbard/presets/my-pack.yaml
-uv run svalbard init /Volumes/MyDrive/svalbard --preset my-pack
-```
-
-## Docs
-
-- User guide: [docs/usage.md](docs/usage.md)
-- Design history: [docs/plans/](docs/plans/) and [docs/superpowers/](docs/superpowers/)
+[CC BY-NC-SA 4.0](LICENSE) — NonCommercial, ShareAlike. Individual datasets carry their own licenses.
