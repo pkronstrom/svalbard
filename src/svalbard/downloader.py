@@ -184,14 +184,15 @@ def download_sources(
 
     results: list[DownloadResult] = []
 
+    progress_width = min(120, console.width)
     with Progress(
         SpinnerColumn(),
         TextColumn("[bold]{task.fields[filename]}"),
-        BarColumn(),
+        BarColumn(bar_width=20),
         DownloadColumn(),
         TransferSpeedColumn(),
         TimeRemainingColumn(),
-        console=console,
+        console=Console(width=progress_width),
     ) as progress:
 
         def _download_one(source_id: str, url: str, dest_dir: Path) -> DownloadResult:

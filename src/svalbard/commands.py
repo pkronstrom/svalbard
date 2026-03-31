@@ -412,14 +412,25 @@ def sync_drive(path: str, update: bool = False, force: bool = False, parallel: i
     download_failed = 0
 
     try:
-        if downloads:
-            label = f"Downloading {len(downloads)} file(s)"
-            if parallel > 1:
-                label += f" ({parallel} parallel)"
-            console.print(f"\n[bold]{label}...[/bold]")
-
         # Sort smallest first so small tools finish quickly while large ZIMs stream
         downloads.sort(key=lambda j: j.source.size_gb)
+
+        if downloads:
+            # Count cached vs pending
+            cached = sum(
+                1 for j in downloads
+                if (j.dest_dir / j.url.rsplit("/", 1)[-1]).exists()
+            )
+            pending = len(downloads) - cached
+            if cached:
+                console.print(f"\n  [dim]{cached} file(s) already cached[/dim]")
+            if pending:
+                label = f"Downloading {pending} file(s)"
+                if parallel > 1:
+                    label += f" ({parallel} parallel)"
+                console.print(f"[bold]{label}...[/bold]")
+            else:
+                console.print("[bold]All files cached — nothing to download.[/bold]")
 
         # Build download tuples and checksum map keyed by source_id
         dl_tuples = [(job.source_id, job.url, job.dest_dir) for job in downloads]
