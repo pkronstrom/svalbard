@@ -177,6 +177,11 @@ def _clear():
     console.clear()
 
 
+def _width() -> int:
+    """Return a clamped width for wizard UI elements (80-120)."""
+    return max(80, min(120, console.width - 2))
+
+
 def run_wizard(target_path: str | None = None, preset_name: str | None = None):
     """Run the interactive setup wizard."""
     _clear()
@@ -196,7 +201,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         choices = {}
         idx = 1
 
-        vol_table = Table(show_header=False, box=None, padding=(0, 1), width=58)
+        vol_table = Table(show_header=False, box=None, padding=(0, 1), width=_width())
         vol_table.add_column("#", width=3, no_wrap=True)
         vol_table.add_column("Path", ratio=1)
         vol_table.add_column("Space", no_wrap=True, justify="right")
@@ -286,7 +291,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         preset_choices = {}
         recommended = None
 
-        preset_table = Table(show_header=False, box=None, padding=(0, 1), width=58)
+        preset_table = Table(show_header=False, box=None, padding=(0, 1), width=_width())
         preset_table.add_column("#", width=3, no_wrap=True)
         preset_table.add_column("Name", width=14, no_wrap=True)
         preset_table.add_column("Size", width=7, no_wrap=True, justify="right")
@@ -330,7 +335,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         console.print(f"  Optional local sources ({remaining_gb:.1f} GB remaining):\n")
         local_choices: dict[str, str] = {}
 
-        local_table = Table(show_header=False, box=None, padding=(0, 1), width=58)
+        local_table = Table(show_header=False, box=None, padding=(0, 1), width=_width())
         local_table.add_column("#", width=3, no_wrap=True)
         local_table.add_column("Source", width=18, no_wrap=True)
         local_table.add_column("Size", width=7, no_wrap=True, justify="right")
@@ -367,7 +372,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
     _clear()
     console.print(f"\n[bold]Step 5/5 — Review[/bold]")
 
-    table = Table(show_header=True, header_style="bold", width=60)
+    table = Table(show_header=True, header_style="bold", width=_width())
     table.add_column("Source", no_wrap=True)
     table.add_column("Type", no_wrap=True)
     table.add_column("Size", justify="right", no_wrap=True)
