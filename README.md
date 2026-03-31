@@ -143,4 +143,4 @@ svalbard wizard --preset my-pack
 
 ## License
 
-[CC BY-NC-SA 4.0](LICENSE) — NonCommercial, ShareAlike. Individual datasets carry their own licenses.
+[GPL-3.0](LICENSE) — Free to use, modify, and distribute. Derivatives must remain open source. Individual datasets on provisioned drives carry their own licenses.

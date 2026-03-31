@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "svalbard"
 version = "0.1.0"
 description = "Seed vault for human knowledge — civilization on a stick"
+license = "GPL-3.0-only"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1",
