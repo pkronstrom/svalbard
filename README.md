@@ -135,7 +135,7 @@ svalbard wizard --preset my-pack
 - [ ] Offline routing — turn-by-turn navigation from preprocessed OSM graphs
 - [ ] Offline coding assistant — bundled LLM + editor (opencode) as a self-contained dev environment
 - [ ] Mobile workflow — guides and tooling for viewing drive content on phones via USB-C
-- [ ] Windows support
+- [ ] Limited Windows support
 
 ## Documentation
 
