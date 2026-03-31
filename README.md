@@ -52,8 +52,7 @@ Finnish presets (`finland-*`) add Finnish-language Wikipedia, Wiktionary, Finnis
 
 ## Walkthrough: provision your own stick
 
-<!-- TODO: replace with asciinema recording -->
-<!-- [![asciicast](https://asciinema.org/a/XXXXX.svg)](https://asciinema.org/a/XXXXX) -->
+<img src="docs/demo.gif" alt="svalbard wizard demo" width="100%">
 
 ```bash
 # 1. Install svalbard (pick one)
