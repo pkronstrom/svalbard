@@ -71,45 +71,84 @@ def load_preset(name: str, workspace: Path | str | None = None) -> Preset:
     return parse_preset(path)
 
 
-def parse_preset(path: Path, recipe_index: dict[str, dict] | None = None) -> Preset:
-    """Parse a preset YAML file, resolving source IDs from recipes."""
+def parse_preset(
+    path: Path,
+    recipe_index: dict[str, dict] | None = None,
+    _seen: set[str] | None = None,
+) -> Preset:
+    """Parse a preset YAML file, resolving source IDs from recipes.
+
+    Supports ``extends: base-preset`` to inherit sources from another preset.
+    Sources prefixed with ``-`` in the extending preset are removed from the
+    inherited set.  New sources are appended.
+    """
     with open(path) as f:
         data = yaml.safe_load(f)
 
     recipe_index = recipe_index or _build_recipe_index()
-    sources = []
+
+    # ── Resolve extends chain ────────────────────────────────────────────
+    _seen = _seen or set()
+    preset_name = data.get("name", path.stem)
+    if preset_name in _seen:
+        raise ValueError(f"Circular preset extends: {preset_name}")
+    _seen.add(preset_name)
+
+    inherited_sources: list[Source] = []
+    inherited_ids: list[str] = []
+    if "extends" in data:
+        base_name = data["extends"]
+        workspace = path.parent if path.parent.name == "presets" else None
+        base_path = resolve_preset_path(base_name, workspace)
+        base_preset = parse_preset(base_path, recipe_index=recipe_index, _seen=_seen)
+        inherited_sources = list(base_preset.sources)
+        inherited_ids = [s.id for s in inherited_sources]
+
+    # ── Process this preset's source list ────────────────────────────────
+    removals: set[str] = set()
+    additions: list[Source] = []
+
     for entry in data.get("sources", []):
         if isinstance(entry, str):
-            # Simple ID reference
+            if entry.startswith("-"):
+                # Remove inherited source
+                removals.add(entry[1:].strip())
+                continue
             source_id = entry
             recipe = recipe_index.get(source_id)
             if recipe is None:
                 raise ValueError(
-                    f"Recipe '{source_id}' not found (referenced in preset '{data['name']}')"
+                    f"Recipe '{source_id}' not found (referenced in preset '{preset_name}')"
                 )
-            sources.append(_source_from_recipe(recipe))
+            additions.append(_source_from_recipe(recipe))
         elif isinstance(entry, dict):
             if "id" in entry and "type" not in entry:
-                # ID reference with overrides
                 source_id = entry["id"]
                 recipe = recipe_index.get(source_id)
                 if recipe is None:
                     raise ValueError(
-                        f"Recipe '{source_id}' not found (referenced in preset '{data['name']}')"
+                        f"Recipe '{source_id}' not found (referenced in preset '{preset_name}')"
                     )
                 merged = dict(recipe)
                 overrides = entry.get("override", {})
                 merged.update(overrides)
-                sources.append(_source_from_recipe(merged))
+                additions.append(_source_from_recipe(merged))
             else:
-                # Inline source definition (backwards compat)
-                sources.append(_source_from_recipe(entry))
+                additions.append(_source_from_recipe(entry))
+
+    # ── Merge: inherited (minus removals) + additions ────────────────────
+    sources = [s for s in inherited_sources if s.id not in removals]
+    existing_ids = {s.id for s in sources}
+    for s in additions:
+        if s.id not in existing_ids:
+            sources.append(s)
+            existing_ids.add(s.id)
 
     return Preset(
-        name=data["name"],
-        description=data["description"],
-        target_size_gb=data["target_size_gb"],
-        region=data["region"],
+        name=preset_name,
+        description=data.get("description", ""),
+        target_size_gb=data.get("target_size_gb", 0),
+        region=data.get("region", ""),
         sources=sources,
     )
 
