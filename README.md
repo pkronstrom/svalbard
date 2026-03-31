@@ -85,9 +85,18 @@ svalbard import https://youtube.com/watch?v=...
 # Bundle multiple documents into one browsable ZIM
 svalbard import --bundle my-library docs/*.pdf
 
-# Attach to your drive and sync
+# Attach to a specific drive (one-off)
 svalbard attach local:my-library /Volumes/MyStick
 svalbard sync /Volumes/MyStick
+```
+
+To include a source in all future drives of a preset, add it to the preset YAML instead:
+
+```yaml
+# presets/my-pack.yaml
+sources:
+  - ...
+  - local:my-library
 ```
 
 ### Customize a preset
