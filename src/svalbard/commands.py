@@ -1,10 +1,7 @@
 import signal
 import shutil
 import re
-import stat
 import subprocess
-import tarfile
-import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -63,48 +60,6 @@ def _is_archive(path: Path) -> bool:
     name = path.name.lower()
     return any(name.endswith(s) for s in _ARCHIVE_SUFFIXES)
 
-
-def _extract_binaries(archive_path: Path, dest_dir: Path, source_id: str) -> list[Path]:
-    """Extract executable binaries from an archive into dest_dir.
-
-    Returns list of extracted binary paths.
-    """
-    import tempfile
-
-    extracted = []
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-
-        if archive_path.name.endswith(".zip"):
-            with zipfile.ZipFile(archive_path) as zf:
-                zf.extractall(tmp_path)
-        else:
-            with tarfile.open(archive_path) as tf:
-                tf.extractall(tmp_path, filter="data")
-
-        # Find executables or known binary names in extracted content
-        for candidate in tmp_path.rglob("*"):
-            if not candidate.is_file():
-                continue
-            # Skip shared libraries, docs, licenses
-            if candidate.suffix in (".so", ".dylib", ".dll", ".md", ".txt", ".html"):
-                continue
-            name = candidate.name
-            # Skip files that look like shared libraries (libfoo.so.1.2.3)
-            if ".so." in name or name.startswith("lib"):
-                continue
-            # Check if it's executable or matches the source id
-            is_exec = candidate.stat().st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            name_match = source_id.replace("-", "") in name.replace("-", "").lower()
-            if is_exec or name_match:
-                dest = dest_dir / name
-                shutil.copy2(candidate, dest)
-                dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                extracted.append(dest)
-
-    # Remove the archive after successful extraction
-    archive_path.unlink(missing_ok=True)
-    return extracted
 
 
 @dataclass
@@ -340,19 +295,23 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
     # (e.g. drive moved to another machine without the workspace).
     try:
         preset = load_preset(manifest.preset, workspace=workspace)
-        # Refresh the on-drive snapshot so the drive stays self-describing.
-        if workspace:
+    except (FileNotFoundError, ValueError, KeyError):
+        preset = load_snapshot_preset(drive_path)
+        if preset is None:
+            console.print("[red]Cannot load preset — no live workspace or on-drive snapshot.[/red]")
+            return
+
+    # Refresh the on-drive snapshot so the drive stays self-describing.
+    if workspace:
+        try:
             write_drive_snapshot(
                 drive_path,
                 preset_name=manifest.preset,
                 workspace_root=Path(workspace),
                 local_source_ids=manifest.local_sources,
             )
-    except Exception:
-        preset = load_snapshot_preset(drive_path)
-        if preset is None:
-            console.print("[red]Cannot load preset — no live workspace or on-drive snapshot.[/red]")
-            return
+        except Exception as e:
+            console.print(f"[yellow]Warning: could not refresh snapshot: {e}[/yellow]")
     manifest_path = drive_path / "manifest.yaml"
     local_source_map = {
         source.id: source for source in load_local_sources(manifest.workspace_root or resolve_workspace_root())

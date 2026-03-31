@@ -16,20 +16,15 @@ _extract_archive() {
         *)               return 1 ;;
     esac
 
-    # Move binaries from subdirectories up to dest_dir
-    # Archives often nest files inside a versioned folder
-    for subdir in "$dest_dir"/*/; do
-        [ -d "$subdir" ] || continue
-        for f in "$subdir"*; do
-            [ -f "$f" ] || [ -L "$f" ] || continue
-            local base="${f##*/}"
-            # Skip if already exists at dest level
-            [ -e "$dest_dir/$base" ] && continue
-            mv "$f" "$dest_dir/$base"
-        done
-        # Clean up subdirectory (may still have nested dirs)
-        rm -rf "$subdir" 2>/dev/null || true
-    done
+    # Promote all files and symlinks from subdirectories up to dest_dir
+    # Archives often nest files inside versioned folders (possibly multi-level)
+    while IFS= read -r f; do
+        local base="${f##*/}"
+        [ -e "$dest_dir/$base" ] && continue
+        mv "$f" "$dest_dir/$base"
+    done < <(find "$dest_dir" -mindepth 2 \( -type f -o -type l \) 2>/dev/null)
+    # Clean up now-empty subdirectories
+    find "$dest_dir" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 
     # Make all files executable
     chmod +x "$dest_dir"/* 2>/dev/null || true

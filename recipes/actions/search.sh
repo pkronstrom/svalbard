@@ -148,15 +148,16 @@ while true; do
     echo "Searching ($mode): $query"
 
     results=""
+    effective_mode="$mode"
 
-    if [ "$mode" = "semantic" ]; then
+    if [ "$effective_mode" = "semantic" ]; then
         # Ensure embed server is running for any semantic search
         if ! _embed_server_running; then
-            _start_embed_server || { echo "  Embed server unavailable, falling back to keyword"; mode="keyword"; }
+            _start_embed_server || { echo "  Embed server unavailable, falling back to keyword"; effective_mode="keyword"; }
         fi
     fi
 
-    if [ "$mode" = "semantic" ]; then
+    if [ "$effective_mode" = "semantic" ]; then
         if [ "$article_count" -ge 500000 ]; then
             # Large archive: FTS prefilter to get candidates, then rerank
             echo "  FTS prefilter + semantic rerank..."
@@ -199,10 +200,10 @@ while true; do
         fi
 
         # Fall back to keyword if semantic returned nothing
-        [ -z "$results" ] && mode="keyword"
+        [ -z "$results" ] && effective_mode="keyword"
     fi
 
-    if [ "$mode" = "keyword" ] && [ -z "$results" ]; then
+    if [ "$effective_mode" = "keyword" ] && [ -z "$results" ]; then
         # FTS only fallback
         safe_query="${query//\'/\'\'}"
         fts_query=""

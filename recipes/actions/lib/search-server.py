@@ -2,8 +2,8 @@
 """Minimal search REST API server using Python stdlib.
 
 Replaces the socat + search-cgi.sh approach with a single Python process.
-Expects environment variables: DB, SQLITE_BIN (unused — uses Python sqlite3).
-Arguments: PORT BIND KIWIX_PORT
+Expects environment variable: DB (path to search.db).
+Arguments: PORT BIND [KIWIX_PORT]
 """
 import json
 import os
@@ -16,6 +16,16 @@ from urllib.parse import parse_qs, urlparse
 
 DB_PATH = os.environ.get("DB", "")
 KIWIX_PORT = "8080"
+_conn: sqlite3.Connection | None = None
+
+
+def _get_conn() -> sqlite3.Connection:
+    global _conn
+    if _conn is None:
+        _conn = sqlite3.connect(DB_PATH)
+        _conn.row_factory = sqlite3.Row
+        _conn.execute("PRAGMA journal_mode=WAL")
+    return _conn
 
 
 class SearchHandler(BaseHTTPRequestHandler):
@@ -51,10 +61,9 @@ class SearchHandler(BaseHTTPRequestHandler):
 
     def _handle_health(self):
         try:
-            conn = sqlite3.connect(DB_PATH)
+            conn = _get_conn()
             source_count = conn.execute("SELECT count(*) FROM sources").fetchone()[0]
             article_count = conn.execute("SELECT count(*) FROM articles").fetchone()[0]
-            conn.close()
         except Exception:
             source_count = 0
             article_count = 0
@@ -75,8 +84,7 @@ class SearchHandler(BaseHTTPRequestHandler):
         fts_query = " ".join(f"{w}*" for w in words)
 
         try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
+            conn = _get_conn()
             rows = conn.execute(
                 """SELECT a.id, s.filename, a.path, a.title,
                           snippet(articles_fts, 1, '>', '<', '...', 12) AS snippet
@@ -88,7 +96,6 @@ class SearchHandler(BaseHTTPRequestHandler):
                    LIMIT 20""",
                 (fts_query,),
             ).fetchall()
-            conn.close()
             results = [dict(r) for r in rows]
         except Exception:
             results = []
@@ -103,7 +110,7 @@ class SearchHandler(BaseHTTPRequestHandler):
 
         article_id = int(match.group(1))
         try:
-            conn = sqlite3.connect(DB_PATH)
+            conn = _get_conn()
             row = conn.execute(
                 """SELECT s.filename, a.path
                    FROM articles a
@@ -112,7 +119,6 @@ class SearchHandler(BaseHTTPRequestHandler):
                    LIMIT 1""",
                 (article_id,),
             ).fetchone()
-            conn.close()
         except Exception:
             row = None
 
