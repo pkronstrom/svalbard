@@ -14,6 +14,7 @@ def test_parse_finland_2():
     ids = {source.id for source in preset.sources}
 
     assert preset.name == "finland-2"
+    assert preset.description == "Emergency field kit for Finland"
     assert preset.region == "finland"
     assert preset.target_size_gb == 2
     assert "wikem" in ids
