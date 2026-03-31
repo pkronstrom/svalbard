@@ -73,7 +73,11 @@ RASTERS = {
     "koivu": f"{LUKE_BASE}/koivu_vmi1x_1923.tif",
 }
 
-CELL_SIZE = 500  # resample to 500m
+CELL_SIZE = 500           # resample to 500m
+SIMPLIFY_TOLERANCE = 200  # polygon simplification in meters (source CRS)
+MIN_AREA_M2 = 100_000    # drop polygons smaller than this (~0.1 km²)
+MIN_ZOOM = 5
+MAX_ZOOM = 12
 
 # ── Foraging classes ─────────────────────────────────────────────────────────
 
@@ -190,9 +194,15 @@ def resample(src: Path, dst: Path, cell_size: int, method: str = "mode") -> None
     )
 
 
-def read_band(path: Path) -> tuple[np.ndarray, rasterio.Affine, rasterio.CRS]:
-    """Read a single-band raster into a numpy array."""
+def read_band(path: Path, bbox: tuple[float, ...] | None = None) -> tuple[np.ndarray, rasterio.Affine, rasterio.CRS]:
+    """Read a single-band raster into a numpy array, optionally clipped to bbox."""
     with rasterio.open(path) as src:
+        if bbox:
+            from rasterio.windows import from_bounds
+            window = from_bounds(*bbox, src.transform)
+            data = src.read(1, window=window)
+            transform = src.window_transform(window)
+            return data, transform, src.crs
         return src.read(1), src.transform, src.crs
 
 
@@ -245,6 +255,8 @@ def polygonize_and_dissolve(
     dt: np.ndarray,
     transform: rasterio.Affine,
     crs: rasterio.CRS,
+    simplify_tolerance: float = SIMPLIFY_TOLERANCE,
+    min_area: float = MIN_AREA_M2,
 ) -> list[dict]:
     """Convert raster classes to dissolved GeoJSON features in EPSG:4326."""
     print("  Polygonizing...")
@@ -277,8 +289,8 @@ def polygonize_and_dissolve(
 
         # Dissolve all polygons in this group
         merged = unary_union(geoms)
-        # Simplify (200m tolerance for 500m source)
-        merged = merged.simplify(200, preserve_topology=True)
+        if simplify_tolerance > 0:
+            merged = merged.simplify(simplify_tolerance, preserve_topology=True)
 
         if merged.is_empty:
             continue
@@ -291,7 +303,7 @@ def polygonize_and_dissolve(
 
         for poly in polys:
             # Skip tiny polygons
-            if poly.area < 100000:  # ~0.1 km² in projected coords
+            if min_area > 0 and poly.area < min_area:
                 continue
 
             coords = mapping(poly)
@@ -349,16 +361,16 @@ def write_geojsonl(features: list[dict], path: Path) -> None:
             f.write(json.dumps(feat, ensure_ascii=False) + "\n")
 
 
-def run_tippecanoe(geojsonl: Path, output: Path) -> None:
+def run_tippecanoe(geojsonl: Path, output: Path, min_zoom: int = MIN_ZOOM, max_zoom: int = MAX_ZOOM) -> None:
     """Run tippecanoe to produce PMTiles."""
-    print(f"  Running tippecanoe → {output.name}...")
+    print(f"  Running tippecanoe → {output.name} (z{min_zoom}-z{max_zoom})...")
     subprocess.run(
         [
             "tippecanoe",
             "-o", str(output),
             "-l", "foraging",
-            "-Z", "5",
-            "-z", "12",
+            "-Z", str(min_zoom),
+            "-z", str(max_zoom),
             "--coalesce-densest-as-needed",
             "--extend-zooms-if-still-dropping",
             "--no-tile-compression",
@@ -392,8 +404,39 @@ def main():
         default=CELL_SIZE,
         help=f"Resample cell size in meters (default: {CELL_SIZE})",
     )
+    parser.add_argument(
+        "--simplify",
+        type=float,
+        default=SIMPLIFY_TOLERANCE,
+        help=f"Polygon simplify tolerance in meters, 0 to disable (default: {SIMPLIFY_TOLERANCE})",
+    )
+    parser.add_argument(
+        "--min-area",
+        type=float,
+        default=MIN_AREA_M2,
+        help=f"Drop polygons smaller than this in m², 0 to keep all (default: {MIN_AREA_M2})",
+    )
+    parser.add_argument(
+        "--min-zoom",
+        type=int,
+        default=MIN_ZOOM,
+        help=f"Minimum tile zoom level (default: {MIN_ZOOM})",
+    )
+    parser.add_argument(
+        "--max-zoom",
+        type=int,
+        default=MAX_ZOOM,
+        help=f"Maximum tile zoom level (default: {MAX_ZOOM})",
+    )
+    parser.add_argument(
+        "--bbox",
+        type=str,
+        default=None,
+        help="Clip to bounding box in source CRS: minx,miny,maxx,maxy (EPSG:3067)",
+    )
     args = parser.parse_args()
     output = Path(args.output)
+    bbox = tuple(float(x) for x in args.bbox.split(",")) if args.bbox else None
 
     # Check dependencies
     for tool in ("gdal_translate", "tippecanoe"):
@@ -433,10 +476,12 @@ def main():
 
         # 3. Classify
         print("\n[3/5] Reclassifying into foraging habitats...")
+        if bbox:
+            print(f"  Clipping to bbox: {bbox}")
         data = {}
         transform = crs = None
         for name, path in resampled.items():
-            arr, t, c = read_band(path)
+            arr, t, c = read_band(path, bbox=bbox)
             data[name] = arr
             if transform is None:
                 transform, crs = t, c
@@ -450,13 +495,17 @@ def main():
 
         # 4. Polygonize, dissolve, reproject, attach species
         print("\n[4/5] Polygonizing and dissolving...")
-        features = polygonize_and_dissolve(fc, dt, transform, crs)
+        features = polygonize_and_dissolve(
+            fc, dt, transform, crs,
+            simplify_tolerance=args.simplify,
+            min_area=args.min_area,
+        )
 
         # 5. Tippecanoe
         print("\n[5/5] Building PMTiles...")
         geojsonl = work_dir / "foraging.geojsonl"
         write_geojsonl(features, geojsonl)
-        run_tippecanoe(geojsonl, output)
+        run_tippecanoe(geojsonl, output, min_zoom=args.min_zoom, max_zoom=args.max_zoom)
 
         size_mb = output.stat().st_size / 1024 / 1024
         print(f"\nDone! {output} ({size_mb:.1f} MB)")

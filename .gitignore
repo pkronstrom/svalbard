@@ -16,5 +16,5 @@ recipes/local/*
 !recipes/local/.gitkeep
 
 library/*
-!library/README
+!library/README.md
 

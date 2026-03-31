@@ -43,7 +43,6 @@ def main(ctx: click.Context) -> None:
 def _show_menu(path: str):
     console.print("\n  [bold][s][/bold] Sync (check for updates)")
     console.print("  [bold][a][/bold] Audit report")
-    console.print("  [bold][p][/bold] Provision laptop (install apps)")
     console.print("  [bold][w][/bold] Wizard (reconfigure)")
     console.print("  [bold][q][/bold] Quit")
     choice = console.input("\n  > ")
@@ -57,10 +56,6 @@ def _show_menu(path: str):
         from svalbard.audit import generate_audit
 
         click.echo(generate_audit(P(path)))
-    elif choice == "p":
-        from svalbard.provision import run_provision
-
-        run_provision()
     elif choice == "w":
         from svalbard.wizard import run_wizard
 
@@ -107,14 +102,6 @@ def status(path: str, check: bool) -> None:
     from svalbard.commands import show_status
 
     show_status(path, check_updates=check)
-
-
-@main.command()
-def provision() -> None:
-    """Install desktop apps on this laptop (via Homebrew)."""
-    from svalbard.provision import run_provision
-
-    run_provision()
 
 
 @main.command()
