@@ -184,6 +184,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         "[bold]Svalbard — Seed Vault for Human Knowledge[/bold]\n\n"
         "This wizard will help you set up an offline knowledge drive.",
         style="blue",
+        width=60,
     ))
 
     # Step 1: Target
