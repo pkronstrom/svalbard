@@ -95,14 +95,18 @@ def parse_preset(
     _seen.add(preset_name)
 
     inherited_sources: list[Source] = []
-    inherited_ids: list[str] = []
     if "extends" in data:
-        base_name = data["extends"]
+        extends = data["extends"]
+        base_names = [extends] if isinstance(extends, str) else extends
         workspace = path.parent if path.parent.name == "presets" else None
-        base_path = resolve_preset_path(base_name, workspace)
-        base_preset = parse_preset(base_path, recipe_index=recipe_index, _seen=_seen)
-        inherited_sources = list(base_preset.sources)
-        inherited_ids = [s.id for s in inherited_sources]
+        seen_ids: set[str] = set()
+        for base_name in base_names:
+            base_path = resolve_preset_path(base_name, workspace)
+            base_preset = parse_preset(base_path, recipe_index=recipe_index, _seen=_seen)
+            for s in base_preset.sources:
+                if s.id not in seen_ids:
+                    inherited_sources.append(s)
+                    seen_ids.add(s.id)
 
     # ── Process this preset's source list ────────────────────────────────
     removals: set[str] = set()
