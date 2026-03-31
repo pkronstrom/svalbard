@@ -17,7 +17,7 @@ def looks_like_workspace(path: Path) -> bool:
     """Return True when the path looks like a Svalbard workspace."""
     return any(
         (path / name).exists()
-        for name in ("presets", "recipes", "generated")
+        for name in ("presets", "recipes", "library")
     )
 
 

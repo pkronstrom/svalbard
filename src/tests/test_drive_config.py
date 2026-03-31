@@ -11,7 +11,7 @@ def test_init_drive_writes_config_snapshot(tmp_path):
 def test_drive_snapshot_contains_selected_local_source_metadata(tmp_path):
     from svalbard.commands import add_local_source, init_drive
 
-    artifact = tmp_path / "generated" / "example.zim"
+    artifact = tmp_path / "library" / "example.zim"
     artifact.parent.mkdir()
     artifact.write_bytes(b"data")
     source_id = add_local_source(artifact, workspace_root=tmp_path, source_type="zim")

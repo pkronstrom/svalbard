@@ -57,7 +57,7 @@ def test_create_bundle_zip_contains_files_and_collection(tmp_path):
 def test_run_bundle_build_invokes_docker_and_registers(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    (workspace / "generated").mkdir()
+    (workspace / "library").mkdir()
 
     f1 = tmp_path / "doc.pdf"
     f1.write_bytes(b"%PDF-fake-content")
@@ -65,7 +65,7 @@ def test_run_bundle_build_invokes_docker_and_registers(tmp_path):
     docker_result = Mock(returncode=0)
 
     def fake_docker_run(cmd, **kwargs):
-        output_path = workspace / "generated" / "my-bundle.zim"
+        output_path = workspace / "library" / "my-bundle.zim"
         output_path.write_bytes(b"ZIM-fake")
         return docker_result
 

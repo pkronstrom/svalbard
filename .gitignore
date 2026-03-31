@@ -15,10 +15,6 @@ docs/plans/archive/
 recipes/local/*
 !recipes/local/.gitkeep
 
-generated/*
-!generated/.gitkeep
-!generated/README
-
 library/*
 !library/README
 

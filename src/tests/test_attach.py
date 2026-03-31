@@ -5,7 +5,7 @@ def test_attach_adds_local_source_to_manifest_and_snapshot(tmp_path):
     from svalbard.cli import main
     from svalbard.commands import add_local_source, init_drive
 
-    artifact = tmp_path / "generated" / "example.zim"
+    artifact = tmp_path / "library" / "example.zim"
     artifact.parent.mkdir()
     artifact.write_bytes(b"data")
     source_id = add_local_source(artifact, workspace_root=tmp_path, source_type="zim")
@@ -24,7 +24,7 @@ def test_detach_removes_local_source_from_manifest_and_snapshot(tmp_path):
     from svalbard.cli import main
     from svalbard.commands import add_local_source, init_drive
 
-    artifact = tmp_path / "generated" / "example.zim"
+    artifact = tmp_path / "library" / "example.zim"
     artifact.parent.mkdir()
     artifact.write_bytes(b"data")
     source_id = add_local_source(artifact, workspace_root=tmp_path, source_type="zim")
@@ -43,7 +43,7 @@ def test_attach_defaults_drive_path_from_cwd(tmp_path, monkeypatch):
     from svalbard.cli import main
     from svalbard.commands import add_local_source, init_drive
 
-    artifact = tmp_path / "generated" / "example.zim"
+    artifact = tmp_path / "library" / "example.zim"
     artifact.parent.mkdir()
     artifact.write_bytes(b"data")
     source_id = add_local_source(artifact, workspace_root=tmp_path, source_type="zim")

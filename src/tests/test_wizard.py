@@ -126,7 +126,7 @@ def test_presets_for_space_defaults_to_finland_family():
 
 
 def test_local_sources_for_space_marks_fit_and_overflow(tmp_path):
-    generated = tmp_path / "generated"
+    generated = tmp_path / "library"
     local = tmp_path / "recipes" / "local"
     generated.mkdir()
     local.mkdir(parents=True)
@@ -137,7 +137,7 @@ def test_local_sources_for_space_marks_fit_and_overflow(tmp_path):
 type: zim
 group: practical
 strategy: local
-path: generated/small.zim
+path: library/small.zim
 size_bytes: 100000000
 """
     )
@@ -146,7 +146,7 @@ size_bytes: 100000000
 type: zim
 group: practical
 strategy: local
-path: generated/large.zim
+path: library/large.zim
 size_bytes: 3000000000
 """
     )

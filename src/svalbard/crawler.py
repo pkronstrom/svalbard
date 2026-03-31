@@ -39,7 +39,7 @@ def run_url_crawl(
     time_limit_minutes: int = 0,
 ) -> Path:
     """Run a single direct URL crawl and return the generated artifact path."""
-    output_path = workspace_root / "generated" / output_name
+    output_path = workspace_root / "library" / output_name
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "docker", "run", "--rm",

@@ -1,23 +1,13 @@
-Source documents for bundling into ZIM files.
+Personal document library and import artifacts.
 
-Organize by topic, then bundle:
+Organize source documents by topic for bundling:
 
-  svalbard import --bundle radio-manuals sources/radio/*.pdf
-  svalbard import --bundle medical-refs sources/medical/*
+  svalbard import --bundle radio-manuals library/radio/*.pdf
+  svalbard import --bundle medical-refs library/medical/*
 
-Structure:
+Import artifacts (ZIMs from web crawls, media, bundles) also
+land here alongside .source.yaml provenance metadata.
 
-  sources/
-    radio/
-      ham-radio-manual.pdf
-      pmr-guide.pdf
-    medical/
-      first-aid.epub
-      wilderness-medicine.pdf
-    survival/
-      army-survival-manual.pdf
-
-After bundling, the ZIM appears in generated/ and is registered
-as a local source. Attach it to a drive with:
+Attach any registered source to a drive with:
 
   svalbard attach local:radio-manuals /path/to/drive

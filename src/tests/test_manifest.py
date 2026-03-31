@@ -100,7 +100,7 @@ def test_manifest_roundtrip_preserves_workspace_and_local_sources(tmp_path):
         local_source_snapshots=[
             LocalSourceSnapshot(
                 id="local:example-docs",
-                path="generated/example-docs.zim",
+                path="library/example-docs.zim",
                 kind="file",
                 size_bytes=123,
                 mtime=456.0,
@@ -122,9 +122,9 @@ def test_source_accepts_local_path_and_size_bytes():
         type="zim",
         group="practical",
         strategy="local",
-        path="generated/example-docs.zim",
+        path="library/example-docs.zim",
         size_bytes=123456789,
     )
-    assert source.path == "generated/example-docs.zim"
+    assert source.path == "library/example-docs.zim"
     assert source.size_bytes == 123456789
     assert round(source.size_gb, 3) == round(123456789 / 1e9, 3)

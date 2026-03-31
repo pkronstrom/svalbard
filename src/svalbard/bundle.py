@@ -77,7 +77,7 @@ def run_bundle_build(
     resolved_description = description or f"Document bundle: {resolved_title}"
 
     # Prepare staging
-    staging_dir = workspace_root / "generated" / ".staging" / name
+    staging_dir = workspace_root / "library" / ".staging" / name
     staging_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy files to staging (flat namespace, handle collisions)
@@ -101,7 +101,7 @@ def run_bundle_build(
     cmd = [
         "docker", "run", "--rm",
         "-v", f"{staging_dir}:/input:ro",
-        "-v", f"{workspace_root / 'generated'}:/output",
+        "-v", f"{workspace_root / 'library'}:/output",
         TOOLS_IMAGE,
         "nautiluszim",
         "--archive", f"/input/{zip_path.name}",
@@ -117,9 +117,9 @@ def run_bundle_build(
         raise RuntimeError(f"nautiluszim failed with exit code {result.returncode}")
 
     # Find the output ZIM (nautiluszim may add date suffix)
-    artifact_path = workspace_root / "generated" / f"{name}.zim"
+    artifact_path = workspace_root / "library" / f"{name}.zim"
     if not artifact_path.exists():
-        candidates = sorted((workspace_root / "generated").glob(f"{name}*.zim"))
+        candidates = sorted((workspace_root / "library").glob(f"{name}*.zim"))
         if not candidates:
             raise RuntimeError("nautiluszim did not produce an output ZIM")
         artifact_path = candidates[-1]

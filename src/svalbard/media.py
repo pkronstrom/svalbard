@@ -41,8 +41,8 @@ def run_media_ingest(
     if not has_docker() or not ensure_tools_image():
         raise RuntimeError("Docker is not available or failed to build tools image.")
 
-    output_path = workspace_root / "generated" / output_name
-    staging_dir = workspace_root / "generated" / ".staging" / output_path.stem
+    output_path = workspace_root / "library" / output_name
+    staging_dir = workspace_root / "library" / ".staging" / output_path.stem
     output_path.parent.mkdir(parents=True, exist_ok=True)
     staging_dir.mkdir(parents=True, exist_ok=True)
 
@@ -53,8 +53,8 @@ def run_media_ingest(
         "python", "/usr/local/bin/build-media-zim.py",
         "build",
         "--url", url,
-        "--output", f"/workspace/generated/{output_name}",
-        "--staging", f"/workspace/generated/.staging/{output_path.stem}",
+        "--output", f"/workspace/library/{output_name}",
+        "--staging", f"/workspace/library/.staging/{output_path.stem}",
         "--quality", quality,
     ]
     if audio_only:

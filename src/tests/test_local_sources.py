@@ -14,7 +14,7 @@ def test_workspace_root_is_repo_root():
 
 def test_load_local_sources_discovers_sidecars_and_derives_size_gb(tmp_path):
     local_dir = tmp_path / "recipes" / "local"
-    generated_dir = tmp_path / "generated"
+    generated_dir = tmp_path / "library"
     local_dir.mkdir(parents=True)
     generated_dir.mkdir()
     artifact = generated_dir / "example.zim"
@@ -24,20 +24,20 @@ def test_load_local_sources_discovers_sidecars_and_derives_size_gb(tmp_path):
 type: zim
 group: practical
 strategy: local
-path: generated/example.zim
+path: library/example.zim
 size_bytes: 100
 """
     )
 
     sources = load_local_sources(tmp_path)
     assert [s.id for s in sources] == ["local:example"]
-    assert sources[0].path == "generated/example.zim"
+    assert sources[0].path == "library/example.zim"
     assert sources[0].size_gb > 0
 
 
 def test_load_local_sources_rejects_builtin_id_collision(tmp_path):
     local_dir = tmp_path / "recipes" / "local"
-    generated_dir = tmp_path / "generated"
+    generated_dir = tmp_path / "library"
     local_dir.mkdir(parents=True)
     generated_dir.mkdir()
     (generated_dir / "example.zim").write_bytes(b"x")
@@ -46,7 +46,7 @@ def test_load_local_sources_rejects_builtin_id_collision(tmp_path):
 type: zim
 group: practical
 strategy: local
-path: generated/example.zim
+path: library/example.zim
 size_bytes: 1
 """
     )
@@ -57,7 +57,7 @@ size_bytes: 1
 
 def test_active_sources_for_manifest_merges_preset_and_selected_local_sources(tmp_path):
     local_dir = tmp_path / "recipes" / "local"
-    generated_dir = tmp_path / "generated"
+    generated_dir = tmp_path / "library"
     local_dir.mkdir(parents=True)
     generated_dir.mkdir()
     (generated_dir / "example.zim").write_bytes(b"x")
@@ -66,7 +66,7 @@ def test_active_sources_for_manifest_merges_preset_and_selected_local_sources(tm
 type: zim
 group: practical
 strategy: local
-path: generated/example.zim
+path: library/example.zim
 size_bytes: 1
 """
     )

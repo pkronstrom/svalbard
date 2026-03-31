@@ -139,7 +139,7 @@ def test_add_local_file_writes_sidecar(tmp_path):
 
 
 def test_sync_copies_selected_local_source(tmp_path):
-    generated = tmp_path / "generated"
+    generated = tmp_path / "library"
     local = tmp_path / "recipes" / "local"
     drive = tmp_path / "drive"
     generated.mkdir()
@@ -152,7 +152,7 @@ def test_sync_copies_selected_local_source(tmp_path):
 type: zim
 group: practical
 strategy: local
-path: generated/example.zim
+path: library/example.zim
 size_bytes: 4
 """
     )
@@ -200,7 +200,7 @@ def test_add_local_directory_rejects_nested_symlinks(tmp_path):
 def test_run_import_routes_youtube_urls_to_media_backend(tmp_path):
     from svalbard.importer import run_import
 
-    artifact = tmp_path / "generated" / "youtube-video-abc123.zim"
+    artifact = tmp_path / "library" / "youtube-video-abc123.zim"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_bytes(b"data")
 
@@ -214,7 +214,7 @@ def test_run_import_routes_youtube_urls_to_media_backend(tmp_path):
 def test_run_import_uses_youtube_playlist_id_for_default_slug(tmp_path):
     from svalbard.importer import run_import
 
-    artifact = tmp_path / "generated" / "youtube-playlist-pl987.zim"
+    artifact = tmp_path / "library" / "youtube-playlist-pl987.zim"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_bytes(b"data")
 
@@ -227,13 +227,13 @@ def test_run_import_uses_youtube_playlist_id_for_default_slug(tmp_path):
 def test_run_import_writes_media_provenance(tmp_path):
     from svalbard.importer import run_import
 
-    artifact = tmp_path / "generated" / "lecture.zim"
+    artifact = tmp_path / "library" / "lecture.zim"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_bytes(b"data")
 
     with patch("svalbard.importer.run_media_ingest", return_value=artifact):
         run_import("https://areena.yle.fi/1-12345", workspace_root=tmp_path, audio_only=True)
 
-    metadata = (tmp_path / "generated" / "lecture.source.yaml").read_text()
+    metadata = (tmp_path / "library" / "lecture.source.yaml").read_text()
     assert "kind: media" in metadata
     assert "audio_only: true" in metadata

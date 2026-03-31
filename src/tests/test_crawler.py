@@ -7,7 +7,7 @@ from svalbard.crawler import register_generated_zim
 
 
 def test_register_generated_zim_writes_recipe_and_source_metadata(tmp_path):
-    artifact = tmp_path / "generated" / "example.zim"
+    artifact = tmp_path / "library" / "example.zim"
     artifact.parent.mkdir()
     artifact.write_bytes(b"data")
 
@@ -23,7 +23,7 @@ def test_register_generated_zim_writes_recipe_and_source_metadata(tmp_path):
 
     assert source_id == "local:example"
     assert (tmp_path / "recipes" / "local" / "example.yaml").exists()
-    metadata_path = tmp_path / "generated" / "example.source.yaml"
+    metadata_path = tmp_path / "library" / "example.source.yaml"
     assert metadata_path.exists()
     assert "kind: web" in metadata_path.read_text()
     assert "tool: zimit" in metadata_path.read_text()
