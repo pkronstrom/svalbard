@@ -427,7 +427,9 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
 
             index_choice = P2.ask("\n  Select", choices=["1", "2", "3", "4"], default="4")
             if index_choice in ("1", "2", "3"):
-                from svalbard.indexer import run_index, scan_zim_files
+                from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+
+                from svalbard.indexer import run_index, estimate_index
                 from svalbard.search_db import SearchDB
 
                 strategy = {"1": "fast", "2": "standard", "3": "semantic"}[index_choice]
@@ -436,11 +438,26 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
                 data_dir.mkdir(parents=True, exist_ok=True)
                 db = SearchDB(data_dir / "search.db")
                 try:
-                    console.print(f"\n  Indexing ({strategy})...")
-                    run_index(drive, db, strategy=strategy)
+                    plan = estimate_index(drive, db, strategy=strategy)
+                    total = plan.estimated_articles or plan.articles_to_embed or 1
+
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        BarColumn(bar_width=20),
+                        TextColumn("{task.completed}/{task.total}"),
+                        console=Console(width=min(120, console.width)),
+                    ) as progress:
+                        task = progress.add_task(f"Indexing ({strategy})", total=total)
+
+                        def on_progress(phase: str, done: int, total: int):
+                            progress.update(task, description=f"[cyan]{phase}[/cyan]", completed=done, total=total)
+
+                        run_index(drive, db, strategy=strategy, on_progress=on_progress)
+
                     stats = db.stats()
                     console.print(
-                        f"  [green]Done.[/green] {stats['source_count']} sources, "
+                        f"\n  [green]Done.[/green] {stats['source_count']} sources, "
                         f"{stats['article_count']} articles indexed."
                     )
                 except ImportError as e:
