@@ -124,17 +124,18 @@ svalbard wizard --preset my-pack
 - [x] Interactive wizard — region, preset, target drive, download, indexing
 - [x] Parallel downloads with resume and checksum verification
 - [x] Composable presets with inheritance and regional packs
-- [x] Full-text search across all ZIM content
+- [x] Full-text and semantic search across all ZIM content
 - [x] Content import — local files, websites, video, multi-doc bundles
 - [x] Drive toolkit — run.sh shell menu, Kiwix server, bundled tools
 - [x] Coverage audit reports
-- [ ] Drive integrity — inventory, verify checksums, diff presets, budget planner
-- [ ] Finnish survival geodata — recreation structures, groundwater, fish stocks, protected areas as map layers
-- [ ] Foraging habitat map — forest types mapped to edible berries, mushrooms, and herbs
-- [ ] Offline routing with preprocessed OSM graphs
-- [ ] Export guide builder — extract articles to self-contained HTML/PDF/EPUB
-- [ ] Semantic search and RAG with embedded models
-- [ ] Programming toolkit presets — offline compilers and toolchains
+- [ ] Fully curated and verified presets — every source checked, sized, and tested across tiers
+- [ ] Regional geodata packs — Finnish survival layers (shelters, water, foraging) as a first regional pack
+- [ ] Search across all content — index PDFs, geodata, and reference databases alongside ZIMs
+- [ ] RAG — query all drive content through the bundled local LLM
+- [ ] Offline routing — turn-by-turn navigation from preprocessed OSM graphs
+- [ ] Offline coding assistant — bundled LLM + editor (opencode) as a self-contained dev environment
+- [ ] Mobile workflow — guides and tooling for viewing drive content on phones via USB-C
+- [ ] Windows support
 
 ## Documentation
 
