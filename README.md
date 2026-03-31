@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/svalbard_banner.png" alt="Svalbard" width="100%">
+</p>
+
 # Svalbard
 
 Seed vault for human knowledge — civilization on a stick.
