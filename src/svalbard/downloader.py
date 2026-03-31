@@ -171,16 +171,18 @@ def download_sources(
     sources: list[tuple[str, str, Path]],
     checksums: dict[str, str] | None = None,
     use_cli: str | None = None,
+    parallel: int = 1,
 ) -> list[DownloadResult]:
     """Download multiple sources with Rich progress bars.
 
     Input: [(source_id, url, dest_dir), ...]
     checksums: optional {source_id: expected_sha256}
+    parallel: number of concurrent downloads (default 1 = sequential)
     """
     if checksums is None:
         checksums = {}
 
-    results = []
+    results: list[DownloadResult] = []
 
     with Progress(
         SpinnerColumn(),
@@ -191,10 +193,10 @@ def download_sources(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        for source_id, url, dest_dir in sources:
+
+        def _download_one(source_id: str, url: str, dest_dir: Path) -> DownloadResult:
             filename = url.rsplit("/", 1)[-1]
             task_id = progress.add_task("dl", filename=filename, total=None)
-
             try:
                 expected = checksums.get(source_id, "")
                 filepath, sha256 = download_file(
@@ -205,14 +207,28 @@ def download_sources(
                     use_cli=use_cli,
                 )
                 progress.update(task_id, completed=progress.tasks[task_id].total or 0)
-                results.append(DownloadResult(
+                return DownloadResult(
                     source_id=source_id, success=True,
                     filepath=filepath, sha256=sha256,
-                ))
+                )
             except Exception as e:
-                results.append(DownloadResult(
-                    source_id=source_id, success=False, error=str(e),
-                ))
                 console.print(f"  [red]Failed: {source_id}: {e}[/red]")
+                return DownloadResult(
+                    source_id=source_id, success=False, error=str(e),
+                )
+
+        if parallel <= 1:
+            for source_id, url, dest_dir in sources:
+                results.append(_download_one(source_id, url, dest_dir))
+        else:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            with ThreadPoolExecutor(max_workers=parallel) as executor:
+                futures = {
+                    executor.submit(_download_one, sid, url, dest): sid
+                    for sid, url, dest in sources
+                }
+                for future in as_completed(futures):
+                    results.append(future.result())
 
     return results

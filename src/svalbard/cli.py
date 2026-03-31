@@ -87,11 +87,12 @@ def init(path: str, preset: str, workspace: str | None) -> None:
 @click.argument("path", default=".")
 @click.option("--update", is_flag=True, help="Check for and download newer versions")
 @click.option("--force", is_flag=True, help="Re-download everything")
-def sync(path: str, update: bool, force: bool) -> None:
+@click.option("--parallel", "-j", default=1, type=int, help="Parallel downloads (default: 1)")
+def sync(path: str, update: bool, force: bool, parallel: int) -> None:
     """Download/update content on initialized drive."""
     from svalbard.commands import sync_drive
 
-    sync_drive(path, update=update, force=force)
+    sync_drive(path, update=update, force=force, parallel=parallel)
 
 
 @main.command()

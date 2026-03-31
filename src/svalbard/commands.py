@@ -280,7 +280,7 @@ def _artifact_path_for_build(source: Source, drive_path: Path) -> Path | None:
     return path if path.exists() else None
 
 
-def sync_drive(path: str, update: bool = False, force: bool = False):
+def sync_drive(path: str, update: bool = False, force: bool = False, parallel: int = 1):
     """Download/update content on an initialized drive."""
     drive_path = Path(path)
     if not Manifest.exists(drive_path):
@@ -413,60 +413,64 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
 
     try:
         if downloads:
-            console.print(f"\n[bold]Downloading {len(downloads)} file(s)...[/bold]")
+            label = f"Downloading {len(downloads)} file(s)"
+            if parallel > 1:
+                label += f" ({parallel} parallel)"
+            console.print(f"\n[bold]{label}...[/bold]")
 
+        # Build download tuples and checksum map keyed by source_id
+        dl_tuples = [(job.source_id, job.url, job.dest_dir) for job in downloads]
+        dl_checksums = {}
         for job in downloads:
+            checksum_key = f"{job.source_id}:{job.platform}"
+            if checksum_key in checksums:
+                dl_checksums[job.source_id] = checksums[checksum_key]
+
+        results = download_sources(dl_tuples, checksums=dl_checksums, parallel=parallel)
+
+        # Map results by source_id for lookup
+        results_by_id = {r.source_id: r for r in results}
+        job_by_id = {job.source_id: job for job in downloads}
+
+        for r in results:
             if interrupted:
                 break
 
-            try:
-                source_checksums = {}
-                checksum_key = f"{job.source_id}:{job.platform}"
-                if checksum_key in checksums:
-                    source_checksums[job.source_id] = checksums[checksum_key]
-                results = download_sources(
-                    [(job.source_id, job.url, job.dest_dir)],
-                    checksums=source_checksums,
+            job = job_by_id[r.source_id]
+
+            if r.success and r.filepath:
+                # Delete old file if this is an update with a different filename
+                existing = manifest.entry_by_id(job.source_id, job.platform)
+                if existing and existing.filename != r.filepath.name:
+                    old_path = job.dest_dir / existing.filename
+                    if old_path.exists():
+                        old_path.unlink()
+                        console.print(f"  [dim]Removed old: {existing.filename}[/dim]")
+
+                entry = ManifestEntry(
+                    id=job.source_id,
+                    type=job.source.type,
+                    filename=r.filepath.name,
+                    size_bytes=r.filepath.stat().st_size,
+                    platform=job.platform,
+                    tags=job.source.tags,
+                    depth=job.source.depth,
+                    downloaded=datetime.now().isoformat(timespec="seconds"),
+                    url=job.url,
+                    checksum_sha256=r.sha256,
                 )
-                r = results[0]
+                manifest.entries = [
+                    e for e in manifest.entries
+                    if not (e.id == job.source_id and e.platform == job.platform)
+                ]
+                manifest.entries.append(entry)
+                download_succeeded += 1
 
-                if r.success and r.filepath:
-                    # Delete old file if this is an update with a different filename
-                    existing = manifest.entry_by_id(job.source_id, job.platform)
-                    if existing and existing.filename != r.filepath.name:
-                        old_path = job.dest_dir / existing.filename
-                        if old_path.exists():
-                            old_path.unlink()
-                            console.print(f"  [dim]Removed old: {existing.filename}[/dim]")
-
-                    entry = ManifestEntry(
-                        id=job.source_id,
-                        type=job.source.type,
-                        filename=r.filepath.name,
-                        size_bytes=r.filepath.stat().st_size,
-                        platform=job.platform,
-                        tags=job.source.tags,
-                        depth=job.source.depth,
-                        downloaded=datetime.now().isoformat(timespec="seconds"),
-                        url=job.url,
-                        checksum_sha256=r.sha256,
-                    )
-                    manifest.entries = [
-                        e for e in manifest.entries
-                        if not (e.id == job.source_id and e.platform == job.platform)
-                    ]
-                    manifest.entries.append(entry)
-                    download_succeeded += 1
-
-                    # Save manifest after each successful download
-                    manifest.last_synced = datetime.now().isoformat(timespec="seconds")
-                    manifest.save(manifest_path)
-                else:
-                    download_failed += 1
-
-            except Exception as e:
+                # Save manifest after each successful download
+                manifest.last_synced = datetime.now().isoformat(timespec="seconds")
+                manifest.save(manifest_path)
+            else:
                 download_failed += 1
-                console.print(f"  [red]Failed: {job.source_id}: {e}[/red]")
 
         # ── Builds ───────────────────────────────────────────────────────
         if build_sources and not interrupted:
