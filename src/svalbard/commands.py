@@ -280,7 +280,7 @@ def _artifact_path_for_build(source: Source, drive_path: Path) -> Path | None:
     return path if path.exists() else None
 
 
-def sync_drive(path: str, update: bool = False, force: bool = False, parallel: int = 4):
+def sync_drive(path: str, update: bool = False, force: bool = False, parallel: int = 5):
     """Download/update content on an initialized drive."""
     drive_path = Path(path)
     if not Manifest.exists(drive_path):
@@ -417,6 +417,9 @@ def sync_drive(path: str, update: bool = False, force: bool = False, parallel: i
             if parallel > 1:
                 label += f" ({parallel} parallel)"
             console.print(f"\n[bold]{label}...[/bold]")
+
+        # Sort smallest first so small tools finish quickly while large ZIMs stream
+        downloads.sort(key=lambda j: j.source.size_gb)
 
         # Build download tuples and checksum map keyed by source_id
         dl_tuples = [(job.source_id, job.url, job.dest_dir) for job in downloads]

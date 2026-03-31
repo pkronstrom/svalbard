@@ -7,6 +7,7 @@ on the drive, and generates entries.tab based on actual drive content.
 import os
 import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 from svalbard.drive_config import load_snapshot_preset
@@ -264,7 +265,10 @@ def generate_toolkit(drive_path: Path, preset_name: str) -> Path:
     # Refresh toolkit-managed files but preserve config snapshots.
     for managed_dir in (actions_dest, lib_dest):
         if managed_dir.exists():
-            shutil.rmtree(managed_dir)
+            shutil.rmtree(managed_dir, ignore_errors=True)
+        if managed_dir.exists():
+            # Fallback: subprocess rm for stubborn filesystems (FAT32/exFAT USB)
+            subprocess.run(["rm", "-rf", str(managed_dir)], check=False)
     if entries_path.exists():
         entries_path.unlink()
     actions_dest.mkdir(parents=True)

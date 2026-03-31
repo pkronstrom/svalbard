@@ -171,7 +171,7 @@ def download_sources(
     sources: list[tuple[str, str, Path]],
     checksums: dict[str, str] | None = None,
     use_cli: str | None = None,
-    parallel: int = 4,
+    parallel: int = 5,
 ) -> list[DownloadResult]:
     """Download multiple sources with Rich progress bars.
 
