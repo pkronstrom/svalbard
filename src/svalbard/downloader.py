@@ -196,9 +196,26 @@ def download_sources(
 
         def _download_one(source_id: str, url: str, dest_dir: Path) -> DownloadResult:
             filename = url.rsplit("/", 1)[-1]
+            dest_path = dest_dir / filename
+            expected = checksums.get(source_id, "")
+
+            # Skip already-cached files without creating a progress bar
+            if dest_path.exists() and dest_path.stat().st_size > 0:
+                if expected:
+                    actual = compute_sha256(dest_path)
+                    if actual == expected:
+                        return DownloadResult(
+                            source_id=source_id, success=True,
+                            filepath=dest_path, sha256=actual,
+                        )
+                else:
+                    return DownloadResult(
+                        source_id=source_id, success=True,
+                        filepath=dest_path, sha256="",
+                    )
+
             task_id = progress.add_task("dl", filename=filename, total=None)
             try:
-                expected = checksums.get(source_id, "")
                 filepath, sha256 = download_file(
                     url, dest_dir,
                     expected_sha256=expected,
