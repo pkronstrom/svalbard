@@ -4,6 +4,7 @@ import click
 from rich.console import Console
 
 from svalbard.importer import run_import
+from svalbard.bundle import run_bundle_build
 from svalbard.attach import attach_local_source, detach_local_source, resolve_drive_path
 from svalbard.paths import workspace_root as resolve_workspace_root
 from svalbard.presets import copy_preset_to_workspace, list_presets
@@ -136,6 +137,10 @@ def audit(path: str) -> None:
 
 @main.command("import")
 @click.argument("input_values", nargs=-1, required=True)
+@click.option("--bundle", "bundle_name", default=None, help="Package files into a named ZIM bundle")
+@click.option("--title", default=None, help="Bundle title (default: derived from name)")
+@click.option("--description", default=None, help="Bundle description")
+@click.option("--language", default="eng", show_default=True, help="ISO-639-3 language code")
 @click.option("--kind", type=click.Choice(["auto", "local", "web", "media"]), default="auto", show_default=True)
 @click.option("--runner", type=click.Choice(["auto", "docker", "host"]), default="auto", show_default=True)
 @click.option("--quality", type=click.Choice(["1080p", "720p", "480p", "360p", "source"]), default="720p", show_default=True)
@@ -144,6 +149,10 @@ def audit(path: str) -> None:
 @click.option("--workspace", default=None, help="Workspace root")
 def import_command(
     input_values: tuple[str, ...],
+    bundle_name: str | None,
+    title: str | None,
+    description: str | None,
+    language: str,
     kind: str,
     runner: str,
     quality: str,
@@ -152,12 +161,29 @@ def import_command(
     workspace: str | None,
 ) -> None:
     """Import local content or remote URLs as workspace-local sources."""
+    from pathlib import Path
+
+    ws = resolve_workspace_root(workspace)
+
+    if bundle_name:
+        source_id = run_bundle_build(
+            files=[Path(f) for f in input_values],
+            name=bundle_name,
+            workspace_root=ws,
+            title=title,
+            description=description,
+            language=language,
+        )
+        console.print(f"[green]Bundle created:[/green] {source_id}")
+        return
+
     if len(input_values) > 1:
         console.print("[red]Error:[/red] multiple inputs require --bundle NAME")
         raise SystemExit(1)
+
     source_id = run_import(
         input_values[0],
-        workspace_root=resolve_workspace_root(workspace),
+        workspace_root=ws,
         kind=kind,
         runner=runner,
         quality=quality,
