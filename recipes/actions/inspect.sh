@@ -27,24 +27,24 @@ echo ""
 
 if [ -d "$DRIVE_ROOT/zim" ]; then
     ui_header "ZIM files"
-    find "$DRIVE_ROOT/zim" -name "*.zim" -type f -exec ls -lh {} \; 2>/dev/null | \
+    find "$DRIVE_ROOT/zim" -name "*.zim" -not -name "._*" -type f -exec ls -lh {} \; 2>/dev/null | \
         awk '{printf "  %-8s %s\n", $5, $NF}' | sort -k2
 fi
 
 if [ -d "$DRIVE_ROOT/models" ]; then
     ui_header "Models"
-    find "$DRIVE_ROOT/models" -name "*.gguf" -type f -exec ls -lh {} \; 2>/dev/null | \
+    find "$DRIVE_ROOT/models" -name "*.gguf" -not -name "._*" -type f -exec ls -lh {} \; 2>/dev/null | \
         awk '{printf "  %-8s %s\n", $5, $NF}'
 fi
 
 if [ -d "$DRIVE_ROOT/data" ]; then
     ui_header "Databases"
-    find "$DRIVE_ROOT/data" -name "*.sqlite" -type f -exec ls -lh {} \; 2>/dev/null | \
+    find "$DRIVE_ROOT/data" -name "*.sqlite" -not -name "._*" -type f -exec ls -lh {} \; 2>/dev/null | \
         awk '{printf "  %-8s %s\n", $5, $NF}'
 fi
 
 if [ -d "$DRIVE_ROOT/maps" ]; then
     ui_header "Map tiles"
-    find "$DRIVE_ROOT/maps" -name "*.pmtiles" -type f -exec ls -lh {} \; 2>/dev/null | \
+    find "$DRIVE_ROOT/maps" -name "*.pmtiles" -not -name "._*" -type f -exec ls -lh {} \; 2>/dev/null | \
         awk '{printf "  %-8s %s\n", $5, $NF}'
 fi

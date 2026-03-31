@@ -16,7 +16,7 @@ zim_files=()
 if [ -d "$DRIVE_ROOT/zim" ]; then
     while IFS= read -r f; do
         [ -n "$f" ] && zim_files+=("$f")
-    done < <(find "$DRIVE_ROOT/zim" -name "*.zim" -type f 2>/dev/null | sort)
+    done < <(find "$DRIVE_ROOT/zim" -name "*.zim" -not -name "._*" -type f 2>/dev/null | sort)
 fi
 
 if [ ${#zim_files[@]} -eq 0 ]; then

@@ -14,7 +14,7 @@ fi
 
 model="${1:-}"
 if [ -z "$model" ]; then
-    model="$(find "$DRIVE_ROOT/models" -name "*.gguf" -type f 2>/dev/null | head -1)"
+    model="$(find "$DRIVE_ROOT/models" -name "*.gguf" -not -name "._*" -type f 2>/dev/null | head -1)"
 fi
 if [ -z "$model" ] || [ ! -f "$model" ]; then
     ui_error "No GGUF model found in models/"
