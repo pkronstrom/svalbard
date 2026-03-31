@@ -29,25 +29,25 @@ def test_register_generated_zim_writes_recipe_and_source_metadata(tmp_path):
     assert "tool: zimit" in metadata_path.read_text()
 
 
-def test_add_command_registers_local_file(tmp_path):
+def test_import_command_registers_local_file(tmp_path):
     runner = CliRunner()
     artifact = tmp_path / "manual.zim"
     artifact.write_bytes(b"data")
 
-    result = runner.invoke(main, ["add", str(artifact), "--workspace", str(tmp_path)])
+    result = runner.invoke(main, ["import", str(artifact), "--workspace", str(tmp_path)])
 
     assert result.exit_code == 0
     assert (tmp_path / "local" / "manual.yaml").exists()
 
 
-def test_add_command_routes_remote_urls_through_run_add(tmp_path):
+def test_import_command_routes_remote_urls_through_run_import(tmp_path):
     runner = CliRunner()
 
-    with patch("svalbard.cli.run_add", return_value="local:example") as run_add_mock:
+    with patch("svalbard.cli.run_import", return_value="local:example") as run_import_mock:
         result = runner.invoke(
             main,
             [
-                "add",
+                "import",
                 "https://example.com/docs",
                 "--workspace",
                 str(tmp_path),
@@ -55,17 +55,17 @@ def test_add_command_routes_remote_urls_through_run_add(tmp_path):
         )
 
     assert result.exit_code == 0
-    run_add_mock.assert_called_once()
+    run_import_mock.assert_called_once()
 
 
-def test_add_command_passes_quality_and_audio_only_flags(tmp_path):
+def test_import_command_passes_quality_and_audio_only_flags(tmp_path):
     runner = CliRunner()
 
-    with patch("svalbard.cli.run_add", return_value="local:audio") as run_add_mock:
+    with patch("svalbard.cli.run_import", return_value="local:audio") as run_import_mock:
         result = runner.invoke(
             main,
             [
-                "add",
+                "import",
                 "https://areena.yle.fi/1-12345",
                 "--workspace",
                 str(tmp_path),
@@ -76,8 +76,14 @@ def test_add_command_passes_quality_and_audio_only_flags(tmp_path):
         )
 
     assert result.exit_code == 0
-    assert run_add_mock.call_args.kwargs["quality"] == "1080p"
-    assert run_add_mock.call_args.kwargs["audio_only"] is True
+    assert run_import_mock.call_args.kwargs["quality"] == "1080p"
+    assert run_import_mock.call_args.kwargs["audio_only"] is True
+
+
+def test_legacy_add_command_is_not_available():
+    result = CliRunner().invoke(main, ["add"])
+    assert result.exit_code != 0
+    assert "No such command 'add'" in result.output
 
 
 def test_legacy_crawl_command_is_not_available():

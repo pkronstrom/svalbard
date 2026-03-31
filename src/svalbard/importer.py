@@ -1,4 +1,4 @@
-"""Unified add command orchestration."""
+"""Unified import command orchestration."""
 
 from __future__ import annotations
 
@@ -39,8 +39,8 @@ def _looks_like_media_url(value: str) -> bool:
     )
 
 
-def detect_add_kind(value: str, *, kind: str = "auto", runner: str = "auto") -> str:
-    """Resolve add input kind."""
+def detect_import_kind(value: str, *, kind: str = "auto", runner: str = "auto") -> str:
+    """Resolve import input kind."""
     if kind != "auto":
         return kind
     if _is_existing_path(value):
@@ -99,7 +99,7 @@ def _default_output_slug(value: str, kind: str) -> str:
     return _slugify(f"{host}-{path or kind}")
 
 
-def run_add(
+def run_import(
     value: str,
     *,
     workspace_root: Path | str | None = None,
@@ -110,18 +110,18 @@ def run_add(
     output_name: str | None = None,
     source_type: str | None = None,
 ) -> str:
-    """Add a local path or remote URL as a workspace-local source."""
+    """Import a local path or remote URL as a workspace-local source."""
     root = resolve_workspace_root(workspace_root)
-    resolved_kind = detect_add_kind(value, kind=kind, runner=runner)
+    resolved_kind = detect_import_kind(value, kind=kind, runner=runner)
     resolved_runner = runner if runner != "auto" else ("host" if resolved_kind == "local" else "docker")
 
     if resolved_kind == "local":
         return add_local_source(Path(value), workspace_root=root, source_type=source_type)
 
     if resolved_runner != "docker":
-        raise ValueError("Remote add currently supports only the docker runner")
+        raise ValueError("Remote import currently supports only the docker runner")
     if not has_docker():
-        raise RuntimeError("Docker is not available. Install Docker to use remote add.")
+        raise RuntimeError("Docker is not available. Install Docker to use remote import.")
 
     slug = _default_output_slug(value, resolved_kind)
     normalized_output = _normalize_output_name(output_name, slug)

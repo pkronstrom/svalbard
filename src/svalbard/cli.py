@@ -3,7 +3,7 @@
 import click
 from rich.console import Console
 
-from svalbard.add import run_add
+from svalbard.importer import run_import
 from svalbard.attach import attach_local_source, detach_local_source, resolve_drive_path
 from svalbard.paths import workspace_root as resolve_workspace_root
 from svalbard.presets import copy_preset_to_workspace, list_presets
@@ -134,16 +134,16 @@ def audit(path: str) -> None:
     click.echo(report)
 
 
-@main.command("add")
-@click.argument("input_value")
+@main.command("import")
+@click.argument("input_values", nargs=-1, required=True)
 @click.option("--kind", type=click.Choice(["auto", "local", "web", "media"]), default="auto", show_default=True)
 @click.option("--runner", type=click.Choice(["auto", "docker", "host"]), default="auto", show_default=True)
 @click.option("--quality", type=click.Choice(["1080p", "720p", "480p", "360p", "source"]), default="720p", show_default=True)
 @click.option("--audio-only", is_flag=True, help="Ingest as audio-only media where supported")
 @click.option("-o", "--output", "output_name", default=None, help="Output artifact name")
 @click.option("--workspace", default=None, help="Workspace root")
-def add_command(
-    input_value: str,
+def import_command(
+    input_values: tuple[str, ...],
     kind: str,
     runner: str,
     quality: str,
@@ -151,9 +151,12 @@ def add_command(
     output_name: str | None,
     workspace: str | None,
 ) -> None:
-    """Add local content or remote URLs as workspace-local sources."""
-    source_id = run_add(
-        input_value,
+    """Import local content or remote URLs as workspace-local sources."""
+    if len(input_values) > 1:
+        console.print("[red]Error:[/red] multiple inputs require --bundle NAME")
+        raise SystemExit(1)
+    source_id = run_import(
+        input_values[0],
         workspace_root=resolve_workspace_root(workspace),
         kind=kind,
         runner=runner,
@@ -161,7 +164,7 @@ def add_command(
         audio_only=audio_only,
         output_name=output_name,
     )
-    console.print(f"[green]Registered:[/green] {source_id}")
+    console.print(f"[green]Imported:[/green] {source_id}")
 
 
 @main.command("attach")
