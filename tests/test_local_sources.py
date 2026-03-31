@@ -13,9 +13,9 @@ def test_workspace_root_is_repo_root():
 
 
 def test_load_local_sources_discovers_sidecars_and_derives_size_gb(tmp_path):
-    local_dir = tmp_path / "local"
+    local_dir = tmp_path / "recipes" / "local"
     generated_dir = tmp_path / "generated"
-    local_dir.mkdir()
+    local_dir.mkdir(parents=True)
     generated_dir.mkdir()
     artifact = generated_dir / "example.zim"
     artifact.write_bytes(b"x" * 100)
@@ -36,9 +36,9 @@ size_bytes: 100
 
 
 def test_load_local_sources_rejects_builtin_id_collision(tmp_path):
-    local_dir = tmp_path / "local"
+    local_dir = tmp_path / "recipes" / "local"
     generated_dir = tmp_path / "generated"
-    local_dir.mkdir()
+    local_dir.mkdir(parents=True)
     generated_dir.mkdir()
     (generated_dir / "example.zim").write_bytes(b"x")
     (local_dir / "example.yaml").write_text(
@@ -56,9 +56,9 @@ size_bytes: 1
 
 
 def test_active_sources_for_manifest_merges_preset_and_selected_local_sources(tmp_path):
-    local_dir = tmp_path / "local"
+    local_dir = tmp_path / "recipes" / "local"
     generated_dir = tmp_path / "generated"
-    local_dir.mkdir()
+    local_dir.mkdir(parents=True)
     generated_dir.mkdir()
     (generated_dir / "example.zim").write_bytes(b"x")
     (local_dir / "example.yaml").write_text(

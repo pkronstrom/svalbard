@@ -30,7 +30,7 @@ def _build_recipe_index(recipe_dirs: list[Path] | None = None) -> dict[str, dict
         for path in recipes_dir.rglob("*.yaml"):
             with open(path) as f:
                 data = yaml.safe_load(f)
-            if data and "id" in data:
+            if data and "id" in data and data.get("strategy") != "local":
                 index[data["id"]] = data
     return index
 

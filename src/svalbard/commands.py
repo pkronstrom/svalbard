@@ -161,7 +161,7 @@ def add_local_source(
     normalized_id = f"local:{slug.removeprefix('local-')}" if not raw_name.startswith("local:") else f"local:{slug.split('local-', 1)[-1]}"
     if normalized_id in builtin_recipe_ids():
         raise ValueError(f"Local source id '{normalized_id}' collides with built-in source id")
-    local_dir = root / "local"
+    local_dir = root / "recipes" / "local"
     local_dir.mkdir(parents=True, exist_ok=True)
     sidecar = local_dir / f"{slug.removeprefix('local-')}.yaml"
     for existing in local_dir.glob("*.yaml"):

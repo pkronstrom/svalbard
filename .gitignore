@@ -22,5 +22,3 @@ generated/*
 sources/*
 !sources/README
 
-local/*
-!local/.gitkeep

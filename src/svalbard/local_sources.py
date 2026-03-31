@@ -30,7 +30,7 @@ def _artifact_exists(root: Path, source: Source) -> bool:
 def load_local_sources(root: Path | str | None = None) -> list[Source]:
     """Load local source sidecars from workspace local/."""
     root_path = workspace_root(root)
-    local_dir = root_path / "local"
+    local_dir = root_path / "recipes" / "local"
     if not local_dir.exists():
         return []
 
@@ -39,6 +39,8 @@ def load_local_sources(root: Path | str | None = None) -> list[Source]:
     for recipe_path in sorted(local_dir.glob("*.yaml")):
         with open(recipe_path) as f:
             recipe = yaml.safe_load(f) or {}
+        if recipe.get("strategy") != "local":
+            continue
         source = _source_from_recipe(recipe)
         if source.id in builtin_ids:
             raise ValueError(f"Local source id '{source.id}' collides with built-in recipe id")
