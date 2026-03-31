@@ -50,15 +50,53 @@ Presets scale from pocket-sized emergency kits to full archives:
 
 Finnish presets (`finland-*`) add Finnish-language Wikipedia, Wiktionary, Finnish maps, open geodata (recreation structures, nature reserves), and Finnish-specific guides on top of the English baseline.
 
-## Quick start
+## Walkthrough: provision your own stick
+
+<!-- TODO: replace with asciinema recording -->
+<!-- [![asciicast](https://asciinema.org/a/XXXXX.svg)](https://asciinema.org/a/XXXXX) -->
 
 ```bash
-pip install -e .        # or: uv sync
-svalbard wizard         # pick a region, preset, and target drive
-svalbard sync           # download everything
+# 1. Install svalbard
+pip install -e .                    # or: uv sync
+
+# 2. Run the wizard — pick a region, preset, and target drive
+svalbard wizard
+
+# 3. Sync — downloads everything to the drive
+svalbard sync /Volumes/MyStick
+
+# 4. Check what's on it
+svalbard status /Volumes/MyStick
+
+# 5. Done — unplug and go
+cd /Volumes/MyStick && ./run.sh     # browse, search, maps, AI chat
 ```
 
-## Import your own content
+### Add your own content
+
+```bash
+# Import files, websites, or video
+svalbard import manual.pdf
+svalbard import https://youtube.com/watch?v=...
+svalbard import https://example.com
+
+# Bundle multiple documents into one browsable archive
+svalbard import --bundle my-library docs/*.pdf
+
+# Attach to your drive
+svalbard attach local:my-library /Volumes/MyStick
+svalbard sync /Volumes/MyStick
+```
+
+### Customize a preset
+
+```bash
+svalbard preset copy default-128 my-pack
+$EDITOR ~/.local/share/svalbard/presets/my-pack.yaml
+svalbard init /Volumes/MyStick --preset my-pack
+```
+
+## Commands
 
 ```bash
 svalbard import manual.pdf                              # register a local file
