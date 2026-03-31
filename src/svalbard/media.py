@@ -5,35 +5,21 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-
-# Bump this tag when the media container contents change so local Docker
-# caches do not keep running stale ingest logic.
-MEDIA_IMAGE = "svalbard-media:v2"
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-
-
-def ensure_media_image() -> bool:
-    """Build or refresh the media Docker image."""
-    subprocess.run(["docker", "image", "inspect", MEDIA_IMAGE], capture_output=True)
-    dockerfile = PROJECT_ROOT / "docker" / "media" / "Dockerfile"
-    if not dockerfile.exists():
-        return False
-    result = subprocess.run(
-        ["docker", "build", "-t", MEDIA_IMAGE, str(dockerfile.parent)],
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
+from svalbard.docker import TOOLS_IMAGE, has_docker, ensure_tools_image
 
 
 def probe_media_url(url: str, *, runner: str = "auto") -> bool:
     """Return True when the media backend can resolve the URL."""
     if runner not in {"auto", "docker"}:
         return False
-    if not ensure_media_image():
+    if not has_docker() or not ensure_tools_image():
         return False
     result = subprocess.run(
-        ["docker", "run", "--rm", MEDIA_IMAGE, "probe", "--url", url],
+        [
+            "docker", "run", "--rm", TOOLS_IMAGE,
+            "python", "/usr/local/bin/build-media-zim.py",
+            "probe", "--url", url,
+        ],
         capture_output=True,
         text=True,
     )
@@ -52,8 +38,8 @@ def run_media_ingest(
     """Run the media ingest backend and return the generated artifact path."""
     if runner != "docker":
         raise ValueError("Media ingest currently supports only the docker runner")
-    if not ensure_media_image():
-        raise RuntimeError("Failed to build media ingest image.")
+    if not has_docker() or not ensure_tools_image():
+        raise RuntimeError("Docker is not available or failed to build tools image.")
 
     output_path = workspace_root / "generated" / output_name
     staging_dir = workspace_root / "generated" / ".staging" / output_path.stem
@@ -61,21 +47,15 @@ def run_media_ingest(
     staging_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-v",
-        f"{workspace_root}:/workspace",
-        MEDIA_IMAGE,
+        "docker", "run", "--rm",
+        "-v", f"{workspace_root}:/workspace",
+        TOOLS_IMAGE,
+        "python", "/usr/local/bin/build-media-zim.py",
         "build",
-        "--url",
-        url,
-        "--output",
-        f"/workspace/generated/{output_name}",
-        "--staging",
-        f"/workspace/generated/.staging/{output_path.stem}",
-        "--quality",
-        quality,
+        "--url", url,
+        "--output", f"/workspace/generated/{output_name}",
+        "--staging", f"/workspace/generated/.staging/{output_path.stem}",
+        "--quality", quality,
     ]
     if audio_only:
         cmd.append("--audio-only")

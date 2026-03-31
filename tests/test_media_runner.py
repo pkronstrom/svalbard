@@ -1,14 +1,23 @@
 from unittest.mock import Mock, patch
 
 
-def test_ensure_media_image_rebuilds_even_when_tag_exists():
-    from svalbard.media import ensure_media_image
+def test_probe_media_url_uses_tools_image():
+    from svalbard.media import probe_media_url
 
-    inspect_result = Mock(returncode=0)
-    build_result = Mock(returncode=0)
+    with (
+        patch("svalbard.media.has_docker", return_value=True),
+        patch("svalbard.media.ensure_tools_image", return_value=True),
+        patch("svalbard.media.subprocess.run", return_value=Mock(returncode=0)) as run_mock,
+    ):
+        assert probe_media_url("https://youtube.com/watch?v=abc") is True
 
-    with patch("svalbard.media.subprocess.run", side_effect=[inspect_result, build_result]) as run_mock:
-        assert ensure_media_image() is True
+    cmd = run_mock.call_args.args[0]
+    assert "svalbard-tools:v1" in cmd
+    assert "build-media-zim.py" in " ".join(cmd)
 
-    assert run_mock.call_args_list[0].args[0][:3] == ["docker", "image", "inspect"]
-    assert run_mock.call_args_list[1].args[0][:2] == ["docker", "build"]
+
+def test_probe_media_url_returns_false_without_docker():
+    from svalbard.media import probe_media_url
+
+    with patch("svalbard.media.has_docker", return_value=False):
+        assert probe_media_url("https://youtube.com/watch?v=abc") is False

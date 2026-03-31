@@ -8,11 +8,11 @@ from urllib.parse import parse_qs, urlparse
 
 from svalbard.commands import add_local_source
 from svalbard.crawler import (
-    check_docker,
     ensure_zimit_image,
     register_generated_zim,
     run_url_crawl,
 )
+from svalbard.docker import has_docker
 from svalbard.media import probe_media_url, run_media_ingest
 from svalbard.paths import workspace_root as resolve_workspace_root
 
@@ -120,7 +120,7 @@ def run_add(
 
     if resolved_runner != "docker":
         raise ValueError("Remote add currently supports only the docker runner")
-    if not check_docker():
+    if not has_docker():
         raise RuntimeError("Docker is not available. Install Docker to use remote add.")
 
     slug = _default_output_slug(value, resolved_kind)

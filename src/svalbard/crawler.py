@@ -1,4 +1,4 @@
-"""Website-to-ZIM helpers for the unified add flow."""
+"""Website-to-ZIM helpers for the unified import flow."""
 
 import subprocess
 from datetime import datetime, timezone
@@ -7,21 +7,11 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
+from svalbard.docker import has_docker
+
 console = Console()
 
 ZIMIT_IMAGE = "ghcr.io/openzim/zimit:3.0"
-
-
-def check_docker() -> bool:
-    """Check if Docker is available and running."""
-    try:
-        result = subprocess.run(
-            ["docker", "info"],
-            capture_output=True, timeout=10,
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
 
 
 def ensure_zimit_image() -> bool:

@@ -23,7 +23,7 @@ def test_handler_registry_has_all_families():
 
 def test_check_tools_returns_empty_when_all_present():
     with patch("shutil.which", return_value="/usr/bin/tool"), \
-         patch("svalbard.builder._has_docker", return_value=False):
+         patch("svalbard.builder.has_docker", return_value=False):
         missing = check_tools(["reference-static", "app-bundle"])
     assert missing == []
 
@@ -33,7 +33,7 @@ def test_check_tools_detects_missing():
         return None if name == "tippecanoe" else f"/usr/bin/{name}"
 
     with patch("shutil.which", side_effect=fake_which), \
-         patch("svalbard.builder._has_docker", return_value=False):
+         patch("svalbard.builder.has_docker", return_value=False):
         missing = check_tools(["vector-static"])
     assert "tippecanoe" in missing
 
@@ -41,8 +41,8 @@ def test_check_tools_detects_missing():
 def test_check_tools_accepts_docker_fallback():
     """When Docker is available, tools with Docker images should not be missing."""
     with patch("shutil.which", return_value=None), \
-         patch("svalbard.builder._has_docker", return_value=True), \
-         patch("svalbard.builder._ensure_geodata_image", return_value=True):
+         patch("svalbard.builder.has_docker", return_value=True), \
+         patch("svalbard.builder.ensure_tools_image", return_value=True):
         missing = check_tools(["vector-static"])
     # ogr2ogr and tippecanoe have Docker images, so neither should be missing
     assert "ogr2ogr" not in missing
@@ -61,7 +61,7 @@ def test_check_tools_finds_binary_on_drive(tmp_path):
     pmtiles_bin.chmod(0o755)
 
     with patch("shutil.which", return_value=None), \
-         patch("svalbard.builder._has_docker", return_value=False):
+         patch("svalbard.builder.has_docker", return_value=False):
         missing = check_tools(["osm-extract"], drive_path=tmp_path)
     assert "pmtiles" not in missing
 

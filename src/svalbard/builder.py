@@ -19,12 +19,10 @@ from urllib.parse import urlparse
 
 import httpx
 
+from svalbard.docker import TOOLS_IMAGE, has_docker, ensure_tools_image, run_container
 from svalbard.models import Source
 
 log = logging.getLogger(__name__)
-
-# ── Docker image for geodata tools (ogr2ogr + tippecanoe) ─────────────────
-GEODATA_IMAGE = "svalbard-geodata"  # built from docker/geodata/Dockerfile
 
 CACHE_ROOT = Path.home() / ".cache" / "svalbard" / "build"
 
@@ -49,9 +47,9 @@ TOOL_REQUIREMENTS: dict[str, list[str]] = {
 
 # Tools that can fall back to Docker when not installed locally
 DOCKER_TOOL_IMAGES: dict[str, str] = {
-    "ogr2ogr": GEODATA_IMAGE,
-    "tippecanoe": GEODATA_IMAGE,
-    "pmtiles": GEODATA_IMAGE,
+    "ogr2ogr": TOOLS_IMAGE,
+    "tippecanoe": TOOLS_IMAGE,
+    "pmtiles": TOOLS_IMAGE,
 }
 
 
@@ -86,7 +84,7 @@ def check_tools(families: list[str], drive_path: Path | None = None) -> list[str
         if shutil.which(tool) is not None:
             continue
         # Accept Docker fallback for supported tools
-        if tool in DOCKER_TOOL_IMAGES and _has_docker() and _ensure_geodata_image():
+        if tool in DOCKER_TOOL_IMAGES and has_docker() and ensure_tools_image():
             continue
         missing.append(tool)
     return missing
@@ -150,55 +148,6 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, capture_output=True, text=True, **kwargs)
 
 
-def _has_docker() -> bool:
-    """Return True if Docker is available and the daemon is running."""
-    try:
-        result = subprocess.run(
-            ["docker", "info"], capture_output=True, timeout=10,
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-
-
-def _ensure_geodata_image() -> bool:
-    """Build the lightweight geodata Docker image if not already present."""
-    result = subprocess.run(
-        ["docker", "image", "inspect", GEODATA_IMAGE],
-        capture_output=True,
-    )
-    if result.returncode == 0:
-        return True
-    dockerfile = _PROJECT_ROOT / "docker" / "geodata" / "Dockerfile"
-    if not dockerfile.exists():
-        log.warning("Geodata Dockerfile not found at %s", dockerfile)
-        return False
-    log.info("Building %s Docker image...", GEODATA_IMAGE)
-    result = subprocess.run(
-        ["docker", "build", "-t", GEODATA_IMAGE, str(dockerfile.parent)],
-        capture_output=True, text=True,
-    )
-    return result.returncode == 0
-
-
-def _run_docker(
-    image: str,
-    cmd: list[str],
-    mounts: dict[str, str],
-    **kwargs,
-) -> subprocess.CompletedProcess:
-    """Run command in a Docker container with volume mounts."""
-    docker_cmd = ["docker", "run", "--rm"]
-    for host_path, container_path in mounts.items():
-        docker_cmd.extend(["-v", f"{host_path}:{container_path}"])
-    docker_cmd.append(image)
-    docker_cmd.extend(cmd)
-    return _run(docker_cmd, **kwargs)
-
-
 def _resolve_tool(
     name: str, drive_path: Path,
 ) -> tuple[str | None, str | None]:
@@ -210,7 +159,7 @@ def _resolve_tool(
     local = _find_tool(name, drive_path)
     if local:
         return local, None
-    if name in DOCKER_TOOL_IMAGES and _has_docker() and _ensure_geodata_image():
+    if name in DOCKER_TOOL_IMAGES and has_docker() and ensure_tools_image():
         return None, DOCKER_TOOL_IMAGES[name]
     return None, None
 
@@ -232,7 +181,7 @@ def _run_ogr2ogr(args: list[str], drive_path: Path, mounts: dict[str, str] | Non
     if binary:
         return _run([binary, *args])
     if image:
-        return _run_docker(image, ["ogr2ogr", *args], mounts or {})
+        return run_container(["ogr2ogr", *args], mounts=mounts or {}, check=True, capture_output=True, text=True)
     raise RuntimeError("ogr2ogr not found. Install GDAL or Docker.")
 
 
@@ -242,7 +191,7 @@ def _run_tippecanoe(args: list[str], drive_path: Path, mounts: dict[str, str] | 
     if binary:
         return _run([binary, *args])
     if image:
-        return _run_docker(image, ["tippecanoe", *args], mounts or {})
+        return run_container(["tippecanoe", *args], mounts=mounts or {}, check=True, capture_output=True, text=True)
     raise RuntimeError("tippecanoe not found. Install tippecanoe or Docker.")
 
 
@@ -429,9 +378,9 @@ def build_osm_extract(source: Source, drive_path: Path, cache: Path) -> BuildRes
         if binary:
             _run([binary, *cmd_args])
         elif image:
-            _run_docker(image, ["pmtiles", *cmd_args], {
+            run_container(["pmtiles", *cmd_args], mounts={
                 str(dest_dir): str(dest_dir),
-            })
+            }, check=True, capture_output=True, text=True)
         else:
             raise RuntimeError("pmtiles not found. Install go-pmtiles or Docker.")
 
