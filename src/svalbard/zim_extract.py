@@ -79,8 +79,19 @@ def extract_articles(
 
 
 def article_count(zim_path: str | Path) -> int:
-    """Return the article count stored in the ZIM metadata (no iteration)."""
+    """Return the approximate HTML article count in a ZIM file.
+
+    Uses ``archive.article_count`` which counts content entries (excludes
+    metadata/redirects).  This is closer to the actual indexable count than
+    ``entry_count`` which includes images, CSS, JS, etc.
+    """
     from libzim.reader import Archive  # type: ignore[import-untyped]
 
     archive = Archive(str(zim_path))
-    return archive.entry_count
+    # article_count excludes redirects and metadata; still includes non-HTML
+    # items but is much closer than entry_count (~2-3x overcount vs ~5-10x).
+    try:
+        return archive.article_count
+    except AttributeError:
+        # Older libzim versions may not have article_count
+        return archive.entry_count
