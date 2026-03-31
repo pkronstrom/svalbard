@@ -53,15 +53,18 @@ def _workspace_preset_path(name: str, workspace: Path | str | None = None) -> Pa
 
 
 def resolve_preset_path(name: str, workspace: Path | str | None = None) -> Path:
-    """Resolve a preset path from workspace-owned or built-in presets."""
+    """Resolve a preset path from workspace-owned, built-in, or packs presets."""
     workspace_path = _workspace_preset_path(name, workspace)
     builtin_path = PRESETS_DIR / f"{name}.yaml"
-    if workspace_path.exists() and builtin_path.exists():
+    packs_path = PRESETS_DIR / "packs" / f"{name}.yaml"
+    if workspace_path.exists() and (builtin_path.exists() or packs_path.exists()):
         raise ValueError(f"Workspace preset '{name}' collides with built-in preset")
     if workspace_path.exists():
         return workspace_path
     if builtin_path.exists():
         return builtin_path
+    if packs_path.exists():
+        return packs_path
     raise FileNotFoundError(f"Preset not found: {name}")
 
 
@@ -166,10 +169,13 @@ def recipe_data_by_id(source_id: str) -> dict:
 
 
 def list_presets(workspace: Path | str | None = None) -> list[str]:
-    """List available preset names."""
+    """List available preset names (presets, packs, and workspace presets)."""
     names: set[str] = set()
     if PRESETS_DIR.exists():
         names.update(p.stem for p in PRESETS_DIR.glob("*.yaml"))
+    packs_dir = PRESETS_DIR / "packs"
+    if packs_dir.exists():
+        names.update(p.stem for p in packs_dir.glob("*.yaml"))
     workspace_dir = workspace_presets_dir(workspace)
     if workspace_dir.exists():
         names.update(p.stem for p in workspace_dir.glob("*.yaml"))

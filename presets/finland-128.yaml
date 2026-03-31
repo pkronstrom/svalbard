@@ -2,73 +2,17 @@ name: finland-128
 description: Finnish + English reference and practical guides for a 128GB drive
 target_size_gb: 128
 region: finland
+extends:
+  - fi-reference
+  - fi-survival
+  - fi-maps
+  - tools-base
 sources:
-# ── Reference ───────────────────────────────────────────────────────────────
-- wikipedia-en-nopic
-- wikipedia-fi-nopic
-- wiktionary-en
-- wiktionary-fi
-- wikimed
-- wikem
-- wikibooks-en
-- khan-academy
-- gutenberg
-
-# ── Practical ───────────────────────────────────────────────────────────────
-- ifixit
-- practical-action
-- who-basic-emergency-care
-- fas-military-medicine
-- zimgit-water
-- zimgit-knots
-- zimgit-medicine
-- zimgit-food-preparation
-- zimgit-post-disaster
-- based-cooking
+# ── Additional sources not in packs ──
 - grimgrains
-- usda-nutrition
 - 100-rabbits
-- lowtech-magazine
-- cd3wd
-- appropedia
-
-# ── Q&A ─────────────────────────────────────────────────────────────────────
-- stackexchange-survival
-- stackexchange-diy
 - stackexchange-gardening
 - stackexchange-cooking
 - stackexchange-amateur-radio
 - stackexchange-sustainability
-
-# ── Textbooks ───────────────────────────────────────────────────────────────
-- libretexts-engineering
-- libretexts-medicine
-- libretexts-geosciences
-
-# ── Video ───────────────────────────────────────────────────────────────────
-- quick-guides-medicine
-
-# ── Maps ────────────────────────────────────────────────────────────────────
-- natural-earth
-- osm-finland
-- pohjavesialueet
-- luonnonsuojelualueet
-- virtavesien-lohikalakannat
-- lipas-recreation
-
-# ── Datasets ────────────────────────────────────────────────────────────────
-- fimea
-
-# ── Tools ───────────────────────────────────────────────────────────────────
-- cyberchef
-- age
-- kiwix-serve
-- sqliteviz
-- duckdb-wasm
-- maplibre-vendor
-- toybox
 - dufs
-- fzf
-- 7z
-- sqlite3
-- nomic-embed-text-v1.5

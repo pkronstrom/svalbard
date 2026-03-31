@@ -1,0 +1,15 @@
+name: fi-reference
+description: Finnish + English reference — encyclopedias, dictionaries, textbooks
+region: finland
+target_size_gb: 30
+sources:
+- wikipedia-en-nopic
+- wikipedia-fi-nopic
+- wiktionary-en
+- wiktionary-fi
+- wikibooks-en
+- khan-academy
+- gutenberg
+- libretexts-engineering
+- libretexts-medicine
+- libretexts-geosciences

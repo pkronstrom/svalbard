@@ -1,0 +1,14 @@
+name: tools-base
+description: Core drive tooling — search, file serving, encryption, compression
+target_size_gb: 1
+sources:
+- kiwix-serve
+- sqlite3
+- nomic-embed-text-v1.5
+- cyberchef
+- sqliteviz
+- duckdb-wasm
+- age
+- 7z
+- fzf
+- toybox

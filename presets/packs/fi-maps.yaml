@@ -1,0 +1,13 @@
+name: fi-maps
+description: Finnish geodata layers, basemap, and map viewer tooling
+region: finland
+target_size_gb: 4
+sources:
+- natural-earth
+- osm-finland
+- pohjavesialueet
+- luonnonsuojelualueet
+- virtavesien-lohikalakannat
+- lipas-recreation
+- maplibre-vendor
+- dufs
