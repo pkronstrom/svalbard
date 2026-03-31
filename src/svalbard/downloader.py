@@ -185,13 +185,13 @@ def download_sources(
     results: list[DownloadResult] = []
 
     progress_width = min(120, console.width)
+    max_filename = 40
     with Progress(
         SpinnerColumn(),
         TextColumn("[bold]{task.fields[filename]}"),
         BarColumn(bar_width=20),
         DownloadColumn(),
         TransferSpeedColumn(),
-        TimeRemainingColumn(),
         console=Console(width=progress_width),
     ) as progress:
 
@@ -215,7 +215,8 @@ def download_sources(
                         filepath=dest_path, sha256="",
                     )
 
-            task_id = progress.add_task("dl", filename=filename, total=None)
+            display_name = filename if len(filename) <= max_filename else filename[:max_filename - 1] + "…"
+            task_id = progress.add_task("dl", filename=display_name, total=None)
             try:
                 filepath, sha256 = download_file(
                     url, dest_dir,
