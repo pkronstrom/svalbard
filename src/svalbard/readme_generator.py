@@ -30,7 +30,7 @@ def _generate_license_section(sources: list[Source]) -> list[str]:
         "",
         "All content on this drive is redistributed under the terms of its",
         "original license. This drive was assembled using Svalbard",
-        "(AGPL-3.0 with Commons Clause — not for commercial redistribution).",
+        "(CC-BY-NC-SA-4.0 — not for commercial use or redistribution).",
         "",
     ]
 

@@ -31,7 +31,7 @@ def ensure_tools_image() -> bool:
     )
     if result.returncode == 0:
         return True
-    dockerfile = _PROJECT_ROOT / "docker" / "Dockerfile"
+    dockerfile = _PROJECT_ROOT / "Dockerfile"
     if not dockerfile.exists():
         log.warning("Dockerfile not found at %s", dockerfile)
         return False

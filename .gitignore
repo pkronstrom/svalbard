@@ -19,6 +19,6 @@ generated/*
 !generated/.gitkeep
 !generated/README
 
-sources/*
-!sources/README
+library/*
+!library/README
 

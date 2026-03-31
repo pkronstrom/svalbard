@@ -4,7 +4,7 @@ import sys
 
 
 def _load_media_builder_module():
-    module_path = Path(__file__).resolve().parent.parent / "recipes" / "builders" / "media-zim.py"
+    module_path = Path(__file__).resolve().parent.parent.parent / "recipes" / "builders" / "media-zim.py"
     spec = spec_from_file_location("build_media_zim", module_path)
     module = module_from_spec(spec)
     assert spec is not None

@@ -24,6 +24,9 @@ svb = "svalbard.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/svalbard"]
 
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
