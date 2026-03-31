@@ -403,7 +403,11 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         workspace_root=str(workspace),
         local_sources=selected_local_ids,
     )
-    if Confirm.ask("\n  Start downloading now?", default=True):
+    _clear()
+    console.print(f"\n  [green]Initialized:[/green] {target_path}")
+    console.print(f"  [bold]Preset:[/bold]  {preset.name} — {len(sources)} sources, {total_gb:.1f} GB\n")
+    if Confirm.ask("  Start downloading now?", default=True):
+        _clear()
         sync_drive(target_path)
 
         # Offer to build search index after sync
