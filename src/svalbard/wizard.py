@@ -195,32 +195,36 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         volumes = detect_volumes()
         choices = {}
         idx = 1
+
+        vol_table = Table(show_header=False, box=None, padding=(0, 1), width=58)
+        vol_table.add_column("#", width=3, no_wrap=True)
+        vol_table.add_column("Path", ratio=1)
+        vol_table.add_column("Space", no_wrap=True, justify="right")
+
         for v in volumes:
             svalbard_path = str(Path(v["path"]) / "svalbard")
-            size_info = f"{v['total_gb']:.0f} GB total, {v['free_gb']:.0f} GB free"
-            if v["network"]:
-                console.print(f"  [dim][bold]{idx}[/bold]) {svalbard_path}  [network]  ({size_info})[/dim]")
-            else:
-                console.print(f"  [bold]{idx}[/bold]) {svalbard_path}  ({size_info})")
+            size_info = f"{v['free_gb']:.0f}/{v['total_gb']:.0f} GB"
+            style = "dim" if v["network"] else ""
+            label = f"{svalbard_path}  [network]" if v["network"] else svalbard_path
+            vol_table.add_row(f"[bold]{idx}[/bold]", label, size_info, style=style)
             choices[str(idx)] = svalbard_path
             idx += 1
 
-        # Home directory option — always present
+        # Home directory option
         home_svalbard = Path.home() / "svalbard"
-        home_label = "~/svalbard/"
+        home_size = ""
         if home_svalbard.exists():
             try:
                 usage = shutil.disk_usage(home_svalbard)
-                home_label += f"  ({usage.free / 1e9:.0f} GB free)"
+                home_size = f"{usage.free / 1e9:.0f} GB free"
             except OSError:
                 pass
-        else:
-            home_label += "  (home directory)"
-        console.print(f"  [bold]{idx}[/bold]) {home_label}")
+        vol_table.add_row(f"[bold]{idx}[/bold]", "~/svalbard/", home_size or "home directory")
         choices[str(idx)] = str(home_svalbard)
         idx += 1
 
-        console.print(f"  [bold]c[/bold]) Custom path...")
+        vol_table.add_row("[bold]c[/bold]", "Custom path...", "")
+        console.print(vol_table)
 
         valid_choices = list(choices.keys()) + ["c"]
         choice = Prompt.ask("\n  Select", choices=valid_choices)
@@ -281,23 +285,29 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         console.print(f"  Presets ({free_gb:.0f} GB free):\n")
         preset_choices = {}
         recommended = None
+
+        preset_table = Table(show_header=False, box=None, padding=(0, 1), width=58)
+        preset_table.add_column("#", width=3, no_wrap=True)
+        preset_table.add_column("Name", width=14, no_wrap=True)
+        preset_table.add_column("Size", width=7, no_wrap=True, justify="right")
+        preset_table.add_column("Description", ratio=1)
+
         for i, (name, content_gb, fits) in enumerate(all_presets, 1):
             p = load_preset(name, workspace=resolve_workspace_root())
             preset_choices[str(i)] = name
+            style = "" if fits else "dim"
             if fits:
                 recommended = str(i)
-                over = ""
-                marker = ""
+                size_str = f"~{content_gb:.0f} GB"
             else:
-                over = f"  (needs ~{content_gb - free_gb:.0f} GB more)"
-                marker = "[dim]"
+                size_str = f"~{content_gb:.0f} GB"
+            desc = p.description
+            if not fits:
+                desc += f" (needs ~{content_gb - free_gb:.0f} GB more)"
+            preset_table.add_row(f"[bold]{i}[/bold]", name, size_str, desc, style=style)
 
-            line = f"  [bold]{i}[/bold]) {marker}{name:15s}  ~{content_gb:.0f} GB  — {p.description}{over}"
-            if marker:
-                line += "[/dim]"
-            console.print(line)
+        console.print(preset_table)
 
-        # Mark recommended after printing all lines
         if recommended:
             console.print(f"\n  [green]Enter = {preset_choices[recommended]} (recommended)[/green]")
 
@@ -319,12 +329,22 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         console.print("\n[bold]Step 4/5 — Local Sources[/bold]")
         console.print(f"  Optional local sources ({remaining_gb:.1f} GB remaining):\n")
         local_choices: dict[str, str] = {}
+
+        local_table = Table(show_header=False, box=None, padding=(0, 1), width=58)
+        local_table.add_column("#", width=3, no_wrap=True)
+        local_table.add_column("Source", width=18, no_wrap=True)
+        local_table.add_column("Size", width=7, no_wrap=True, justify="right")
+        local_table.add_column("Description", ratio=1)
+
         for i, (source, size_gb, fits) in enumerate(local_candidates, 1):
-            status = "" if fits else "  [dim](too large)[/dim]"
-            console.print(
-                f"  [bold]{i}[/bold]) {source.id:20s} ~{size_gb:.1f} GB — {source.description or source.id}{status}"
-            )
+            style = "" if fits else "dim"
+            desc = source.description or source.id
+            if not fits:
+                desc += " (too large)"
+            local_table.add_row(f"[bold]{i}[/bold]", source.id, f"~{size_gb:.1f} GB", desc, style=style)
             local_choices[str(i)] = source.id
+
+        console.print(local_table)
 
         raw = Prompt.ask(
             "\n  Select extra local sources (comma-separated, blank for none)",
@@ -347,11 +367,11 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
     _clear()
     console.print(f"\n[bold]Step 5/5 — Review[/bold]")
 
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Source")
-    table.add_column("Type")
-    table.add_column("Size", justify="right")
-    table.add_column("Description")
+    table = Table(show_header=True, header_style="bold", width=60)
+    table.add_column("Source", no_wrap=True)
+    table.add_column("Type", no_wrap=True)
+    table.add_column("Size", justify="right", no_wrap=True)
+    table.add_column("Description", ratio=1)
 
     by_type: dict[str, list] = {}
     for s in sources:
