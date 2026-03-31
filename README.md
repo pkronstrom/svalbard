@@ -100,24 +100,13 @@ svalbard wizard --preset my-pack
 
 ## Commands
 
-```bash
-svalbard import manual.pdf                              # register a local file
-svalbard import https://youtube.com/watch?v=...         # download video into ZIM
-svalbard import https://example.com                     # crawl website into ZIM
-svalbard import --bundle my-library docs/*.pdf          # package documents into ZIM
-svalbard attach local:my-library /Volumes/MyDrive       # add to a drive
-```
-
-## Commands
-
 | Command | Description |
 |---------|-------------|
-| `svalbard wizard` | Interactive setup |
-| `svalbard init <path> --preset <name>` | Initialize a drive |
+| `svalbard wizard` | Interactive setup — region, preset, target, download, index |
 | `svalbard sync <path>` | Download and update content |
 | `svalbard status <path>` | Show drive contents |
 | `svalbard audit <path>` | Coverage gap report |
-| `svalbard import <input>` | Import files, URLs, or bundles |
+| `svalbard import <input>` | Import files, URLs, or bundles into `library/` |
 | `svalbard attach / detach` | Add or remove sources from a drive |
 | `svalbard index <path>` | Build cross-content search index |
 | `svalbard preset list / copy` | List or customize presets |
