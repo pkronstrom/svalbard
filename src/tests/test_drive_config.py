@@ -21,3 +21,36 @@ def test_drive_snapshot_contains_selected_local_source_metadata(tmp_path):
 
     snapshot = drive / ".svalbard" / "config" / "local" / "example.yaml"
     assert snapshot.exists()
+
+
+def test_load_snapshot_preset_ignores_macos_appledouble_sidecars(tmp_path):
+    from svalbard.drive_config import load_snapshot_preset
+
+    config_root = tmp_path / ".svalbard" / "config"
+    recipes_dir = config_root / "recipes"
+    recipes_dir.mkdir(parents=True)
+
+    (config_root / "preset.yaml").write_text(
+        """name: finland-2
+description: test
+target_size_gb: 2
+region: finland
+sources:
+- wikem
+"""
+    )
+    (recipes_dir / "wikem.yaml").write_text(
+        """id: wikem
+type: zim
+group: practical
+size_gb: 0.042
+description: WikEM
+"""
+    )
+    (recipes_dir / "._wikem.yaml").write_bytes(b"\x00\x05\x16\x07binary-sidecar")
+
+    preset = load_snapshot_preset(tmp_path)
+
+    assert preset is not None
+    assert preset.name == "finland-2"
+    assert [source.id for source in preset.sources] == ["wikem"]

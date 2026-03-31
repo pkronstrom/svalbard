@@ -30,6 +30,15 @@ def _copy_yaml(path: Path, dest: Path) -> None:
     shutil.copy2(path, dest)
 
 
+def _visible_yaml_files(root: Path):
+    for path in sorted(root.glob("*.yaml")):
+        if path.name.startswith("."):
+            continue
+        if path.name.startswith("._"):
+            continue
+        yield path
+
+
 def _local_snapshot_path(drive_path: Path, source_id: str) -> Path:
     slug = source_id.split(":", 1)[-1]
     return config_root(drive_path) / "local" / f"{_slugify(slug)}.yaml"
@@ -73,7 +82,7 @@ def write_drive_snapshot(
     _copy_yaml(preset_path, root / "preset.yaml")
 
     # Replace the recipe snapshot set with the exact recipes referenced by the preset.
-    for existing in recipes_dir.glob("*.yaml"):
+    for existing in _visible_yaml_files(recipes_dir):
         existing.unlink()
 
     preset = load_preset(preset_name, workspace=workspace_root)
@@ -82,7 +91,7 @@ def write_drive_snapshot(
         recipe_path = recipes_dir / f"{_slugify(source.id)}.yaml"
         recipe_path.write_text(yaml.safe_dump(recipe, sort_keys=False))
 
-    for existing in local_dir.glob("*.yaml"):
+    for existing in _visible_yaml_files(local_dir):
         existing.unlink()
     for source_id in local_source_ids:
         write_local_source_snapshot(drive_path, source_id, workspace_root)
@@ -96,7 +105,7 @@ def load_snapshot_preset(drive_path: Path) -> Preset | None:
         return None
 
     recipe_index: dict[str, dict] = {}
-    for path in sorted(recipes_dir.glob("*.yaml")):
+    for path in _visible_yaml_files(recipes_dir):
         data = yaml.safe_load(path.read_text()) or {}
         if "id" in data:
             recipe_index[data["id"]] = data
