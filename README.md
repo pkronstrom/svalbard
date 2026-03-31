@@ -76,16 +76,22 @@ cd /Volumes/MyStick && ./run.sh     # browse, search, maps, AI chat
 
 ### Add your own content
 
+`svalbard import` downloads content, transforms it as needed, and packages it into a browsable ZIM archive in `library/`. From there you can attach it to any drive.
+
 ```bash
-# Import files, websites, or video
+# Import a local file — registers it as a source
 svalbard import manual.pdf
-svalbard import https://youtube.com/watch?v=...
+
+# Import a website — crawls it and packages into a ZIM
 svalbard import https://example.com
 
-# Bundle multiple documents into one browsable archive
+# Import video — downloads, transcodes, and packages into a ZIM
+svalbard import https://youtube.com/watch?v=...
+
+# Bundle multiple documents into one browsable ZIM
 svalbard import --bundle my-library docs/*.pdf
 
-# Attach to your drive
+# Attach to your drive and sync
 svalbard attach local:my-library /Volumes/MyStick
 svalbard sync /Volumes/MyStick
 ```
