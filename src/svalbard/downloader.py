@@ -94,7 +94,7 @@ def download_file_httpx(url: str, dest_path: Path, progress: Progress, task_id) 
 
 def download_file_cli(url: str, dest_dir: Path, tool: str) -> Path:
     """Download using CLI tools (aria2c/wget/curl) as fallback."""
-    filename = url.rsplit("/", 1)[-1]
+    filename = url.rsplit("/", 1)[-1].split("?")[0]
     dest_path = dest_dir / filename
 
     if tool == "aria2c":
@@ -120,7 +120,7 @@ def download_file(url: str, dest_dir: Path, expected_sha256: str = "",
     if use_cli is set or httpx fails.
     """
     dest_dir.mkdir(parents=True, exist_ok=True)
-    filename = url.rsplit("/", 1)[-1]
+    filename = url.rsplit("/", 1)[-1].split("?")[0]
     dest_path = dest_dir / filename
 
     if dest_path.exists() and dest_path.stat().st_size > 0:
@@ -196,7 +196,7 @@ def download_sources(
     ) as progress:
 
         def _download_one(source_id: str, url: str, dest_dir: Path) -> DownloadResult:
-            filename = url.rsplit("/", 1)[-1]
+            filename = url.rsplit("/", 1)[-1].split("?")[0]
             dest_path = dest_dir / filename
             expected = checksums.get(source_id, "")
 
