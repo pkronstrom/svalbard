@@ -144,7 +144,7 @@ def estimate_index(
 
 # ── Indexing ─────────────────────────────────────────────────────────
 
-_BATCH_SIZE = 10_000
+_BATCH_SIZE = 1_000
 _EMBED_BATCH_SIZE = 32
 
 
@@ -195,6 +195,11 @@ def run_index(
 
             for file_idx, zf in enumerate(plan.files_to_index):
                 filename = zf.name
+
+                if on_progress:
+                    label = filename if len(filename) <= 40 else filename[:39] + "…"
+                    on_progress(f"[{file_idx+1}/{total_files}] {label}", cumulative_articles, plan.estimated_articles)
+
                 source_id = db.upsert_source(filename, title=filename)
 
                 # If re-indexing a changed file, remove stale articles first
@@ -221,7 +226,7 @@ def run_index(
                             cumulative_articles += len(batch)
                             batch = []
                             if on_progress:
-                                on_progress(filename, cumulative_articles, plan.estimated_articles)
+                                on_progress(f"[{file_idx+1}/{total_files}] {label}", cumulative_articles, plan.estimated_articles)
                 except RuntimeError as e:
                     from rich.console import Console as C
                     C().print(f"  [yellow]Skipping {filename}: {e}[/yellow]")
@@ -232,11 +237,13 @@ def run_index(
                     db.insert_articles_batch(batch)
                     file_articles += len(batch)
                     cumulative_articles += len(batch)
-                    if on_progress:
-                        on_progress(filename, cumulative_articles, plan.estimated_articles)
 
                 # Store checksum so future runs skip this file
                 db.set_meta(_meta_key(filename), _file_checksum(zf))
+
+            # Final progress update with actual count
+            if on_progress:
+                on_progress("Indexing complete", cumulative_articles, cumulative_articles)
 
         finally:
             # Restore safe sync
