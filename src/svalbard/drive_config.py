@@ -45,7 +45,7 @@ def _local_snapshot_path(drive_path: Path, source_id: str) -> Path:
 
 
 def _local_recipe_path(workspace_root: Path, source_id: str) -> Path:
-    local_dir = workspace_root / "recipes" / "local"
+    local_dir = workspace_root / "local" / "recipes"
     for path in sorted(local_dir.glob("*.yaml")):
         data = yaml.safe_load(path.read_text()) or {}
         if data.get("id") == source_id:

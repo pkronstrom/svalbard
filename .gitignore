@@ -12,8 +12,8 @@ build/
 
 docs/plans/archive/
 
-recipes/local/*
-!recipes/local/.gitkeep
+local/*
+!local/README.md
 
 library/*
 !library/README.md

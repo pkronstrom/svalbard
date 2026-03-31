@@ -30,7 +30,7 @@ def _artifact_exists(root: Path, source: Source) -> bool:
 def load_local_sources(root: Path | str | None = None) -> list[Source]:
     """Load local source sidecars from workspace local/."""
     root_path = workspace_root(root)
-    local_dir = root_path / "recipes" / "local"
+    local_dir = root_path / "local" / "recipes"
     if not local_dir.exists():
         return []
 

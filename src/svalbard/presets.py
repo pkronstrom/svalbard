@@ -40,27 +40,21 @@ def builtin_recipe_ids() -> set[str]:
     return set(_build_recipe_index())
 
 
-def workspace_presets_dir(workspace: Path | str | None = None) -> Path:
-    """Return the workspace-owned preset directory."""
+def local_presets_dir(workspace: Path | str | None = None) -> Path:
+    """Return the local (gitignored) preset directory."""
     root = resolve_workspace_root(workspace)
-    if root == _PROJECT_ROOT:
-        return root / ".svalbard" / "presets"
-    return root / "presets"
-
-
-def _workspace_preset_path(name: str, workspace: Path | str | None = None) -> Path:
-    return workspace_presets_dir(workspace) / f"{name}.yaml"
+    return root / "local" / "presets"
 
 
 def resolve_preset_path(name: str, workspace: Path | str | None = None) -> Path:
-    """Resolve a preset path from workspace-owned, built-in, or packs presets."""
-    workspace_path = _workspace_preset_path(name, workspace)
+    """Resolve a preset path: local → built-in → packs."""
+    local_path = local_presets_dir(workspace) / f"{name}.yaml"
     builtin_path = PRESETS_DIR / f"{name}.yaml"
     packs_path = PRESETS_DIR / "packs" / f"{name}.yaml"
-    if workspace_path.exists() and (builtin_path.exists() or packs_path.exists()):
-        raise ValueError(f"Workspace preset '{name}' collides with built-in preset")
-    if workspace_path.exists():
-        return workspace_path
+    if local_path.exists() and (builtin_path.exists() or packs_path.exists()):
+        raise ValueError(f"Local preset '{name}' collides with built-in preset")
+    if local_path.exists():
+        return local_path
     if builtin_path.exists():
         return builtin_path
     if packs_path.exists():
@@ -169,16 +163,16 @@ def recipe_data_by_id(source_id: str) -> dict:
 
 
 def list_presets(workspace: Path | str | None = None) -> list[str]:
-    """List available preset names (presets, packs, and workspace presets)."""
+    """List available preset names (presets, packs, and local presets)."""
     names: set[str] = set()
     if PRESETS_DIR.exists():
         names.update(p.stem for p in PRESETS_DIR.glob("*.yaml"))
     packs_dir = PRESETS_DIR / "packs"
     if packs_dir.exists():
         names.update(p.stem for p in packs_dir.glob("*.yaml"))
-    workspace_dir = workspace_presets_dir(workspace)
-    if workspace_dir.exists():
-        names.update(p.stem for p in workspace_dir.glob("*.yaml"))
+    local_dir = local_presets_dir(workspace)
+    if local_dir.exists():
+        names.update(p.stem for p in local_dir.glob("*.yaml"))
     return sorted(names)
 
 
@@ -187,9 +181,9 @@ def copy_preset_to_workspace(
     target_name: str,
     workspace: Path | str | None = None,
 ) -> Path:
-    """Copy a preset into the workspace-owned preset directory."""
+    """Copy a preset into local/presets/."""
     source_path = resolve_preset_path(source_name, workspace)
-    target_path = workspace_presets_dir(workspace) / f"{target_name}.yaml"
+    target_path = local_presets_dir(workspace) / f"{target_name}.yaml"
     target_path.parent.mkdir(parents=True, exist_ok=True)
     if target_path.exists():
         raise FileExistsError(f"Preset already exists: {target_path}")
