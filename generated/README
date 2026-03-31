@@ -1,0 +1,15 @@
+Generated artifacts from svalbard import.
+
+This directory is populated automatically:
+
+  - ZIM files from --bundle, web crawls, and media imports
+  - .source.yaml metadata sidecars for each artifact
+  - .staging/ temporary build directories
+
+Files here are gitignored. To rebuild a bundle:
+
+  svalbard import --bundle my-library sources/topic/*.pdf
+
+To attach a generated artifact to a drive:
+
+  svalbard attach local:my-library /path/to/drive

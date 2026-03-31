@@ -1,0 +1,23 @@
+Source documents for bundling into ZIM files.
+
+Organize by topic, then bundle:
+
+  svalbard import --bundle radio-manuals sources/radio/*.pdf
+  svalbard import --bundle medical-refs sources/medical/*
+
+Structure:
+
+  sources/
+    radio/
+      ham-radio-manual.pdf
+      pmr-guide.pdf
+    medical/
+      first-aid.epub
+      wilderness-medicine.pdf
+    survival/
+      army-survival-manual.pdf
+
+After bundling, the ZIM appears in generated/ and is registered
+as a local source. Attach it to a drive with:
+
+  svalbard attach local:radio-manuals /path/to/drive

@@ -17,6 +17,10 @@ recipes/local/*
 
 generated/*
 !generated/.gitkeep
+!generated/README
+
+sources/*
+!sources/README
 
 local/*
 !local/.gitkeep
