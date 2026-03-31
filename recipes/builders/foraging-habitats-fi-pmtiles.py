@@ -24,7 +24,7 @@ VASTUUVAPAUSLAUSEKE / DISCLAIMER:
 
 Requirements: rasterio, numpy, pyproj, fiona, shapely
               GDAL CLI (gdal_translate), tippecanoe
-Usage: python recipes/builders/foraging-habitats-pmtiles.py [--output foraging-habitats.pmtiles]
+Usage: python recipes/builders/foraging-habitats-fi-pmtiles.py [--output foraging-habitats-fi.pmtiles]
 """
 
 from __future__ import annotations
@@ -390,8 +390,8 @@ def main():
     )
     parser.add_argument(
         "--output", "-o",
-        default="foraging-habitats.pmtiles",
-        help="Output PMTiles file (default: foraging-habitats.pmtiles)",
+        default="foraging-habitats-fi.pmtiles",
+        help="Output PMTiles file (default: foraging-habitats-fi.pmtiles)",
     )
     parser.add_argument(
         "--cache-dir",

@@ -155,7 +155,7 @@ Runs inside the existing `svalbard-tools` Docker container.
 ## Recipe
 
 ```yaml
-id: foraging-habitats
+id: foraging-habitats-fi
 type: pmtiles
 group: maps
 tags: [food, foraging, survival]
@@ -163,7 +163,9 @@ depth: comprehensive
 size_gb: 0.04
 description: Foraging habitat map — edible plants, berries, and mushrooms by forest type
 strategy: download
-url: <hosted-url-tbd>
+path: generated/foraging-habitats-fi.pmtiles   # local artifact
+# url: <remote-url-tbd>                        # for distribution
+builder: foraging-habitats-fi-pmtiles.py        # regenerate from source (requires Docker)
 layer_name: foraging
 
 viewer:
@@ -178,6 +180,18 @@ license:
     Species associations are indicative — identify before consuming.
   url: https://www.luke.fi/en/statistics/multi-source-national-forest-inventory
 ```
+
+## Builder-aware sync (future feature)
+
+When a recipe has a `builder:` field, `sync_drive` should:
+
+1. Check `url` → download pre-built artifact
+2. Check `path` → copy local artifact
+3. Neither exists → detect `builder` → prompt user:
+   *"foraging-habitats-fi has no pre-built artifact. Build from source?
+   (requires Docker/svalbard-tools, ~4 GB download, ~10 min)"*
+4. User confirms → run builder inside svalbard-tools Docker → place on drive
+5. User declines → skip
 
 ## Disclaimer (vastuuvapauslauseke)
 

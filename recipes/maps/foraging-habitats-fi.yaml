@@ -1,4 +1,4 @@
-id: foraging-habitats
+id: foraging-habitats-fi
 type: pmtiles
 group: maps
 tags: [food, foraging, survival]
@@ -8,7 +8,9 @@ description: >
   Foraging habitat map — edible berries, mushrooms, and herbs by Finnish
   forest type. Derived from LUKE MS-NFI 2023 forest inventory rasters.
 strategy: download
-# url: <hosted-url-tbd — build with recipes/builders/foraging-habitats-pmtiles.py>
+path: generated/foraging-habitats-fi.pmtiles
+# url: <remote-url-tbd>
+builder: foraging-habitats-fi-pmtiles.py
 layer_name: foraging
 
 viewer:
