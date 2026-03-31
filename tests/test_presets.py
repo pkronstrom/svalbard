@@ -9,6 +9,28 @@ def test_parse_finland_128():
     assert len(preset.sources) > 10
 
 
+def test_parse_finland_2():
+    preset = load_preset("finland-2")
+    ids = {source.id for source in preset.sources}
+
+    assert preset.name == "finland-2"
+    assert preset.region == "finland"
+    assert preset.target_size_gb == 2
+    assert "wikem" in ids
+    assert "quick-guides-medicine" in ids
+    assert "fimea" in ids
+    assert "joukahainen" not in ids
+    assert "stackexchange-survival" not in ids
+    assert "wikipedia-en-nopic" not in ids
+
+
+def test_finland_2_estimated_size_leaves_headroom():
+    preset = load_preset("finland-2")
+    total_size = sum(source.size_gb for source in preset.sources)
+
+    assert total_size < 1.7
+
+
 def test_parse_finland_128_group_and_platforms():
     preset = load_preset("finland-128")
     tool = next(source for source in preset.sources if source.id == "kiwix-serve")
@@ -26,6 +48,7 @@ def test_list_presets_only_returns_canonical_names():
 
 def test_list_presets_contains_finland_and_default_families():
     presets = list_presets()
+    assert "finland-2" in presets
     assert "finland-32" in presets
     assert "finland-1tb" in presets
     assert "default-32" in presets

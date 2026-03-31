@@ -52,6 +52,7 @@ Finland presets add Finnish-language and Finland-focused content on top of that 
 
 | Preset       | Size   | Focus                                               |
 | ------------ | ------ | --------------------------------------------------- |
+| `finland-2`    | 2 GB   | Emergency field kit with compact medical, water, food, and low-tech practical references |
 | `finland-128`  | 128 GB | Finnish + English reference and practical guides    |
 | `finland-1tb`  | 1 TB   | Full Finnish-first archive with larger models/tools |
 

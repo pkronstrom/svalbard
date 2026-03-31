@@ -68,6 +68,21 @@ def test_presets_for_space_122gb():
     assert "finland-256" not in fitting
 
 
+def test_presets_for_space_includes_finland_2():
+    result = presets_for_space(10, region="finland")
+    names = [name for name, _, _ in result]
+
+    assert "finland-2" in names
+
+
+def test_presets_for_space_small_disk_marks_finland_2_as_fitting():
+    result = presets_for_space(3, region="finland")
+    fitting = [name for name, _, fits in result if fits]
+
+    assert "finland-2" in fitting
+    assert "finland-32" not in fitting
+
+
 def test_presets_for_space_filters_by_region_family():
     result = presets_for_space(122, region="default")
     names = [name for name, _, _ in result]
@@ -92,10 +107,15 @@ def test_presets_for_space_sorted_by_size():
 
 
 def test_presets_for_space_too_small():
-    """10 GB free should return all presets, none fitting."""
+    """10 GB free should fit finland-2 but still reject larger Finland tiers."""
     result = presets_for_space(10, region="finland")
+    names = [name for name, _, _ in result]
+    fitting = [name for name, _, fits in result if fits]
+
     assert len(result) > 0
-    assert all(not fits for _, _, fits in result)
+    assert "finland-2" in names
+    assert "finland-2" in fitting
+    assert "finland-32" not in fitting
 
 
 def test_presets_for_space_defaults_to_finland_family():

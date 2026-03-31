@@ -1,0 +1,22 @@
+name: finland-2
+description: Emergency field kit for Finland use on a 2GB stick or phone-copyable archive
+target_size_gb: 2
+region: finland
+sources:
+- wikem
+- who-basic-emergency-care
+- zimgit-medicine
+- fas-military-medicine
+- quick-guides-medicine
+- zimgit-water
+- zimgit-food-preparation
+- based-cooking
+- grimgrains
+- usda-nutrition
+- zimgit-knots
+- cd3wd
+- fimea
+- kiwix-serve
+- 7z
+- sqlite3
+- toybox

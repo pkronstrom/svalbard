@@ -25,6 +25,8 @@ uv run svalbard sync /Volumes/MyDrive/svalbard
 
 If you run `attach`, `detach`, `sync`, `status`, or `audit` from inside the drive directory, the path argument is optional.
 
+For the smallest Finland-oriented bundle, `finland-2` is the compact emergency field-kit preset.
+
 ## Workspace Location
 
 Svalbard resolves the active workspace like this:
