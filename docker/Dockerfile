@@ -1,31 +1,39 @@
-FROM ubuntu:24.04 AS builder
+FROM python:3.12-alpine3.21 AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libsqlite3-dev zlib1g-dev curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache build-base sqlite-dev zlib-dev curl
 
-# Build tippecanoe from source (small, fast build)
+# Build tippecanoe from source
 ARG TIPPECANOE_VERSION=2.75.0
 RUN curl -fsSL "https://github.com/felt/tippecanoe/archive/refs/tags/${TIPPECANOE_VERSION}.tar.gz" \
     | tar xz && cd tippecanoe-${TIPPECANOE_VERSION} && make -j$(nproc) && make install
 
 # Install go-pmtiles
 ARG PMTILES_VERSION=1.30.1
-RUN ARCH=$(dpkg --print-architecture) && \
+RUN ARCH=$(uname -m) && \
     case "$ARCH" in \
-      amd64)  SUFFIX="Linux_x86_64.tar.gz" ;; \
-      arm64)  SUFFIX="Linux_arm64.tar.gz" ;; \
+      x86_64)  SUFFIX="Linux_x86_64.tar.gz" ;; \
+      aarch64) SUFFIX="Linux_arm64.tar.gz" ;; \
     esac && \
     curl -fsSL "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_${SUFFIX}" \
     | tar xz -C /usr/local/bin pmtiles
 
-FROM ubuntu:24.04
+FROM python:3.12-alpine3.21
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gdal-bin libsqlite3-0 zlib1g ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache \
+    ca-certificates \
+    ffmpeg \
+    gdal-tools \
+    wget
 
 COPY --from=builder /usr/local/bin/tippecanoe /usr/local/bin/
 COPY --from=builder /usr/local/bin/tile-join /usr/local/bin/
 COPY --from=builder /usr/local/bin/tippecanoe-decode /usr/local/bin/
 COPY --from=builder /usr/local/bin/pmtiles /usr/local/bin/
+
+RUN pip install --no-cache-dir \
+    libzim \
+    nautiluszim \
+    yle-dl \
+    yt-dlp
+
+COPY scripts/build-media-zim.py /usr/local/bin/build-media-zim.py
