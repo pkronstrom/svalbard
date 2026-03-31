@@ -443,5 +443,6 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
                         f"  [green]Done.[/green] {stats['sources']} sources, "
                         f"{stats['articles']} articles indexed."
                     )
-                finally:
-                    db.close()
+                except ImportError as e:
+                    console.print(f"\n  [yellow]Indexing skipped:[/yellow] {e}")
+                    console.print("  Install libzim to enable indexing: pip install libzim")
