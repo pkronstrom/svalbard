@@ -172,8 +172,14 @@ def local_sources_for_space(
     return result
 
 
+def _clear():
+    """Clear terminal screen."""
+    console.clear()
+
+
 def run_wizard(target_path: str | None = None, preset_name: str | None = None):
     """Run the interactive setup wizard."""
+    _clear()
     console.print(Panel(
         "[bold]Svalbard — Seed Vault for Human Knowledge[/bold]\n\n"
         "This wizard will help you set up an offline knowledge drive.",
@@ -236,6 +242,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
 
     if preset_name is None:
         # Step 2: Region
+        _clear()
         console.print("\n[bold]Step 2/4 — Region[/bold]")
 
         regions = available_regions()
@@ -259,6 +266,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
         selected_region = region_choices[region_choice]
 
         # Step 3: Preset
+        _clear()
         console.print("\n[bold]Step 3/4 — Preset[/bold]")
         all_presets = presets_for_space(free_gb, region=selected_region) if free_gb > 0 else []
 
@@ -306,6 +314,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
     remaining_gb = max(free_gb - sum(s.size_gb for s in preset.sources), 0)
     local_candidates = local_sources_for_space(remaining_gb, root=workspace)
     if local_candidates:
+        _clear()
         console.print("\n[bold]Step 4/5 — Local Sources[/bold]")
         console.print(f"  Optional local sources ({remaining_gb:.1f} GB remaining):\n")
         local_choices: dict[str, str] = {}
@@ -334,6 +343,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
     sources = [*preset.sources, *selected_local_sources]
     total_gb = sum(s.size_gb for s in sources)
 
+    _clear()
     console.print(f"\n[bold]Step 5/5 — Review[/bold]")
 
     table = Table(show_header=True, header_style="bold")
