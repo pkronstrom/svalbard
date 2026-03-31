@@ -333,9 +333,6 @@ def build_vector_service(source: Source, drive_path: Path, cache: Path) -> Build
 
 # ── osm-extract ─────────────────────────────────────────────────────────────
 
-PROTOMAPS_DAILY_URL = "https://build.protomaps.com/20260329.pmtiles"
-
-
 def _resolve_protomaps_url() -> str:
     """Resolve the latest Protomaps daily build URL.
 
@@ -352,8 +349,10 @@ def _resolve_protomaps_url() -> str:
                 return url
         except httpx.HTTPError:
             continue
-    # Fallback to known-good URL
-    return PROTOMAPS_DAILY_URL
+    raise RuntimeError(
+        "Could not find a Protomaps daily build from the last 7 days. "
+        "Check https://build.protomaps.com/ for availability."
+    )
 
 
 @_register("osm-extract")

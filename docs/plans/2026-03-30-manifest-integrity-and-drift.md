@@ -1,7 +1,5 @@
 # Manifest Integrity & Drift Detection
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Add commands to detect foreign files, verify checksums, diff presets, and plan drive downsizing — turning the manifest into a reliable source of truth for what's on disk.
 
 **Architecture:** Four new CLI subcommands (`inventory`, `verify`, `diff`, `budget`) that build on the existing `Manifest` and `Preset` infrastructure. All are read-only operations (no downloads, no deletes) — they report what *would* need to change and let the user decide.

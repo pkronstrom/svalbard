@@ -18,7 +18,7 @@ The project ships with sanely curated presets built from open recipes, but it's 
 
 ## What's on a drive
 
-- **Encyclopedias** — Wikipedia, Wiktionary, WikiMed, WikiHow
+- **Encyclopedias** — Wikipedia, Wiktionary, WikiMed
 - **Practical knowledge** — iFixit repair guides, Stack Exchange Q&A, Practical Action field guides
 - **Books and courses** — Project Gutenberg, Wikibooks, Khan Academy
 - **Maps** — OpenStreetMap regional extracts, geodata overlays
@@ -44,7 +44,7 @@ Presets scale from pocket-sized emergency kits to full archives:
 |--------|------|-------------|
 | `finland-2` | 2 GB | Emergency field kit — compact medical, water, food, and practical references |
 | `default-32` | 32 GB | Core reference — Wikipedia, WikiMed, survival guides, repair manuals |
-| `default-128` | 128 GB | Broad reference — adds WikiHow, dictionaries, books, Khan Academy, maps |
+| `default-128` | 128 GB | Broad reference — adds dictionaries, books, Khan Academy, maps |
 | `default-512` | 512 GB | Deep archive — adds full-picture Wikipedia, AI models, more Stack Exchange |
 | `default-2tb` | 2 TB | Everything — full Wikipedia, large AI models, comprehensive coverage |
 
@@ -118,6 +118,23 @@ svalbard wizard --preset my-pack
 | `svalbard attach / detach` | Add or remove sources from a drive |
 | `svalbard index <path>` | Build cross-content search index |
 | `svalbard preset list / copy` | List or customize presets |
+
+## Roadmap
+
+- [x] Interactive wizard — region, preset, target drive, download, indexing
+- [x] Parallel downloads with resume and checksum verification
+- [x] Composable presets with inheritance and regional packs
+- [x] Full-text search across all ZIM content
+- [x] Content import — local files, websites, video, multi-doc bundles
+- [x] Drive toolkit — run.sh shell menu, Kiwix server, bundled tools
+- [x] Coverage audit reports
+- [ ] Drive integrity — inventory, verify checksums, diff presets, budget planner
+- [ ] Finnish survival geodata — recreation structures, groundwater, fish stocks, protected areas as map layers
+- [ ] Foraging habitat map — forest types mapped to edible berries, mushrooms, and herbs
+- [ ] Offline routing with preprocessed OSM graphs
+- [ ] Export guide builder — extract articles to self-contained HTML/PDF/EPUB
+- [ ] Semantic search and RAG with embedded models
+- [ ] Programming toolkit presets — offline compilers and toolchains
 
 ## Documentation
 

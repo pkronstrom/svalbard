@@ -76,11 +76,11 @@ _semantic_rerank() {
     # Use Python for the dot product reranking (too complex for awk with BLOBs)
     python3 -c "
 import json, struct, sqlite3, sys
-q_data = json.loads('''$q_vec''')
+q_data = json.loads(sys.argv[1])
 q_emb = q_data[0]['embedding']
 if isinstance(q_emb[0], list): q_emb = q_emb[0]
-conn = sqlite3.connect('$DB')
-ids = [$candidate_ids]
+conn = sqlite3.connect(sys.argv[2])
+ids = [int(x) for x in sys.argv[3].split(',') if x]
 scores = []
 for aid in ids:
     row = conn.execute('SELECT vector FROM embeddings WHERE article_id=?', (aid,)).fetchone()
@@ -91,7 +91,7 @@ for aid in ids:
 scores.sort(key=lambda x: -x[1])
 for aid, score in scores[:20]:
     print(aid)
-" 2>/dev/null
+" "$q_vec" "$DB" "$candidate_ids" 2>/dev/null
 }
 
 EMBED_PID=""
@@ -161,11 +161,12 @@ while true; do
         if [ "$article_count" -ge 500000 ]; then
             # Large archive: FTS prefilter to get candidates, then rerank
             echo "  FTS prefilter + semantic rerank..."
-            safe_query="${query//\'/\'\'}"
             fts_query=""
-            for word in $safe_query; do
+            for word in $query; do
+                w="${word//\"/\"\"}"
+                w="${w//\'/\'\'}"
                 [ -n "$fts_query" ] && fts_query="$fts_query "
-                fts_query="${fts_query}${word}*"
+                fts_query="${fts_query}\"${w}\"*"
             done
             candidate_ids=$("$SQLITE_BIN" "$DB" \
                 "SELECT a.id
@@ -205,11 +206,12 @@ while true; do
 
     if [ "$effective_mode" = "keyword" ] && [ -z "$results" ]; then
         # FTS only fallback
-        safe_query="${query//\'/\'\'}"
         fts_query=""
-        for word in $safe_query; do
+        for word in $query; do
+            w="${word//\"/\"\"}"
+            w="${w//\'/\'\'}"
             [ -n "$fts_query" ] && fts_query="$fts_query "
-            fts_query="${fts_query}${word}*"
+            fts_query="${fts_query}\"${w}\"*"
         done
         results="$("$SQLITE_BIN" -separator $'\t' "$DB" \
             "SELECT a.id, s.filename, a.path, a.title,

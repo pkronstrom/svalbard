@@ -14,8 +14,8 @@ This runs **from the drive**, not from the provisioner. No Python, no package ma
 Browse kiwix-serve in browser, copy URLs of articles you want, pass them to an export tool:
 
 ```bash
-./export http://localhost:8080/wikihow/Build-a-Snow-Shelter \
-         http://localhost:8080/wikipedia/Hypothermia \
+./export http://localhost:8080/wikipedia/Hypothermia \
+         http://localhost:8080/wikipedia/Snow_shelter \
          --title "Winter Survival" --format html
 ```
 
