@@ -277,11 +277,12 @@ def generate_toolkit(drive_path: Path, preset_name: str) -> Path:
             shutil.copy2(script, dest)
             _make_executable(dest)
 
-    # Copy lib scripts
+    # Copy lib scripts and support files
     if LIB_DIR.exists():
-        for script in LIB_DIR.glob("*.sh"):
-            dest = lib_dest / script.name
-            shutil.copy2(script, dest)
+        for pattern in ("*.sh", "*.py"):
+            for script in LIB_DIR.glob(pattern):
+                dest = lib_dest / script.name
+                shutil.copy2(script, dest)
 
     # Generate entries.tab
     manifest = Manifest.load(drive_path / "manifest.yaml")

@@ -21,14 +21,14 @@ _extract_archive() {
     for subdir in "$dest_dir"/*/; do
         [ -d "$subdir" ] || continue
         for f in "$subdir"*; do
-            [ -f "$f" ] || continue
+            [ -f "$f" ] || [ -L "$f" ] || continue
             local base="${f##*/}"
             # Skip if already exists at dest level
-            [ -f "$dest_dir/$base" ] && continue
+            [ -e "$dest_dir/$base" ] && continue
             mv "$f" "$dest_dir/$base"
         done
-        # Clean up empty subdirectory
-        rmdir "$subdir" 2>/dev/null || true
+        # Clean up subdirectory (may still have nested dirs)
+        rm -rf "$subdir" 2>/dev/null || true
     done
 
     # Make all files executable

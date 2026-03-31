@@ -333,10 +333,26 @@ def sync_drive(path: str, update: bool = False, force: bool = False):
         return
 
     manifest = Manifest.load(drive_path / "manifest.yaml")
-    preset = load_snapshot_preset(drive_path) or load_preset(
-        manifest.preset,
-        workspace=manifest.workspace_root or None,
-    )
+    workspace = manifest.workspace_root or None
+
+    # Always load the live preset so new sources added after init are picked up.
+    # Fall back to the frozen snapshot only when the live preset is unavailable
+    # (e.g. drive moved to another machine without the workspace).
+    try:
+        preset = load_preset(manifest.preset, workspace=workspace)
+        # Refresh the on-drive snapshot so the drive stays self-describing.
+        if workspace:
+            write_drive_snapshot(
+                drive_path,
+                preset_name=manifest.preset,
+                workspace_root=Path(workspace),
+                local_source_ids=manifest.local_sources,
+            )
+    except Exception:
+        preset = load_snapshot_preset(drive_path)
+        if preset is None:
+            console.print("[red]Cannot load preset — no live workspace or on-drive snapshot.[/red]")
+            return
     manifest_path = drive_path / "manifest.yaml"
     local_source_map = {
         source.id: source for source in load_local_sources(manifest.workspace_root or resolve_workspace_root())

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$DRIVE_ROOT/.svalbard/lib/ui.sh"
-source "$DRIVE_ROOT/.svalbard/lib/platform.sh"
-source "$DRIVE_ROOT/.svalbard/lib/binaries.sh"
 source "$DRIVE_ROOT/.svalbard/lib/ports.sh"
 source "$DRIVE_ROOT/.svalbard/lib/process.sh"
 
@@ -13,9 +11,8 @@ if [ ! -f "$DB" ]; then
     exit 1
 fi
 
-SQLITE_BIN="$(find_binary sqlite3 2>/dev/null || true)"
-if [ -z "$SQLITE_BIN" ]; then
-    ui_error "sqlite3 not found. Run 'Provision tools' from the menu."
+if ! command -v python3 >/dev/null 2>&1; then
+    ui_error "python3 not found. Required for search API server."
     exit 1
 fi
 
@@ -24,32 +21,22 @@ PORT="${1:-9090}"
 BIND="${2:-127.0.0.1}"
 KIWIX_PORT="${3:-8080}"
 
-export DB SQLITE_BIN DRIVE_ROOT KIWIX_PORT
-
-CGI_SCRIPT="$DRIVE_ROOT/.svalbard/lib/search-cgi.sh"
-if [ ! -x "$CGI_SCRIPT" ]; then
-    ui_error "CGI handler not found or not executable: $CGI_SCRIPT"
-    exit 1
-fi
-
-SOCAT_BIN="$(command -v socat 2>/dev/null || true)"
-if [ -z "$SOCAT_BIN" ]; then
-    ui_error "socat not found."
-    ui_error "Install socat to run the search API server."
-    ui_error "  macOS:  brew install socat"
-    ui_error "  Linux:  apt install socat"
-    exit 1
-fi
+export DB
 
 trap_cleanup
+
+SEARCH_SERVER="$DRIVE_ROOT/.svalbard/lib/search-server.py"
+if [ ! -f "$SEARCH_SERVER" ]; then
+    ui_error "Search server not found: $SEARCH_SERVER"
+    exit 1
+fi
 
 ui_header "Svalbard Search API"
 ui_status "Listening on http://${BIND}:${PORT}"
 ui_status "Kiwix redirect target: http://localhost:${KIWIX_PORT}"
 echo ""
 
-"$SOCAT_BIN" "TCP-LISTEN:${PORT},bind=${BIND},reuseaddr,fork" \
-    "EXEC:${CGI_SCRIPT}" &
+python3 "$SEARCH_SERVER" "$PORT" "$BIND" "$KIWIX_PORT" &
 SVALBARD_PIDS+=($!)
 
 wait_for_services

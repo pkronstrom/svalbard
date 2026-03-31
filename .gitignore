@@ -12,4 +12,11 @@ build/
 
 docs/plans/archive/
 
-recipes/local/
+recipes/local/*
+!recipes/local/.gitkeep
+
+generated/*
+!generated/.gitkeep
+
+local/*
+!local/.gitkeep
