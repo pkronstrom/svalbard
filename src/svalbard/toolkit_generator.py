@@ -31,6 +31,7 @@ TYPE_DIRS = {
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ACTIONS_DIR = _PROJECT_ROOT / "recipes" / "actions"
 LIB_DIR = ACTIONS_DIR / "lib"
+DOCS_DIR = ACTIONS_DIR / "docs"
 
 
 # ── entries.tab generation ──────────────────────────────────────────────────
@@ -306,6 +307,14 @@ def generate_toolkit(drive_path: Path, preset_name: str) -> Path:
 
     # Generate checksums.sha256 from manifest entries
     _generate_checksums(svalbard_dir, manifest)
+
+    # Copy embedded dev docs if toolchain content is present
+    if any(e.type == "toolchain" for e in manifest.entries):
+        pio_dir = drive_path / "tools" / "platformio"
+        pio_dir.mkdir(parents=True, exist_ok=True)
+        guide = DOCS_DIR / "embedded-getting-started.md"
+        if guide.exists():
+            shutil.copy2(guide, pio_dir / "README.md")
 
     # Write run.sh
     run_sh = drive_path / "run.sh"
