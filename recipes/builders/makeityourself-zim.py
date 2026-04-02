@@ -1794,6 +1794,26 @@ def stage_package(
     projects = _collect_projects(state)
     log.info("  Found %d crawled projects", len(projects))
 
+    # Regenerate all project pages with latest template
+    log.info("  Regenerating project pages...")
+    for proj in projects:
+        proj_dir = state.sites_dir / proj["_dir"]
+        try:
+            meta_obj = ProjectMeta(**{
+                k: v for k, v in proj.items()
+                if k in ProjectMeta.__dataclass_fields__
+            })
+            steps = None
+            steps_file = proj_dir / "steps.json"
+            if steps_file.exists():
+                steps = json.loads(steps_file.read_text())
+            _generate_project_page(proj_dir, meta_obj, steps=steps)
+        except Exception as e:
+            log.debug("  Could not regenerate %s: %s", proj.get("title", "?")[:40], e)
+
+    # Re-collect after regeneration (meta may have changed)
+    projects = _collect_projects(state)
+
     # Group by category
     by_category: dict[str, list[dict]] = {}
     for proj in projects:
