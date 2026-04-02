@@ -71,6 +71,8 @@ Forge setup, basic blacksmithing (tongs, hooks, hardware), tool making, welding 
 | CD3WD | `cd3wd` | ZIM | ~0.55 GB | Agriculture, food processing, water, construction, energy |
 | Energypedia | `energypedia` | ZIM | ~0.76 GB | Renewable energy and energy access |
 | Low-tech Magazine | `lowtech-magazine` | ZIM | ~0.67 GB | Pre-industrial and sustainable technology |
+| Woodworking Stack Exchange | `stackexchange-woodworking` | ZIM | ~0.1 GB | Joinery, tools, wood selection, finishing Q&A |
+| Permacomputing | `permacomputing` | ZIM | ~0.001 GB | Sustainable/resilient computing and low-tech approaches |
 | My Self Reliance | `lrn-self-reliance` | ZIM | ~3.7 GB | Log cabin building, bushcraft, off-grid living (video) |
 | Based Cooking | `based-cooking` | ZIM | included | Simple recipes |
 | Grim Grains | `grimgrains` | ZIM | included | Plant-based recipes |

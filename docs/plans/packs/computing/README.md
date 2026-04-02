@@ -168,6 +168,16 @@ These are already defined as Svalbard recipes and included in various presets. L
 | Electronics SE | `stackexchange-electronics` | 2 GB | Hardware / embedded (also relevant to toolkit preset) |
 | CyberChef | `cyberchef` | 15 MB | Data analysis tool |
 | Wikibooks | `wikibooks-en` | 3 GB | Contains programming textbooks among other topics |
+| Security SE | `stackexchange-security` | 420 MB | InfoSec, crypto, vulnerabilities Q&A |
+| Unix SE | `stackexchange-unix` | 1.2 GB | Linux/UNIX sysadmin Q&A |
+| Arch Wiki | `arch-wiki` | 30 MB | Best single-source Linux reference |
+| Man pages | `man-pages` | 180 MB | Full Linux/POSIX man page corpus |
+| DevDocs C | `devdocs-c` | 1 MB | C standard library reference |
+| DevDocs C++ | `devdocs-cpp` | 7 MB | C++ standard library reference |
+| DevDocs Python | `devdocs-python` | 4 MB | Python standard library reference |
+| DevDocs Rust | `devdocs-rust` | 6 MB | Rust std reference |
+| DevDocs Go | `devdocs-go` | 2 MB | Go standard library reference |
+| DevDocs JavaScript | `devdocs-javascript` | 3 MB | MDN JavaScript reference |
 
 ## Tiering notes
 
@@ -223,7 +233,23 @@ The 220+ individual DevDocs ZIMs are tiny (most under 5 MB). Two approaches:
 1. **Individual recipes per ZIM** -- maximum flexibility, each language can be tiered independently. Verbose but consistent with how Stack Exchange recipes work today.
 2. **Bundled recipe groups** -- e.g., `devdocs-core-languages`, `devdocs-infrastructure`, `devdocs-extended`. Simpler preset definitions. The recipe would list multiple URLs.
 
-Recommendation: start with bundled groups (3-4 recipes covering the tiers above), split later if granular control is needed.
+Recommendation: **per-language ecosystem bundles** that can be mixed into domain packs:
+
+```
+devdocs-c-eco:       C, C++, CMake, Make, GCC          → embedded pack + computing
+devdocs-python-eco:  Python, Django, Flask, FastAPI     → computing + sciences
+devdocs-js-eco:      JavaScript, TypeScript, Node, React, Vue → computing
+devdocs-rust-eco:    Rust                               → computing
+devdocs-go-eco:      Go                                 → computing
+devdocs-ops:         Docker, Nginx, Terraform, Ansible, K8s → computing (sysadmin)
+devdocs-data:        PostgreSQL, SQLite, DuckDB, Redis  → computing + sciences
+devdocs-web:         HTML, CSS, SVG, DOM, HTTP          → computing
+devdocs-general:     Git, Bash, jq, Lua, Zig, Make      → core or computing
+```
+
+This allows the embedded pack to pull in `devdocs-c-eco` without dragging in Django docs, and the sciences pack to pull in `devdocs-python-eco` + `devdocs-data` for data analysis use cases.
+
+Each bundle is still tiny (under 50 MB) so they can ship at any tier.
 
 ### OWASP content
 

@@ -52,6 +52,7 @@ ITU Radio Regulations (relevant excerpts), national band plans (US FCC, IARU Reg
 |--------|-----------|------|------|-------|
 | Amateur Radio Stack Exchange | `stackexchange-amateur-radio` | ZIM | ~0.5 GB | Q&A covering licensing, antennas, operating, digital modes |
 | Electronics Stack Exchange | `stackexchange-electronics` | ZIM | ~2.0 GB | RF circuit design, component selection, test equipment |
+| Network Engineering Stack Exchange | `stackexchange-networkengineering` | ZIM | ~124 MB | TCP/IP, routing, switching, network design Q&A |
 
 ### New ZIM Sources (Kiwix library)
 
