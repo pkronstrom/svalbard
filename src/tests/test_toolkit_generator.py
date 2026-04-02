@@ -192,3 +192,45 @@ def test_entries_tab_omits_search_when_no_db(tmp_path):
 
     entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
     assert "[search]" not in entries
+
+
+def test_entries_tab_includes_embedded_when_toolchains_present(tmp_path):
+    """Embedded dev section should appear when toolchain entries exist."""
+    _write_manifest(tmp_path, {
+        "preset": "default-32",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [
+            {"id": "toolchain-xtensa-esp-elf", "type": "toolchain",
+             "filename": "toolchain-xtensa-esp-elf-linux_x86_64-14.2.0.tar.gz",
+             "size_bytes": 200_000_000, "tags": [], "depth": "comprehensive"},
+        ],
+    })
+
+    generate_toolkit(tmp_path, "default-32")
+
+    tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
+    assert "[embedded]" in tab_content
+    assert "Open embedded dev shell" in tab_content
+    assert "pio-setup.sh" in tab_content
+
+
+def test_entries_tab_omits_embedded_when_no_toolchains(tmp_path):
+    """Embedded dev section should NOT appear when no toolchain entries exist."""
+    _write_manifest(tmp_path, {
+        "preset": "default-32",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [
+            {"id": "wikipedia-en-nopic", "type": "zim",
+             "filename": "wikipedia-en-nopic.zim",
+             "size_bytes": 4_500_000_000, "tags": [], "depth": "comprehensive"},
+        ],
+    })
+    (tmp_path / "zim").mkdir()
+    (tmp_path / "zim" / "wikipedia-en-nopic.zim").touch()
+
+    generate_toolkit(tmp_path, "default-32")
+
+    tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
+    assert "[embedded]" not in tab_content

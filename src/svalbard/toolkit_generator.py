@@ -147,6 +147,16 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
             )
         lines.append("")
 
+    # ── Embedded Dev ───────────────────────────────────────────────────
+    toolchain_entries = [e for e in manifest.entries if e.type == "toolchain"]
+    if toolchain_entries:
+        lines.append("[embedded]")
+        lines.append(
+            "Open embedded dev shell"
+            "\t.svalbard/actions/pio-setup.sh"
+        )
+        lines.append("")
+
     # ── Serve ───────────────────────────────────────────────────────────
     has_services = zim_count > 0 or pmtiles_count > 0 or bool(gguf_entries)
     if has_services:
