@@ -505,6 +505,16 @@ def stage_verify(state: PipelineState, links: list[LinkEntry]) -> list[VerifiedL
 # ── Stage 3: Crawl — Extractors ───────────────────────────────────────────
 
 
+def _download_file_sync(url: str, dest: Path, *, timeout: float = 60) -> None:
+    """Download a file without a pre-existing client."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with httpx.stream("GET", url, follow_redirects=True, timeout=timeout, headers=HEADERS) as r:
+        r.raise_for_status()
+        with open(dest, "wb") as f:
+            for chunk in r.iter_bytes(65536):
+                f.write(chunk)
+
+
 def _download_file(client: httpx.Client, url: str, dest: Path, *, timeout: float = 120) -> bool:
     """Download a file to dest. Returns True on success."""
     if dest.exists() and dest.stat().st_size > 0:
@@ -1742,6 +1752,32 @@ def stage_package(
         zim.add_metadata("Publisher", "svalbard")
         zim.add_metadata("Date", datetime.now().strftime("%Y-%m-%d"))
         zim.add_metadata("Tags", "diy;maker;3d-printing;woodworking;sewing;electronics")
+
+        # Illustration (cover image for Kiwix library view)
+        cover_path = state.workdir / "cover.png"
+        if not cover_path.exists():
+            log.info("  Downloading cover image...")
+            try:
+                _download_file_sync(
+                    "https://makeityourself.org/img/book.png",
+                    cover_path,
+                )
+            except Exception:
+                log.warning("  Could not download cover image")
+        if cover_path.exists():
+            try:
+                from PIL import Image as PILImage
+                img = PILImage.open(cover_path)
+                # 48x48 required by Kiwix spec
+                for size in (48,):
+                    thumb = img.copy()
+                    thumb.thumbnail((size, size), PILImage.LANCZOS)
+                    import io
+                    buf = io.BytesIO()
+                    thumb.save(buf, "PNG")
+                    zim.add_metadata(f"Illustration_{size}x{size}@1", buf.getvalue())
+            except ImportError:
+                log.warning("  Pillow not installed, skipping cover")
 
         # CSS
         zim.add_item(StaticItem("style.css", "text/css", FRONTPAGE_CSS))
