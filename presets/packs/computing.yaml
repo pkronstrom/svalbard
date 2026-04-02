@@ -1,3 +1,7 @@
+# Capability pack: offline programming, sysadmin, Linux, and security reference.
+# Include: software docs, Linux references, troubleshooting, and security Q&A.
+# Exclude: hardware-making, regional geodata, and non-computing practical skills.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: computing
 kind: pack
 display_group: Computing & Dev

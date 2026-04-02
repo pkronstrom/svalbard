@@ -1,3 +1,7 @@
+# Capability pack: foundational drive tooling for search, serving, inspection, and ops.
+# Include: core binaries and small apps needed to use Svalbard content effectively.
+# Exclude: domain reference content and hardware-specific toolchains.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: tools-base
 kind: pack
 display_group: Tools

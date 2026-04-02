@@ -1,3 +1,7 @@
+# Capability pack: tiny universal additions that almost every drive can justify.
+# Include: compact civilization references and other small, high-value extras.
+# Exclude: heavyweight domain content, broad tools, and regional material.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: core
 kind: pack
 display_group: Core

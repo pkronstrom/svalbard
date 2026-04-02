@@ -1,3 +1,7 @@
+# Capability pack: Finnish-language and Finland-oriented general reference.
+# Include: local-language encyclopedias, dictionaries, and broad study/reference material.
+# Exclude: map layers, operational survival content, and non-local specialist packs.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: fi-reference
 kind: pack
 display_group: Reference

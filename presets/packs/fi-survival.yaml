@@ -1,3 +1,7 @@
+# Capability pack: Finland-specific survival and practical reference.
+# Include: Finnish emergency support content plus universal survival material useful in Finland.
+# Exclude: non-Finnish regional data and broad reference content better handled elsewhere.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: fi-survival
 kind: pack
 display_group: Survival & Medical

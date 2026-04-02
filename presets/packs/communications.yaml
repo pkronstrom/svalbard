@@ -1,3 +1,7 @@
+# Capability pack: offline communications, ham radio, networking, and RF reference.
+# Include: radio operation, RF/electronics support, networking, and comms theory.
+# Exclude: broad software reference and general maker content unless comms-relevant.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: communications
 kind: pack
 display_group: Communications

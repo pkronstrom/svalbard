@@ -1,3 +1,7 @@
+# Capability pack: embedded systems, fabrication, electronics, and applied making.
+# Include: hardware Q&A, fabrication references, and embedded language support.
+# Exclude: general software reference and regional or purely homesteading content.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: engineering
 kind: pack
 display_group: Engineering & Making

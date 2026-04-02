@@ -1,3 +1,7 @@
+# Capability pack: agriculture, low-tech systems, construction, and self-sufficient living.
+# Include: farming, food preservation, appropriate technology, practical trades.
+# Exclude: pure software/sysadmin reference and specialized medical material.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: homesteading
 kind: pack
 display_group: Homesteading

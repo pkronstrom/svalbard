@@ -1,3 +1,7 @@
+# Capability pack: emergency medicine, austere care, and preparedness reference.
+# Include: field medicine, drug and disease reference, crisis-response guidance.
+# Exclude: broad science education and non-essential general survival media.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: survival-medical
 kind: pack
 display_group: Survival & Medical

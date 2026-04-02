@@ -1,3 +1,7 @@
+# Capability pack: Finland geodata, basemaps, and map-viewer support.
+# Include: Finland map layers, basemap data, and the tooling needed to browse them.
+# Exclude: general reference content and non-map regional sources.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: fi-maps
 kind: pack
 display_group: Maps & Geodata

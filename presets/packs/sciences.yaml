@@ -1,3 +1,7 @@
+# Capability pack: science learning and reference across the major disciplines.
+# Include: core science textbooks, science Q&A, and broad educational references.
+# Exclude: clinical medicine, regional field guides, and unrelated practical how-to.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
 name: sciences
 kind: pack
 display_group: Science & Education
