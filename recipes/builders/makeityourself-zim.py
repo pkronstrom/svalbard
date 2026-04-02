@@ -734,7 +734,7 @@ class PrintablesExtractor(BaseExtractor):
 
         if gql_data:
             meta.title = gql_data.get("name", "")
-            meta.description = (gql_data.get("description") or "")[:500]
+            meta.description = (gql_data.get("description") or "")[:2000]
             meta.author = (gql_data.get("user") or {}).get("publicUsername", "")
             lic = gql_data.get("license") or {}
             meta.license = lic.get("name", "")
@@ -816,7 +816,7 @@ class PrintablesExtractor(BaseExtractor):
                 ssr = self._parse_ssr_data(r.text)
                 if ssr:
                     meta.title = ssr.get("title", "") or ssr.get("name", "")
-                    meta.description = (ssr.get("description") or "")[:500]
+                    meta.description = (ssr.get("description") or "")[:2000]
                     # Save the raw HTML as fallback
                     (site_dir / "raw.html").write_text(r.text)
                 time.sleep(CRAWL_DELAY_PER_DOMAIN)
@@ -902,7 +902,7 @@ class ThingiverseExtractor(BaseExtractor):
 
         if jsonld:
             meta.title = jsonld.get("name", "")
-            meta.description = (jsonld.get("description") or "")[:500]
+            meta.description = (jsonld.get("description") or "")[:2000]
             brand = jsonld.get("brand") or {}
             meta.author = brand.get("name", "")
             # Author is also in mainEntityOfPage
@@ -1068,7 +1068,7 @@ class GitHubExtractor(BaseExtractor):
             if r.status_code == 200:
                 repo_data = r.json()
                 meta.title = repo_data.get("name", "")
-                meta.description = (repo_data.get("description") or "")[:500]
+                meta.description = (repo_data.get("description") or "")[:2000]
                 meta.author = (repo_data.get("owner") or {}).get("login", "")
                 lic = repo_data.get("license") or {}
                 meta.license = lic.get("spdx_id", "")
@@ -1174,7 +1174,7 @@ class InstructablesExtractor(BaseExtractor):
         meta.title = title_tag.get_text().replace(" : ", " - ").strip() if title_tag else ""
         og_desc = soup.find("meta", property="og:description")
         if og_desc:
-            meta.description = og_desc.get("content", "")[:500]
+            meta.description = og_desc.get("content", "")[:2000]
 
         # Author
         author_tag = soup.find("a", class_="member-header-display-name") or soup.find("a", attrs={"rel": "author"})
@@ -1289,7 +1289,7 @@ class GenericExtractor(BaseExtractor):
         meta.title = title_tag.get_text().strip()[:200] if title_tag else ""
         og_desc = soup.find("meta", property="og:description") or soup.find("meta", attrs={"name": "description"})
         if og_desc:
-            meta.description = og_desc.get("content", "")[:500]
+            meta.description = og_desc.get("content", "")[:2000]
         author_meta = soup.find("meta", attrs={"name": "author"})
         if author_meta:
             meta.author = author_meta.get("content", "")
@@ -1525,17 +1525,40 @@ def stage_crawl(
 # ── Stage 3 helper: Generate project page HTML ────────────────────────────
 
 
+def _strip_html(html: str) -> str:
+    """Strip HTML tags, keeping text content."""
+    soup = BeautifulSoup(html, "html.parser")
+    return soup.get_text(separator=" ", strip=True)
+
+
+def _clean_description_html(html: str) -> str:
+    """Clean description HTML: keep safe tags, strip scripts/styles."""
+    soup = BeautifulSoup(html, "html.parser")
+    # Remove scripts, styles, iframes
+    for tag in soup.find_all(["script", "style", "iframe", "oembed"]):
+        tag.decompose()
+    # Keep only safe tags
+    safe_tags = {"p", "br", "strong", "em", "b", "i", "ul", "ol", "li", "a", "h2", "h3", "h4", "figure", "img"}
+    for tag in soup.find_all(True):
+        if tag.name not in safe_tags:
+            tag.unwrap()
+    return str(soup).strip()
+
+
 def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] | None = None) -> None:
     """Generate a clean HTML page for a crawled project."""
 
+    # Images — clickable to open full size
     images_html = ""
-    for img_path in meta.images[:8]:
-        images_html += f'<img src="{escape(img_path)}" alt="" loading="lazy">\n'
+    for img_path in meta.images[:12]:
+        images_html += f'<a href="{escape(img_path)}" target="_blank"><img src="{escape(img_path)}" alt="" loading="lazy"></a>\n'
 
+    # Artifacts
     artifacts_html = ""
-    if meta.artifacts:
+    real_artifacts = [a for a in meta.artifacts if not a.get("download_failed")]
+    if real_artifacts:
         artifacts_html = '<h2>Downloads</h2><ul class="artifacts">\n'
-        for art in meta.artifacts:
+        for art in real_artifacts:
             fname = Path(art["filename"]).name
             ftype = art.get("type", "").upper()
             fsize = art.get("size_bytes", 0)
@@ -1543,17 +1566,63 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
             artifacts_html += f'<li><a href="{escape(art["filename"])}">{escape(fname)}</a> <span class="badge">{ftype}</span> <span class="size">{size_str}</span></li>\n'
         artifacts_html += "</ul>\n"
 
+    # Steps (Instructables)
     steps_html = ""
     if steps:
         steps_html = '<h2>Steps</h2>\n'
         for i, step in enumerate(steps, 1):
             title = step.get("title", f"Step {i}")
             text = step.get("text", "")
-            steps_html += f'<div class="step"><h3>{escape(title)}</h3><p>{escape(text[:1000])}</p></div>\n'
+            steps_html += f'<div class="step"><h3>{escape(title)}</h3><p>{escape(text[:2000])}</p></div>\n'
+
+    # Description — render as HTML if it contains tags, otherwise escape
+    desc = meta.description
+    if "<p>" in desc or "<br" in desc or "<strong>" in desc:
+        desc_html = f'<div class="description">{_clean_description_html(desc)}</div>'
+    else:
+        desc_html = f'<p class="description">{escape(desc)}</p>' if desc else ""
 
     license_html = ""
     if meta.license:
         license_html = f'<p class="license">License: {escape(meta.license)}</p>'
+
+    # Include cleaned raw page content if available
+    raw_content_html = ""
+    raw_path = site_dir / "raw.html"
+    if raw_path.exists() and raw_path.stat().st_size > 500:
+        try:
+            raw_soup = BeautifulSoup(raw_path.read_text(), "html.parser")
+            # Try to extract main content area
+            main = (
+                raw_soup.find("main")
+                or raw_soup.find("article")
+                or raw_soup.find("div", class_="content")
+                or raw_soup.find("div", id="content")
+                or raw_soup.find("div", class_="entry-content")
+                or raw_soup.find("div", class_="post-content")
+                or raw_soup.find("div", class_="step-container")
+            )
+            if main:
+                # Remove scripts, styles, navs, footers, ads
+                for tag in main.find_all(["script", "style", "nav", "footer", "iframe",
+                                          "noscript", "svg", "form", "input", "button"]):
+                    tag.decompose()
+                for tag in main.find_all(class_=lambda c: c and any(
+                    x in str(c).lower() for x in ["ad-", "sidebar", "newsletter", "popup", "cookie", "social"]
+                )):
+                    tag.decompose()
+                # Fix image paths — make relative to site_dir
+                for img in main.find_all("img"):
+                    src = img.get("src") or img.get("data-src")
+                    if src:
+                        img["src"] = src
+                        img["loading"] = "lazy"
+                        img["style"] = "max-width:100%;height:auto;"
+                content_text = main.get_text(strip=True)
+                if len(content_text) > 100:  # only include if substantial
+                    raw_content_html = f'<details class="raw-content"><summary>Full page content</summary><div class="raw-body">{str(main)}</div></details>'
+        except Exception:
+            pass
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1572,10 +1641,11 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
   <span class="source"><a href="{escape(meta.url)}">Original</a></span>
 </p>
 {license_html}
-<p class="description">{escape(meta.description)}</p>
+{desc_html}
 <div class="gallery">{images_html}</div>
 {artifacts_html}
 {steps_html}
+{raw_content_html}
 </body>
 </html>"""
 
@@ -1868,6 +1938,11 @@ nav a { color: #2563eb; text-decoration: none; }
 .license { font-size: 13px; color: #666; font-style: italic; }
 .step { margin: 16px 0; padding: 12px; background: #fff; border-radius: 6px;
   border: 1px solid #e5e7eb; }
+.gallery a { display: inline-block; }
+.raw-content { margin-top: 24px; }
+.raw-content summary { cursor: pointer; font-weight: 600; color: #2563eb; padding: 8px 0; }
+.raw-body { margin-top: 12px; line-height: 1.6; overflow-wrap: break-word; }
+.raw-body img { max-width: 100%; height: auto; border-radius: 4px; margin: 8px 0; }
 """
 
 FRONTPAGE_CSS = """
