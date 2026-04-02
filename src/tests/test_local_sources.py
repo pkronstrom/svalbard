@@ -22,7 +22,7 @@ def test_load_local_sources_discovers_sidecars_and_derives_size_gb(tmp_path):
     (local_dir / "example.yaml").write_text(
         """id: local:example
 type: zim
-group: practical
+display_group: practical
 strategy: local
 path: library/example.zim
 size_bytes: 100
@@ -44,7 +44,7 @@ def test_load_local_sources_rejects_builtin_id_collision(tmp_path):
     (local_dir / "example.yaml").write_text(
         """id: wikipedia-en-nopic
 type: zim
-group: practical
+display_group: practical
 strategy: local
 path: library/example.zim
 size_bytes: 1
@@ -64,7 +64,7 @@ def test_active_sources_for_manifest_merges_preset_and_selected_local_sources(tm
     (local_dir / "example.yaml").write_text(
         """id: local:example
 type: zim
-group: practical
+display_group: practical
 strategy: local
 path: library/example.zim
 size_bytes: 1
@@ -76,7 +76,7 @@ size_bytes: 1
         description="test",
         target_size_gb=32,
         region="default",
-        sources=[Source(id="wiki", type="zim", group="reference")],
+        sources=[Source(id="wiki", type="zim", display_group="reference")],
     )
     manifest = Manifest(
         preset="default-32",
@@ -96,7 +96,7 @@ def test_active_sources_for_manifest_keeps_missing_selected_local_source_visible
         description="test",
         target_size_gb=32,
         region="default",
-        sources=[Source(id="wiki", type="zim", group="reference")],
+        sources=[Source(id="wiki", type="zim", display_group="reference")],
     )
     manifest = Manifest(
         preset="default-32",

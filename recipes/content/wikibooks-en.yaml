@@ -1,6 +1,6 @@
 id: wikibooks-en
 type: zim
-group: education
+display_group: education
 tags:
 - education-pedagogy
 - mathematics

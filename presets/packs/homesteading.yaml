@@ -1,5 +1,6 @@
 name: homesteading
 kind: pack
+display_group: Homesteading
 description: Agriculture, trades, construction, and self-sufficient living
 target_size_gb: 4
 sources:

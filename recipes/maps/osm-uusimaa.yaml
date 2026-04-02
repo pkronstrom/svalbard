@@ -1,6 +1,6 @@
 id: osm-uusimaa
 type: pmtiles
-group: maps
+display_group: maps
 tags: [navigation, basemap, regional]
 depth: overview
 size_gb: 0.08

@@ -1,5 +1,6 @@
 name: engineering
 kind: pack
+display_group: Engineering & Making
 description: Embedded systems, 3D printing, and electronics references
 target_size_gb: 4
 sources:

@@ -1,5 +1,6 @@
 name: fi-maps
 kind: pack
+display_group: Maps & Geodata
 description: Finnish geodata layers, basemap, and map viewer tooling
 region: finland
 target_size_gb: 4

@@ -1,5 +1,6 @@
 name: communications
 kind: pack
+display_group: Communications
 description: Networking, ham radio, and emergency communications references
 target_size_gb: 4
 sources:

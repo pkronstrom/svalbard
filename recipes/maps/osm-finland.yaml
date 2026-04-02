@@ -1,6 +1,6 @@
 id: osm-finland
 type: pmtiles
-group: maps
+display_group: maps
 tags: [navigation, basemap]
 depth: comprehensive
 size_gb: 3.0

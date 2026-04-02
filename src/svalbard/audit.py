@@ -114,7 +114,7 @@ def generate_audit(drive_path: Path) -> str:
         elif c.score < 30:
             gap = "\u26a0 Weak coverage"
         lines.append(
-            f"| {c.domain} | {c.group} | {bar} {c.score}% | {len(c.sources)} | {gap} |"
+            f"| {c.domain} | {c.taxonomy_group} | {bar} {c.score}% | {len(c.sources)} | {gap} |"
         )
     lines.append("")
     lines.append("## Format Accessibility Matrix")

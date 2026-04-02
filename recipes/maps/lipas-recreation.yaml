@@ -1,6 +1,6 @@
 id: lipas-recreation
 type: pmtiles
-group: maps
+display_group: maps
 tags: [shelter, recreation, hiking]
 depth: comprehensive
 size_gb: 0.1

@@ -34,7 +34,7 @@ def test_finland_2_estimated_size_leaves_headroom():
 def test_parse_finland_128_group_and_platforms():
     preset = load_preset("finland-128")
     tool = next(source for source in preset.sources if source.id == "kiwix-serve")
-    assert tool.group == "tools"
+    assert tool.display_group == "tools"
     assert "linux-x86_64" in tool.platforms
     assert tool.platforms["linux-x86_64"].startswith("https://")
 
@@ -69,7 +69,7 @@ def test_list_presets_contains_full_default_family():
 def test_default_64_is_region_neutral():
     preset = load_preset("default-64")
     assert preset.region == "default"
-    assert all(source.group != "regional" for source in preset.sources)
+    assert all(source.display_group != "regional" for source in preset.sources)
 
 
 def test_sciences_pack_includes_core_libretexts_subjects():
@@ -183,12 +183,14 @@ def test_all_preset_sources_resolve_from_recipes():
             assert source.type, f"Source {source.id} in {preset_name} has no type"
 
 
-def test_recipes_have_consistent_group_field():
-    """Every resolved source should have a group assigned."""
+def test_recipes_have_consistent_display_group_field():
+    """Every resolved source should have a display_group assigned."""
     for preset_name in list_presets():
         preset = load_preset(preset_name)
         for source in preset.sources:
-            assert source.group, f"Source {source.id} in {preset_name} has no group"
+            assert source.display_group, (
+                f"Source {source.id} in {preset_name} has no display_group"
+            )
 
 
 def test_resolve_nested_pack():

@@ -16,6 +16,8 @@ RECIPES_DIRS = [
 def _source_from_recipe(recipe: dict) -> Source:
     """Build a Source from a recipe dict, converting nested structures."""
     kwargs = {k: v for k, v in recipe.items() if k in Source.__dataclass_fields__}
+    if "display_group" not in kwargs and "group" in recipe:
+        kwargs["display_group"] = recipe["group"]
     if "license" in kwargs and isinstance(kwargs["license"], dict):
         kwargs["license"] = License(**kwargs["license"])
     return Source(**kwargs)
@@ -151,6 +153,7 @@ def parse_preset(
         target_size_gb=data.get("target_size_gb", 0),
         region=data.get("region", ""),
         kind=data.get("kind", "preset"),
+        display_group=data.get("display_group", data.get("group", "")),
         sources=sources,
     )
 

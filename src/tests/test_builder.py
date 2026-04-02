@@ -13,7 +13,7 @@ from svalbard.models import Source
 
 def _make_source(id: str, family: str, **build_extra) -> Source:
     build = {"family": family, **build_extra}
-    return Source(id=id, type="pmtiles", group="maps", strategy="build", build=build)
+    return Source(id=id, type="pmtiles", display_group="maps", strategy="build", build=build)
 
 
 def test_handler_registry_has_all_families():
@@ -93,7 +93,7 @@ def test_build_reference_static_creates_sqlite(tmp_path):
     source = Source(
         id="test-ref",
         type="sqlite",
-        group="regional",
+        display_group="regional",
         strategy="build",
         build={
             "family": "reference-static",
@@ -125,7 +125,7 @@ def test_build_reference_static_skips_if_exists(tmp_path):
     source = Source(
         id="test-ref",
         type="sqlite",
-        group="regional",
+        display_group="regional",
         strategy="build",
         build={"family": "reference-static", "tables": []},
     )
@@ -144,7 +144,7 @@ def test_build_app_bundle_with_assets(tmp_path):
     source = Source(
         id="test-app",
         type="app",
-        group="tools",
+        display_group="tools",
         strategy="build",
         build={
             "family": "app-bundle",
@@ -171,7 +171,7 @@ def test_build_app_bundle_skips_if_populated(tmp_path):
     source = Source(
         id="test-app",
         type="app",
-        group="tools",
+        display_group="tools",
         strategy="build",
         build={"family": "app-bundle", "source_url": "https://example.com/app.zip"},
     )

@@ -1,6 +1,6 @@
 id: natural-earth
 type: gpkg
-group: maps
+display_group: maps
 tags:
 - navigation
 - general-reference

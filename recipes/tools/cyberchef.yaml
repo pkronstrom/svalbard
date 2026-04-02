@@ -1,6 +1,6 @@
 id: cyberchef
 type: app
-group: tools
+display_group: tools
 tags:
 - computing
 depth: reference-only

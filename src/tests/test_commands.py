@@ -150,7 +150,7 @@ def test_sync_copies_selected_local_source(tmp_path):
     (local / "example.yaml").write_text(
         """id: local:example
 type: zim
-group: practical
+display_group: practical
 strategy: local
 path: library/example.zim
 size_bytes: 4

@@ -1,6 +1,6 @@
 id: framework-espidf
 type: toolchain
-group: tools
+display_group: tools
 tags:
 - embedded
 - esp32

@@ -120,7 +120,7 @@ def test_source_accepts_local_path_and_size_bytes():
     source = Source(
         id="local:example-docs",
         type="zim",
-        group="practical",
+        display_group="practical",
         strategy="local",
         path="library/example-docs.zim",
         size_bytes=123456789,

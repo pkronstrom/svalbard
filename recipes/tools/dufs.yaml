@@ -1,6 +1,6 @@
 id: dufs
 type: binary
-group: tools
+display_group: tools
 tags:
 - computing
 depth: reference-only

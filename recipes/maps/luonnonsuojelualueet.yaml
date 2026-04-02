@@ -1,6 +1,6 @@
 id: luonnonsuojelualueet
 type: pmtiles
-group: maps
+display_group: maps
 tags: [environment, conservation]
 depth: comprehensive
 size_gb: 0.08

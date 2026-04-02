@@ -42,7 +42,7 @@ sources:
     (recipes_dir / "wikem.yaml").write_text(
         """id: wikem
 type: zim
-group: practical
+display_group: practical
 size_gb: 0.042
 description: WikEM
 """

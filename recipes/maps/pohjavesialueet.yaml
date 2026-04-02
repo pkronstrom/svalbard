@@ -1,6 +1,6 @@
 id: pohjavesialueet
 type: pmtiles
-group: maps
+display_group: maps
 tags: [water, groundwater]
 depth: comprehensive
 size_gb: 0.05

@@ -1,5 +1,6 @@
 name: survival-medical
 kind: pack
+display_group: Survival & Medical
 description: Emergency medicine, wilderness survival, and preparedness references
 target_size_gb: 2
 sources:

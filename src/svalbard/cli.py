@@ -1,13 +1,20 @@
 """Svalbard CLI entry point."""
 
+import shutil
+from pathlib import Path
+
 import click
 from rich.console import Console
 
+from svalbard.commands import sync_drive
+from svalbard.drive_config import load_snapshot_preset, write_drive_snapshot
 from svalbard.importer import run_import
 from svalbard.bundle import run_bundle_build
 from svalbard.attach import attach_local_source, detach_local_source, resolve_drive_path
+from svalbard.manifest import Manifest
 from svalbard.paths import workspace_root as resolve_workspace_root
-from svalbard.presets import copy_preset_to_workspace, list_presets
+from svalbard.presets import copy_preset_to_workspace, list_presets, load_preset
+from svalbard.wizard import pick_sources_via_packs, run_wizard, write_custom_preset
 
 console = Console()
 
@@ -33,8 +40,6 @@ def main(ctx: click.Context) -> None:
             console.print("[bold]Svalbard[/bold] — Seed vault for human knowledge\n")
             console.print("No drive found in current directory.")
             if Confirm.ask("  Run setup wizard?", default=True):
-                from svalbard.wizard import run_wizard
-
                 run_wizard()
             else:
                 console.print("Run [bold]svalbard --help[/bold] for all commands.")
@@ -57,8 +62,6 @@ def _show_menu(path: str):
 
         click.echo(generate_audit(P(path)))
     elif choice == "w":
-        from svalbard.wizard import run_wizard
-
         run_wizard()
 
 
@@ -67,20 +70,23 @@ def _show_menu(path: str):
 @click.option("--preset", default=None, help="Preset name (skip region and preset selection)")
 def wizard(path: str | None, preset: str | None) -> None:
     """Interactive setup wizard."""
-    from svalbard.wizard import run_wizard
-
     run_wizard(target_path=path, preset_name=preset)
 
 
 @main.command()
 @click.argument("path")
-@click.option("--preset", required=True, help="Preset name (e.g. finland-128)")
+@click.option("--preset", default=None, help="Preset name to pre-check before browsing")
 @click.option("--workspace", default=None, help="Workspace root")
 def init(path: str, preset: str, workspace: str | None) -> None:
-    """Initialize a drive with a preset."""
-    from svalbard.commands import init_drive
-
-    init_drive(path, preset, workspace_root=str(resolve_workspace_root(workspace)))
+    """Initialize a drive via the interactive pack picker."""
+    kwargs = {
+        "target_path": path,
+        "preset_name": preset,
+        "browse_only": True,
+    }
+    if workspace is not None:
+        kwargs["workspace"] = workspace
+    run_wizard(**kwargs)
 
 
 @main.command()
@@ -182,11 +188,68 @@ def import_command(
 
 
 @main.command("attach")
-@click.argument("source_id")
+@click.argument("source_id", required=False)
 @click.argument("path", required=False, default=".")
+@click.option("--browse", is_flag=True, help="Browse and select pack content interactively")
 @click.option("--workspace", default=None, help="Workspace root")
-def attach_command(source_id: str, path: str, workspace: str | None) -> None:
-    """Attach a local source to an existing drive."""
+def attach_command(
+    source_id: str | None,
+    path: str,
+    browse: bool,
+    workspace: str | None,
+) -> None:
+    """Attach a local source or browse pack content for an existing drive."""
+    if browse:
+        drive_arg = source_id if source_id and path == "." else path
+        drive_path = resolve_drive_path(drive_arg)
+        manifest_path = drive_path / "manifest.yaml"
+        manifest = Manifest.load(manifest_path)
+        workspace_root = (
+            resolve_workspace_root(workspace)
+            if workspace is not None
+            else Path(manifest.workspace_root).resolve()
+            if manifest.workspace_root
+            else resolve_workspace_root()
+        )
+        try:
+            free_gb = shutil.disk_usage(drive_path).free / 1e9
+        except OSError:
+            free_gb = 0
+        try:
+            preset = load_preset(manifest.preset, workspace=workspace_root)
+        except (FileNotFoundError, ValueError, KeyError):
+            preset = load_snapshot_preset(drive_path)
+        if preset is not None:
+            checked_ids = {source.id for source in preset.sources if not source.id.startswith("local:")}
+        else:
+            checked_ids = {entry.id for entry in manifest.entries if not entry.id.startswith("local:")}
+        selected_ids = pick_sources_via_packs(
+            free_gb=free_gb,
+            workspace=workspace_root,
+            checked_ids=checked_ids,
+        )
+        preset_name = write_custom_preset(
+            selected_ids,
+            workspace=workspace_root,
+            target_size_gb=free_gb,
+            region=manifest.region,
+            description=f"Attached selection for {drive_path.name}",
+        )
+        manifest.preset = preset_name
+        manifest.save(manifest_path)
+        write_drive_snapshot(
+            drive_path,
+            preset_name=preset_name,
+            workspace_root=workspace_root,
+            local_source_ids=manifest.local_sources,
+        )
+        sync_drive(str(drive_path))
+        console.print(f"[green]Updated preset:[/green] {preset_name}")
+        return
+
+    if not source_id:
+        raise click.UsageError("SOURCE_ID is required unless --browse is used")
+
     drive_path = resolve_drive_path(path)
     attach_local_source(drive_path, source_id, workspace=workspace)
     console.print(f"[green]Attached:[/green] {source_id}")

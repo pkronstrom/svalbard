@@ -1,6 +1,6 @@
 id: virtavesien-lohikalakannat
 type: pmtiles
-group: maps
+display_group: maps
 tags: [food, fishing]
 depth: comprehensive
 size_gb: 0.02

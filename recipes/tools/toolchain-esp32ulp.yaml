@@ -1,6 +1,6 @@
 id: toolchain-esp32ulp
 type: toolchain
-group: tools
+display_group: tools
 tags:
 - embedded
 - esp32

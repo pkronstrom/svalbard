@@ -1,5 +1,6 @@
 name: sciences
 kind: pack
+display_group: Science & Education
 description: Biology, chemistry, physics, math, and earth sciences references
 target_size_gb: 16
 sources:
