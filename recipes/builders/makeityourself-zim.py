@@ -1393,11 +1393,12 @@ def stage_crawl(
             continue
         existing = progress.get(v.url)
         if existing:
-            if existing["status"] == "completed" and not retry_failed:
-                continue
+            if existing["status"] == "completed":
+                continue  # never re-crawl completed items
             if existing["status"] == "failed":
                 if not retry_failed and existing.get("attempts", 0) >= MAX_RETRIES:
                     continue
+                # retry_failed=True → re-attempt failed items regardless of attempts
         to_crawl.append(v)
 
     if not to_crawl:
