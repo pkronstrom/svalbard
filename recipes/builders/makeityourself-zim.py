@@ -1895,6 +1895,8 @@ def main():
 
     import os
 
+    workdir = Path(args.workdir)
+
     # Load .env from project root (or workdir) if present
     for env_path in [Path.cwd() / ".env", workdir / ".env"]:
         if env_path.exists():
@@ -1933,7 +1935,6 @@ def main():
     else:
         log.info("Thingiverse token: not set (metadata only)")
 
-    workdir = Path(args.workdir)
     output_path = Path(args.output) if args.output else workdir / "makeityourself.zim"
 
     # Handle --force
