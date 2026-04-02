@@ -1575,8 +1575,23 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
             text = step.get("text", "")
             steps_html += f'<div class="step"><h3>{escape(title)}</h3><p>{escape(text[:2000])}</p></div>\n'
 
-    # Description — render as HTML if it contains tags, otherwise escape
+    # Description — try to improve truncated descriptions from raw HTML
     desc = meta.description
+    raw_path = site_dir / "raw.html"
+    if desc.rstrip().endswith("…") and raw_path.exists():
+        try:
+            raw_soup = BeautifulSoup(raw_path.read_text(), "html.parser")
+            # Try to find a real description from the page
+            for sel in ["article p", "main p", ".step-body p", ".entry-content p", ".post-content p"]:
+                paras = raw_soup.select(sel)
+                if paras:
+                    full_desc = " ".join(p.get_text(strip=True) for p in paras[:3])
+                    if len(full_desc) > len(desc):
+                        desc = full_desc[:2000]
+                    break
+        except Exception:
+            pass
+
     if "<p>" in desc or "<br" in desc or "<strong>" in desc:
         desc_html = f'<div class="description">{_clean_description_html(desc)}</div>'
     else:
@@ -1620,7 +1635,10 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
                         img["style"] = "max-width:100%;height:auto;"
                 content_text = main.get_text(strip=True)
                 if len(content_text) > 100:  # only include if substantial
-                    raw_content_html = f'<details class="raw-content"><summary>Full page content</summary><div class="raw-body">{str(main)}</div></details>'
+                    # Auto-open if project has no images or short description
+                    has_content = len(meta.images) > 2 and len(_strip_html(meta.description)) > 100
+                    open_attr = "" if has_content else " open"
+                    raw_content_html = f'<details class="raw-content"{open_attr}><summary>Full page content</summary><div class="raw-body">{str(main)}</div></details>'
         except Exception:
             pass
 
@@ -1782,6 +1800,51 @@ def _collect_projects(state: PipelineState) -> list[dict]:
     return projects
 
 
+def _refetch_truncated_descriptions(projects: list[dict], state: PipelineState) -> None:
+    """Re-fetch full descriptions for Printables projects truncated during crawl."""
+    truncated = [
+        p for p in projects
+        if p.get("source_domain") == "printables.com"
+        and len(p.get("description", "")) >= 490  # likely truncated at old 500-char limit
+    ]
+    if not truncated:
+        return
+
+    log.info("  Re-fetching %d truncated Printables descriptions...", len(truncated))
+    with httpx.Client(timeout=30) as client:
+        for proj in truncated:
+            model_id = None
+            m = re.search(r"/model/(\d+)", proj.get("url", ""))
+            if m:
+                model_id = m.group(1)
+            if not model_id:
+                continue
+            try:
+                r = client.post(
+                    "https://api.printables.com/graphql/",
+                    json={
+                        "query": "{ print(id: \"%s\") { description } }" % model_id,
+                    },
+                    headers={**HEADERS, "Content-Type": "application/json",
+                             "Origin": "https://www.printables.com"},
+                    timeout=15,
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    full_desc = (data.get("data", {}).get("print", {}).get("description") or "")
+                    if len(full_desc) > len(proj.get("description", "")):
+                        proj["description"] = full_desc
+                        # Update meta.json on disk
+                        meta_path = state.sites_dir / proj["_dir"] / "meta.json"
+                        if meta_path.exists():
+                            meta_data = json.loads(meta_path.read_text())
+                            meta_data["description"] = full_desc
+                            meta_path.write_text(json.dumps(meta_data, ensure_ascii=False, indent=2))
+                time.sleep(0.3)
+            except Exception as e:
+                log.debug("  Failed to refetch desc for %s: %s", model_id, e)
+
+
 def stage_package(
     state: PipelineState,
     verified: list[VerifiedLink],
@@ -1796,6 +1859,8 @@ def stage_package(
 
     # Regenerate all project pages with latest template
     log.info("  Regenerating project pages...")
+    # Re-fetch truncated Printables descriptions from GraphQL
+    _refetch_truncated_descriptions(projects, state)
     for proj in projects:
         proj_dir = state.sites_dir / proj["_dir"]
         try:
