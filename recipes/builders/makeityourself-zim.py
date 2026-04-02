@@ -1639,6 +1639,10 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
         except Exception:
             pass
 
+    # Unescape HTML entities that got double-escaped
+    import html as html_mod
+    desc = html_mod.unescape(desc)
+
     if "<p>" in desc or "<br" in desc or "<strong>" in desc:
         desc_html = f'<div class="description">{_clean_description_html(desc)}</div>'
     else:
@@ -1651,6 +1655,32 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
     # Include cleaned raw page content if available
     raw_content_html = ""
     raw_path = site_dir / "raw.html"
+    # For GitHub projects, use README.md as content source if no raw.html
+    readme_path = site_dir / "README.md"
+    if not (raw_path.exists() and raw_path.stat().st_size > 500) and readme_path.exists():
+        try:
+            readme_text = readme_path.read_text()
+            # Simple markdown-to-HTML: wrap in pre or convert basic formatting
+            # Convert headers, bold, links, lists
+            lines = []
+            for line in readme_text.split("\n"):
+                if line.startswith("# "):
+                    lines.append(f"<h2>{escape(line[2:])}</h2>")
+                elif line.startswith("## "):
+                    lines.append(f"<h3>{escape(line[3:])}</h3>")
+                elif line.startswith("### "):
+                    lines.append(f"<h4>{escape(line[4:])}</h4>")
+                elif line.startswith("- ") or line.startswith("* "):
+                    lines.append(f"<li>{escape(line[2:])}</li>")
+                elif line.strip():
+                    lines.append(f"<p>{escape(line)}</p>")
+            readme_html = "\n".join(lines)
+            if len(readme_text) > 100:
+                has_content = len(meta.images) > 2 and len(_strip_html(meta.description)) > 100
+                open_attr = "" if has_content else " open"
+                raw_content_html = f'<details class="raw-content"{open_attr}><summary>README</summary><div class="raw-body">{readme_html}</div></details>'
+        except Exception:
+            pass
     if raw_path.exists() and raw_path.stat().st_size > 500:
         try:
             raw_soup = BeautifulSoup(raw_path.read_text(), "html.parser")
