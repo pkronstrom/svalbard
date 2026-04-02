@@ -177,6 +177,13 @@ def test_write_custom_preset_creates_loadable_workspace_preset(tmp_path):
 def test_wizard_preset_mode_preserves_sources_missing_from_packs(tmp_path, monkeypatch):
     target = tmp_path / "drive"
     target.mkdir()
+    base_preset = load_preset("finland-128")
+    pack_source_ids = {
+        source.id
+        for pack in wizard.load_pack_presets()
+        for source in pack.sources
+    }
+    orphan_ids = {source.id for source in base_preset.sources} - pack_source_ids
 
     monkeypatch.setattr(wizard, "_clear", lambda: None)
     monkeypatch.setattr(wizard, "run_picker", lambda *args, **kwargs: {"kiwix-serve"})
@@ -195,5 +202,5 @@ def test_wizard_preset_mode_preserves_sources_missing_from_packs(tmp_path, monke
     custom_preset = load_preset(preset_files[0].stem, workspace=tmp_path)
     source_ids = {source.id for source in custom_preset.sources}
     assert "kiwix-serve" in source_ids
-    assert "grimgrains" in source_ids
-    assert "100-rabbits" in source_ids
+    assert orphan_ids
+    assert orphan_ids <= source_ids
