@@ -1907,8 +1907,8 @@ def main():
                         os.environ.setdefault(key.strip(), val.strip())
             break
 
-    printables_token = os.environ.get("MIY_PRINTABLES_TOKEN", "")
-    thingiverse_token = os.environ.get("MIY_THINGIVERSE_TOKEN", "")
+    printables_token = os.environ.get("MIY_PRINTABLES_TOKEN", "") or os.environ.get("PRINTABLES_TOKEN", "")
+    thingiverse_token = os.environ.get("MIY_THINGIVERSE_TOKEN", "") or os.environ.get("THINGIVERSE_TOKEN", "")
 
     # Warn / block if Thingiverse token is missing
     if not thingiverse_token and not args.skip_thingiverse_check:
