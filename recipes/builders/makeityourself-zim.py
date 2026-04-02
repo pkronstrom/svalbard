@@ -5,7 +5,7 @@ Downloads the Make It Yourself PDF, extracts all project links, verifies them,
 crawls each site with domain-specific extractors, and packages everything into
 a single searchable ZIM file with a responsive HTML frontpage.
 
-Requirements: pip install pymupdf httpx beautifulsoup4 libzim
+Requirements: pip install pymupdf httpx beautifulsoup4 libzim Pillow
 Optional: pip install playwright (for JS-heavy generic sites)
 
 Usage:
@@ -1377,6 +1377,7 @@ def stage_crawl(
     retry_failed: bool = False,
     printables_token: str = "",
     thingiverse_token: str = "",
+    optimize: bool = True,
 ) -> list[CrawlResult]:
     """Crawl all verified links using appropriate extractors (parallel)."""
     import threading
@@ -1456,6 +1457,25 @@ def stage_crawl(
                         error=str(e)[:200], attempts=attempts,
                         ts=datetime.now(timezone.utc).isoformat(),
                     )
+
+            # Post-crawl optimization
+            if optimize and result.status == "completed":
+                site_dir = extractor.site_dir_for(v.final_url or v.url)
+                meta_path = site_dir / "meta.json"
+                if meta_path.exists():
+                    try:
+                        meta_data = json.loads(meta_path.read_text())
+                        meta_obj = ProjectMeta(**{
+                            k: v for k, v in meta_data.items()
+                            if k in ProjectMeta.__dataclass_fields__
+                        })
+                        bytes_saved = _optimize_project(site_dir, meta_obj)
+                        if bytes_saved > 0:
+                            _save_meta(site_dir, meta_obj)
+                            result.size_bytes -= bytes_saved
+                            result.files = len(meta_obj.artifacts) + len(meta_obj.images)
+                    except Exception as e:
+                        log.debug("    optimize error: %s", e)
 
             with progress_lock:
                 counter["done"] += 1
@@ -1550,6 +1570,118 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
 </html>"""
 
     (site_dir / "index.html").write_text(html)
+
+
+# ── Post-crawl optimization ────────────────────────────────────────────────
+
+# Extensions to always drop (compiler output, installers, redundant formats)
+DROP_ALWAYS = {".o", ".crf", ".exe", ".wrl", ".ttf", ".iges", ".igs"}
+
+# Extensions to drop when a better alternative exists in the same project
+DROP_IF_REDUNDANT = {
+    ".gcode": {".stl", ".3mf"},       # gcode is printer-specific; STL is universal
+}
+
+# Non-essential CAD source formats (proprietary, or redundant when .step exists)
+DROP_CAD_NON_ESSENTIAL = {".blend", ".skp"}
+
+# Max image dimension (pixels) for resized images
+IMAGE_MAX_DIM = 1200
+IMAGE_JPEG_QUALITY = 85
+
+
+def _optimize_project(site_dir: Path, meta: ProjectMeta) -> int:
+    """Optimize a crawled project's files in-place. Returns bytes saved."""
+    saved = 0
+    has_exts = {p.suffix.lower() for p in site_dir.rglob("*") if p.is_file()}
+
+    # 1. Drop always-unwanted files
+    for f in list(site_dir.rglob("*")):
+        if f.is_file() and f.suffix.lower() in DROP_ALWAYS:
+            size = f.stat().st_size
+            f.unlink()
+            saved += size
+            log.debug("    drop %s (%d KB)", f.name, size // 1024)
+
+    # 2. Drop gcode when STL/3MF exists
+    for ext, alternatives in DROP_IF_REDUNDANT.items():
+        if has_exts & alternatives:
+            for f in list(site_dir.rglob(f"*{ext}")):
+                size = f.stat().st_size
+                f.unlink()
+                saved += size
+                log.debug("    drop redundant %s (%d KB)", f.name, size // 1024)
+
+    # 3. Drop non-essential CAD formats
+    for f in list(site_dir.rglob("*")):
+        if f.is_file() and f.suffix.lower() in DROP_CAD_NON_ESSENTIAL:
+            size = f.stat().st_size
+            f.unlink()
+            saved += size
+            log.debug("    drop CAD %s (%d KB)", f.name, size // 1024)
+
+    # 4. GIFs > 500KB → extract first frame as JPG
+    try:
+        from PIL import Image as PILImage
+        for f in list(site_dir.rglob("*.gif")):
+            if f.stat().st_size > 500_000:
+                try:
+                    old_size = f.stat().st_size
+                    img = PILImage.open(f)
+                    img = img.convert("RGB")
+                    jpg_path = f.with_suffix(".jpg")
+                    img.save(str(jpg_path), "JPEG", quality=IMAGE_JPEG_QUALITY)
+                    new_size = jpg_path.stat().st_size
+                    f.unlink()
+                    saved += old_size - new_size
+                    # Update meta references
+                    old_rel = str(f.relative_to(site_dir))
+                    new_rel = str(jpg_path.relative_to(site_dir))
+                    meta.images = [new_rel if i == old_rel else i for i in meta.images]
+                except Exception:
+                    pass
+
+        # 5. Resize large images
+        for f in list(site_dir.rglob("*")):
+            if f.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+                continue
+            if f.stat().st_size < 50_000:  # skip tiny images
+                continue
+            try:
+                old_size = f.stat().st_size
+                img = PILImage.open(f)
+                w, h = img.size
+                if max(w, h) <= IMAGE_MAX_DIM:
+                    continue
+                ratio = IMAGE_MAX_DIM / max(w, h)
+                new_size_tuple = (int(w * ratio), int(h * ratio))
+                img = img.resize(new_size_tuple, PILImage.LANCZOS)
+                if f.suffix.lower() == ".png":
+                    img.save(str(f), "PNG", optimize=True)
+                else:
+                    if img.mode in ("RGBA", "P"):
+                        img = img.convert("RGB")
+                    img.save(str(f), "JPEG", quality=IMAGE_JPEG_QUALITY)
+                new_size = f.stat().st_size
+                saved += old_size - new_size
+            except Exception:
+                pass
+    except ImportError:
+        log.debug("    Pillow not installed, skipping image optimization")
+
+    # 6. Update meta.json artifacts list (remove deleted files)
+    meta.artifacts = [
+        a for a in meta.artifacts
+        if not a.get("download_failed")
+        and (site_dir / a["filename"]).exists()
+    ]
+    # Update sizes
+    for a in meta.artifacts:
+        p = site_dir / a["filename"]
+        if p.exists():
+            a["size_bytes"] = p.stat().st_size
+
+    return saved
 
 
 # ── Stage 4: Package ──────────────────────────────────────────────────────
@@ -1979,6 +2111,10 @@ def main():
         help="Re-attempt only previously failed crawls",
     )
     parser.add_argument(
+        "--do-not-optimize", action="store_true",
+        help="Skip post-crawl optimization (keep all files at original size)",
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="Enable debug logging",
     )
@@ -2065,6 +2201,7 @@ def main():
         retry_failed=args.retry_failed,
         printables_token=printables_token,
         thingiverse_token=thingiverse_token,
+        optimize=not args.do_not_optimize,
     )
     stage_package(state, verified, crawl_results, output_path)
 
