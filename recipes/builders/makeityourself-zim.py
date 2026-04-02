@@ -621,32 +621,53 @@ class PrintablesExtractor(BaseExtractor):
             log.debug("  Printables GraphQL failed for %s: %s", model_id, e)
         return None
 
-    def _get_download_links(self, model_id: str, file_type: str = "stl") -> str | None:
-        """Get signed download URL via mutation (requires auth token)."""
-        if not self.auth_token:
-            return None
+    def _get_download_links(self, model_id: str, file_ids: list[dict]) -> dict[str, str]:
+        """Get signed download URLs via mutation. No auth needed with file IDs.
+
+        Args:
+            model_id: The Printables model ID
+            file_ids: List of dicts with 'id' and 'type' keys (stl/gcode/other)
+
+        Returns:
+            Dict mapping file ID to download URL.
+        """
+        # Group files by type
+        by_type: dict[str, list[str]] = {}
+        for f in file_ids:
+            ft = f.get("type", "stl")
+            by_type.setdefault(ft, []).append(f["id"])
+
+        files_arg = [{"fileType": ft, "ids": ids} for ft, ids in by_type.items()]
+
         mutation = """
-        mutation GetDownloadLink($printId: ID!, $fileType: DownloadFileTypeEnum!, $source: DownloadSourceEnum!) {
-            getDownloadLink(printId: $printId, fileType: $fileType, source: $source, id: $printId) {
+        mutation GetDownloadLink($printId: ID!, $files: [DownloadFileInput!]!, $source: DownloadSourceEnum!) {
+            getDownloadLink(printId: $printId, files: $files, source: $source) {
                 ok
-                output { link ttl }
+                output {
+                    files { id link ttl fileType }
+                }
                 errors { field messages }
             }
         }
         """
+        headers = {
+            **HEADERS,
+            "Content-Type": "application/json",
+            "Origin": "https://www.printables.com",
+            "Referer": "https://www.printables.com/",
+        }
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+
+        result_map: dict[str, str] = {}
         try:
-            headers = {
-                **HEADERS,
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.auth_token}",
-            }
             r = self.client.post(
                 "https://api.printables.com/graphql/",
                 json={
                     "query": mutation,
                     "variables": {
                         "printId": model_id,
-                        "fileType": file_type,
+                        "files": files_arg,
                         "source": "model_detail",
                     },
                 },
@@ -655,12 +676,16 @@ class PrintablesExtractor(BaseExtractor):
             )
             if r.status_code == 200:
                 data = r.json()
-                result = data.get("data", {}).get("getDownloadLink", {})
-                if result.get("ok") and result.get("output"):
-                    return result["output"]["link"]
+                dl = data.get("data", {}).get("getDownloadLink", {})
+                if dl.get("ok") and dl.get("output"):
+                    for f in dl["output"].get("files", []):
+                        if f.get("link"):
+                            result_map[f["id"]] = f["link"]
+                elif dl.get("errors"):
+                    log.debug("  Printables download errors: %s", dl["errors"])
         except Exception as e:
             log.debug("  Printables download link failed: %s", e)
-        return None
+        return result_map
 
     def extract(self, verified: VerifiedLink) -> CrawlResult:
         url = verified.final_url or verified.url
@@ -722,37 +747,43 @@ class PrintablesExtractor(BaseExtractor):
                     total_size += fsize
                 time.sleep(0.3)
 
-            # Download STLs and other files (requires auth token for signed URLs)
+            # Download STLs and other files via signed URLs (no auth needed)
+            stls = gql_data.get("stls") or []
+            gcodes = gql_data.get("gcodes") or []
+            other = gql_data.get("otherFiles") or []
             all_files = [
-                *(gql_data.get("stls") or []),
-                *(gql_data.get("gcodes") or []),
-                *(gql_data.get("otherFiles") or []),
+                *[{**f, "_type": "stl"} for f in stls],
+                *[{**f, "_type": "gcode"} for f in gcodes],
+                *[{**f, "_type": "other"} for f in other],
             ]
-            if all_files and self.auth_token:
-                # Get signed download link for STLs
-                for file_type in ("stl", "gcode", "other"):
-                    dl_link = self._get_download_links(model_id, file_type)
-                    if dl_link:
-                        # dl_link is a ZIP URL containing all files of that type
-                        zip_name = f"{file_type}_files.zip"
-                        if _download_file(self.client, dl_link, artifacts_dir / zip_name):
-                            fsize = (artifacts_dir / zip_name).stat().st_size
+            if all_files:
+                # Get signed download URLs for all files at once
+                file_ids = [{"id": f["id"], "type": f["_type"]} for f in all_files]
+                dl_urls = self._get_download_links(model_id, file_ids)
+                time.sleep(CRAWL_DELAY_PER_DOMAIN)
+
+                for f_info in all_files:
+                    fid = f_info["id"]
+                    dl_url = dl_urls.get(fid)
+                    fname = _sanitize_filename(f_info.get("name", f"file_{fid}"))
+                    if dl_url:
+                        if _download_file(self.client, dl_url, artifacts_dir / fname):
+                            fsize = (artifacts_dir / fname).stat().st_size
                             meta.artifacts.append({
-                                "filename": f"artifacts/{zip_name}",
-                                "type": "zip",
+                                "filename": f"artifacts/{fname}",
+                                "type": Path(fname).suffix.lstrip("."),
                                 "size_bytes": fsize,
                             })
                             total_size += fsize
-                        time.sleep(1.0)
-            elif all_files:
-                # No auth — record file metadata but can't download
-                for f_info in all_files:
-                    meta.artifacts.append({
-                        "filename": f_info.get("name", "unknown"),
-                        "type": Path(f_info.get("name", "")).suffix.lstrip(".") or "stl",
-                        "size_bytes": f_info.get("fileSize", 0),
-                        "download_requires_auth": True,
-                    })
+                        time.sleep(0.5)
+                    else:
+                        # Record metadata for files we couldn't get URLs for
+                        meta.artifacts.append({
+                            "filename": fname,
+                            "type": Path(fname).suffix.lstrip(".") or f_info["_type"],
+                            "size_bytes": f_info.get("fileSize", 0),
+                            "download_failed": True,
+                        })
 
         else:
             # Fallback: fetch page HTML and parse meta tags
@@ -812,63 +843,85 @@ class ThingiverseExtractor(BaseExtractor):
             result.error = "Could not extract thing ID"
             return result
 
-        # Thingiverse API requires auth — try it but fall back to HTML scraping
-        api_base = "https://api.thingiverse.com"
-        thing_data = None
-        files_data = None
+        # Strategy: fetch HTML and parse JSON-LD (no auth needed), then try API
+        html = None
+        try:
+            r = self.client.get(url, headers=HEADERS, timeout=30, follow_redirects=True)
+            r.raise_for_status()
+            html = r.text
+            (site_dir / "raw.html").write_text(html)
+            time.sleep(CRAWL_DELAY_PER_DOMAIN)
+        except Exception as e:
+            result.status = "failed"
+            result.error = str(e)[:200]
+            return result
 
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Extract JSON-LD (richest no-auth data source)
+        jsonld = None
+        for script in soup.find_all("script", type="application/ld+json"):
+            try:
+                data = json.loads(script.string)
+                if isinstance(data, dict) and data.get("@type") == "Product":
+                    jsonld = data
+                    break
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        if jsonld:
+            meta.title = jsonld.get("name", "")
+            meta.description = (jsonld.get("description") or "")[:500]
+            brand = jsonld.get("brand") or {}
+            meta.author = brand.get("name", "")
+            # Author is also in mainEntityOfPage
+            meop = jsonld.get("mainEntityOfPage") or {}
+            author_obj = meop.get("author") or {}
+            if author_obj.get("name"):
+                meta.author = author_obj["name"]
+            meta.license = meop.get("license", "")
+            # Thumbnail
+            img_obj = jsonld.get("image") or jsonld.get("thumbnailUrl")
+            thumb_url = None
+            if isinstance(img_obj, dict):
+                thumb_url = img_obj.get("url", "")
+            elif isinstance(img_obj, str):
+                thumb_url = img_obj
+        else:
+            # Fallback to title tag
+            title_tag = soup.find("title")
+            if title_tag:
+                t = title_tag.get_text()
+                meta.title = re.sub(r"\s*[-–]\s*Thingiverse\s*$", "", t).strip()
+                # Title format: "Name by Author - Thingiverse"
+                m = re.match(r"(.+?)\s+by\s+(.+)", meta.title)
+                if m:
+                    meta.title, meta.author = m.group(1), m.group(2)
+            thumb_url = None
+
+        # Download thumbnail/image
+        images_dir = site_dir / "images"
+        images_dir.mkdir(exist_ok=True)
+        if thumb_url and thumb_url.startswith("http"):
+            if _download_file(self.client, thumb_url, images_dir / "thumb.jpg"):
+                meta.images.append("images/thumb.jpg")
+                total_size += (images_dir / "thumb.jpg").stat().st_size
+            time.sleep(0.3)
+
+        # Try Thingiverse API for files (requires app token)
+        api_base = "https://api.thingiverse.com"
         try:
             r = self.client.get(
-                f"{api_base}/things/{thing_id}",
+                f"{api_base}/things/{thing_id}/files",
                 headers=HEADERS, timeout=30,
             )
             if r.status_code == 200:
-                thing_data = r.json()
-            time.sleep(CRAWL_DELAY_PER_DOMAIN)
-        except Exception as e:
-            log.debug("  Thingiverse API failed for %s: %s", thing_id, e)
-
-        if thing_data:
-            meta.title = thing_data.get("name", "")
-            meta.description = (thing_data.get("description") or "")[:500]
-            meta.author = (thing_data.get("creator") or {}).get("name", "")
-            meta.license = thing_data.get("license", "")
-
-            # Download thumbnail/images
-            images_dir = site_dir / "images"
-            images_dir.mkdir(exist_ok=True)
-            for img in (thing_data.get("images") or [])[:10]:
-                for size_key in ("url", "large_url", "medium_url"):
-                    img_url = img.get(size_key)
-                    if img_url:
-                        break
-                if not img_url:
-                    continue
-                fname = _sanitize_filename(Path(urlparse(img_url).path).name)
-                if not fname or fname == "file":
-                    fname = f"image_{img.get('id', 0)}.jpg"
-                if _download_file(self.client, img_url, images_dir / fname):
-                    meta.images.append(f"images/{fname}")
-                    total_size += (images_dir / fname).stat().st_size
-                time.sleep(0.3)
-
-            # Fetch files list
-            try:
-                r = self.client.get(
-                    f"{api_base}/things/{thing_id}/files",
-                    headers=HEADERS, timeout=30,
-                )
-                if r.status_code == 200:
-                    files_data = r.json()
-                time.sleep(CRAWL_DELAY_PER_DOMAIN)
-            except Exception:
-                pass
-
-            if files_data:
+                files_data = r.json()
                 artifacts_dir = site_dir / "artifacts"
                 artifacts_dir.mkdir(exist_ok=True)
                 for f_info in files_data:
-                    dl_url = f_info.get("download_url") or f_info.get("public_url")
+                    # Try direct_url (CDN, no auth) first, then download_url
+                    dl_url = f_info.get("direct_url") or f_info.get("public_url")
                     if not dl_url:
                         continue
                     fname = _sanitize_filename(f_info.get("name", "file"))
@@ -881,31 +934,9 @@ class ThingiverseExtractor(BaseExtractor):
                         })
                         total_size += fsize
                     time.sleep(0.5)
-        else:
-            # Fallback: scrape the page HTML for metadata
-            try:
-                r = self.client.get(url, headers=HEADERS, timeout=30, follow_redirects=True)
-                r.raise_for_status()
-                soup = BeautifulSoup(r.text, "html.parser")
-                title_tag = soup.find("title")
-                meta.title = title_tag.get_text().replace(" - Thingiverse", "").strip() if title_tag else ""
-                og_desc = soup.find("meta", property="og:description")
-                if og_desc:
-                    meta.description = og_desc.get("content", "")[:500]
-                og_img = soup.find("meta", property="og:image")
-                if og_img:
-                    img_url = og_img.get("content", "")
-                    if img_url:
-                        images_dir = site_dir / "images"
-                        images_dir.mkdir(exist_ok=True)
-                        if _download_file(self.client, img_url, images_dir / "thumb.jpg"):
-                            meta.images.append("images/thumb.jpg")
-                (site_dir / "raw.html").write_text(r.text)
-                time.sleep(CRAWL_DELAY_PER_DOMAIN)
-            except Exception as e:
-                result.status = "failed"
-                result.error = str(e)[:200]
-                return result
+            time.sleep(CRAWL_DELAY_PER_DOMAIN)
+        except Exception:
+            log.debug("  Thingiverse API unavailable for thing:%s (auth required)", thing_id)
 
         meta.title = meta.title or verified.title or f"Thingiverse Thing {thing_id}"
         _generate_project_page(site_dir, meta)
