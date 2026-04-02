@@ -2,7 +2,7 @@ id: makeityourself
 type: zim
 group: practical
 tags: [diy, maker, 3d-printing, woodworking, sewing, electronics]
-size_gb: 3.5
+size_gb: 14
 description: "1000+ curated DIY projects archived from makeityourself.org"
 strategy: build
 build:

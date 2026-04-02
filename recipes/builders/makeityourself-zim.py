@@ -51,6 +51,10 @@ log = logging.getLogger("miy")
 PDF_URL = "https://makeityourself.org/MIY.pdf"
 WAYBACK_API = "https://archive.org/wayback/available"
 
+# Default paths relative to svalbard project root
+DEFAULT_WORKDIR = "library/workspace/miy"
+DEFAULT_OUTPUT = "library/makeityourself.zim"
+
 BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -1950,12 +1954,12 @@ def main():
         description="Archive makeityourself.org projects into a ZIM file",
     )
     parser.add_argument(
-        "--workdir", "-w", required=True,
-        help="Working directory for intermediate files and state",
+        "--workdir", "-w", default=DEFAULT_WORKDIR,
+        help=f"Working directory for intermediate files and state (default: {DEFAULT_WORKDIR})",
     )
     parser.add_argument(
-        "--output", "-o", default=None,
-        help="Output ZIM path (default: workdir/makeityourself.zim)",
+        "--output", "-o", default=DEFAULT_OUTPUT,
+        help=f"Output ZIM path (default: {DEFAULT_OUTPUT})",
     )
     parser.add_argument(
         "--pdf", default=None,
@@ -2034,7 +2038,7 @@ def main():
     else:
         log.info("Thingiverse token: not set (metadata only)")
 
-    output_path = Path(args.output) if args.output else workdir / "makeityourself.zim"
+    output_path = Path(args.output)
 
     # Handle --force
     if args.force:
