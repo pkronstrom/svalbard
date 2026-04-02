@@ -84,6 +84,18 @@ def test_sciences_pack_includes_core_libretexts_subjects():
     assert "libretexts-statistics" in ids
 
 
+def test_homesteading_pack_includes_practical_technology_sources():
+    preset = load_preset("packs/homesteading")
+    ids = {source.id for source in preset.sources}
+
+    assert "appropedia" in ids
+    assert "cd3wd" in ids
+    assert "lowtech-magazine" in ids
+    assert "practical-action" in ids
+    assert "stackexchange-gardening" in ids
+    assert "zimgit-food-preparation" in ids
+
+
 def test_default_512_includes_portable_qwen_model():
     preset = load_preset("default-512")
     ids = {source.id for source in preset.sources}

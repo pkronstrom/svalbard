@@ -1,12 +1,19 @@
 name: homesteading
 kind: pack
 description: Agriculture, trades, construction, and self-sufficient living
-target_size_gb: 1
+target_size_gb: 4
 sources:
 # ── Trades ──
 - stackexchange-woodworking
 # ── Sustainable tech ──
 - permacomputing
+- lowtech-magazine
+- appropedia
+- practical-action
+- cd3wd
+# ── Agriculture & food ──
+- stackexchange-gardening
+- zimgit-food-preparation
 
 # ── TODO: Agriculture (PDF/zimit) ──
 # fao-agricultural-manuals  # ~500 MB-2 GB, UN FAO guides
