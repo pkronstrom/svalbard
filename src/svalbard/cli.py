@@ -231,6 +231,362 @@ def preset_copy_command(source_name: str, target_name: str, workspace: str | Non
 
 
 @main.command()
+@click.argument("target")
+@click.option("--port", default=None, type=int, help="Port to serve on (default: random free port)")
+def show(target: str, port: int | None) -> None:
+    """Open or serve a file/recipe for viewing.
+
+    TARGET can be a file path (e.g. library/zim/ifixit.zim) or a recipe ID
+    (e.g. ifixit). File type determines the viewer:
+
+    \b
+      .zim      → serve via kiwix-serve (Docker) + open browser
+      .pmtiles  → serve with local HTTP viewer + open browser
+      .pdf/epub → open with system viewer
+      .sqlite   → print schema + row counts, suggest datasette
+    """
+    from pathlib import Path
+
+    file_path = Path(target)
+
+    # If target looks like a file path (has extension or exists), use it directly.
+    if file_path.suffix or file_path.exists():
+        if not file_path.exists():
+            console.print(f"[red]File not found:[/red] {file_path}")
+            raise SystemExit(1)
+        _show_file(file_path.resolve(), port)
+        return
+
+    # Otherwise, treat as a recipe ID — resolve to an artifact.
+    _show_recipe(target, port)
+
+
+def _find_free_port() -> int:
+    """Find a free TCP port on localhost."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _show_file(file_path, port: int | None) -> None:
+    """Dispatch to the appropriate viewer based on file extension."""
+    from pathlib import Path
+
+    file_path = Path(file_path)
+    suffix = file_path.suffix.lower()
+
+    if suffix == ".zim":
+        _serve_zim(file_path, port)
+    elif suffix == ".pmtiles":
+        _serve_pmtiles(file_path, port)
+    elif suffix in (".pdf", ".epub"):
+        _open_native(file_path)
+    elif suffix in (".sqlite", ".db"):
+        _inspect_sqlite(file_path)
+    else:
+        console.print(f"[yellow]Unknown file type:[/yellow] {suffix}")
+        console.print("Trying system open...")
+        _open_native(file_path)
+
+
+def _serve_zim(file_path, port: int | None) -> None:
+    """Serve a ZIM file via kiwix-serve in Docker."""
+    import subprocess
+    import webbrowser
+
+    from svalbard.docker import has_docker
+
+    if not has_docker():
+        console.print("[red]Docker is required to serve ZIM files but is not available.[/red]")
+        console.print("Install Docker Desktop or start the Docker daemon.")
+        raise SystemExit(1)
+
+    local_port = port or _find_free_port()
+    container_name = f"svalbard-kiwix-{file_path.stem[:20]}-{local_port}"
+    url = f"http://localhost:{local_port}"
+
+    console.print(f"[bold]Serving:[/bold] {file_path.name}")
+    console.print(f"[bold]URL:[/bold]     {url}")
+    console.print(f"[dim]Press Ctrl-C to stop.[/dim]\n")
+
+    docker_cmd = [
+        "docker", "run", "--rm",
+        "--name", container_name,
+        "-p", f"{local_port}:8080",
+        "-v", f"{file_path}:/data/{file_path.name}:ro",
+        "ghcr.io/kiwix/kiwix-serve:latest",
+        file_path.name,
+    ]
+
+    try:
+        # Open browser after a short delay to let the server start.
+        import threading
+
+        def _open_browser():
+            import time
+            time.sleep(1.5)
+            webbrowser.open(url)
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+
+        subprocess.run(docker_cmd, check=True)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopping kiwix-serve...[/dim]")
+        subprocess.run(
+            ["docker", "stop", container_name],
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        console.print(f"[red]kiwix-serve exited with code {exc.returncode}[/red]")
+        raise SystemExit(1)
+
+
+def _serve_pmtiles(file_path, port: int | None) -> None:
+    """Serve a PMTiles file with a simple Python HTTP server + viewer page."""
+    import http.server
+    import threading
+    import webbrowser
+
+    local_port = port or _find_free_port()
+    url = f"http://localhost:{local_port}"
+    parent_dir = file_path.parent
+
+    console.print(f"[bold]Serving:[/bold] {file_path.name}")
+    console.print(f"[bold]URL:[/bold]     {url}/viewer.html")
+    console.print(f"[dim]Press Ctrl-C to stop.[/dim]\n")
+
+    # Write a minimal viewer HTML that loads the PMTiles file.
+    viewer_html = f"""\
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>{file_path.stem} — PMTiles Viewer</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
+  <style>body{{margin:0}}#map{{width:100vw;height:100vh}}</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    let protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+    new maplibregl.Map({{
+      container: "map",
+      style: {{
+        version: 8,
+        sources: {{
+          pmtiles: {{
+            type: "vector",
+            url: "pmtiles://{url}/{file_path.name}",
+          }}
+        }},
+        layers: [{{
+          id: "bg",
+          type: "background",
+          paint: {{"background-color": "#e0e0e0"}}
+        }}]
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+    viewer_path = parent_dir / "viewer.html"
+    _viewer_created = False
+    if not viewer_path.exists():
+        viewer_path.write_text(viewer_html)
+        _viewer_created = True
+
+    handler = http.server.SimpleHTTPRequestHandler
+
+    class QuietHandler(handler):
+        def log_message(self, format, *args):
+            pass  # Suppress request logs
+
+    try:
+        server = http.server.HTTPServer(("127.0.0.1", local_port), QuietHandler)
+        # Serve from the directory containing the PMTiles file.
+        import os
+        os.chdir(str(parent_dir))
+
+        def _open_browser():
+            import time
+            time.sleep(1.0)
+            webbrowser.open(f"{url}/viewer.html")
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+        server.serve_forever()
+    except KeyboardInterrupt:
+        console.print("\n[dim]Server stopped.[/dim]")
+    finally:
+        if _viewer_created and viewer_path.exists():
+            viewer_path.unlink()
+
+
+def _open_native(file_path) -> None:
+    """Open a file with the system default application."""
+    import subprocess
+    import sys
+
+    console.print(f"[bold]Opening:[/bold] {file_path.name}")
+
+    if sys.platform == "darwin":
+        subprocess.run(["open", str(file_path)])
+    elif sys.platform == "linux":
+        subprocess.run(["xdg-open", str(file_path)])
+    else:
+        # Windows
+        import os
+        os.startfile(str(file_path))  # type: ignore[attr-defined]
+
+
+def _inspect_sqlite(file_path) -> None:
+    """Print schema and row counts for an SQLite database."""
+    import sqlite3
+
+    console.print(f"[bold]Database:[/bold] {file_path.name}")
+    console.print(f"[dim]{file_path}[/dim]\n")
+
+    try:
+        conn = sqlite3.connect(str(file_path))
+        cursor = conn.cursor()
+
+        # Get all tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = [row[0] for row in cursor.fetchall()]
+
+        if not tables:
+            console.print("[yellow]No tables found.[/yellow]")
+            conn.close()
+            return
+
+        from rich.table import Table
+
+        table = Table(title="Tables", show_lines=False)
+        table.add_column("Table", style="bold")
+        table.add_column("Rows", justify="right")
+        table.add_column("Columns")
+
+        for tbl in tables:
+            # Row count
+            cursor.execute(f'SELECT COUNT(*) FROM "{tbl}"')
+            row_count = cursor.fetchone()[0]
+
+            # Column info
+            cursor.execute(f'PRAGMA table_info("{tbl}")')
+            cols = [row[1] for row in cursor.fetchall()]
+            col_str = ", ".join(cols[:6])
+            if len(cols) > 6:
+                col_str += f" ... (+{len(cols) - 6})"
+
+            table.add_row(tbl, f"{row_count:,}", col_str)
+
+        console.print(table)
+
+        # Check for FTS tables
+        fts_tables = [t for t in tables if t.endswith("_fts") or "_fts_" in t]
+        if fts_tables:
+            console.print(f"\n[dim]FTS tables detected: {', '.join(fts_tables)}[/dim]")
+
+        conn.close()
+
+    except sqlite3.Error as exc:
+        console.print(f"[red]SQLite error:[/red] {exc}")
+        raise SystemExit(1)
+
+    console.print(f"\n[bold]Tip:[/bold] For interactive exploration, run:")
+    console.print(f"  datasette {file_path}")
+
+
+def _show_recipe(recipe_id: str, port: int | None) -> None:
+    """Resolve a recipe ID to a file and show it."""
+    from pathlib import Path
+
+    from svalbard.presets import _build_recipe_index
+
+    recipe_index = _build_recipe_index()
+    recipe = recipe_index.get(recipe_id)
+
+    if recipe is None:
+        console.print(f"[red]Unknown recipe or file:[/red] {recipe_id}")
+        console.print("[dim]Tip: use a file path (e.g. zim/ifixit.zim) or a known recipe ID.[/dim]")
+        raise SystemExit(1)
+
+    source_type = recipe.get("type", "zim")
+    ext_map = {
+        "zim": ".zim",
+        "pmtiles": ".pmtiles",
+        "pdf": ".pdf",
+        "epub": ".epub",
+        "sqlite": ".sqlite",
+    }
+    ext = ext_map.get(source_type, f".{source_type}")
+
+    # TYPE_DIRS from commands.py
+    type_dirs = {
+        "zim": "zim",
+        "pmtiles": "maps",
+        "pdf": "books",
+        "epub": "books",
+        "gguf": "models",
+    }
+    type_dir = type_dirs.get(source_type, "other")
+
+    # Search for the artifact in current directory (drive root) or library/.
+    cwd = Path.cwd()
+    candidates = [
+        cwd / type_dir / f"{recipe_id}{ext}",
+        cwd / "library" / type_dir / f"{recipe_id}{ext}",
+    ]
+
+    # Also glob for partial matches (files downloaded with dates in names).
+    search_dirs = [cwd / type_dir, cwd / "library" / type_dir]
+    for search_dir in search_dirs:
+        if search_dir.is_dir():
+            for f in search_dir.iterdir():
+                if f.name.startswith(recipe_id) and f.suffix == ext:
+                    candidates.append(f)
+
+    # Find the first existing candidate.
+    found = None
+    for candidate in candidates:
+        if candidate.exists():
+            found = candidate
+            break
+
+    if found is None:
+        console.print(f"[bold]{recipe_id}[/bold] — {recipe.get('description', '')}")
+        console.print(f"  Type: {source_type}, Size: ~{recipe.get('size_gb', '?')} GB\n")
+        console.print(f"[yellow]Artifact not found on disk.[/yellow]")
+
+        build_hint = "svalbard sync" if recipe.get("strategy") == "download" else "svalbard sync (build)"
+        console.print(f"  To obtain it, run [bold]{build_hint}[/bold] on an initialized drive that includes this recipe.")
+
+        from rich.prompt import Confirm
+
+        if Confirm.ask("\n  Search for it across all drives?", default=False):
+            # Look in common mount points.
+            import glob as glob_mod
+            pattern = f"**/{type_dir}/{recipe_id}*{ext}"
+            console.print(f"  [dim]Searching {cwd} for {pattern}...[/dim]")
+            matches = list(cwd.glob(pattern))
+            if matches:
+                console.print(f"  [green]Found:[/green] {matches[0]}")
+                _show_file(matches[0], port)
+            else:
+                console.print("  [yellow]Not found.[/yellow]")
+        return
+
+    console.print(f"[bold]{recipe_id}[/bold] — {recipe.get('description', '')}")
+    console.print(f"  [dim]{found}[/dim]\n")
+    _show_file(found, port)
+
+
+@main.command()
 @click.argument("path", default=".")
 @click.option("--strategy", type=click.Choice(["fast", "standard", "semantic"]), default="fast", help="Indexing strategy tier")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
