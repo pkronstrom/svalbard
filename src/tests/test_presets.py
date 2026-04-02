@@ -1,4 +1,4 @@
-from svalbard.presets import list_presets, load_preset
+from svalbard.presets import list_presets, load_preset, resolve_preset_path
 
 
 def test_parse_finland_128():
@@ -146,3 +146,17 @@ def test_recipes_have_consistent_group_field():
         preset = load_preset(preset_name)
         for source in preset.sources:
             assert source.group, f"Source {source.id} in {preset_name} has no group"
+
+
+def test_resolve_nested_pack():
+    """resolve_preset_path finds packs in subdirectories like embedded/esp32-dev."""
+    path = resolve_preset_path("embedded/esp32-dev")
+    assert path.exists()
+    assert path.name == "esp32-dev.yaml"
+    assert "embedded" in path.parts
+
+
+def test_list_presets_includes_nested():
+    """list_presets returns nested pack names like 'embedded/esp32-dev'."""
+    presets = list_presets()
+    assert "embedded/esp32-dev" in presets

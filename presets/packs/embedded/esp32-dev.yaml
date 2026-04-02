@@ -1,0 +1,10 @@
+name: esp32-dev
+kind: pack
+description: ESP32 offline development — Xtensa toolchain + ESP-IDF framework
+target_size_gb: 2
+sources:
+- toolchain-xtensa-esp-elf
+- framework-espidf
+- tool-esptoolpy
+- toolchain-esp32ulp
+- tool-openocd-esp32

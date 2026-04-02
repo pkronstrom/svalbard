@@ -170,7 +170,9 @@ def list_presets(workspace: Path | str | None = None) -> list[str]:
         names.update(p.stem for p in PRESETS_DIR.glob("*.yaml"))
     packs_dir = PRESETS_DIR / "packs"
     if packs_dir.exists():
-        names.update(p.stem for p in packs_dir.glob("*.yaml"))
+        for p in packs_dir.rglob("*.yaml"):
+            rel = p.relative_to(packs_dir).with_suffix("")
+            names.add(str(rel))
     local_dir = local_presets_dir(workspace)
     if local_dir.exists():
         names.update(p.stem for p in local_dir.glob("*.yaml"))
