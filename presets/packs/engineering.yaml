@@ -1,14 +1,17 @@
 name: engineering
 kind: pack
 description: Embedded systems, 3D printing, and electronics references
-target_size_gb: 3
+target_size_gb: 4
 sources:
 # ── Embedded Q&A ──
 - stackexchange-arduino
 - stackexchange-raspberrypi
 - stackexchange-robotics
+- stackexchange-electronics
+- stackexchange-engineering
 # ── Fabrication ──
 - stackexchange-3dprinting
+- ted-3d-printing
 # ── Language references for embedded ──
 - devdocs-c
 - devdocs-cpp

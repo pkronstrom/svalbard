@@ -96,6 +96,15 @@ def test_homesteading_pack_includes_practical_technology_sources():
     assert "zimgit-food-preparation" in ids
 
 
+def test_engineering_pack_includes_broader_hardware_references():
+    preset = load_preset("packs/engineering")
+    ids = {source.id for source in preset.sources}
+
+    assert "stackexchange-electronics" in ids
+    assert "stackexchange-engineering" in ids
+    assert "ted-3d-printing" in ids
+
+
 def test_default_512_includes_portable_qwen_model():
     preset = load_preset("default-512")
     ids = {source.id for source in preset.sources}
