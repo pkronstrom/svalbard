@@ -1,6 +1,6 @@
 id: qwen-9b
 type: gguf
-group: models
+display_group: models
 tags:
 - computing
 - general-reference

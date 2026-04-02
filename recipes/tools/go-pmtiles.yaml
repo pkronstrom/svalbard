@@ -1,6 +1,6 @@
 id: go-pmtiles
 type: binary
-group: tools
+display_group: tools
 tags:
 - maps
 - navigation

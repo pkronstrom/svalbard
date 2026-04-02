@@ -1,6 +1,6 @@
 id: kiwix-serve
 type: binary
-group: tools
+display_group: tools
 tags:
 - general-reference
 depth: reference-only

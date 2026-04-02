@@ -15,7 +15,7 @@ class License:
 class Source:
     id: str
     type: str  # zim, pmtiles, pdf, gguf, binary, app, iso
-    group: str = ""  # reference, practical, education, maps, regional, models, tools
+    display_group: str = ""  # UI section label: reference, practical, maps, tools
     tags: list[str] = field(default_factory=list)
     depth: str = "comprehensive"  # comprehensive, overview, reference-only
     size_gb: float = 0.0
@@ -42,6 +42,7 @@ class Preset:
     target_size_gb: float
     region: str
     kind: str = "preset"  # preset | pack | test
+    display_group: str = ""
     sources: list[Source] = field(default_factory=list)
 
     @property

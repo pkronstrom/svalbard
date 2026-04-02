@@ -1,6 +1,6 @@
 id: wikipedia-en-all
 type: zim
-group: reference
+display_group: reference
 tags:
 - general-reference
 - medicine

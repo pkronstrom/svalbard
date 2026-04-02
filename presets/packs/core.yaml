@@ -1,5 +1,6 @@
 name: core
 kind: pack
+display_group: Core
 description: Universal foundation — tiny references included on every drive
 target_size_gb: 1
 sources:

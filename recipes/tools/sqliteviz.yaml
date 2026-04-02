@@ -1,6 +1,6 @@
 id: sqliteviz
 type: app
-group: tools
+display_group: tools
 tags: [data, database]
 depth: reference-only
 size_gb: 0.005

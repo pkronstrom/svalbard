@@ -1,5 +1,6 @@
 name: computing
 kind: pack
+display_group: Computing & Dev
 description: Programming references, sysadmin docs, and security resources
 target_size_gb: 3
 sources:

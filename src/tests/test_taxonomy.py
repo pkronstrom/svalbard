@@ -21,6 +21,7 @@ def test_compute_coverage():
 
     assert by_domain["water"].score == 45  # 30 + 15
     assert by_domain["water"].sources == ["src1", "src2"]
+    assert by_domain["water"].taxonomy_group == "survival"
     assert by_domain["fire-shelter"].score == 30
     assert by_domain["dentistry"].score == 0
     assert by_domain["dentistry"].sources == []

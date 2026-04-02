@@ -1,6 +1,6 @@
 id: nomic-embed-text-v1.5
 type: gguf
-group: models
+display_group: models
 tags: [embedding, search]
 depth: reference-only
 size_gb: 0.14

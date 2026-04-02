@@ -4,6 +4,7 @@ __pycache__/
 dist/
 build/
 .venv/
+.worktrees/
 
 *.zim
 *.pmtiles
@@ -31,4 +32,3 @@ local/*
 
 library/*
 !library/README.md
-

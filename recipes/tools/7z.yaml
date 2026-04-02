@@ -1,6 +1,6 @@
 id: 7z
 type: binary
-group: tools
+display_group: tools
 tags:
 - computing
 depth: reference-only

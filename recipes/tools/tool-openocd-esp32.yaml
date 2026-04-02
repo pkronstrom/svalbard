@@ -1,6 +1,6 @@
 id: tool-openocd-esp32
 type: toolchain
-group: tools
+display_group: tools
 tags:
 - embedded
 - esp32

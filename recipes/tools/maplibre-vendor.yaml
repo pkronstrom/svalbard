@@ -1,6 +1,6 @@
 id: maplibre-vendor
 type: app
-group: tools
+display_group: tools
 tags: [maps, viewer]
 depth: reference-only
 size_gb: 0.01

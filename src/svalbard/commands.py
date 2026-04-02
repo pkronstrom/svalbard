@@ -182,7 +182,7 @@ def add_local_source(
             [
                 f"id: {normalized_id}",
                 f"type: {inferred_type}",
-                f"group: {TYPE_GROUPS.get(inferred_type, 'practical')}",
+                f"display_group: {TYPE_GROUPS.get(inferred_type, 'practical')}",
                 "strategy: local",
                 f"path: {stored_path}",
                 f"description: {artifact.stem}",

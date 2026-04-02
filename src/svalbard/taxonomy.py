@@ -18,7 +18,7 @@ DEPTH_SCORES = {
 @dataclass
 class DomainCoverage:
     domain: str
-    group: str
+    taxonomy_group: str
     score: int  # 0-100
     sources: list[str]  # source ids contributing
     depth_breakdown: dict[str, int]  # depth -> count
@@ -59,7 +59,7 @@ def compute_coverage(
         results.append(
             DomainCoverage(
                 domain=domain,
-                group=group,
+                taxonomy_group=group,
                 score=min(raw_score, 100),
                 sources=contributing,
                 depth_breakdown=depth_breakdown,

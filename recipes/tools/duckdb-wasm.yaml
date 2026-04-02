@@ -1,6 +1,6 @@
 id: duckdb-wasm
 type: app
-group: tools
+display_group: tools
 tags: [data, database, analytics]
 depth: reference-only
 size_gb: 0.02

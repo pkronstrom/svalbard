@@ -1,5 +1,6 @@
 name: esp32-dev
 kind: pack
+display_group: Computing & Dev
 description: ESP32 offline development — Xtensa toolchain + ESP-IDF framework
 target_size_gb: 2
 sources:

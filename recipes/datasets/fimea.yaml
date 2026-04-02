@@ -1,6 +1,6 @@
 id: fimea
 type: sqlite
-group: regional
+display_group: regional
 tags: [medical, pharmaceutical]
 depth: comprehensive
 size_gb: 0.01

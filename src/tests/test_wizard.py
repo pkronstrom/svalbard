@@ -2,6 +2,7 @@ from collections import namedtuple
 from pathlib import Path
 
 import svalbard.wizard as wizard
+from svalbard.presets import load_preset
 from svalbard.wizard import detect_volumes, local_sources_for_space, presets_for_space
 
 
@@ -135,7 +136,7 @@ def test_local_sources_for_space_marks_fit_and_overflow(tmp_path):
     (local / "small.yaml").write_text(
         """id: local:small
 type: zim
-group: practical
+display_group: practical
 strategy: local
 path: library/small.zim
 size_bytes: 100000000
@@ -144,7 +145,7 @@ size_bytes: 100000000
     (local / "large.yaml").write_text(
         """id: local:large
 type: zim
-group: practical
+display_group: practical
 strategy: local
 path: library/large.zim
 size_bytes: 3000000000
@@ -155,3 +156,44 @@ size_bytes: 3000000000
     by_id = {source.id: fits for source, _, fits in result}
     assert by_id["local:small"] is True
     assert by_id["local:large"] is False
+
+
+def test_write_custom_preset_creates_loadable_workspace_preset(tmp_path):
+    preset_name = wizard.write_custom_preset(
+        {"kiwix-serve", "wikem"},
+        workspace=tmp_path,
+        target_size_gb=12.0,
+        region="finland",
+        timestamp="20260402-120000",
+    )
+
+    preset = load_preset(preset_name, workspace=tmp_path)
+
+    assert preset.name == "custom-20260402-120000"
+    assert preset.region == "finland"
+    assert [source.id for source in preset.sources] == ["kiwix-serve", "wikem"]
+
+
+def test_wizard_preset_mode_preserves_sources_missing_from_packs(tmp_path, monkeypatch):
+    target = tmp_path / "drive"
+    target.mkdir()
+
+    monkeypatch.setattr(wizard, "_clear", lambda: None)
+    monkeypatch.setattr(wizard, "run_picker", lambda *args, **kwargs: {"kiwix-serve"})
+    monkeypatch.setattr(wizard, "local_sources_for_space", lambda *args, **kwargs: [])
+    monkeypatch.setattr(wizard.Confirm, "ask", lambda *args, **kwargs: False)
+
+    wizard.run_wizard(
+        target_path=str(target),
+        preset_name="finland-128",
+        workspace=tmp_path,
+    )
+
+    preset_files = list((tmp_path / "local" / "presets").glob("custom-*.yaml"))
+    assert len(preset_files) == 1
+
+    custom_preset = load_preset(preset_files[0].stem, workspace=tmp_path)
+    source_ids = {source.id for source in custom_preset.sources}
+    assert "kiwix-serve" in source_ids
+    assert "grimgrains" in source_ids
+    assert "100-rabbits" in source_ids

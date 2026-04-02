@@ -2,8 +2,10 @@ import os
 import platform
 import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
+import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
@@ -12,7 +14,8 @@ from rich.table import Table
 from svalbard.commands import init_drive, sync_drive
 from svalbard.local_sources import load_local_sources
 from svalbard.paths import workspace_root as resolve_workspace_root
-from svalbard.presets import list_presets, load_preset
+from svalbard.picker import build_picker_tree, run_picker
+from svalbard.presets import list_presets, load_preset, local_presets_dir
 
 console = Console()
 
@@ -172,6 +175,66 @@ def local_sources_for_space(
     return result
 
 
+def load_pack_presets(workspace: Path | str | None = None) -> list:
+    """Load all pack presets available in the workspace."""
+    workspace_root = resolve_workspace_root(workspace)
+    packs = []
+    for name in list_presets(workspace=workspace_root):
+        try:
+            preset = load_preset(name, workspace=workspace_root)
+        except (FileNotFoundError, ValueError, KeyError):
+            continue
+        if preset.kind == "pack":
+            packs.append(preset)
+    return sorted(packs, key=lambda preset: (preset.display_group or "Other", preset.name))
+
+
+def pick_sources_via_packs(
+    *,
+    free_gb: float,
+    workspace: Path | str | None = None,
+    checked_ids: set[str] | None = None,
+) -> set[str]:
+    """Open the interactive pack picker with optional pre-checked source ids."""
+    checked_ids = checked_ids or set()
+    packs = load_pack_presets(workspace)
+    pack_source_ids = {source.id for pack in packs for source in pack.sources}
+    hidden_checked_ids = checked_ids - pack_source_ids
+    tree = build_picker_tree(packs, checked_ids=checked_ids)
+    return run_picker(tree, free_gb=free_gb) | hidden_checked_ids
+
+
+def write_custom_preset(
+    selected_ids: set[str],
+    *,
+    workspace: Path | str | None = None,
+    target_size_gb: float = 0,
+    region: str = "",
+    description: str | None = None,
+    timestamp: str | None = None,
+) -> str:
+    """Persist a picker selection as a workspace-local preset and return its name."""
+    workspace_root = resolve_workspace_root(workspace)
+    preset_name = f"custom-{timestamp or datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    preset_path = local_presets_dir(workspace_root) / f"{preset_name}.yaml"
+    preset_path.parent.mkdir(parents=True, exist_ok=True)
+    preset_path.write_text(
+        yaml.safe_dump(
+            {
+                "name": preset_name,
+                "kind": "preset",
+                "description": description or f"Custom selection — {len(selected_ids)} sources",
+                "target_size_gb": target_size_gb,
+                "region": region,
+                "sources": sorted(selected_ids),
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    )
+    return preset_name
+
+
 def _clear():
     """Clear terminal screen."""
     console.clear()
@@ -182,7 +245,12 @@ def _width() -> int:
     return max(80, min(120, console.width - 2))
 
 
-def run_wizard(target_path: str | None = None, preset_name: str | None = None):
+def run_wizard(
+    target_path: str | None = None,
+    preset_name: str | None = None,
+    browse_only: bool = False,
+    workspace: Path | str | None = None,
+):
     """Run the interactive setup wizard."""
     _clear()
     console.print(Panel(
@@ -250,85 +318,119 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
     except OSError:
         free_gb = 0
 
-    if preset_name is None:
-        # Step 2: Region
+    workspace_root = resolve_workspace_root(workspace)
+    selected_region = ""
+    checked_ids: set[str] = set()
+
+    if preset_name is not None:
+        base_preset = load_preset(preset_name, workspace=workspace_root)
+        selected_region = base_preset.region
+        checked_ids = {source.id for source in base_preset.sources}
+    elif not browse_only:
         _clear()
-        console.print("\n[bold]Step 2/4 — Region[/bold]")
+        console.print("\n[bold]Step 2 — Configure[/bold]")
+        console.print("  How would you like to set up this drive?\n")
+        console.print("  [bold]1[/bold]) Use a preset [dim](recommended)[/dim]")
+        console.print("      Pre-configured for your drive size and region")
+        console.print("  [bold]2[/bold]) Customize")
+        console.print("      Browse all content and pick what you want")
 
-        regions = available_regions()
-        if not regions:
-            console.print("[red]No preset regions available.[/red]")
-            return
+        mode = Prompt.ask("\n  Select", choices=["1", "2"], default="1")
+        if mode == "1":
+            _clear()
+            console.print("\n[bold]Step 3 — Region[/bold]")
 
-        region_choices = {str(i): region for i, region in enumerate(regions, 1)}
-        for key, region in region_choices.items():
-            console.print(f"  [bold]{key}[/bold]) {region}")
+            regions = available_regions()
+            if not regions:
+                console.print("[red]No preset regions available.[/red]")
+                return
 
-        default_region = "finland" if "finland" in regions else regions[0]
-        default_region_key = next(
-            key for key, region in region_choices.items() if region == default_region
-        )
-        region_choice = Prompt.ask(
-            "\n  Select",
-            choices=list(region_choices.keys()),
-            default=default_region_key,
-        )
-        selected_region = region_choices[region_choice]
+            region_choices = {str(i): region for i, region in enumerate(regions, 1)}
+            for key, region in region_choices.items():
+                console.print(f"  [bold]{key}[/bold]) {region}")
 
-        # Step 3: Preset
-        _clear()
-        console.print("\n[bold]Step 3/4 — Preset[/bold]")
-        all_presets = presets_for_space(free_gb, region=selected_region) if free_gb > 0 else []
+            default_region = "finland" if "finland" in regions else regions[0]
+            default_region_key = next(
+                key for key, region in region_choices.items() if region == default_region
+            )
+            region_choice = Prompt.ask(
+                "\n  Select",
+                choices=list(region_choices.keys()),
+                default=default_region_key,
+            )
+            selected_region = region_choices[region_choice]
 
-        if not all_presets:
-            if free_gb > 0:
-                console.print(f"[red]No presets available for region '{selected_region}'.[/red]")
-            else:
-                console.print("[red]Could not determine free space at target.[/red]")
-            return
+            _clear()
+            console.print("\n[bold]Step 4 — Preset[/bold]")
+            all_presets = presets_for_space(free_gb, region=selected_region) if free_gb > 0 else []
 
-        console.print(f"  Presets ({free_gb:.0f} GB free):\n")
-        preset_choices = {}
-        recommended = None
+            if not all_presets:
+                if free_gb > 0:
+                    console.print(f"[red]No presets available for region '{selected_region}'.[/red]")
+                else:
+                    console.print("[red]Could not determine free space at target.[/red]")
+                return
 
-        preset_table = Table(show_header=False, box=None, padding=(0, 1), width=_width())
-        preset_table.add_column("#", width=3, no_wrap=True)
-        preset_table.add_column("Name", width=14, no_wrap=True)
-        preset_table.add_column("Size", width=7, no_wrap=True, justify="right")
-        preset_table.add_column("Description", ratio=1)
+            console.print(f"  Presets ({free_gb:.0f} GB free):\n")
+            preset_choices = {}
+            recommended = None
 
-        for i, (name, content_gb, fits) in enumerate(all_presets, 1):
-            p = load_preset(name, workspace=resolve_workspace_root())
-            preset_choices[str(i)] = name
-            style = "" if fits else "dim"
-            if fits:
-                recommended = str(i)
-                size_str = f"~{content_gb:.0f} GB"
-            else:
-                size_str = f"~{content_gb:.0f} GB"
-            desc = p.description
-            if not fits:
-                desc += f" (needs ~{content_gb - free_gb:.0f} GB more)"
-            preset_table.add_row(f"[bold]{i}[/bold]", name, size_str, desc, style=style)
+            preset_table = Table(show_header=False, box=None, padding=(0, 1), width=_width())
+            preset_table.add_column("#", width=3, no_wrap=True)
+            preset_table.add_column("Name", width=14, no_wrap=True)
+            preset_table.add_column("Size", width=7, no_wrap=True, justify="right")
+            preset_table.add_column("Description", ratio=1)
 
-        console.print(preset_table)
+            for i, (name, content_gb, fits) in enumerate(all_presets, 1):
+                preset = load_preset(name, workspace=workspace_root)
+                preset_choices[str(i)] = name
+                style = "" if fits else "dim"
+                if fits:
+                    recommended = str(i)
+                desc = preset.description
+                if not fits:
+                    desc += f" (needs ~{content_gb - free_gb:.0f} GB more)"
+                preset_table.add_row(
+                    f"[bold]{i}[/bold]",
+                    name,
+                    f"~{content_gb:.0f} GB",
+                    desc,
+                    style=style,
+                )
 
-        if recommended:
-            console.print(f"\n  [green]Enter = {preset_choices[recommended]} (recommended)[/green]")
+            console.print(preset_table)
+            if recommended:
+                console.print(
+                    f"\n  [green]Enter = {preset_choices[recommended]} (recommended)[/green]"
+                )
+            choice = Prompt.ask(
+                "\n  Select",
+                choices=list(preset_choices.keys()),
+                default=recommended or "1",
+            )
+            preset_name = preset_choices[choice]
+            base_preset = load_preset(preset_name, workspace=workspace_root)
+            checked_ids = {source.id for source in base_preset.sources}
 
-        default_choice = recommended or "1"
-        choice = Prompt.ask("\n  Select", choices=list(preset_choices.keys()), default=default_choice)
-        preset_name = preset_choices[choice]
-    else:
-        console.print(f"\n  [bold]Preset:[/bold] {preset_name}")
-
-    preset = load_preset(preset_name, workspace=resolve_workspace_root())
+    _clear()
+    console.print("\n[bold]Step 5 — Pack Picker[/bold]")
+    selected_ids = pick_sources_via_packs(
+        free_gb=free_gb,
+        workspace=workspace_root,
+        checked_ids=checked_ids,
+    )
+    preset_name = write_custom_preset(
+        selected_ids,
+        workspace=workspace_root,
+        target_size_gb=free_gb,
+        region=selected_region,
+    )
+    preset = load_preset(preset_name, workspace=workspace_root)
 
     selected_local_ids: list[str] = []
     selected_local_sources = []
-    workspace = resolve_workspace_root()
     remaining_gb = max(free_gb - sum(s.size_gb for s in preset.sources), 0)
-    local_candidates = local_sources_for_space(remaining_gb, root=workspace)
+    local_candidates = local_sources_for_space(remaining_gb, root=workspace_root)
     if local_candidates:
         _clear()
         console.print("\n[bold]Step 4/5 — Local Sources[/bold]")
@@ -400,7 +502,7 @@ def run_wizard(target_path: str | None = None, preset_name: str | None = None):
     init_drive(
         target_path,
         preset_name,
-        workspace_root=str(workspace),
+        workspace_root=str(workspace_root),
         local_sources=selected_local_ids,
     )
     _clear()

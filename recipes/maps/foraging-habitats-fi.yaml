@@ -1,6 +1,6 @@
 id: foraging-habitats-fi
 type: pmtiles
-group: maps
+display_group: maps
 tags: [food, foraging, survival]
 depth: comprehensive
 size_gb: 0.04

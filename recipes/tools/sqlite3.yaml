@@ -1,6 +1,6 @@
 id: sqlite3
 type: binary
-group: tools
+display_group: tools
 tags: [search, database]
 depth: reference-only
 size_gb: 0.002

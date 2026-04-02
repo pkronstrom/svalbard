@@ -15,6 +15,8 @@ def workspace_root(explicit: Path | str | None = None) -> Path:
 
 def _source_from_recipe(recipe: dict) -> Source:
     kwargs = {k: v for k, v in recipe.items() if k in Source.__dataclass_fields__}
+    if "display_group" not in kwargs and "group" in recipe:
+        kwargs["display_group"] = recipe["group"]
     if "license" in kwargs and isinstance(kwargs["license"], dict):
         kwargs["license"] = License(**kwargs["license"])
     return Source(**kwargs)
@@ -66,7 +68,7 @@ def active_sources_for_manifest(manifest: Manifest, preset) -> list[Source]:
             Source(
                 id=source_id,
                 type="unknown",
-                group="local",
+                display_group="local",
                 strategy="local",
                 path=snapshot.path if snapshot else "",
                 size_bytes=snapshot.size_bytes if snapshot else 0,
