@@ -144,10 +144,39 @@ Most of the new-recipe work here falls into three categories:
 
 ---
 
+## TODO: Curated Datasheet ZIM
+
+Build a custom ZIM archive of datasheets for common chips, modules, and components. Target audience: hobbyist/professional with a home electronics bench. Should be searchable offline.
+
+**Approach options:**
+1. **Curated PDF bundle → ZIM** — hand-pick datasheets for the most common chips/modules, package with an HTML index into a browsable ZIM. Most practical.
+2. **SQLite component database** — structured data (pinouts, specs, package info) with linked PDF datasheets. More ambitious but much more useful for search.
+3. **Hybrid** — SQLite index + PDF blobs, viewable via sqliteviz or a simple HTML viewer on the drive.
+
+**Candidate components to include:**
+- **MCUs:** ESP32, ESP8266, RP2040, ATmega328P, STM32F103, ATtiny85, SAMD21
+- **Sensors:** BME280, BMP280, DHT22, MPU6050, ADXL345, BH1750, TSL2561, DS18B20, HC-SR04, VL53L0X
+- **Displays:** SSD1306 (OLED), ILI9341 (TFT), ST7789, HD44780 (character LCD), MAX7219 (LED matrix)
+- **Power:** LM7805, AMS1117, MT3608, LM2596, TP4056 (LiPo charger), INA219 (current sensor)
+- **Communication:** nRF24L01, SX1276/8 (LoRa), CC1101, W5500 (Ethernet), ENC28J60, MCP2515 (CAN)
+- **Motor drivers:** L298N, DRV8825, A4988, TB6612FNG, L293D
+- **Audio:** MAX98357A (I2S amp), PCM5102A (DAC), INMP441 (MEMS mic)
+- **Logic/misc:** 74HC595, CD4051, MCP23017 (I/O expander), ADS1115 (ADC), PCF8574, NE555
+- **Modules:** relay boards, SD card adapters, RTC (DS3231), GPS (NEO-6M), GSM (SIM800L)
+- **Connectors/passives:** common resistor/capacitor/inductor series reference tables
+
+**Size estimate:** ~100-300 MB depending on depth (datasheets are typically 20-80 pages each)
+
+**Open questions:**
+- Should this be a personal `.local.` recipe or a public one? Many vendor datasheets are freely distributed but not explicitly open-licensed.
+- Include application notes alongside datasheets? AN are often more useful than the datasheet itself.
+- Build tooling: Python script that fetches PDFs from vendor sites → packages into ZIM with search index?
+
+---
+
 ## Open Questions
 
 - How much of LibreTexts Engineering is actually EE vs. civil/environmental? If it is mostly non-EE, the pack may need more targeted electrical engineering textbook content.
-- Should common component datasheets be bundled as a flat PDF collection, or converted into a searchable HTML/SQLite reference? A curated "top 50 components" datasheet pack would be more useful than a raw dump.
 - Is the RepRap Wiki still actively maintained, or has the community moved to other resources? The wiki is large and some content may be outdated (pre-2020 printer designs). A focused subset might be better than a full crawl.
 - Should KiCad symbol/footprint libraries be bundled alongside docs? They are CC BY-SA 4.0 and essential for actual PCB design, but add significant size (~1-2 GB with 3D models).
 - How to handle the Prusa Knowledge Base -- it is one of the best 3D printing troubleshooting resources, but its license for offline redistribution is unclear (not standard CC, not explicitly restricted either).
