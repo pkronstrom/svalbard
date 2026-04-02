@@ -1,0 +1,15 @@
+id: makeityourself
+type: zim
+group: practical
+tags: [diy, maker, 3d-printing, woodworking, sewing, electronics]
+size_gb: 3.5
+description: "1000+ curated DIY projects archived from makeityourself.org"
+strategy: build
+build:
+  family: custom
+  builder: makeityourself-zim.py
+  source_url: https://makeityourself.org/MIY.pdf
+license:
+  id: mixed
+  attribution: "Curated by NODE (makeityourself.org). Individual project licenses vary."
+  note: "PDF has no explicit license. Projects are CC-BY-SA, CC-BY-NC, MIT, etc."
