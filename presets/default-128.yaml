@@ -3,46 +3,20 @@ description: Region-neutral broad reference, education, and practical guides for
   128GB drive
 target_size_gb: 128
 region: default
+extends:
+  - default-64
 sources:
-- wikipedia-en-nopic
-- wiktionary-en
-- wikimed
-- wikem
-- ifixit
-- practical-action
-- who-basic-emergency-care
-- fas-military-medicine
-- zimgit-water
-- zimgit-knots
-- zimgit-medicine
-- zimgit-food-preparation
-- zimgit-post-disaster
-- based-cooking
-- grimgrains
-- usda-nutrition
-- 100-rabbits
+# ── Practical ──
 - lowtech-magazine
 - cd3wd
 - appropedia
-- stackexchange-survival
-- stackexchange-diy
+- quick-guides-medicine
+# ── Q&A ──
 - stackexchange-gardening
 - stackexchange-cooking
-- stackexchange-sustainability
-- wikibooks-en
+# ── Education ──
 - khan-academy
 - gutenberg
 - libretexts-engineering
 - libretexts-medicine
 - libretexts-geosciences
-- quick-guides-medicine
-- natural-earth
-- cyberchef
-- age
-- kiwix-serve
-- toybox
-- dufs
-- fzf
-- 7z
-- sqlite3
-- nomic-embed-text-v1.5

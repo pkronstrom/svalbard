@@ -2,61 +2,15 @@ name: finland-256
 description: Rich coverage with Finnish focus, Nordic languages, and expanded references
 target_size_gb: 256
 region: finland
+extends:
+  - default-256
+  - fi-maps
 sources:
-- wikipedia-en-maxi
+# ── Finnish language ──
 - wikipedia-fi-nopic
+- wiktionary-fi
+# ── Nordic languages ──
 - wikipedia-sv-nopic
 - wikipedia-no-nopic
-- wiktionary-en
-- wiktionary-fi
-- wikimed
-- wikem
-- medlineplus
-- ifixit
-- practical-action
-- who-basic-emergency-care
-- fas-military-medicine
-- ready-gov
-- zimgit-water
-- zimgit-knots
-- zimgit-medicine
-- zimgit-food-preparation
-- zimgit-post-disaster
-- based-cooking
-- grimgrains
-- usda-nutrition
-- 100-rabbits
-- lowtech-magazine
-- cd3wd
-- appropedia
-- energypedia
-- stackexchange-survival
-- stackexchange-diy
-- stackexchange-gardening
-- stackexchange-cooking
-- stackexchange-amateur-radio
-- stackexchange-electronics
-- stackexchange-physics
-- stackexchange-sustainability
-- wikibooks-en
-- khan-academy
-- gutenberg
-- libretexts-engineering
-- libretexts-chemistry
-- libretexts-biology
-- libretexts-physics
-- libretexts-math
-- libretexts-medicine
-- libretexts-geosciences
-- libretexts-statistics
-- quick-guides-medicine
-- natural-earth
-- cyberchef
-- age
-- kiwix-serve
-- toybox
-- dufs
-- fzf
-- 7z
-- sqlite3
-- nomic-embed-text-v1.5
+# ── Finnish-specific ──
+- fimea

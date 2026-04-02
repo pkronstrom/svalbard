@@ -2,76 +2,17 @@ name: finland-1tb
 description: Full Finnish-first coverage with large references and advanced tooling
 target_size_gb: 1024
 region: finland
+extends:
+  - default-1tb
+  - fi-maps
 sources:
-- wikipedia-en-maxi
+# ── Finnish language ──
 - wikipedia-fi-nopic
+- wiktionary-fi
+# ── Nordic + neighbouring languages ──
 - wikipedia-sv-nopic
 - wikipedia-no-nopic
 - wikipedia-da-nopic
 - wikipedia-de-nopic
-- wiktionary-en
-- wiktionary-fi
-- wikimed
-- wikem
-- medlineplus
-- ifixit
-- practical-action
-- who-basic-emergency-care
-- fas-military-medicine
-- ready-gov
-- zimgit-water
-- zimgit-knots
-- zimgit-medicine
-- zimgit-food-preparation
-- zimgit-post-disaster
-- based-cooking
-- grimgrains
-- usda-nutrition
-- 100-rabbits
-- lowtech-magazine
-- cd3wd
-- appropedia
-- energypedia
-- stackexchange-survival
-- stackexchange-diy
-- stackexchange-gardening
-- stackexchange-cooking
-- stackexchange-amateur-radio
-- stackexchange-electronics
-- stackexchange-physics
-- stackexchange-math
-- stackexchange-chemistry
-- stackexchange-biology
-- stackexchange-engineering
-- stackexchange-sustainability
-- wikibooks-en
-- khan-academy
-- gutenberg
-- libretexts-engineering
-- libretexts-chemistry
-- libretexts-biology
-- libretexts-physics
-- libretexts-math
-- libretexts-medicine
-- libretexts-geosciences
-- libretexts-statistics
-- quick-guides-medicine
-- canadian-prepper-bugout-concepts
-- canadian-prepper-bugout-roll
-- canadian-prepper-prepping-food
-- canadian-prepper-winter-prepping
-- urban-prepper
-- s2-underground
-- lrn-self-reliance
-- natural-earth
-- qwen-35b-a3b
-- llama-server
-- cyberchef
-- age
-- kiwix-serve
-- toybox
-- dufs
-- fzf
-- 7z
-- sqlite3
-- nomic-embed-text-v1.5
+# ── Finnish-specific ──
+- fimea

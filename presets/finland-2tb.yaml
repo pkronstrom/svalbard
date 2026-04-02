@@ -3,81 +3,19 @@ description: Maximum Finnish-first archive with full encyclopedias and broad lan
   coverage
 target_size_gb: 2048
 region: finland
+extends:
+  - default-2tb
+  - fi-maps
 sources:
-- wikipedia-en-all
+# ── Finnish language (full) ──
 - wikipedia-fi-all
+- wiktionary-fi
+# ── Nordic + neighbouring languages (full where available) ──
 - wikipedia-sv-all
 - wikipedia-no-all
 - wikipedia-da-all
 - wikipedia-de-all
 - wikipedia-ru-nopic
 - wikipedia-et-nopic
-- wiktionary-en
-- wiktionary-fi
-- wikimed
-- wikem
-- medlineplus
-- ifixit
-- practical-action
-- who-basic-emergency-care
-- fas-military-medicine
-- ready-gov
-- zimgit-water
-- zimgit-knots
-- zimgit-medicine
-- zimgit-food-preparation
-- zimgit-post-disaster
-- based-cooking
-- grimgrains
-- usda-nutrition
-- 100-rabbits
-- lowtech-magazine
-- cd3wd
-- appropedia
-- energypedia
-- stackexchange-survival
-- stackexchange-diy
-- stackexchange-gardening
-- stackexchange-cooking
-- stackexchange-amateur-radio
-- stackexchange-electronics
-- stackexchange-physics
-- stackexchange-math
-- stackexchange-chemistry
-- stackexchange-biology
-- stackexchange-engineering
-- stackexchange-serverfault
-- stackexchange-superuser
-- stackexchange-sustainability
-- wikibooks-en
-- khan-academy
-- gutenberg
-- libretexts-engineering
-- libretexts-chemistry
-- libretexts-biology
-- libretexts-physics
-- libretexts-math
-- libretexts-medicine
-- libretexts-geosciences
-- libretexts-statistics
-- quick-guides-medicine
-- canadian-prepper-bugout-concepts
-- canadian-prepper-bugout-roll
-- canadian-prepper-prepping-food
-- canadian-prepper-winter-prepping
-- urban-prepper
-- s2-underground
-- lrn-self-reliance
-- natural-earth
-- qwen-35b-a3b
-- qwen-9b
-- llama-server
-- cyberchef
-- age
-- kiwix-serve
-- toybox
-- dufs
-- fzf
-- 7z
-- sqlite3
-- nomic-embed-text-v1.5
+# ── Finnish-specific ──
+- fimea

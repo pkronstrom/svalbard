@@ -2,66 +2,18 @@ name: default-512
 description: Region-neutral large reference archive with a first local LLM tier
 target_size_gb: 512
 region: default
+extends:
+  - default-256
 sources:
-- wikipedia-en-maxi
-- wiktionary-en
-- wikimed
-- wikem
-- medlineplus
-- ifixit
-- practical-action
-- who-basic-emergency-care
-- fas-military-medicine
-- ready-gov
-- zimgit-water
-- zimgit-knots
-- zimgit-medicine
-- zimgit-food-preparation
-- zimgit-post-disaster
-- based-cooking
-- grimgrains
-- usda-nutrition
-- 100-rabbits
-- lowtech-magazine
-- cd3wd
-- appropedia
-- energypedia
-- stackexchange-survival
-- stackexchange-diy
-- stackexchange-gardening
-- stackexchange-cooking
-- stackexchange-amateur-radio
-- stackexchange-electronics
-- stackexchange-physics
+# ── Q&A ──
 - stackexchange-math
-- stackexchange-sustainability
-- wikibooks-en
-- khan-academy
-- gutenberg
-- libretexts-engineering
-- libretexts-chemistry
-- libretexts-biology
-- libretexts-physics
-- libretexts-math
-- libretexts-medicine
-- libretexts-geosciences
-- libretexts-statistics
-- quick-guides-medicine
+# ── Preparedness media ──
 - canadian-prepper-bugout-concepts
 - canadian-prepper-bugout-roll
 - canadian-prepper-prepping-food
 - canadian-prepper-winter-prepping
 - urban-prepper
 - s2-underground
-- natural-earth
+# ── Local AI ──
 - qwen-9b
 - llama-server
-- cyberchef
-- age
-- kiwix-serve
-- toybox
-- dufs
-- fzf
-- 7z
-- sqlite3
-- nomic-embed-text-v1.5

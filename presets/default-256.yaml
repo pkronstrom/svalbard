@@ -2,57 +2,24 @@ name: default-256
 description: Region-neutral expanded reference and practical archive for a 256GB drive
 target_size_gb: 256
 region: default
+extends:
+  - default-128
 sources:
+# ── Wikipedia upgrade ──
+- -wikipedia-en-nopic
 - wikipedia-en-maxi
-- wiktionary-en
-- wikimed
-- wikem
+# ── Expanded medical ──
 - medlineplus
-- ifixit
-- practical-action
-- who-basic-emergency-care
-- fas-military-medicine
+# ── Preparedness ──
 - ready-gov
-- zimgit-water
-- zimgit-knots
-- zimgit-medicine
-- zimgit-food-preparation
-- zimgit-post-disaster
-- based-cooking
-- grimgrains
-- usda-nutrition
-- 100-rabbits
-- lowtech-magazine
-- cd3wd
-- appropedia
 - energypedia
-- stackexchange-survival
-- stackexchange-diy
-- stackexchange-gardening
-- stackexchange-cooking
+# ── Q&A ──
 - stackexchange-amateur-radio
 - stackexchange-electronics
 - stackexchange-physics
-- stackexchange-sustainability
-- wikibooks-en
-- khan-academy
-- gutenberg
-- libretexts-engineering
+# ── Education ──
 - libretexts-chemistry
 - libretexts-biology
 - libretexts-physics
 - libretexts-math
-- libretexts-medicine
-- libretexts-geosciences
 - libretexts-statistics
-- quick-guides-medicine
-- natural-earth
-- cyberchef
-- age
-- kiwix-serve
-- toybox
-- dufs
-- fzf
-- 7z
-- sqlite3
-- nomic-embed-text-v1.5

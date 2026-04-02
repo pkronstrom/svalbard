@@ -2,25 +2,6 @@ name: finland-32
 description: Survival essentials with Finnish-language support for a 32GB USB stick
 target_size_gb: 32
 region: finland
-sources:
-- wikipedia-en-nopic
-- wikimed
-- wikem
-- practical-action
-- who-basic-emergency-care
-- zimgit-water
-- zimgit-knots
-- zimgit-medicine
-- zimgit-food-preparation
-- based-cooking
-- grimgrains
-- usda-nutrition
-- stackexchange-survival
-- cyberchef
-- kiwix-serve
-- toybox
-- dufs
-- fzf
-- 7z
-- sqlite3
-- nomic-embed-text-v1.5
+extends:
+  - default-32
+sources: []

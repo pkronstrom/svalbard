@@ -3,16 +3,13 @@ description: Finnish + English reference and practical guides for a 128GB drive
 target_size_gb: 128
 region: finland
 extends:
-  - fi-reference
-  - fi-survival
+  - default-128
   - fi-maps
-  - tools-base
 sources:
-# ── Additional sources not in packs ──
-- grimgrains
-- 100-rabbits
-- stackexchange-gardening
-- stackexchange-cooking
+# ── Finnish language ──
+- wikipedia-fi-nopic
+- wiktionary-fi
+# ── Finnish-specific ──
+- fimea
+# ── Early introduction (default gets this at 256) ──
 - stackexchange-amateur-radio
-- stackexchange-sustainability
-- dufs

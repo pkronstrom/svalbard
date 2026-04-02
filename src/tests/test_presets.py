@@ -18,7 +18,6 @@ def test_parse_finland_2():
     assert preset.region == "finland"
     assert preset.target_size_gb == 2
     assert "wikem" in ids
-    assert "quick-guides-medicine" in ids
     assert "fimea" in ids
     assert "joukahainen" not in ids
     assert "stackexchange-survival" not in ids

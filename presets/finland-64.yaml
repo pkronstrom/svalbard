@@ -2,38 +2,14 @@ name: finland-64
 description: Broader coverage with Finnish + English reference and practical guides
 target_size_gb: 64
 region: finland
+extends:
+  - default-64
+  - fi-maps
 sources:
-- wikipedia-en-nopic
+# ── Finnish language ──
 - wikipedia-fi-nopic
-- wiktionary-en
 - wiktionary-fi
-- wikimed
-- wikem
-- ifixit
-- practical-action
-- who-basic-emergency-care
-- fas-military-medicine
-- zimgit-water
-- zimgit-knots
-- zimgit-medicine
-- zimgit-food-preparation
-- zimgit-post-disaster
-- based-cooking
-- grimgrains
-- usda-nutrition
-- 100-rabbits
-- stackexchange-survival
-- stackexchange-diy
+# ── Finnish-specific ──
+- fimea
+# ── Early introduction (default gets these at 128) ──
 - stackexchange-gardening
-- stackexchange-sustainability
-- wikibooks-en
-- natural-earth
-- cyberchef
-- age
-- kiwix-serve
-- toybox
-- dufs
-- fzf
-- 7z
-- sqlite3
-- nomic-embed-text-v1.5
