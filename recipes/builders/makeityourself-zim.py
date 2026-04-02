@@ -1305,6 +1305,18 @@ EXTRACTORS: dict[str, type[BaseExtractor]] = {
 }
 
 
+CRAWL_WORKERS = 6  # total concurrent crawl threads
+
+# Max concurrent crawls per domain — rate-limited sites get 1
+DOMAIN_CONCURRENCY: dict[str, int] = {
+    "printables": 2,
+    "thingiverse": 1,
+    "github": 2,
+    "instructables": 2,
+    "generic": 4,  # spread across many different domains
+}
+
+
 def stage_crawl(
     state: PipelineState,
     verified: list[VerifiedLink],
@@ -1312,7 +1324,10 @@ def stage_crawl(
     printables_token: str = "",
     thingiverse_token: str = "",
 ) -> list[CrawlResult]:
-    """Crawl all verified links using appropriate extractors."""
+    """Crawl all verified links using appropriate extractors (parallel)."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     log.info("Stage 3: Crawling %d links...", len(verified))
 
     # Load existing progress
@@ -1325,7 +1340,7 @@ def stage_crawl(
     to_crawl = []
     for v in verified:
         if v.status == "dead":
-            continue  # Nothing to crawl
+            continue
         existing = progress.get(v.url)
         if existing:
             if existing["status"] == "completed" and not retry_failed:
@@ -1339,16 +1354,24 @@ def stage_crawl(
         log.info("  All links already crawled")
         return [CrawlResult(**p) for p in progress.values()]
 
-    log.info("  %d links to crawl (%d already done)", len(to_crawl), len(progress) - len(to_crawl))
+    log.info("  %d links to crawl (%d already done)", len(to_crawl), len(progress))
 
     # Group by extractor for stats
-    by_ext = {}
+    by_ext: dict[str, list] = {}
     for v in to_crawl:
-        by_ext.setdefault(v.extractor, []).append(v)
+        by_ext.setdefault(v.extractor or "generic", []).append(v)
     for ext, items in sorted(by_ext.items()):
         log.info("    %s: %d", ext, len(items))
 
     state.sites_dir.mkdir(parents=True, exist_ok=True)
+
+    # Per-extractor semaphores for rate limiting
+    ext_sems: dict[str, threading.Semaphore] = {
+        name: threading.Semaphore(DOMAIN_CONCURRENCY.get(name, 2))
+        for name in EXTRACTORS
+    }
+    progress_lock = threading.Lock()
+    counter = {"done": 0}
 
     with httpx.Client(timeout=60, follow_redirects=True) as client:
         extractors: dict[str, BaseExtractor] = {}
@@ -1360,32 +1383,48 @@ def stage_crawl(
             else:
                 extractors[name] = cls(client, state.sites_dir)
 
-        for i, v in enumerate(to_crawl):
+        def _crawl_one(v: VerifiedLink) -> CrawlResult:
             ext_name = v.extractor or "generic"
             extractor = extractors.get(ext_name, extractors["generic"])
-
+            sem = ext_sems.get(ext_name, ext_sems["generic"])
             attempts = progress.get(v.url, {}).get("attempts", 0) + 1
 
-            log.info("  [%d/%d] %s → %s: %s", i + 1, len(to_crawl), ext_name, v.status, v.url[:80])
+            with sem:  # per-domain rate limit
+                try:
+                    result = extractor.extract(v)
+                    result.attempts = attempts
+                except Exception as e:
+                    log.error("    FAILED: %s", e)
+                    result = CrawlResult(
+                        url=v.url, status="failed", extractor=ext_name,
+                        error=str(e)[:200], attempts=attempts,
+                        ts=datetime.now(timezone.utc).isoformat(),
+                    )
 
-            try:
-                result = extractor.extract(v)
-                result.attempts = attempts
-            except Exception as e:
-                log.error("    FAILED: %s", e)
-                result = CrawlResult(
-                    url=v.url, status="failed", extractor=ext_name,
-                    error=str(e)[:200], attempts=attempts,
-                    ts=datetime.now(timezone.utc).isoformat(),
-                )
-
-            progress[v.url] = asdict(result)
-            _append_jsonl(state.progress_file, result)
+            with progress_lock:
+                counter["done"] += 1
+                n = counter["done"]
+                progress[v.url] = asdict(result)
+                _append_jsonl(state.progress_file, result)
 
             if result.status == "completed":
-                log.info("    OK: %s (%d files, %.1f KB)", result.title[:50], result.files, result.size_bytes / 1024)
+                log.info("  [%d/%d] %s OK: %s (%d files, %.1f KB)",
+                         n, len(to_crawl), ext_name, result.title[:50],
+                         result.files, result.size_bytes / 1024)
             else:
-                log.info("    FAIL: %s", result.error[:80])
+                log.info("  [%d/%d] %s FAIL: %s — %s",
+                         n, len(to_crawl), ext_name, v.url[:60], result.error[:60])
+            return result
+
+        log.info("  Starting %d workers...", CRAWL_WORKERS)
+        with ThreadPoolExecutor(max_workers=CRAWL_WORKERS) as pool:
+            futures = {pool.submit(_crawl_one, v): v for v in to_crawl}
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    v = futures[future]
+                    log.error("  Unhandled error for %s: %s", v.url[:60], e)
 
     state.stage = "crawl"
     state.save()
