@@ -23,6 +23,9 @@ build/
 
 docs/plans/archive/
 
+# Local-only packs and files (personal, not committed)
+*.local.*
+
 local/*
 !local/README.md
 
