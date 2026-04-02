@@ -1894,6 +1894,19 @@ def main():
     )
 
     import os
+
+    # Load .env from project root (or workdir) if present
+    for env_path in [Path.cwd() / ".env", workdir / ".env"]:
+        if env_path.exists():
+            log.info("Loading env from %s", env_path)
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, val = line.partition("=")
+                        os.environ.setdefault(key.strip(), val.strip())
+            break
+
     printables_token = os.environ.get("MIY_PRINTABLES_TOKEN", "")
     thingiverse_token = os.environ.get("MIY_THINGIVERSE_TOKEN", "")
 
