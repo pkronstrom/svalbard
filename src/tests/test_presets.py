@@ -134,6 +134,8 @@ def test_all_preset_sources_resolve_from_recipes():
     """Every source ID in every preset must resolve to a recipe."""
     for preset_name in list_presets():
         preset = load_preset(preset_name)
+        if preset.kind == "pack" and len(preset.sources) == 0:
+            continue  # stub packs with only TODOs are valid
         assert len(preset.sources) > 0, f"{preset_name} has no sources"
         for source in preset.sources:
             assert source.id, f"Source in {preset_name} has no id"

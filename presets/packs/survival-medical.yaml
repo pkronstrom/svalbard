@@ -1,0 +1,32 @@
+name: survival-medical
+kind: pack
+description: Emergency medicine, wilderness survival, and preparedness references
+target_size_gb: 2
+sources: []
+# Note: wikimed, wikem, who-basic-emergency-care, fas-military-medicine
+# are already in the default preset chain. This pack adds supplements.
+
+# ── TODO: Medical ZIMs on Kiwix ──
+# nhs-medicines         # ~17 MB, ZIM, drug monographs
+# cdc-travelers-health  # ~170 MB, ZIM, disease references
+# libre-pathology       # ~80 MB, ZIM, pathology reference
+#
+# ── TODO: Hesperian HealthWiki (scrape/PDF, highest priority) ──
+# where-there-is-no-doctor   # ~30 MB, CC BY-NC, foundational
+# where-there-is-no-dentist  # ~10 MB, CC BY-NC
+# where-women-have-no-doctor # ~20 MB, CC BY-NC
+# book-for-midwives          # ~20 MB, CC BY-NC
+#
+# ── TODO: Guidelines & manuals (PDFs) ──
+# who-essential-medicines    # ~5 MB, essential drug list
+# psychological-first-aid   # ~2 MB, WHO guide
+# sphere-handbook            # ~10 MB, humanitarian disaster standards
+# tccc-guidelines            # ~5 MB, tactical combat casualty care
+# fm-21-76-survival          # ~15 MB, US Army survival manual
+# nuclear-war-survival-skills # ~10 MB, public domain (Cresson Kearny)
+#
+# ── TODO: Food preservation ──
+# fao-food-preservation      # ~50 MB, PDF collection, UN guides
+#
+# ── TODO: Large archive ──
+# survivor-library-subset    # ~5-10 GB curated from 235 GB, pre-industrial skills

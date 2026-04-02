@@ -12,3 +12,31 @@ sources:
 # ── Language references for embedded ──
 - devdocs-c
 - devdocs-cpp
+
+# ── TODO: Documentation scrapes (zimit) ──
+# reprap-wiki           # ~200-400 MB, GNU FDL, 3D printing knowledge base
+# freecad-docs          # ~220 MB, CC BY 3.0, parametric CAD
+# kicad-docs            # ~50-100 MB, GPL-3.0 / CC BY 3.0, PCB design
+# arduino-docs          # ~100-200 MB, CC BY-SA 4.0, language ref + pinouts
+# esp-idf-docs          # ~150-300 MB, Apache 2.0, ESP32 framework
+# raspberry-pi-docs     # ~50-100 MB, CC BY-SA 4.0, hardware specs + Pico SDK
+# micropython-docs      # ~20-40 MB, MIT, per-board quick reference
+# freertos-docs         # ~30-50 MB, MIT, RTOS API reference
+# circuitpython-docs    # ~30-50 MB, MIT, Adafruit boards
+# openscad-docs         # ~20-40 MB, CC BY-SA 3.0
+# librecad-docs         # ~10-20 MB, GPL
+# platformio-docs       # ~30-50 MB, Apache 2.0, build system
+# zephyr-rtos-docs      # ~100-200 MB, Apache 2.0, modern RTOS
+# lvgl-docs             # ~30-50 MB, MIT, embedded GUI
+#
+# ── TODO: Reference tables (custom build) ──
+# curated-datasheet-zim # ~100-300 MB, common MCUs/sensors/displays/power ICs
+# fastener-tables       # ~5-10 MB, bolt grades, thread pitches, torque specs
+# wire-gauge-tables     # ~1-2 MB, AWG/metric cross-ref, ampacity
+# resistor-code-charts  # ~1 MB, color codes, SMD markings, E-series
+# protocol-specs        # ~10-20 MB, I2C, SPI, UART specs (PDFs)
+#
+# ── TODO: Textbooks (PDF/EPUB) ──
+# openstax-physics      # ~150 MB, CC BY 4.0, mechanics + E&M + optics
+# oer-welding           # ~20-50 MB, CC BY 4.0, Open Oregon guides
+# nist-engineering-stats # ~50-100 MB, public domain, DOE + SPC

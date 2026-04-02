@@ -14,3 +14,32 @@ sources:
 - stackexchange-unix
 # ── Security ──
 - stackexchange-security
+
+# ── TODO: DevDocs ecosystem bundles (per-language, all tiny) ──
+# devdocs-ops:          docker, nginx, terraform, ansible, k8s, cmake, gcc (~45 MB)
+# devdocs-data:         postgresql, sqlite, duckdb, redis, http (~12 MB)
+# devdocs-web:          html, css, svg, dom, react, vue, angular (~15 MB)
+# devdocs-extended:     kotlin, java, elixir, erlang, haskell, scala, perl, php, ruby, node (~60 MB)
+# devdocs-general:      bash, git, jq, lua, zig, make, fish, nushell, latex (~5 MB)
+#
+# ── TODO: Stack Exchange sites ──
+# ask-ubuntu            # ~2.6 GB, ZIM on Kiwix
+# dba-stackexchange     # ~670 MB, ZIM on Kiwix
+# software-engineering  # ~457 MB, ZIM on Kiwix
+# code-review-se        # ~525 MB, ZIM on Kiwix
+# cryptography-se       # ~176 MB, ZIM on Kiwix
+# reverse-engineering   # ~110 MB, ZIM on Kiwix
+# devops-se             # ~33 MB, ZIM on Kiwix
+#
+# ── TODO: Linux wikis ──
+# alpine-linux-wiki     # ~3 MB, ZIM on Kiwix
+# gentoo-wiki           # ~69 MB, ZIM on Kiwix
+# termux-wiki           # ~2 MB, ZIM on Kiwix
+#
+# ── TODO: Security (custom packaging) ──
+# owasp-top-ten         # ~1 MB, Markdown → static HTML
+# owasp-wstg            # ~5-10 MB, zimit scrape
+# owasp-cheat-sheets    # ~3-5 MB, GitHub Markdown → static
+#
+# ── TODO: Big ──
+# stack-overflow        # 75 GB, ZIM — 512 GB+ tier only

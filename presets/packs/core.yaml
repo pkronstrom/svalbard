@@ -1,0 +1,19 @@
+name: core
+kind: pack
+description: Universal foundation — tiny references included on every drive
+target_size_gb: 1
+sources:
+# ── Civilization references (tiny, high value) ──
+- wikiciv
+- permacomputing
+
+# Note: core reference content (Wikipedia, WikiMed, survival basics, tools)
+# lives in the default preset chain, not in this pack. This pack is for
+# small universal additions that don't fit other domain packs.
+
+# ── TODO: Low-zoom global basemap ──
+# osm-planet-low-zoom   # ~500 MB, PMTiles, z0-z8 world overview
+# protomaps-styles      # <1 MB, JSON, basemap rendering styles
+#
+# ── TODO: Offline infrastructure ──
+# pre-built-search-index # SQLite FTS5, varies by content
