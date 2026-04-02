@@ -132,7 +132,7 @@ def test_entries_tab_always_has_info(tmp_path):
 
 
 def test_regeneration_cleans_old_svalbard_dir(tmp_path):
-    """Calling generate_toolkit twice should clean and rebuild .svalbard/."""
+    """Calling generate_toolkit twice should clean managed subdirs (.svalbard/actions/, .svalbard/lib/)."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -141,12 +141,12 @@ def test_regeneration_cleans_old_svalbard_dir(tmp_path):
     })
 
     generate_toolkit(tmp_path, "default-32")
-    # Add a stale file
-    (tmp_path / ".svalbard" / "stale.txt").write_text("old")
+    # Add a stale file inside a managed subdir
+    (tmp_path / ".svalbard" / "actions" / "stale.sh").write_text("old")
 
     generate_toolkit(tmp_path, "default-32")
 
-    assert not (tmp_path / ".svalbard" / "stale.txt").exists()
+    assert not (tmp_path / ".svalbard" / "actions" / "stale.sh").exists()
 
 
 def test_entries_tab_includes_search_when_db_exists(tmp_path):

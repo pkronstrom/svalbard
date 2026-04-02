@@ -129,7 +129,7 @@ def test_add_local_file_writes_sidecar(tmp_path):
     artifact.write_bytes(b"data")
 
     source_id = add_local_source(artifact, workspace_root=tmp_path, source_type="zim")
-    sidecar = tmp_path / "recipes" / "local" / "manual.yaml"
+    sidecar = tmp_path / "local" / "recipes" / "manual.yaml"
 
     assert source_id == "local:manual"
     assert sidecar.exists()
@@ -140,7 +140,7 @@ def test_add_local_file_writes_sidecar(tmp_path):
 
 def test_sync_copies_selected_local_source(tmp_path):
     generated = tmp_path / "library"
-    local = tmp_path / "recipes" / "local"
+    local = tmp_path / "local" / "recipes"
     drive = tmp_path / "drive"
     generated.mkdir()
     local.mkdir(parents=True)

@@ -13,7 +13,7 @@ def test_workspace_root_is_repo_root():
 
 
 def test_load_local_sources_discovers_sidecars_and_derives_size_gb(tmp_path):
-    local_dir = tmp_path / "recipes" / "local"
+    local_dir = tmp_path / "local" / "recipes"
     generated_dir = tmp_path / "library"
     local_dir.mkdir(parents=True)
     generated_dir.mkdir()
@@ -36,7 +36,7 @@ size_bytes: 100
 
 
 def test_load_local_sources_rejects_builtin_id_collision(tmp_path):
-    local_dir = tmp_path / "recipes" / "local"
+    local_dir = tmp_path / "local" / "recipes"
     generated_dir = tmp_path / "library"
     local_dir.mkdir(parents=True)
     generated_dir.mkdir()
@@ -56,7 +56,7 @@ size_bytes: 1
 
 
 def test_active_sources_for_manifest_merges_preset_and_selected_local_sources(tmp_path):
-    local_dir = tmp_path / "recipes" / "local"
+    local_dir = tmp_path / "local" / "recipes"
     generated_dir = tmp_path / "library"
     local_dir.mkdir(parents=True)
     generated_dir.mkdir()
