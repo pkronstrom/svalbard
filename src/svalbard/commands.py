@@ -38,6 +38,7 @@ TYPE_DIRS = {
     "app": "apps",
     "iso": "infra",
     "sqlite": "data",
+    "toolchain": "tools/platformio/packages",
 }
 
 TYPE_GROUPS = {
@@ -198,12 +199,16 @@ def expand_source_downloads(source: Source, drive_path: Path) -> list[DownloadJo
     if source.platforms:
         jobs = []
         for platform, url in sorted(source.platforms.items()):
+            if source.type == "toolchain":
+                dest = drive_path / "tools" / "platformio" / "packages" / platform
+            else:
+                dest = drive_path / "bin" / platform
             jobs.append(
                 DownloadJob(
                     source_id=source.id,
                     source_type=source.type,
                     url=url,
-                    dest_dir=drive_path / "bin" / platform,
+                    dest_dir=dest,
                     source=source,
                     platform=platform,
                 )

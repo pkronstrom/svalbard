@@ -197,6 +197,59 @@ def test_add_local_directory_rejects_nested_symlinks(tmp_path):
         add_local_source(root, workspace_root=tmp_path, source_type="app")
 
 
+def test_expand_toolchain_source_with_platforms(tmp_path):
+    """Toolchain sources with platforms go to tools/platformio/packages/{platform}/."""
+    from svalbard.models import Source
+    from svalbard.commands import expand_source_downloads
+
+    source = Source(
+        id="toolchain-xtensa-esp-elf",
+        type="toolchain",
+        platforms={
+            "linux-x86_64": "https://example.com/linux.tar.gz",
+            "macos-arm64": "https://example.com/macos.tar.gz",
+        },
+    )
+    jobs = expand_source_downloads(source, tmp_path)
+    assert len(jobs) == 2
+    assert jobs[0].dest_dir == tmp_path / "tools" / "platformio" / "packages" / "linux-x86_64"
+    assert jobs[1].dest_dir == tmp_path / "tools" / "platformio" / "packages" / "macos-arm64"
+
+
+def test_expand_toolchain_source_no_platforms(tmp_path):
+    """Cross-platform toolchain sources go to tools/platformio/packages/."""
+    from svalbard.models import Source
+    from svalbard.commands import expand_source_downloads
+
+    source = Source(
+        id="framework-espidf",
+        type="toolchain",
+        url="https://example.com/espidf.tar.gz",
+    )
+    jobs = expand_source_downloads(source, tmp_path)
+    assert len(jobs) == 1
+    assert jobs[0].dest_dir == tmp_path / "tools" / "platformio" / "packages"
+
+
+def test_expand_binary_source_still_goes_to_bin(tmp_path):
+    """Regular binary sources still go to bin/{platform}/ (regression check)."""
+    from svalbard.models import Source
+    from svalbard.commands import expand_source_downloads
+
+    source = Source(
+        id="kiwix-serve",
+        type="binary",
+        platforms={
+            "linux-x86_64": "https://example.com/linux.tar.gz",
+            "macos-arm64": "https://example.com/macos.tar.gz",
+        },
+    )
+    jobs = expand_source_downloads(source, tmp_path)
+    assert len(jobs) == 2
+    assert jobs[0].dest_dir == tmp_path / "bin" / "linux-x86_64"
+    assert jobs[1].dest_dir == tmp_path / "bin" / "macos-arm64"
+
+
 def test_run_import_routes_youtube_urls_to_media_backend(tmp_path):
     from svalbard.importer import run_import
 
