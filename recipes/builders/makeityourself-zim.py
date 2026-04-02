@@ -930,7 +930,7 @@ class ThingiverseExtractor(BaseExtractor):
                     meta.title, meta.author = m.group(1), m.group(2)
             thumb_url = None
 
-        # Download thumbnail/image
+        # Download thumbnail/image — try multiple sources
         images_dir = site_dir / "images"
         images_dir.mkdir(exist_ok=True)
         if thumb_url and thumb_url.startswith("http"):
@@ -938,6 +938,17 @@ class ThingiverseExtractor(BaseExtractor):
                 meta.images.append("images/thumb.jpg")
                 total_size += (images_dir / "thumb.jpg").stat().st_size
             time.sleep(0.3)
+        # Fallback: try all content image URLs from the raw HTML
+        if not meta.images and html:
+            cdn_urls = re.findall(r'https?://cdn\.thingiverse\.com/[^"\'<>\s]+\.(?:jpg|png|jpeg)', html)
+            for i, img_url in enumerate(dict.fromkeys(cdn_urls)):  # dedupe preserving order
+                if i >= 5:
+                    break
+                fname = f"img_{i:02d}.jpg"
+                if _download_file(self.client, img_url, images_dir / fname):
+                    meta.images.append(f"images/{fname}")
+                    total_size += (images_dir / fname).stat().st_size
+                time.sleep(0.2)
 
         # Try Thingiverse API for files (requires app token)
         if self.api_token:
@@ -1181,25 +1192,47 @@ class InstructablesExtractor(BaseExtractor):
         if author_tag:
             meta.author = author_tag.get_text().strip()
 
-        # Download images
+        # Download images — Instructables loads images via JS, so extract
+        # URLs from the full HTML source (content.instructables.com CDN)
         images_dir = site_dir / "images"
         images_dir.mkdir(exist_ok=True)
         img_count = 0
-        for img in soup.find_all("img"):
-            src = img.get("src", "") or img.get("data-src", "")
-            if not src or not src.startswith("http"):
-                continue
-            if "instructables.com" not in src and "content.instructables.com" not in src:
-                continue
+        seen_urls = set()
+        # Find all content.instructables.com image URLs in the raw HTML
+        img_urls = re.findall(
+            r'https?://content\.instructables\.com/[A-Z0-9/]+\.[a-z]+\?[^"\'&\s<>]+',
+            html,
+        )
+        for src in img_urls:
             if img_count >= 20:
                 break
-            ext = Path(urlparse(src).path).suffix or ".jpg"
+            # Normalize: strip webp conversion, use reasonable size
+            src = re.sub(r'&amp;', '&', src)
+            # Deduplicate by base path (same image at different sizes)
+            base_path = src.split("?")[0]
+            if base_path in seen_urls:
+                continue
+            seen_urls.add(base_path)
+            # Skip tiny thumbnails
+            if "height=620&width=620" in src or "width=320" in src:
+                continue
+            ext = Path(urlparse(base_path).path).suffix or ".jpg"
+            if ext == ".webp":
+                ext = ".jpg"
             fname = f"img_{img_count:02d}{ext}"
-            if _download_file(self.client, src, images_dir / fname):
+            # Request without webp conversion
+            dl_url = base_path + "?frame=1&width=1024"
+            if _download_file(self.client, dl_url, images_dir / fname):
                 meta.images.append(f"images/{fname}")
                 total_size += (images_dir / fname).stat().st_size
                 img_count += 1
             time.sleep(0.2)
+        # Fallback: try OG image if no images found
+        if not meta.images:
+            og_img = soup.find("meta", property="og:image")
+            if og_img and og_img.get("content", "").startswith("http"):
+                if _download_file(self.client, og_img["content"], images_dir / "og.jpg"):
+                    meta.images.append("images/og.jpg")
 
         # Extract steps
         steps = []
@@ -1294,26 +1327,32 @@ class GenericExtractor(BaseExtractor):
         if author_meta:
             meta.author = author_meta.get("content", "")
 
-        # Download images (limit to same domain, max 15)
+        # Download images (broader matching, skip data: URIs)
         images_dir = site_dir / "images"
         images_dir.mkdir(exist_ok=True)
-        base_domain = urlparse(url).netloc
+        base_domain = urlparse(url).netloc.replace("www.", "")
         img_count = 0
         for img in soup.find_all("img"):
-            if img_count >= 15:
+            if img_count >= 20:
                 break
-            src = img.get("src", "") or img.get("data-src", "")
-            if not src:
+            src = img.get("src", "") or img.get("data-src", "") or img.get("data-lazy-src", "")
+            if not src or src.startswith("data:"):
                 continue
             if not src.startswith("http"):
                 src = urljoin(url, src)
-            # Only download from same domain or CDN
-            src_domain = urlparse(src).netloc
-            if base_domain.replace("www.", "") not in src_domain.replace("www.", ""):
-                continue
+            # Skip tiny tracking pixels and icons
+            width = img.get("width", "")
+            height = img.get("height", "")
+            if width and height:
+                try:
+                    if int(width) < 50 or int(height) < 50:
+                        continue
+                except (ValueError, TypeError):
+                    pass
             ext = Path(urlparse(src).path).suffix.lower()
             if ext not in IMAGE_EXTS:
-                continue
+                # Try to download anyway if no extension (CDN URLs)
+                ext = ".jpg"
             fname = f"img_{img_count:02d}{ext}"
             if _download_file(self.client, src, images_dir / fname):
                 meta.images.append(f"images/{fname}")
@@ -1575,18 +1614,26 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
             text = step.get("text", "")
             steps_html += f'<div class="step"><h3>{escape(title)}</h3><p>{escape(text[:2000])}</p></div>\n'
 
-    # Description — try to improve truncated descriptions from raw HTML
+    # Description — try to improve truncated/missing descriptions from raw HTML
     desc = meta.description
     raw_path = site_dir / "raw.html"
-    if desc.rstrip().endswith("…") and raw_path.exists():
+    needs_better_desc = (
+        not desc
+        or len(desc.strip()) < 30
+        or desc.rstrip().endswith("…")
+        or desc.rstrip().endswith("...")
+    )
+    if needs_better_desc and raw_path.exists():
         try:
             raw_soup = BeautifulSoup(raw_path.read_text(), "html.parser")
-            # Try to find a real description from the page
-            for sel in ["article p", "main p", ".step-body p", ".entry-content p", ".post-content p"]:
+            for sel in ["article p", "main p", ".step-body p", ".entry-content p",
+                        ".post-content p", ".content p", "#content p", "body p"]:
                 paras = raw_soup.select(sel)
+                # Filter out very short paragraphs (nav items, etc.)
+                paras = [p for p in paras if len(p.get_text(strip=True)) > 30]
                 if paras:
                     full_desc = " ".join(p.get_text(strip=True) for p in paras[:3])
-                    if len(full_desc) > len(desc):
+                    if len(full_desc) > len(desc or ""):
                         desc = full_desc[:2000]
                     break
         except Exception:
@@ -1607,7 +1654,7 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
     if raw_path.exists() and raw_path.stat().st_size > 500:
         try:
             raw_soup = BeautifulSoup(raw_path.read_text(), "html.parser")
-            # Try to extract main content area
+            # Try to extract main content area — broadest set of selectors
             main = (
                 raw_soup.find("main")
                 or raw_soup.find("article")
@@ -1616,7 +1663,20 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
                 or raw_soup.find("div", class_="entry-content")
                 or raw_soup.find("div", class_="post-content")
                 or raw_soup.find("div", class_="step-container")
+                or raw_soup.find("div", class_="article-content")
+                or raw_soup.find("div", class_="page-content")
+                or raw_soup.find("div", class_="site-content")
+                or raw_soup.find("div", class_="main-content")
+                or raw_soup.find("div", id="main")
+                or raw_soup.find("div", role="main")
+                or raw_soup.find("section", class_="content")
             )
+            # Last resort: use body, but strip header/footer/nav
+            if not main:
+                main = raw_soup.find("body")
+                if main:
+                    for tag in main.find_all(["header", "footer", "nav"]):
+                        tag.decompose()
             if main:
                 # Remove scripts, styles, navs, footers, ads
                 for tag in main.find_all(["script", "style", "nav", "footer", "iframe",
