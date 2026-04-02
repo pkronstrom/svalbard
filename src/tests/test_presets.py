@@ -72,6 +72,18 @@ def test_default_64_is_region_neutral():
     assert all(source.group != "regional" for source in preset.sources)
 
 
+def test_sciences_pack_includes_core_libretexts_subjects():
+    preset = load_preset("packs/sciences")
+    ids = {source.id for source in preset.sources}
+
+    assert "libretexts-biology" in ids
+    assert "libretexts-chemistry" in ids
+    assert "libretexts-geosciences" in ids
+    assert "libretexts-math" in ids
+    assert "libretexts-physics" in ids
+    assert "libretexts-statistics" in ids
+
+
 def test_default_512_includes_portable_qwen_model():
     preset = load_preset("default-512")
     ids = {source.id for source in preset.sources}
