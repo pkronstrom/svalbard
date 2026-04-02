@@ -1,0 +1,12 @@
+id: devdocs-c
+type: zim
+group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.001
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_c_{date}.zim
+description: DevDocs C language reference
+license:
+  id: CC-BY-SA-3.0
+  attribution: cppreference.com contributors via DevDocs
