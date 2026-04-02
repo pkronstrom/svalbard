@@ -1,0 +1,16 @@
+id: tool-openocd-esp32
+type: toolchain
+group: tools
+tags:
+- embedded
+- esp32
+depth: reference-only
+size_gb: 0.003
+platforms:
+  linux-x86_64: https://dl.registry.platformio.org/download/platformio/tool/tool-openocd-esp32/2.1200.20230419/tool-openocd-esp32-linux_x86_64-2.1200.20230419.tar.gz
+  linux-arm64: https://dl.registry.platformio.org/download/platformio/tool/tool-openocd-esp32/2.1200.20230419/tool-openocd-esp32-linux_aarch64-2.1200.20230419.tar.gz
+  macos-arm64: https://dl.registry.platformio.org/download/platformio/tool/tool-openocd-esp32/2.1200.20230419/tool-openocd-esp32-darwin_arm64-2.1200.20230419.tar.gz
+description: OpenOCD debug server for ESP32 (SWD/JTAG)
+license:
+  id: GPL-2.0-or-later
+  attribution: Espressif Systems

@@ -372,8 +372,14 @@ EXTRACTOR_MAP: dict[str, str] = {
 
 
 def _classify_extractor(url: str) -> str:
-    domain = urlparse(url).netloc.lower()
-    return EXTRACTOR_MAP.get(domain, "generic")
+    parsed = urlparse(url)
+    domain = parsed.netloc.lower()
+    ext = EXTRACTOR_MAP.get(domain, "generic")
+    # Thingiverse make: URLs are user prints, not things — use generic
+    if ext == "thingiverse" and "/make:" in parsed.path:
+        return "generic"
+    # GitHub org/user pages without /repo — still use github extractor (handles orgs)
+    return ext
 
 
 async def _check_wayback(client: httpx.AsyncClient, url: str) -> str | None:
@@ -827,7 +833,11 @@ class ThingiverseExtractor(BaseExtractor):
 
     def _extract_thing_id(self, url: str) -> str | None:
         m = re.search(r"thing:(\d+)", url)
-        return m.group(1) if m else None
+        if m:
+            return m.group(1)
+        # Handle make: URLs — these are user prints, not things.
+        # Fall back to generic extractor by returning None.
+        return None
 
     def extract(self, verified: VerifiedLink) -> CrawlResult:
         url = verified.final_url or verified.url
@@ -971,6 +981,14 @@ class GitHubExtractor(BaseExtractor):
             return parts[0], parts[1]
         return None
 
+    def _is_org_url(self, url: str) -> str | None:
+        """Check if URL is a GitHub org/user (single path segment)."""
+        parsed = urlparse(url)
+        parts = [p for p in parsed.path.strip("/").split("/") if p]
+        if len(parts) == 1:
+            return parts[0]
+        return None
+
     def extract(self, verified: VerifiedLink) -> CrawlResult:
         url = verified.final_url or verified.url
         repo_info = self._parse_repo(url)
@@ -986,6 +1004,38 @@ class GitHubExtractor(BaseExtractor):
             crawled_at=datetime.now(timezone.utc).isoformat(),
             source_status=verified.status,
         )
+
+        # Handle org/user URLs (no repo) — find main repo or crawl generically
+        org_name = self._is_org_url(url)
+        if org_name and not repo_info:
+            try:
+                r = self.client.get(
+                    f"https://api.github.com/orgs/{org_name}/repos?sort=stars&per_page=5",
+                    headers={**HEADERS, "Accept": "application/vnd.github.v3+json"},
+                    timeout=30,
+                )
+                if r.status_code == 200:
+                    repos = r.json()
+                    if repos:
+                        # Use the top-starred repo
+                        top = repos[0]
+                        repo_info = (org_name, top["name"])
+                        log.info("    GitHub org %s → using top repo: %s", org_name, top["name"])
+                if not repo_info:
+                    # Try as user
+                    r = self.client.get(
+                        f"https://api.github.com/users/{org_name}/repos?sort=stars&per_page=5",
+                        headers={**HEADERS, "Accept": "application/vnd.github.v3+json"},
+                        timeout=30,
+                    )
+                    if r.status_code == 200:
+                        repos = r.json()
+                        if repos:
+                            top = repos[0]
+                            repo_info = (org_name, top["name"])
+                            log.info("    GitHub user %s → using top repo: %s", org_name, top["name"])
+            except Exception as e:
+                log.debug("    GitHub org/user lookup failed: %s", e)
 
         if not repo_info:
             result.status = "failed"
@@ -1384,7 +1434,8 @@ def stage_crawl(
                 extractors[name] = cls(client, state.sites_dir)
 
         def _crawl_one(v: VerifiedLink) -> CrawlResult:
-            ext_name = v.extractor or "generic"
+            # Re-classify at crawl time (handles fixes to classifier)
+            ext_name = _classify_extractor(v.url)
             extractor = extractors.get(ext_name, extractors["generic"])
             sem = ext_sems.get(ext_name, ext_sems["generic"])
             attempts = progress.get(v.url, {}).get("attempts", 0) + 1
