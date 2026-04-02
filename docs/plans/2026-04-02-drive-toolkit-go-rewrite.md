@@ -28,16 +28,24 @@ on Mac/Linux/Windows without a POSIX shell.
 
 ### New: Embedded development support
 
-- [ ] Set `PLATFORMIO_CORE_DIR` to `$DRIVE/tools/platformio` — point PlatformIO
-      at the stick's pre-cached packages directory so that `pio run`,
-      `pio run --target upload`, and `pio device monitor` all work offline
+- [ ] "Open embedded dev shell" menu entry — spawns a new shell (user's default
+      `$SHELL`) with the environment pre-configured:
+      - `PLATFORMIO_CORE_DIR=$DRIVE/tools/platformio` — toolchains + frameworks
+      - `PLATFORMIO_BUILD_DIR=/tmp/pio-build` — build artifacts on host for speed
+      - `PATH` prepended with bundled toolchain binaries (xtensa-gcc, esptool, etc.)
+      - User lands in a ready-to-use terminal: `pio run` just works
 - [ ] Decompress toolchains on first use if stored compressed (zstd) — extract
       to host temp dir or user-specified location, cache the extraction path
 - [ ] Serial port detection — list available `/dev/tty*` or `COM*` devices for
       upload target selection
-- [ ] Submenu: "Embedded Dev" with options for build, flash, monitor, new project
-- [ ] Environment setup: export `PATH` additions for bundled toolchains so that
-      `pio` and `esptool.py` resolve without host installs
+- [ ] Quick-action submenu inside the dev shell or main menu:
+      - New project from template (`pio init --board ... --project-option ...`)
+      - Browse example projects (copy to host filesystem)
+      - Browse offline docs (ESP-IDF guide, datasheets)
+      - List available pre-cached libraries
+- [ ] Minimal neovim config with clangd LSP bundled — PlatformIO generates
+      `compile_commands.json`, clangd provides autocomplete and go-to-definition
+      for C/C++ embedded code out of the box
 
 ### Cross-cutting
 
