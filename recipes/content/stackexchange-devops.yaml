@@ -1,0 +1,12 @@
+id: stackexchange-devops
+type: zim
+group: practical
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.033
+url_pattern: https://download.kiwix.org/zim/stack_exchange/devops.stackexchange.com_en_all_{date}.zim
+description: DevOps Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

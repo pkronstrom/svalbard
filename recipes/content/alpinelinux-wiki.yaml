@@ -1,0 +1,12 @@
+id: alpinelinux-wiki
+type: zim
+group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.003
+url_pattern: https://download.kiwix.org/zim/other/alpinelinux_en_all_maxi_{date}.zim
+description: Alpine Linux Wiki — minimal Linux distribution reference
+license:
+  id: GFDL-1.3-or-later
+  attribution: Alpine Linux contributors

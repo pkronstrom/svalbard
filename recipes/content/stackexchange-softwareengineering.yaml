@@ -1,0 +1,12 @@
+id: stackexchange-softwareengineering
+type: zim
+group: practical
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.457
+url_pattern: https://download.kiwix.org/zim/stack_exchange/softwareengineering.stackexchange.com_en_all_{date}.zim
+description: Software Engineering Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

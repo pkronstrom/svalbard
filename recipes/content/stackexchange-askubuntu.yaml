@@ -1,0 +1,12 @@
+id: stackexchange-askubuntu
+type: zim
+group: practical
+tags:
+- computing
+depth: comprehensive
+size_gb: 2.6
+url_pattern: https://download.kiwix.org/zim/stack_exchange/askubuntu.com_en_all_{date}.zim
+description: Ask Ubuntu Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

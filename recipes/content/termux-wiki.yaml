@@ -1,0 +1,12 @@
+id: termux-wiki
+type: zim
+group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.002
+url_pattern: https://download.kiwix.org/zim/other/termux_en_all_maxi_{date}.zim
+description: Termux Wiki — Android terminal emulator and Linux environment reference
+license:
+  id: CC-BY-SA-4.0
+  attribution: Termux contributors

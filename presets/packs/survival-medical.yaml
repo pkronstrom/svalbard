@@ -2,14 +2,13 @@ name: survival-medical
 kind: pack
 description: Emergency medicine, wilderness survival, and preparedness references
 target_size_gb: 2
-sources: []
+sources:
 # Note: wikimed, wikem, who-basic-emergency-care, fas-military-medicine
 # are already in the default preset chain. This pack adds supplements.
-
-# ── TODO: Medical ZIMs on Kiwix ──
-# nhs-medicines         # ~17 MB, ZIM, drug monographs
-# cdc-travelers-health  # ~170 MB, ZIM, disease references
-# libre-pathology       # ~80 MB, ZIM, pathology reference
+# ── Medical ZIMs from Kiwix ──
+- nhs-medicines
+- cdc-travelers-health
+- librepathology
 #
 # ── TODO: Hesperian HealthWiki (scrape/PDF, highest priority) ──
 # where-there-is-no-doctor   # ~30 MB, CC BY-NC, foundational

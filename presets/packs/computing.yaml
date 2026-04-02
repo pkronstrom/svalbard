@@ -1,7 +1,7 @@
 name: computing
 kind: pack
 description: Programming references, sysadmin docs, and security resources
-target_size_gb: 3
+target_size_gb: 8
 sources:
 # ── Language references ──
 - devdocs-python
@@ -22,19 +22,18 @@ sources:
 # devdocs-extended:     kotlin, java, elixir, erlang, haskell, scala, perl, php, ruby, node (~60 MB)
 # devdocs-general:      bash, git, jq, lua, zig, make, fish, nushell, latex (~5 MB)
 #
-# ── TODO: Stack Exchange sites ──
-# ask-ubuntu            # ~2.6 GB, ZIM on Kiwix
-# dba-stackexchange     # ~670 MB, ZIM on Kiwix
-# software-engineering  # ~457 MB, ZIM on Kiwix
-# code-review-se        # ~525 MB, ZIM on Kiwix
-# cryptography-se       # ~176 MB, ZIM on Kiwix
-# reverse-engineering   # ~110 MB, ZIM on Kiwix
-# devops-se             # ~33 MB, ZIM on Kiwix
-#
-# ── TODO: Linux wikis ──
-# alpine-linux-wiki     # ~3 MB, ZIM on Kiwix
-# gentoo-wiki           # ~69 MB, ZIM on Kiwix
-# termux-wiki           # ~2 MB, ZIM on Kiwix
+# ── Stack Exchange sites ──
+- stackexchange-askubuntu
+- stackexchange-dba
+- stackexchange-softwareengineering
+- stackexchange-codereview
+- stackexchange-cryptography
+- stackexchange-reverseengineering
+- stackexchange-devops
+# ── Linux wikis ──
+- alpinelinux-wiki
+- gentoo-wiki
+- termux-wiki
 #
 # ── TODO: Security (custom packaging) ──
 # owasp-top-ten         # ~1 MB, Markdown → static HTML
