@@ -1578,16 +1578,20 @@ def stage_package(
             dead_html = _make_dead_page(dead)
             zim.add_item(HtmlItem("dead/index.html", "Dead Links", dead_html))
 
-        # Project pages and assets
+        # Project pages and assets — track paths to avoid duplicates
+        added_paths: set[str] = set()
+
         for proj in projects:
             proj_dir = state.sites_dir / proj["_dir"]
             zim_prefix = f"sites/{proj['_dir']}"
 
             # index.html
             index_file = proj_dir / "index.html"
-            if index_file.exists():
+            zim_path = f"{zim_prefix}/index.html"
+            if index_file.exists() and zim_path not in added_paths:
+                added_paths.add(zim_path)
                 zim.add_item(HtmlItem(
-                    f"{zim_prefix}/index.html",
+                    zim_path,
                     proj.get("title", ""),
                     index_file.read_text(),
                     is_front=True,
@@ -1596,16 +1600,20 @@ def stage_package(
             # Images
             for img_path in proj.get("images", []):
                 full_path = proj_dir / img_path
-                if full_path.exists():
+                zim_path = f"{zim_prefix}/{img_path}"
+                if full_path.exists() and zim_path not in added_paths:
+                    added_paths.add(zim_path)
                     mime = mimetypes.guess_type(str(full_path))[0] or "image/jpeg"
-                    zim.add_item(FileItem(f"{zim_prefix}/{img_path}", mime, full_path))
+                    zim.add_item(FileItem(zim_path, mime, full_path))
 
             # Artifacts
             for art in proj.get("artifacts", []):
                 full_path = proj_dir / art["filename"]
-                if full_path.exists():
+                zim_path = f"{zim_prefix}/{art['filename']}"
+                if full_path.exists() and zim_path not in added_paths:
+                    added_paths.add(zim_path)
                     mime = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
-                    zim.add_item(FileItem(f"{zim_prefix}/{art['filename']}", mime, full_path))
+                    zim.add_item(FileItem(zim_path, mime, full_path))
 
     size_mb = output_path.stat().st_size / 1e6
     log.info("  Done: %s (%.1f MB)", output_path, size_mb)
