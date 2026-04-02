@@ -105,6 +105,14 @@ def test_engineering_pack_includes_broader_hardware_references():
     assert "ted-3d-printing" in ids
 
 
+def test_communications_pack_includes_rf_supporting_references():
+    preset = load_preset("packs/communications")
+    ids = {source.id for source in preset.sources}
+
+    assert "stackexchange-electronics" in ids
+    assert "libretexts-engineering" in ids
+
+
 def test_default_512_includes_portable_qwen_model():
     preset = load_preset("default-512")
     ids = {source.id for source in preset.sources}
