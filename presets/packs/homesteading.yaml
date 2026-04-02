@@ -1,0 +1,9 @@
+name: homesteading
+kind: pack
+description: Agriculture, trades, construction, and self-sufficient living
+target_size_gb: 1
+sources:
+# ── Trades ──
+- stackexchange-woodworking
+# ── Sustainable tech ──
+- permacomputing

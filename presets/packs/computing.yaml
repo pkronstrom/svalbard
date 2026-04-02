@@ -1,0 +1,16 @@
+name: computing
+kind: pack
+description: Programming references, sysadmin docs, and security resources
+target_size_gb: 3
+sources:
+# ── Language references ──
+- devdocs-python
+- devdocs-rust
+- devdocs-go
+- devdocs-javascript
+# ── System administration ──
+- arch-wiki
+- man-pages
+- stackexchange-unix
+# ── Security ──
+- stackexchange-security
