@@ -14,11 +14,14 @@ Usage:
     python3 makeityourself-zim.py --workdir /data/miy --force-stage verify
     python3 makeityourself-zim.py --workdir /data/miy --retry-failed
 
-Note on STL downloads:
-    Printables and Thingiverse require authentication to download STL files.
-    Without auth, we archive metadata, images, and description PDFs.
-    To enable STL downloads, provide a Printables API token:
-        python3 makeityourself-zim.py --workdir /data/miy --printables-token TOKEN
+Environment variables:
+    MIY_THINGIVERSE_TOKEN  — Thingiverse API app token (required for STL downloads).
+                             Register at https://www.thingiverse.com/developers
+                             Without it, Thingiverse metadata is archived but STLs are not.
+
+    MIY_PRINTABLES_TOKEN   — Printables API bearer token (optional).
+                             STL downloads work without auth via signed URLs, but
+                             providing a token may avoid rate limits on heavy runs.
 """
 
 from __future__ import annotations
@@ -818,6 +821,10 @@ class PrintablesExtractor(BaseExtractor):
 class ThingiverseExtractor(BaseExtractor):
     name = "thingiverse"
 
+    def __init__(self, client: httpx.Client, sites_dir: Path, api_token: str = ""):
+        super().__init__(client, sites_dir)
+        self.api_token = api_token
+
     def _extract_thing_id(self, url: str) -> str | None:
         m = re.search(r"thing:(\d+)", url)
         return m.group(1) if m else None
@@ -909,34 +916,38 @@ class ThingiverseExtractor(BaseExtractor):
             time.sleep(0.3)
 
         # Try Thingiverse API for files (requires app token)
-        api_base = "https://api.thingiverse.com"
-        try:
-            r = self.client.get(
-                f"{api_base}/things/{thing_id}/files",
-                headers=HEADERS, timeout=30,
-            )
-            if r.status_code == 200:
-                files_data = r.json()
-                artifacts_dir = site_dir / "artifacts"
-                artifacts_dir.mkdir(exist_ok=True)
-                for f_info in files_data:
-                    # Try direct_url (CDN, no auth) first, then download_url
-                    dl_url = f_info.get("direct_url") or f_info.get("public_url")
-                    if not dl_url:
-                        continue
-                    fname = _sanitize_filename(f_info.get("name", "file"))
-                    if _download_file(self.client, dl_url, artifacts_dir / fname):
-                        fsize = (artifacts_dir / fname).stat().st_size
-                        meta.artifacts.append({
-                            "filename": f"artifacts/{fname}",
-                            "type": Path(fname).suffix.lstrip("."),
-                            "size_bytes": fsize,
-                        })
-                        total_size += fsize
-                    time.sleep(0.5)
-            time.sleep(CRAWL_DELAY_PER_DOMAIN)
-        except Exception:
-            log.debug("  Thingiverse API unavailable for thing:%s (auth required)", thing_id)
+        if self.api_token:
+            api_base = "https://api.thingiverse.com"
+            api_headers = {**HEADERS, "Authorization": f"Bearer {self.api_token}"}
+            try:
+                r = self.client.get(
+                    f"{api_base}/things/{thing_id}/files",
+                    headers=api_headers, timeout=30,
+                )
+                if r.status_code == 200:
+                    files_data = r.json()
+                    artifacts_dir = site_dir / "artifacts"
+                    artifacts_dir.mkdir(exist_ok=True)
+                    for f_info in files_data:
+                        # direct_url is CDN (no auth needed once we have it)
+                        dl_url = f_info.get("direct_url") or f_info.get("public_url")
+                        if not dl_url:
+                            continue
+                        fname = _sanitize_filename(f_info.get("name", "file"))
+                        if _download_file(self.client, dl_url, artifacts_dir / fname):
+                            fsize = (artifacts_dir / fname).stat().st_size
+                            meta.artifacts.append({
+                                "filename": f"artifacts/{fname}",
+                                "type": Path(fname).suffix.lstrip("."),
+                                "size_bytes": fsize,
+                            })
+                            total_size += fsize
+                        time.sleep(0.5)
+                elif r.status_code == 401:
+                    log.warning("  Thingiverse API returned 401 — token may be invalid")
+                time.sleep(CRAWL_DELAY_PER_DOMAIN)
+            except Exception as e:
+                log.debug("  Thingiverse API error for thing:%s: %s", thing_id, e)
 
         meta.title = meta.title or verified.title or f"Thingiverse Thing {thing_id}"
         _generate_project_page(site_dir, meta)
@@ -1299,6 +1310,7 @@ def stage_crawl(
     verified: list[VerifiedLink],
     retry_failed: bool = False,
     printables_token: str = "",
+    thingiverse_token: str = "",
 ) -> list[CrawlResult]:
     """Crawl all verified links using appropriate extractors."""
     log.info("Stage 3: Crawling %d links...", len(verified))
@@ -1343,6 +1355,8 @@ def stage_crawl(
         for name, cls in EXTRACTORS.items():
             if name == "printables":
                 extractors[name] = cls(client, state.sites_dir, auth_token=printables_token)
+            elif name == "thingiverse":
+                extractors[name] = cls(client, state.sites_dir, api_token=thingiverse_token)
             else:
                 extractors[name] = cls(client, state.sites_dir)
 
@@ -1862,12 +1876,12 @@ def main():
         help="Re-attempt only previously failed crawls",
     )
     parser.add_argument(
-        "--printables-token", default="",
-        help="Printables API bearer token (enables STL downloads)",
-    )
-    parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="Enable debug logging",
+    )
+    parser.add_argument(
+        "--skip-thingiverse-check", action="store_true",
+        help="Skip the Thingiverse token check (archive without STLs)",
     )
     args = parser.parse_args()
 
@@ -1878,6 +1892,33 @@ def main():
         format="%(asctime)s %(levelname)-5s %(message)s",
         datefmt="%H:%M:%S",
     )
+
+    import os
+    printables_token = os.environ.get("MIY_PRINTABLES_TOKEN", "")
+    thingiverse_token = os.environ.get("MIY_THINGIVERSE_TOKEN", "")
+
+    # Warn / block if Thingiverse token is missing
+    if not thingiverse_token and not args.skip_thingiverse_check:
+        log.warning("=" * 70)
+        log.warning("MIY_THINGIVERSE_TOKEN is not set!")
+        log.warning("")
+        log.warning("  124 Thingiverse links (14%% of all projects) will be archived")
+        log.warning("  WITHOUT STL files — only metadata and thumbnails.")
+        log.warning("")
+        log.warning("  To fix: register a free app at https://www.thingiverse.com/developers")
+        log.warning("  then:   export MIY_THINGIVERSE_TOKEN=your_token_here")
+        log.warning("")
+        log.warning("  To proceed without Thingiverse STLs, re-run with:")
+        log.warning("    --skip-thingiverse-check")
+        log.warning("=" * 70)
+        sys.exit(1)
+
+    if printables_token:
+        log.info("Printables token: set (will use for auth)")
+    if thingiverse_token:
+        log.info("Thingiverse token: set (STL downloads enabled)")
+    else:
+        log.info("Thingiverse token: not set (metadata only)")
 
     workdir = Path(args.workdir)
     output_path = Path(args.output) if args.output else workdir / "makeityourself.zim"
@@ -1905,7 +1946,8 @@ def main():
     crawl_results = stage_crawl(
         state, verified,
         retry_failed=args.retry_failed,
-        printables_token=args.printables_token,
+        printables_token=printables_token,
+        thingiverse_token=thingiverse_token,
     )
     stage_package(state, verified, crawl_results, output_path)
 
