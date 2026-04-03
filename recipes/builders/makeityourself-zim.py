@@ -388,15 +388,21 @@ def _classify_extractor(url: str) -> str:
 
 async def _check_wayback(client: httpx.AsyncClient, url: str) -> str | None:
     """Check Wayback Machine for an archived version of a URL."""
-    try:
-        r = await client.get(WAYBACK_API, params={"url": url}, timeout=15)
-        if r.status_code == 200:
-            data = r.json()
-            snap = data.get("archived_snapshots", {}).get("closest", {})
-            if snap.get("available"):
-                return snap["url"]
-    except Exception:
-        pass
+    for attempt in range(3):
+        try:
+            r = await client.get(WAYBACK_API, params={"url": url}, timeout=20)
+            if r.status_code == 200:
+                data = r.json()
+                snap = data.get("archived_snapshots", {}).get("closest", {})
+                if snap.get("available"):
+                    return snap["url"]
+                return None
+            if r.status_code == 503:
+                await asyncio.sleep(2 * (attempt + 1))
+                continue
+            return None
+        except Exception:
+            await asyncio.sleep(1)
     return None
 
 
@@ -562,6 +568,159 @@ class BaseExtractor:
 
     def extract(self, verified: VerifiedLink) -> CrawlResult:
         raise NotImplementedError
+
+
+# ── Quality check & Playwright fallback ────────────────────────────────────
+
+
+def _quality_score(site_dir: Path) -> dict:
+    """Evaluate crawl quality for a project. Returns dict with score + issues."""
+    meta_path = site_dir / "meta.json"
+    if not meta_path.exists():
+        return {"score": 0, "issues": ["no_meta"]}
+
+    d = json.loads(meta_path.read_text())
+    issues = []
+    score = 0
+
+    # Images
+    img_dir = site_dir / "images"
+    actual_imgs = [f for f in img_dir.glob("*") if f.is_file() and f.stat().st_size > 1000] if img_dir.exists() else []
+    if actual_imgs:
+        score += 3
+    else:
+        issues.append("no_images")
+
+    # Description
+    desc = d.get("description", "")
+    if len(desc.strip()) > 100:
+        score += 2
+    elif len(desc.strip()) > 30:
+        score += 1
+    else:
+        issues.append("no_description")
+
+    # Artifacts
+    real_arts = [a for a in d.get("artifacts", []) if not a.get("download_failed")]
+    if real_arts:
+        score += 2
+
+    # Raw content
+    raw = site_dir / "raw.html"
+    readme = site_dir / "README.md"
+    if (raw.exists() and raw.stat().st_size > 1000) or (readme.exists() and readme.stat().st_size > 100):
+        score += 1
+    else:
+        issues.append("no_content")
+
+    return {"score": score, "issues": issues, "has_images": bool(actual_imgs)}
+
+
+def _playwright_recrawl(url: str, site_dir: Path, meta: ProjectMeta) -> bool:
+    """Re-crawl a page with Playwright headless browser. Returns True if improved."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+
+    log.debug("    Playwright re-crawl: %s", url[:60])
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.set_viewport_size({"width": 1280, "height": 800})
+            page.goto(url, wait_until="networkidle", timeout=30000)
+
+            # Wait for images to lazy-load
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(2000)
+            page.evaluate("window.scrollTo(0, 0)")
+            page.wait_for_timeout(1000)
+
+            # Save rendered HTML
+            html = page.content()
+            (site_dir / "raw.html").write_text(html)
+
+            # Extract images from rendered page
+            images_dir = site_dir / "images"
+            images_dir.mkdir(exist_ok=True)
+            img_count = len(meta.images)
+
+            img_urls = page.evaluate("""
+                () => Array.from(document.querySelectorAll('img'))
+                    .map(img => img.src || img.dataset.src)
+                    .filter(src => src && src.startsWith('http') && !src.startsWith('data:'))
+            """)
+
+            seen = set(meta.images)
+            for img_url in img_urls[:20]:
+                if img_count >= 20:
+                    break
+                # Skip tiny images
+                try:
+                    dims = page.evaluate(f"""
+                        () => {{
+                            const img = document.querySelector('img[src="{img_url}"]');
+                            return img ? {{w: img.naturalWidth, h: img.naturalHeight}} : null;
+                        }}
+                    """)
+                    if dims and (dims["w"] < 50 or dims["h"] < 50):
+                        continue
+                except Exception:
+                    pass
+
+                ext = Path(urlparse(img_url).path).suffix.lower() or ".jpg"
+                fname = f"img_{img_count:02d}{ext}"
+                rel_path = f"images/{fname}"
+                if rel_path in seen:
+                    continue
+                try:
+                    resp = page.request.get(img_url)
+                    if resp.ok:
+                        (images_dir / fname).write_bytes(resp.body())
+                        if (images_dir / fname).stat().st_size > 1000:
+                            meta.images.append(rel_path)
+                            seen.add(rel_path)
+                            img_count += 1
+                except Exception:
+                    pass
+
+            # Extract description if missing
+            if len(meta.description.strip()) < 30:
+                desc = page.evaluate("""
+                    () => {
+                        const p = document.querySelector('article p, main p, .content p, #content p');
+                        return p ? p.textContent.trim() : '';
+                    }
+                """)
+                if len(desc) > len(meta.description):
+                    meta.description = desc[:2000]
+
+            browser.close()
+
+            improved = len(meta.images) > len(seen) - len(meta.images) or len(meta.description) > 30
+            return improved
+    except Exception as e:
+        log.debug("    Playwright failed: %s", str(e)[:100])
+        return False
+
+
+_PLAYWRIGHT_AVAILABLE: bool | None = None
+
+
+def _has_playwright() -> bool:
+    """Check if Playwright is available (cached)."""
+    global _PLAYWRIGHT_AVAILABLE
+    if _PLAYWRIGHT_AVAILABLE is None:
+        try:
+            from playwright.sync_api import sync_playwright
+            # Quick check that browser is installed
+            with sync_playwright() as p:
+                p.chromium.launch(headless=True).close()
+            _PLAYWRIGHT_AVAILABLE = True
+        except Exception:
+            _PLAYWRIGHT_AVAILABLE = False
+    return _PLAYWRIGHT_AVAILABLE
 
 
 class PrintablesExtractor(BaseExtractor):
@@ -1507,8 +1666,8 @@ def stage_crawl(
                         ts=datetime.now(timezone.utc).isoformat(),
                     )
 
-            # Post-crawl optimization
-            if optimize and result.status == "completed":
+            # Post-crawl: quality check → Playwright fallback → optimize
+            if result.status == "completed":
                 site_dir = extractor.site_dir_for(v.final_url or v.url)
                 meta_path = site_dir / "meta.json"
                 if meta_path.exists():
@@ -1518,13 +1677,36 @@ def stage_crawl(
                             k: v for k, v in meta_data.items()
                             if k in ProjectMeta.__dataclass_fields__
                         })
-                        bytes_saved = _optimize_project(site_dir, meta_obj)
-                        if bytes_saved > 0:
-                            _save_meta(site_dir, meta_obj)
-                            result.size_bytes -= bytes_saved
-                            result.files = len(meta_obj.artifacts) + len(meta_obj.images)
+
+                        # GitHub: extract description from README if missing
+                        if not meta_obj.description or len(meta_obj.description.strip()) < 30:
+                            readme = site_dir / "README.md"
+                            if readme.exists():
+                                text = readme.read_text()
+                                # Skip title line, get first real paragraph
+                                lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#") and not l.startswith("!")]
+                                if lines:
+                                    meta_obj.description = " ".join(lines[:3])[:2000]
+
+                        # Quality check → Playwright fallback
+                        quality = _quality_score(site_dir)
+                        if "no_images" in quality["issues"] and _has_playwright():
+                            url_to_crawl = v.final_url or v.url
+                            if _playwright_recrawl(url_to_crawl, site_dir, meta_obj):
+                                _save_meta(site_dir, meta_obj)
+                                result.files = len(meta_obj.artifacts) + len(meta_obj.images)
+                                log.debug("    Playwright improved: +%d images", len(meta_obj.images))
+
+                        # Optimize (drop redundant files, resize images)
+                        if optimize:
+                            bytes_saved = _optimize_project(site_dir, meta_obj)
+                            if bytes_saved > 0:
+                                result.size_bytes -= bytes_saved
+                                result.files = len(meta_obj.artifacts) + len(meta_obj.images)
+
+                        _save_meta(site_dir, meta_obj)
                     except Exception as e:
-                        log.debug("    optimize error: %s", e)
+                        log.debug("    post-crawl error: %s", e)
 
             with progress_lock:
                 counter["done"] += 1
