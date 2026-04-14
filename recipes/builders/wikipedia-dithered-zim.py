@@ -130,6 +130,9 @@ def rewrite_zim(
     *,
     max_width: int = DEFAULT_WIDTH,
     num_colors: int = DEFAULT_COLORS,
+    quality: int = 60,
+    no_dither: bool = False,
+    index: bool = False,
 ) -> None:
     """Read a ZIM, dither images via Go tool, write new ZIM."""
     binary = find_zim_dither()
@@ -170,17 +173,19 @@ def rewrite_zim(
         log.info("extracted %d images", img_count)
 
         # Phase 2: batch dither via Go tool
-        log.info("phase 2: dithering (width=%d, colors=%d)", max_width, num_colors)
-        subprocess.run(
-            [
-                binary, "batch",
-                "--width", str(max_width),
-                "--colors", str(num_colors),
-                "--dither", "bayer",
-                str(img_dir),
-            ],
-            check=True,
-        )
+        mode = "resize-only" if no_dither else "dither"
+        log.info("phase 2: %s (width=%d, quality=%d)", mode, max_width, quality)
+        cmd = [
+            binary, "batch",
+            "--width", str(max_width),
+            "--quality", str(quality),
+        ]
+        if no_dither:
+            cmd.append("--no-dither")
+        else:
+            cmd.extend(["--colors", str(num_colors), "--dither", "bayer"])
+        cmd.append(str(img_dir))
+        subprocess.run(cmd, check=True)
 
         # Build lookup: original name -> dithered PNG path
         dithered: dict[str, Path] = {}
@@ -214,7 +219,7 @@ def rewrite_zim(
         except Exception:
             pass
 
-        with Creator(str(output_path)).config_indexing(True, "eng") as creator:
+        with Creator(str(output_path)).config_indexing(index, "eng") as creator:
             if main_path:
                 creator.set_mainpath(main_path)
             if illustration_data:
@@ -284,6 +289,9 @@ def main():
     )
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH)
     parser.add_argument("--colors", type=int, default=DEFAULT_COLORS)
+    parser.add_argument("--quality", type=int, default=60, help="JPEG output quality 1-100 (default 60)")
+    parser.add_argument("--no-dither", action="store_true", help="Resize only, no dithering")
+    parser.add_argument("--index", action="store_true", help="Enable ZIM full-text indexing (slow)")
     parser.add_argument("--workdir", type=Path, help="Download directory")
     args = parser.parse_args()
 
@@ -303,7 +311,11 @@ def main():
         filename = Path(urlparse(args.source_url).path).name
         source_zim = download_zim(args.source_url, work / filename)
 
-    rewrite_zim(source_zim, args.output, max_width=args.width, num_colors=args.colors)
+    rewrite_zim(
+        source_zim, args.output,
+        max_width=args.width, num_colors=args.colors,
+        quality=args.quality, no_dither=args.no_dither, index=args.index,
+    )
 
     in_mb = source_zim.stat().st_size / (1024 * 1024)
     out_mb = args.output.stat().st_size / (1024 * 1024)

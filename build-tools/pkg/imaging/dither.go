@@ -21,3 +21,8 @@ func Process(img image.Image, maxWidth uint, numColors int, algorithm string) *i
 	pal := ExtractPalette(resized, numColors)
 	return Dither(resized, pal, algorithm)
 }
+
+// ResizeOnly resizes an image without dithering.
+func ResizeOnly(img image.Image, maxWidth uint) image.Image {
+	return Resize(img, maxWidth)
+}

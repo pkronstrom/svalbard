@@ -2,11 +2,11 @@
 //
 // Modes:
 //
-//	zim-dither image [flags] input output     — dither a single image
-//	zim-dither batch [flags] dir              — dither all images in a directory (in-place)
+//	zim-dither image [flags] input output     — process a single image
+//	zim-dither batch [flags] dir              — process all images in a directory (in-place)
 //
 // The ZIM reading/writing is handled by the Python builder via libzim.
-// This tool only handles the image processing (resize + dither).
+// This tool only handles the image processing (resize + optional dither).
 package main
 
 import (
@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"image"
 	_ "image/gif"
-	_ "image/jpeg"
 	"image/jpeg"
 	"image/png"
 	"log"
@@ -53,13 +52,15 @@ func main() {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `Usage:
-  zim-dither image [flags] input output   Dither a single image
-  zim-dither batch [flags] dir            Dither all images in a directory
+  zim-dither image [flags] input output   Process a single image
+  zim-dither batch [flags] dir            Process all images in a directory
 
 Flags:
-  --width   int     Max width in pixels (default 400)
-  --colors  int     Palette size (default 8)
-  --dither  string  Algorithm: bayer (default "bayer")
+  --width      int     Max width in pixels (default 400)
+  --colors     int     Palette size for dithering (default 8)
+  --dither     string  Algorithm: bayer, none (default "bayer")
+  --quality    int     JPEG output quality 1-100 (default 60)
+  --no-dither          Resize only, no dithering (same as --dither none)
 `)
 }
 
@@ -67,9 +68,14 @@ func cmdImage(args []string) {
 	fs := flag.NewFlagSet("image", flag.ExitOnError)
 	width := fs.Uint("width", 400, "Max image width")
 	colors := fs.Int("colors", 8, "Palette size")
-	dither := fs.String("dither", "bayer", "Algorithm")
+	dither := fs.String("dither", "bayer", "Algorithm (bayer, none)")
 	quality := fs.Int("quality", 60, "JPEG output quality (1-100)")
+	noDither := fs.Bool("no-dither", false, "Resize only, no dithering")
 	fs.Parse(args)
+
+	if *noDither {
+		*dither = "none"
+	}
 
 	if fs.NArg() != 2 {
 		fmt.Fprintf(os.Stderr, "Usage: zim-dither image [flags] input output\n")
@@ -85,10 +91,15 @@ func cmdBatch(args []string) {
 	fs := flag.NewFlagSet("batch", flag.ExitOnError)
 	width := fs.Uint("width", 400, "Max image width")
 	colors := fs.Int("colors", 8, "Palette size")
-	dither := fs.String("dither", "bayer", "Algorithm")
+	dither := fs.String("dither", "bayer", "Algorithm (bayer, none)")
 	quality := fs.Int("quality", 60, "JPEG output quality (1-100)")
+	noDither := fs.Bool("no-dither", false, "Resize only, no dithering")
 	workers := fs.Int("workers", runtime.NumCPU(), "Parallel workers")
 	fs.Parse(args)
+
+	if *noDither {
+		*dither = "none"
+	}
 
 	if fs.NArg() != 1 {
 		fmt.Fprintf(os.Stderr, "Usage: zim-dither batch [flags] dir\n")
@@ -107,7 +118,7 @@ func cmdBatch(args []string) {
 		return nil
 	})
 
-	log.Printf("found %d images in %s", len(paths), dir)
+	log.Printf("found %d images in %s (dither=%s, width=%d, quality=%d)", len(paths), dir, *dither, *width, *quality)
 
 	var processed, skipped atomic.Int64
 	sem := make(chan struct{}, *workers)
@@ -125,7 +136,6 @@ func cmdBatch(args []string) {
 				skipped.Add(1)
 				return
 			}
-			// Remove original if format changed
 			if outPath != path {
 				os.Remove(path)
 			}
@@ -139,7 +149,7 @@ func cmdBatch(args []string) {
 	}
 	wg.Wait()
 
-	log.Printf("done: %d dithered, %d skipped", processed.Load(), skipped.Load())
+	log.Printf("done: %d processed, %d skipped", processed.Load(), skipped.Load())
 }
 
 func processFile(input, output string, maxWidth uint, numColors int, algorithm string, jpegQuality int) error {
@@ -155,13 +165,17 @@ func processFile(input, output string, maxWidth uint, numColors int, algorithm s
 	}
 	f.Close()
 
-	// Skip tiny images
 	bounds := img.Bounds()
 	if bounds.Dx() < 32 || bounds.Dy() < 32 {
 		return fmt.Errorf("too small (%dx%d)", bounds.Dx(), bounds.Dy())
 	}
 
-	result := imaging.Process(img, maxWidth, numColors, algorithm)
+	var result image.Image
+	if algorithm == "none" {
+		result = imaging.ResizeOnly(img, maxWidth)
+	} else {
+		result = imaging.Process(img, maxWidth, numColors, algorithm)
+	}
 
 	out, err := os.Create(output)
 	if err != nil {
