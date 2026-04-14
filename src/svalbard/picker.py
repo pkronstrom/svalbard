@@ -22,15 +22,16 @@ class PickerPack:
     description: str
     display_group: str
     sources: list[Source]
-    checked_ids: set[str] = field(default_factory=set)
 
     @property
     def total_size_gb(self) -> float:
         return sum(source.size_gb for source in self.sources)
 
-    @property
-    def checked_size_gb(self) -> float:
-        return sum(source.size_gb for source in self.sources if source.id in self.checked_ids)
+    def checked_count(self, checked_ids: set[str]) -> int:
+        return sum(1 for source in self.sources if source.id in checked_ids)
+
+    def checked_size_gb(self, checked_ids: set[str]) -> float:
+        return sum(source.size_gb for source in self.sources if source.id in checked_ids)
 
 
 @dataclass
@@ -42,32 +43,41 @@ class PickerGroup:
 def build_picker_tree(
     packs: list[Preset],
     checked_ids: set[str] | None = None,
-) -> list[PickerGroup]:
-    """Build a grouped picker tree from pack presets."""
-    selected_ids = checked_ids or set()
+) -> tuple[list[PickerGroup], set[str]]:
+    """Build a grouped picker tree from pack presets.
+
+    Returns (tree, checked_ids) where checked_ids is the global selection state.
+    """
+    selected_ids = set(checked_ids) if checked_ids else set()
     groups: dict[str, PickerGroup] = {}
+
+    # Narrow initial checked_ids to only sources that actually appear in packs
+    all_pack_source_ids: set[str] = set()
 
     for pack in packs:
         display_group = pack.display_group or "Other"
         group = groups.setdefault(display_group, PickerGroup(display_group=display_group))
-        group.packs.append(
-            PickerPack(
-                name=pack.name,
-                description=pack.description,
-                display_group=display_group,
-                sources=list(pack.sources),
-                checked_ids={source.id for source in pack.sources if source.id in selected_ids},
-            )
+        picker_pack = PickerPack(
+            name=pack.name,
+            description=pack.description,
+            display_group=display_group,
+            sources=list(pack.sources),
         )
+        group.packs.append(picker_pack)
+        all_pack_source_ids.update(source.id for source in pack.sources)
 
-    return sorted(groups.values(), key=lambda group: group.display_group)
+    initial_checked = selected_ids & all_pack_source_ids
+    tree = sorted(groups.values(), key=lambda group: group.display_group)
+    return tree, initial_checked
 
 
 def _build_rows(
     tree: list[PickerGroup],
     collapsed_groups: dict[str, bool],
     collapsed_packs: dict[str, bool],
+    checked_ids: set[str] | None = None,
 ) -> list[dict]:
+    checked = checked_ids or set()
     rows: list[dict] = []
     for group in tree:
         rows.append(
@@ -85,7 +95,7 @@ def _build_rows(
                 {
                     "kind": ROW_PACK,
                     "pack": pack,
-                    "checked": len(pack.checked_ids),
+                    "checked": pack.checked_count(checked),
                     "total": len(pack.sources),
                 }
             )
@@ -98,19 +108,19 @@ def _build_rows(
                         "kind": ROW_ITEM,
                         "source": source,
                         "pack": pack,
-                        "checked": source.id in pack.checked_ids,
+                        "checked": source.id in checked,
                     }
                 )
     return rows
 
 
-def _compute_total(tree: list[PickerGroup]) -> float:
+def _compute_total(tree: list[PickerGroup], checked_ids: set[str]) -> float:
     seen: set[str] = set()
     total = 0.0
     for group in tree:
         for pack in group.packs:
             for source in pack.sources:
-                if source.id in pack.checked_ids and source.id not in seen:
+                if source.id in checked_ids and source.id not in seen:
                     seen.add(source.id)
                     total += source.size_gb
     return total
@@ -141,12 +151,14 @@ def _build_display(
     rows: list[dict],
     cursor: int,
     tree: list[PickerGroup],
+    checked_ids: set[str],
     free_gb: float,
+    hidden_gb: float,
     scroll_offset: int,
     max_visible: int,
     width: int,
 ) -> str:
-    total_gb = _compute_total(tree)
+    total_gb = _compute_total(tree, checked_ids) + hidden_gb
     fits = free_gb <= 0 or total_gb <= free_gb
 
     lines = [
@@ -161,7 +173,9 @@ def _build_display(
         prefix = "▸ " if abs_idx == cursor else "  "
 
         if row["kind"] == ROW_GROUP:
-            has_checked = any(pack.checked_ids for pack in row["packs"])
+            has_checked = any(
+                pack.checked_count(checked_ids) > 0 for pack in row["packs"]
+            )
             style = "[bold]" if has_checked or abs_idx == cursor else "[bold dim]"
             lines.append(f"{prefix}{style}{row['display_group']}[/]")
             continue
@@ -181,7 +195,7 @@ def _build_display(
                 style = "[bold white]"
             lines.append(
                 f"    {prefix}{mark} {style}{pack.name}[/]  "
-                f"[dim]{_format_size(pack.checked_size_gb)}[/dim]"
+                f"[dim]{_format_size(pack.checked_size_gb(checked_ids))}[/dim]"
             )
             continue
 
@@ -238,7 +252,12 @@ def _update_scroll(total: int, cursor: int, max_visible: int, offset: int) -> in
     return max(0, offset)
 
 
-def run_picker(tree: list[PickerGroup], free_gb: float = 0) -> set[str]:
+def run_picker(
+    tree: list[PickerGroup],
+    checked_ids: set[str],
+    free_gb: float = 0,
+    hidden_gb: float = 0,
+) -> set[str]:
     """Run the interactive pack picker and return selected source ids."""
     console = Console()
     width = min(100, max(40, console.width - 2))
@@ -247,13 +266,13 @@ def run_picker(tree: list[PickerGroup], free_gb: float = 0) -> set[str]:
     cursor = 0
     scroll_offset = 0
 
-    rows = _build_rows(tree, collapsed_groups, collapsed_packs)
+    rows = _build_rows(tree, collapsed_groups, collapsed_packs, checked_ids)
     if rows:
         cursor = _move_cursor(rows, -1, 1)
 
     with Live("", console=console, refresh_per_second=15, screen=True) as live:
         while True:
-            rows = _build_rows(tree, collapsed_groups, collapsed_packs)
+            rows = _build_rows(tree, collapsed_groups, collapsed_packs, checked_ids)
             max_visible = max(8, _get_terminal_height() - 10)
             scroll_offset = _update_scroll(len(rows), cursor, max_visible, scroll_offset)
             live.update(
@@ -262,7 +281,9 @@ def run_picker(tree: list[PickerGroup], free_gb: float = 0) -> set[str]:
                         rows,
                         cursor,
                         tree,
+                        checked_ids,
                         free_gb,
+                        hidden_gb,
                         scroll_offset,
                         max_visible,
                         width,
@@ -294,24 +315,20 @@ def run_picker(tree: list[PickerGroup], free_gb: float = 0) -> set[str]:
                 if key == readchar.key.ENTER:
                     collapsed_packs[pack.name] = not collapsed_packs.get(pack.name, True)
                     continue
-                if len(pack.checked_ids) == len(pack.sources):
-                    pack.checked_ids.clear()
+                pack_ids = {source.id for source in pack.sources}
+                if pack_ids <= checked_ids:
+                    checked_ids -= pack_ids
                 else:
-                    pack.checked_ids = {source.id for source in pack.sources}
+                    checked_ids |= pack_ids
                 continue
 
             source = row["source"]
-            pack = row["pack"]
-            if source.id in pack.checked_ids:
-                pack.checked_ids.discard(source.id)
+            if source.id in checked_ids:
+                checked_ids.discard(source.id)
             else:
-                pack.checked_ids.add(source.id)
+                checked_ids.add(source.id)
 
-    selected: set[str] = set()
-    for group in tree:
-        for pack in group.packs:
-            selected.update(pack.checked_ids)
-    return selected
+    return set(checked_ids)
 
 
 def _demo_main() -> None:
@@ -329,13 +346,14 @@ def _demo_main() -> None:
         if preset.kind == "pack":
             packs.append(preset)
 
-    checked_ids: set[str] = set()
+    pre_checked: set[str] = set()
     try:
-        checked_ids = {source.id for source in load_preset("finland-128", workspace=workspace).sources}
+        pre_checked = {source.id for source in load_preset("finland-128", workspace=workspace).sources}
     except (FileNotFoundError, KeyError, ValueError):
         pass
 
-    selected = run_picker(build_picker_tree(packs, checked_ids=checked_ids), free_gb=128)
+    tree, initial_checked = build_picker_tree(packs, checked_ids=pre_checked)
+    selected = run_picker(tree, initial_checked, free_gb=128)
     print(f"\nSelected {len(selected)} sources:")
     for source_id in sorted(selected):
         print(f"  {source_id}")

@@ -235,14 +235,14 @@ def attach_command(
             region=manifest.region,
             description=f"Attached selection for {drive_path.name}",
         )
-        manifest.preset = preset_name
-        manifest.save(manifest_path)
         write_drive_snapshot(
             drive_path,
             preset_name=preset_name,
             workspace_root=workspace_root,
             local_source_ids=manifest.local_sources,
         )
+        manifest.preset = preset_name
+        manifest.save(manifest_path)
         sync_drive(str(drive_path))
         console.print(f"[green]Updated preset:[/green] {preset_name}")
         return

@@ -35,8 +35,9 @@ def test_build_tree_from_packs():
         ),
     ]
 
-    tree = build_picker_tree(packs=packs)
+    tree, checked = build_picker_tree(packs=packs)
 
+    assert checked == set()
     assert tree == [
         PickerGroup(
             display_group="Maps",
@@ -46,7 +47,6 @@ def test_build_tree_from_packs():
                     description="Finnish maps",
                     display_group="Maps",
                     sources=[_source("osm-finland"), _source("nature-reserves")],
-                    checked_ids=set(),
                 )
             ],
         ),
@@ -58,7 +58,6 @@ def test_build_tree_from_packs():
                     description="Core tools",
                     display_group="Tools",
                     sources=[_source("kiwix-serve", size_gb=0.2)],
-                    checked_ids=set(),
                 )
             ],
         ),
@@ -88,7 +87,7 @@ def test_build_tree_groups_packs_by_display_group():
         ),
     ]
 
-    tree = build_picker_tree(packs=packs)
+    tree, _ = build_picker_tree(packs=packs)
 
     assert len(tree) == 1
     assert tree[0].display_group == "Survival"
@@ -107,14 +106,14 @@ def test_build_tree_defaults_missing_display_group_to_other():
         ),
     ]
 
-    tree = build_picker_tree(packs=packs)
+    tree, _ = build_picker_tree(packs=packs)
 
     assert len(tree) == 1
     assert tree[0].display_group == "Other"
 
 
 def test_build_tree_with_preset_prechecks():
-    """Sources from a preset are pre-checked."""
+    """Sources from a preset are pre-checked in the global set."""
     packs = [
         Preset(
             name="tools",
@@ -127,10 +126,9 @@ def test_build_tree_with_preset_prechecks():
         ),
     ]
 
-    tree = build_picker_tree(packs=packs, checked_ids={"kiwix"})
+    _, checked = build_picker_tree(packs=packs, checked_ids={"kiwix"})
 
-    pack = tree[0].packs[0]
-    assert pack.checked_ids == {"kiwix"}
+    assert checked == {"kiwix"}
 
 
 def test_compute_total_deduplicates_shared_checked_sources():
@@ -144,7 +142,6 @@ def test_compute_total_deduplicates_shared_checked_sources():
                     description="",
                     display_group="A",
                     sources=[shared, _source("other", size_gb=1.0)],
-                    checked_ids={"wikimed", "other"},
                 )
             ],
         ),
@@ -156,17 +153,16 @@ def test_compute_total_deduplicates_shared_checked_sources():
                     description="",
                     display_group="B",
                     sources=[_source("wikimed", size_gb=0.8)],
-                    checked_ids={"wikimed"},
                 )
             ],
         ),
     ]
 
-    assert _compute_total(tree) == 1.8
+    assert _compute_total(tree, {"wikimed", "other"}) == 1.8
 
 
 def test_build_rows_respects_group_and_pack_collapse_state():
-    tree = build_picker_tree(
+    tree, checked = build_picker_tree(
         packs=[
             Preset(
                 name="tools",
@@ -185,6 +181,7 @@ def test_build_rows_respects_group_and_pack_collapse_state():
         tree,
         collapsed_groups={"Tools": False},
         collapsed_packs={"tools": False},
+        checked_ids=checked,
     )
     assert [row["kind"] for row in rows] == ["group", "pack", "item", "item"]
 
@@ -192,5 +189,47 @@ def test_build_rows_respects_group_and_pack_collapse_state():
         tree,
         collapsed_groups={"Tools": True},
         collapsed_packs={"tools": False},
+        checked_ids=checked,
     )
     assert [row["kind"] for row in rows] == ["group"]
+
+
+def test_shared_source_toggle_is_global():
+    """Unchecking a source in one pack removes it from all packs."""
+    packs = [
+        Preset(
+            name="engineering",
+            description="",
+            target_size_gb=4,
+            region="",
+            kind="pack",
+            display_group="Engineering",
+            sources=[_source("stackexchange-electronics"), _source("devdocs-c")],
+        ),
+        Preset(
+            name="communications",
+            description="",
+            target_size_gb=4,
+            region="",
+            kind="pack",
+            display_group="Communications",
+            sources=[_source("stackexchange-electronics"), _source("stackexchange-amateur-radio")],
+        ),
+    ]
+
+    tree, checked = build_picker_tree(
+        packs=packs,
+        checked_ids={"stackexchange-electronics", "devdocs-c", "stackexchange-amateur-radio"},
+    )
+
+    # All three should be checked
+    assert checked == {"stackexchange-electronics", "devdocs-c", "stackexchange-amateur-radio"}
+
+    # Simulate unchecking stackexchange-electronics (global operation)
+    checked.discard("stackexchange-electronics")
+
+    # Both packs should now show it unchecked
+    eng_pack = tree[0].packs[0]  # Engineering
+    comm_pack = tree[1].packs[0]  # Communications
+    assert eng_pack.checked_count(checked) == 1  # only devdocs-c
+    assert comm_pack.checked_count(checked) == 1  # only stackexchange-amateur-radio
