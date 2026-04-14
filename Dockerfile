@@ -1,6 +1,6 @@
 FROM python:3.12-alpine3.21 AS builder
 
-RUN apk add --no-cache build-base sqlite-dev zlib-dev curl
+RUN apk add --no-cache build-base sqlite-dev zlib-dev curl bash
 
 # Build tippecanoe from source
 ARG TIPPECANOE_VERSION=2.75.0
@@ -24,9 +24,11 @@ RUN ARCH=$(uname -m) && \
       x86_64)  SUFFIX="linux-x86_64-musl" ;; \
       aarch64) SUFFIX="linux-aarch64-musl" ;; \
     esac && \
+    mkdir -p /tmp/zim-tools && \
     curl -fsSL "https://download.openzim.org/release/zim-tools/zim-tools_${SUFFIX}-${ZIM_TOOLS_VERSION}.tar.gz" \
-    | tar xz -C /usr/local/bin --strip-components=1 \
-      --wildcards "*/zimdump" "*/zimwriterfs" "*/zimcheck"
+    | tar xz -C /tmp/zim-tools --strip-components=1 && \
+    cp /tmp/zim-tools/zimdump /tmp/zim-tools/zimwriterfs /tmp/zim-tools/zimcheck /usr/local/bin/ && \
+    rm -r /tmp/zim-tools
 
 # Build zim-dither (Go image processing tool)
 FROM golang:1.25-alpine AS go-builder
