@@ -794,6 +794,246 @@ def _sanitize_filename(name: str) -> str:
     return name[:200] or "file"
 
 
+# ── Composable Strategies ──────────────────────────────────────────────
+
+
+@dataclass
+class FetchResult:
+    html: str
+    url: str
+    status_code: int = 200
+    cookies: dict[str, str] = field(default_factory=dict)
+
+
+class FetchStrategy:
+    name: str = "base"
+    def fetch(self, url: str, client: httpx.Client, **kwargs) -> FetchResult:
+        raise NotImplementedError
+
+
+class MetadataStrategy:
+    name: str = "base"
+    def extract(self, soup: BeautifulSoup, url: str, meta: ProjectMeta) -> None:
+        raise NotImplementedError
+
+
+class ImageStrategy:
+    name: str = "base"
+    def collect(self, soup: BeautifulSoup, url: str, images_dir: Path,
+                client: httpx.Client, existing: list[str], **kwargs) -> list[str]:
+        raise NotImplementedError
+
+
+class ArtifactStrategy:
+    name: str = "base"
+    def collect(self, soup: BeautifulSoup, url: str, artifacts_dir: Path,
+                client: httpx.Client, existing: list[dict], **kwargs) -> list[dict]:
+        raise NotImplementedError
+
+
+# ── Fetch Strategy Implementations ────────────────────────────────────
+
+
+class HttpFetcher(FetchStrategy):
+    name = "http"
+    def fetch(self, url, client, **kwargs):
+        r = client.get(url, headers=HEADERS, timeout=30, follow_redirects=True)
+        r.raise_for_status()
+        return FetchResult(html=r.text, url=str(r.url), status_code=r.status_code)
+
+
+class SslBypassFetcher(FetchStrategy):
+    name = "ssl_bypass"
+    def fetch(self, url, client, **kwargs):
+        with httpx.Client(verify=False, timeout=30) as insecure:
+            r = insecure.get(url, headers=HEADERS, follow_redirects=True)
+            r.raise_for_status()
+            log.info("    SSL bypass OK for %s", url[:60])
+            return FetchResult(html=r.text, url=str(r.url), status_code=r.status_code)
+
+
+class PlaywrightFetcher(FetchStrategy):
+    name = "playwright"
+    def fetch(self, url, client, **kwargs):
+        if not _has_playwright():
+            raise RuntimeError("Playwright not available")
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            ctx = browser.new_context(viewport={"width": 1280, "height": 800}, ignore_https_errors=True)
+            page = ctx.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(3000)
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(2000)
+            html = page.content()
+            final_url = page.url
+            browser.close()
+            log.info("    Playwright fetch OK for %s", url[:60])
+            return FetchResult(html=html, url=final_url)
+
+
+class WaybackFetcher(FetchStrategy):
+    name = "wayback"
+    def fetch(self, url, client, **kwargs):
+        wayback_url = kwargs.get("wayback_url", "")
+        if not wayback_url:
+            raise RuntimeError("No wayback URL provided")
+        r = client.get(wayback_url, headers=HEADERS, timeout=30, follow_redirects=True)
+        r.raise_for_status()
+        return FetchResult(html=r.text, url=str(r.url), status_code=r.status_code)
+
+
+class FetchChain:
+    def __init__(self, fetchers: list[FetchStrategy]):
+        self.fetchers = fetchers
+
+    def fetch(self, url: str, client: httpx.Client, **kwargs) -> FetchResult:
+        last_error = None
+        for fetcher in self.fetchers:
+            try:
+                return fetcher.fetch(url, client, **kwargs)
+            except Exception as e:
+                last_error = e
+                continue
+        raise last_error or RuntimeError(f"All fetchers failed for {url}")
+
+
+# ── Metadata Strategy Implementations ─────────────────────────────────
+
+
+class JsonLdMetadata(MetadataStrategy):
+    name = "jsonld"
+    def __init__(self, type_filter: str | None = None):
+        self.type_filter = type_filter
+
+    def extract(self, soup, url, meta):
+        for script in soup.find_all("script", type="application/ld+json"):
+            try:
+                data = json.loads(script.string)
+                if not isinstance(data, dict):
+                    continue
+                if self.type_filter and data.get("@type") != self.type_filter:
+                    continue
+                meta.title = meta.title or data.get("name", "")
+                meta.description = meta.description or (data.get("description") or "")[:2000]
+                for path in [data.get("creator", {}), data.get("brand", {}),
+                             (data.get("mainEntityOfPage") or {}).get("author", {})]:
+                    if isinstance(path, dict) and path.get("name"):
+                        meta.author = meta.author or path["name"]
+                        break
+                meta.license = meta.license or (data.get("mainEntityOfPage") or {}).get("license", "") or data.get("license", "")
+                break
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+
+class OpenGraphMetadata(MetadataStrategy):
+    name = "opengraph"
+    def extract(self, soup, url, meta):
+        def og(prop):
+            tag = soup.find("meta", property=f"og:{prop}")
+            return tag.get("content", "") if tag else ""
+        meta.title = meta.title or og("title")
+        meta.description = meta.description or og("description")[:2000]
+        meta.author = meta.author or og("site_name")
+
+
+class HtmlMetadata(MetadataStrategy):
+    name = "html"
+    def extract(self, soup, url, meta):
+        if not meta.title:
+            t = soup.find("title")
+            if t:
+                meta.title = t.get_text().strip()[:200]
+        if not meta.description:
+            d = soup.find("meta", attrs={"name": "description"})
+            if d:
+                meta.description = d.get("content", "")[:2000]
+        if not meta.author:
+            a = soup.find("meta", attrs={"name": "author"})
+            if a:
+                meta.author = a.get("content", "")
+
+
+# ── Image & Artifact Strategy Implementations ─────────────────────────
+
+
+class ImgTagImages(ImageStrategy):
+    name = "img_tags"
+    def __init__(self, *, domain_filter: str | None = None, data_src: bool = False, max_images: int = 12):
+        self.domain_filter = domain_filter
+        self.data_src = data_src
+        self.max_images = max_images
+
+    def collect(self, soup, url, images_dir, client, existing, **kwargs):
+        new_images = []
+        seen_bases = {Path(e).stem for e in existing}
+        base_domain = urlparse(url).netloc.replace("www.", "")
+        count = len(existing)
+        for img in soup.find_all("img"):
+            if count >= self.max_images:
+                break
+            src = (img.get("data-src") if self.data_src else None) or img.get("src") or ""
+            if not src.startswith("http"):
+                if src.startswith("/"):
+                    src = urljoin(url, src)
+                else:
+                    continue
+            if src.startswith("data:"):
+                continue
+            img_domain = urlparse(src).netloc.replace("www.", "")
+            if self.domain_filter and self.domain_filter not in img_domain:
+                continue
+            elif not self.domain_filter:
+                if img_domain != base_domain and not any(
+                    cdn in img_domain for cdn in ["cloudfront", "cdn", "imgur", "wp.com", "squarespace"]
+                ):
+                    continue
+            base = src.split("?")[0]
+            slug = _slugify(Path(urlparse(base).path).stem)[:20]
+            if slug in seen_bases:
+                continue
+            seen_bases.add(slug)
+            fname = f"img_{count:02d}.jpg"
+            if _download_file(client, src, images_dir / fname, cookies=kwargs.get("cookies")):
+                new_images.append(f"images/{fname}")
+                count += 1
+            time.sleep(0.3)
+        return new_images
+
+
+class OgImages(ImageStrategy):
+    name = "og_image"
+    def collect(self, soup, url, images_dir, client, existing, **kwargs):
+        if existing:
+            return []
+        og_img = soup.find("meta", property="og:image")
+        if og_img and og_img.get("content", "").startswith("http"):
+            if _download_file(client, og_img["content"], images_dir / "og.jpg"):
+                return ["images/og.jpg"]
+        return []
+
+
+class LinkArtifacts(ArtifactStrategy):
+    name = "link_scan"
+    def collect(self, soup, url, artifacts_dir, client, existing, **kwargs):
+        new_artifacts = []
+        for link in soup.find_all("a", href=True):
+            href = link["href"]
+            if not href.startswith("http"):
+                href = urljoin(url, href)
+            ext = Path(urlparse(href).path).suffix.lower()
+            if ext not in ARTIFACT_EXTS:
+                continue
+            fname = _sanitize_filename(Path(urlparse(href).path).name)
+            if _download_file(client, href, artifacts_dir / fname):
+                fsize = (artifacts_dir / fname).stat().st_size
+                new_artifacts.append({"filename": f"artifacts/{fname}", "type": ext.lstrip("."), "size_bytes": fsize})
+            time.sleep(0.3)
+        return new_artifacts
+
+
 class BaseExtractor:
     name: str = "base"
 
@@ -2143,6 +2383,9 @@ def stage_crawl(
         def _crawl_one(v: VerifiedLink) -> CrawlResult:
             # Re-classify at crawl time (handles fixes to classifier)
             ext_name = _classify_extractor(v.url)
+            # Wayback-recovered links should use generic extractor (wayback serves HTML)
+            if v.status == "wayback" and v.wayback_url:
+                ext_name = "generic"
             extractor = extractors.get(ext_name, extractors["generic"])
             sem = ext_sems.get(ext_name, ext_sems["generic"])
             attempts = progress.get(v.url, {}).get("attempts", 0) + 1
