@@ -10,8 +10,7 @@ sources:
 - 7z
 - toybox
 # ── Reference ──
-- wikipedia-en-top-mini
-- wikipedia-en-medicine-mini
+- wikipedia-en-100-maxi
 # ── Medical ──
 - wikem
 - who-basic-emergency-care

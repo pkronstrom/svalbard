@@ -42,7 +42,8 @@ Presets scale from pocket-sized emergency kits to full archives:
 
 | Preset | Size | What you get |
 |--------|------|-------------|
-| `finland-2` | 2 GB | Emergency field kit — compact medical, water, food, and practical references |
+| `default-2` | 2 GB | Universal bugout kit — medical, survival, food/water, practical references |
+| `finland-2` | 2 GB | Finnish emergency field kit — extends default-2 with Finnish pharma registry |
 | `default-32` | 32 GB | Core reference — Wikipedia, WikiMed, survival guides, repair manuals |
 | `default-128` | 128 GB | Broad reference — adds dictionaries, books, Khan Academy, maps |
 | `default-512` | 512 GB | Deep archive — adds full-picture Wikipedia, AI models, more Stack Exchange |
@@ -129,6 +130,7 @@ svalbard wizard --preset my-pack
 - [x] Drive toolkit — run.sh shell menu, Kiwix server, bundled tools
 - [x] Coverage audit reports
 - [ ] Fully curated and verified presets — every source checked, sized, and tested across tiers
+- [ ] Custom Wikipedia ZIM builds — dithered/compressed images for space-constrained tiers
 - [ ] Regional geodata packs — Finnish survival layers (shelters, water, foraging) as a first regional pack
 - [ ] Search across all content — index PDFs, geodata, and reference databases alongside ZIMs
 - [ ] RAG — query all drive content through the bundled local LLM

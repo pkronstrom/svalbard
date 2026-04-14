@@ -5,6 +5,9 @@ region: default
 extends:
   - default-512
 sources:
+# ── Wikipedia upgrade ──
+- -wikipedia-en-nopic
+- wikipedia-en-maxi
 # ── Q&A ──
 - stackexchange-chemistry
 - stackexchange-biology

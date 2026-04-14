@@ -12,7 +12,7 @@ tags:
 - biology
 - history
 depth: comprehensive
-size_gb: 100.0
+size_gb: 115.0
 url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_maxi_{date}.zim
 description: English Wikipedia with pictures
 license:

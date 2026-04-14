@@ -151,7 +151,7 @@ def test_default_2tb_stays_region_neutral():
 def test_finland_128_uses_standalone_sources_only():
     preset = load_preset("finland-128")
     ids = {source.id for source in preset.sources}
-    assert "wikipedia-en-nopic" in ids
+    assert "wikipedia-en-top-maxi" in ids
     assert "kiwix-serve" in ids
     assert all(not source.platforms or source.type == "binary" for source in preset.sources)
 

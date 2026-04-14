@@ -6,8 +6,8 @@ extends:
   - default-128
 sources:
 # ── Wikipedia upgrade ──
-- -wikipedia-en-nopic
-- wikipedia-en-maxi
+- -wikipedia-en-top-maxi
+- wikipedia-en-nopic
 # ── Expanded medical ──
 - medlineplus
 # ── Preparedness ──
