@@ -1,0 +1,14 @@
+id: wikipedia-en-top-mini
+type: zim
+display_group: reference
+tags:
+- general-reference
+- encyclopedia
+depth: standard
+size_gb: 0.315
+url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_top_mini_{date}.zim
+description: English Wikipedia Top 50k — community-curated most important articles
+  with small images (Vital Articles Level 5)
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors
