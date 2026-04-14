@@ -129,16 +129,58 @@ def rewrite_zim(
     dither_cmd.append("/work/extracted")
     _docker_run(dither_cmd, mounts=mounts)
 
+    # Find the main page and illustration from the source ZIM
+    log.info("phase 2.5: reading source ZIM metadata")
+    result = subprocess.run(
+        ["docker", "run", "--rm",
+         "-v", f"{source_path.parent.resolve()}:/input",
+         DOCKER_IMAGE, "zimdump", "info", f"/input/{source_name}"],
+        capture_output=True, text=True,
+    )
+    main_page = "index"
+    illustration = ""
+    for line in result.stdout.splitlines():
+        if line.startswith("main page:"):
+            main_page = line.split(":", 1)[1].strip()
+        if line.startswith("favicon:"):
+            illustration = line.split(":", 1)[1].strip()
+
+    # Create a simple illustration if the extracted one isn't a standard file
+    illustration_flag = []
+    illust_path = extract_dir / illustration
+    if illust_path.exists():
+        illustration_flag = [f"--illustration={illustration}"]
+    else:
+        # Create a minimal 48x48 PNG
+        import struct, zlib
+        def _minimal_png() -> bytes:
+            width, height = 48, 48
+            raw = b""
+            for _ in range(height):
+                raw += b"\x00" + b"\x80\x80\x80" * width
+            compressed = zlib.compress(raw)
+            def chunk(ctype, data):
+                c = ctype + data
+                return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
+            ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+            return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", compressed) + chunk(b"IEND", b"")
+        (extract_dir / "illustration.png").write_bytes(_minimal_png())
+        illustration_flag = ["--illustration=illustration.png"]
+
     # Phase 3: Repack into ZIM
-    log.info("phase 3: repacking into %s", output_name)
+    log.info("phase 3: repacking into %s (main=%s)", output_name, main_page)
     _docker_run(
         [
             "zimwriterfs",
-            "--welcome", "mainPage",
-            "--language", "eng",
-            "--title", "Wikipedia (compact)",
-            "--description", "Wikipedia with resized images",
-            "--name", "wikipedia-compact",
+            f"--welcome={main_page}",
+            *illustration_flag,
+            "--language=eng",
+            "--title=Wikipedia (compact)",
+            "--description=Wikipedia with resized images",
+            "--creator=Wikipedia contributors",
+            "--publisher=Svalbard",
+            "--name=wikipedia-compact",
+            "--withoutFTIndex",
             "/work/extracted",
             f"/output/{output_name}",
         ],
