@@ -37,7 +37,7 @@ import sys
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from html import escape
+from html import escape, unescape
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
 
@@ -542,6 +542,69 @@ def _download_file(client: httpx.Client, url: str, dest: Path, *, timeout: float
 def _save_meta(site_dir: Path, meta: ProjectMeta) -> None:
     meta_path = site_dir / "meta.json"
     meta_path.write_text(json.dumps(asdict(meta), ensure_ascii=False, indent=2))
+
+
+_PROJECT_META_FIELDS = frozenset(ProjectMeta.__dataclass_fields__)
+
+
+def _meta_from_dict(d: dict) -> ProjectMeta:
+    """Construct a ProjectMeta from a raw dict, ignoring unknown keys."""
+    return ProjectMeta(**{k: v for k, v in d.items() if k in _PROJECT_META_FIELDS})
+
+
+def _patch_meta(proj_dir: Path, **fields) -> None:
+    """Update specific fields in a project's meta.json without rewriting the whole object."""
+    meta_path = proj_dir / "meta.json"
+    try:
+        meta_data = json.loads(meta_path.read_text())
+        meta_data.update(fields)
+        meta_path.write_text(json.dumps(meta_data, ensure_ascii=False, indent=2))
+    except Exception:
+        pass
+
+
+# CSS selectors tried in order to find content paragraphs in raw HTML.
+_CONTENT_SELECTORS = [
+    "article p", "main p", ".step-body p", ".entry-content p",
+    ".post-content p", ".content p", "#content p", "body p",
+]
+
+
+def _extract_desc_from_raw(site_dir: Path, current_desc: str) -> str | None:
+    """Try to extract a better description from raw.html or README.md.
+
+    Returns the improved description, or None if nothing better was found.
+    """
+    raw_path = site_dir / "raw.html"
+    if raw_path.exists() and raw_path.stat().st_size > 500:
+        try:
+            raw_soup = BeautifulSoup(raw_path.read_text(), "html.parser")
+            for sel in _CONTENT_SELECTORS:
+                paras = raw_soup.select(sel)
+                paras = [p for p in paras if len(p.get_text(strip=True)) > 30]
+                if paras:
+                    candidate = " ".join(p.get_text(strip=True) for p in paras[:3])
+                    if len(candidate) > len(current_desc):
+                        return unescape(candidate[:2000])
+                    break
+        except Exception:
+            pass
+
+    readme_path = site_dir / "README.md"
+    if readme_path.exists():
+        try:
+            lines = [
+                l.strip() for l in readme_path.read_text().split("\n")
+                if l.strip() and not l.startswith("#") and not l.startswith("!")
+                and not l.startswith("[") and len(l.strip()) > 20
+            ]
+            if lines:
+                candidate = " ".join(lines[:3])[:2000]
+                if len(candidate) > len(current_desc):
+                    return candidate
+        except Exception:
+            pass
+    return None
 
 
 def _sanitize_filename(name: str) -> str:
@@ -1673,10 +1736,7 @@ def stage_crawl(
                 if meta_path.exists():
                     try:
                         meta_data = json.loads(meta_path.read_text())
-                        meta_obj = ProjectMeta(**{
-                            k: v for k, v in meta_data.items()
-                            if k in ProjectMeta.__dataclass_fields__
-                        })
+                        meta_obj = _meta_from_dict(meta_data)
 
                         # GitHub: extract description from README if missing
                         if not meta_obj.description or len(meta_obj.description.strip()) < 30:
@@ -1796,34 +1856,11 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
             text = step.get("text", "")
             steps_html += f'<div class="step"><h3>{escape(title)}</h3><p>{escape(text[:2000])}</p></div>\n'
 
-    # Description — try to improve truncated/missing descriptions from raw HTML
     desc = meta.description
-    raw_path = site_dir / "raw.html"
-    needs_better_desc = (
-        not desc
-        or len(desc.strip()) < 30
-        or desc.rstrip().endswith("…")
-        or desc.rstrip().endswith("...")
-    )
-    if needs_better_desc and raw_path.exists():
-        try:
-            raw_soup = BeautifulSoup(raw_path.read_text(), "html.parser")
-            for sel in ["article p", "main p", ".step-body p", ".entry-content p",
-                        ".post-content p", ".content p", "#content p", "body p"]:
-                paras = raw_soup.select(sel)
-                # Filter out very short paragraphs (nav items, etc.)
-                paras = [p for p in paras if len(p.get_text(strip=True)) > 30]
-                if paras:
-                    full_desc = " ".join(p.get_text(strip=True) for p in paras[:3])
-                    if len(full_desc) > len(desc or ""):
-                        desc = full_desc[:2000]
-                    break
-        except Exception:
-            pass
-
-    # Unescape HTML entities that got double-escaped
-    import html as html_mod
-    desc = html_mod.unescape(desc)
+    better = _extract_desc_from_raw(site_dir, desc)
+    if better:
+        desc = better
+    desc = unescape(desc)
 
     if "<p>" in desc or "<br" in desc or "<strong>" in desc:
         desc_html = f'<div class="description">{_clean_description_html(desc)}</div>'
@@ -2106,15 +2143,38 @@ def _refetch_truncated_descriptions(projects: list[dict], state: PipelineState) 
                     full_desc = (data.get("data", {}).get("print", {}).get("description") or "")
                     if len(full_desc) > len(proj.get("description", "")):
                         proj["description"] = full_desc
-                        # Update meta.json on disk
-                        meta_path = state.sites_dir / proj["_dir"] / "meta.json"
-                        if meta_path.exists():
-                            meta_data = json.loads(meta_path.read_text())
-                            meta_data["description"] = full_desc
-                            meta_path.write_text(json.dumps(meta_data, ensure_ascii=False, indent=2))
+                        _patch_meta(state.sites_dir / proj["_dir"], description=full_desc)
                 time.sleep(0.3)
             except Exception as e:
                 log.debug("  Failed to refetch desc for %s: %s", model_id, e)
+
+
+def _enrich_descriptions_from_raw_html(projects: list[dict], state: PipelineState) -> None:
+    """Extract better descriptions from raw HTML for projects with weak/missing descriptions.
+
+    Persists improvements back to meta.json so category pages also benefit.
+    """
+    enriched = 0
+    for proj in projects:
+        desc = proj.get("description", "")
+        needs_better = (
+            not desc
+            or len(desc.strip()) < 30
+            or desc.rstrip().endswith("…")
+            or desc.rstrip().endswith("...")
+        )
+        if not needs_better:
+            continue
+
+        proj_dir = state.sites_dir / proj["_dir"]
+        new_desc = _extract_desc_from_raw(proj_dir, desc)
+        if new_desc:
+            proj["description"] = new_desc
+            _patch_meta(proj_dir, description=new_desc)
+            enriched += 1
+
+    if enriched:
+        log.info("  Enriched %d project descriptions from raw HTML/README", enriched)
 
 
 def stage_package(
@@ -2129,17 +2189,68 @@ def stage_package(
     projects = _collect_projects(state)
     log.info("  Found %d crawled projects", len(projects))
 
+    # Enrich descriptions: re-fetch truncated Printables, extract from raw HTML
+    log.info("  Enriching descriptions...")
+    _refetch_truncated_descriptions(projects, state)
+    _enrich_descriptions_from_raw_html(projects, state)
+
+    # Optimize existing crawl data (drop redundant files, resize large images)
+    # Runs before image validation since it may rename/delete image files.
+    log.info("  Optimizing project assets...")
+    total_saved = 0
+    optimized_count = 0
+    for proj in projects:
+        proj_dir = state.sites_dir / proj["_dir"]
+        marker = proj_dir / ".optimized"
+        if marker.exists():
+            continue
+        try:
+            meta_obj = _meta_from_dict(proj)
+            saved = _optimize_project(proj_dir, meta_obj)
+            if saved > 0:
+                total_saved += saved
+                optimized_count += 1
+            _save_meta(proj_dir, meta_obj)
+            proj["artifacts"] = meta_obj.artifacts
+            proj["images"] = meta_obj.images
+            marker.touch()
+        except Exception as e:
+            log.debug("  Could not optimize %s: %s", proj.get("title", "?")[:40], e)
+    if total_saved > 0:
+        log.info("  Optimized %d projects, saved %.1f MB", optimized_count, total_saved / 1e6)
+
+    # Validate image paths: drop references to missing files, discover actual images on disk
+    log.info("  Validating image paths...")
+    images_fixed = 0
+    for proj in projects:
+        proj_dir = state.sites_dir / proj["_dir"]
+        images = proj.get("images", [])
+        valid = [img for img in images if (proj_dir / img).exists()]
+        if len(valid) < len(images):
+            img_dir = proj_dir / "images"
+            if img_dir.is_dir():
+                on_disk = sorted(
+                    f"images/{f.name}" for f in img_dir.iterdir()
+                    if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+                )
+                seen = set(valid)
+                for img in on_disk:
+                    if img not in seen:
+                        valid.append(img)
+                        seen.add(img)
+            if valid != images:
+                proj["images"] = valid
+                _patch_meta(proj_dir, images=valid)
+                images_fixed += 1
+    if images_fixed:
+        log.info("  Fixed image references for %d projects", images_fixed)
+
     # Regenerate all project pages with latest template
     log.info("  Regenerating project pages...")
-    # Re-fetch truncated Printables descriptions from GraphQL
-    _refetch_truncated_descriptions(projects, state)
     for proj in projects:
         proj_dir = state.sites_dir / proj["_dir"]
         try:
-            meta_obj = ProjectMeta(**{
-                k: v for k, v in proj.items()
-                if k in ProjectMeta.__dataclass_fields__
-            })
+            meta_obj = _meta_from_dict(proj)
             steps = None
             steps_file = proj_dir / "steps.json"
             if steps_file.exists():
@@ -2147,9 +2258,6 @@ def stage_package(
             _generate_project_page(proj_dir, meta_obj, steps=steps)
         except Exception as e:
             log.debug("  Could not regenerate %s: %s", proj.get("title", "?")[:40], e)
-
-    # Re-collect after regeneration (meta may have changed)
-    projects = _collect_projects(state)
 
     # Group by category
     by_category: dict[str, list[dict]] = {}
@@ -2342,6 +2450,10 @@ h2 { font-size: 20px; color: #444; margin-top: 32px; }
 .credit a { color: #2563eb; }
 a { color: #2563eb; text-decoration: none; }
 nav { margin-bottom: 16px; }
+.muted { color: #999; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+th { font-weight: 600; color: #666; }
 """
 
 
@@ -2447,11 +2559,13 @@ def _make_category_page(cat_name: str, projects: list[dict]) -> str:
 
 def _make_dead_page(dead: list[VerifiedLink]) -> str:
     rows = ""
-    for v in sorted(dead, key=lambda x: x.url):
+    for v in sorted(dead, key=lambda x: (x.category or "zzz", x.title or x.url)):
         wb = ""
         if v.wayback_url:
             wb = f'<a href="{escape(v.wayback_url)}">Wayback</a>'
-        rows += f"<tr><td>{escape(v.url)}</td><td>{v.http_status}</td><td>{wb}</td></tr>\n"
+        title_cell = escape(v.title) if v.title else f'<span class="muted">{escape(v.url)}</span>'
+        cat = escape(v.category) if v.category else ""
+        rows += f"<tr><td>{title_cell}</td><td>{cat}</td><td><a href=\"{escape(v.url)}\">{escape(urlparse(v.url).netloc)}</a></td><td>{v.http_status}</td><td>{wb}</td></tr>\n"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -2466,7 +2580,7 @@ def _make_dead_page(dead: list[VerifiedLink]) -> str:
 <h1>Dead Links</h1>
 <p>{len(dead)} links were not reachable at crawl time.</p>
 <table>
-<tr><th>URL</th><th>Status</th><th>Wayback</th></tr>
+<tr><th>Project</th><th>Category</th><th>Domain</th><th>Status</th><th>Wayback</th></tr>
 {rows}
 </table>
 </body>
