@@ -1034,6 +1034,134 @@ class LinkArtifacts(ArtifactStrategy):
         return new_artifacts
 
 
+# ── SiteScraper Orchestrator ───────────────────────────────────────────────
+
+
+@dataclass
+class SiteConfig:
+    """Declarative configuration for a site-specific scraper."""
+    name: str
+    domain: str
+    fetch_chain: list[FetchStrategy]
+    metadata_strategies: list[MetadataStrategy]
+    image_strategies: list[ImageStrategy]
+    artifact_strategies: list[ArtifactStrategy]
+    pre_fetch: object | None = None    # (verified, client, **kw) -> dict
+    post_parse: object | None = None   # (soup, meta, site_dir, client, **kw) -> None
+    rate_limit: float = CRAWL_DELAY_PER_DOMAIN
+
+
+class SiteScraper:
+    """Orchestrator: runs a configured extraction pipeline for one URL."""
+
+    def __init__(self, config: SiteConfig, client: httpx.Client, sites_dir: Path):
+        self.config = config
+        self.client = client
+        self.sites_dir = sites_dir
+        self.fetch_chain = FetchChain(config.fetch_chain)
+
+    def site_dir_for(self, url: str) -> Path:
+        parsed = urlparse(url)
+        domain = parsed.netloc.replace("www.", "")
+        path_slug = _slugify(parsed.path.strip("/"))
+        d = self.sites_dir / domain / path_slug
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def extract(self, verified: VerifiedLink) -> CrawlResult:
+        url = verified.final_url or verified.url
+        site_dir = self.site_dir_for(url)
+        result = CrawlResult(url=verified.url, extractor=self.config.name)
+        total_size = 0
+
+        meta = ProjectMeta(
+            url=verified.url,
+            category=verified.category,
+            subcategory=verified.subcategory,
+            source_domain=self.config.domain or urlparse(verified.url).netloc.replace("www.", ""),
+            crawled_at=datetime.now(timezone.utc).isoformat(),
+            source_status=verified.status,
+        )
+
+        # Pre-fetch hook (prepare API headers, cookies, tokens)
+        extra_kwargs = {}
+        if self.config.pre_fetch:
+            extra_kwargs = self.config.pre_fetch(verified, self.client) or {}
+
+        # Fetch HTML via chain (HTTP → SSL bypass → Playwright → Wayback)
+        try:
+            fetch_result = self.fetch_chain.fetch(
+                url, self.client,
+                wayback_url=verified.wayback_url if verified.status == "wayback" else "",
+                **extra_kwargs,
+            )
+            html = fetch_result.html
+            (site_dir / "raw.html").write_text(html)
+        except Exception as e:
+            result.status = "failed"
+            result.error = str(e)[:200]
+            return result
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Extract metadata (each strategy fills what it can, first wins per field)
+        for strategy in self.config.metadata_strategies:
+            strategy.extract(soup, url, meta)
+
+        # Post-parse hook (Printables GraphQL, Thingiverse API, GitHub ZIP, etc.)
+        if self.config.post_parse:
+            try:
+                self.config.post_parse(soup, meta, site_dir, self.client, **extra_kwargs)
+            except Exception as e:
+                log.debug("    post_parse hook error: %s", e)
+
+        # Collect images
+        images_dir = site_dir / "images"
+        images_dir.mkdir(exist_ok=True)
+        for strategy in self.config.image_strategies:
+            new_imgs = strategy.collect(soup, url, images_dir, self.client, meta.images, **extra_kwargs)
+            meta.images.extend(new_imgs)
+            total_size += sum(
+                (images_dir / Path(p).name).stat().st_size
+                for p in new_imgs if (images_dir / Path(p).name).exists()
+            )
+
+        # Collect artifacts
+        artifacts_dir = site_dir / "artifacts"
+        artifacts_dir.mkdir(exist_ok=True)
+        for strategy in self.config.artifact_strategies:
+            new_arts = strategy.collect(soup, url, artifacts_dir, self.client, meta.artifacts, **extra_kwargs)
+            meta.artifacts.extend(new_arts)
+            total_size += sum(a.get("size_bytes", 0) for a in new_arts)
+
+        # Finalize
+        meta.title = meta.title or verified.title or "Untitled"
+        _generate_project_page(site_dir, meta)
+        _save_meta(site_dir, meta)
+
+        result.status = "completed"
+        result.title = meta.title
+        result.files = len(meta.artifacts) + len(meta.images)
+        result.size_bytes = total_size
+        result.ts = datetime.now(timezone.utc).isoformat()
+        return result
+
+    def post_extract(self, site_dir: Path, meta: ProjectMeta, url: str) -> None:
+        """Quality check: Playwright fallback for missing images, description enrichment."""
+        quality = _quality_score(site_dir)
+        if "no_images" in quality["issues"] and _has_playwright():
+            _playwright_recrawl(url, site_dir, meta)
+            _save_meta(site_dir, meta)
+
+        better = _extract_desc_from_raw(site_dir, meta.description)
+        if better:
+            meta.description = better
+            _save_meta(site_dir, meta)
+
+
+# ── Legacy Extractors (to be removed after migration) ─────────────────────
+
+
 class BaseExtractor:
     name: str = "base"
 
