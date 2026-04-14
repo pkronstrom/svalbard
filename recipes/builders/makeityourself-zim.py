@@ -1931,9 +1931,38 @@ class GenericExtractor(BaseExtractor):
             r.raise_for_status()
             html = r.text
         except Exception as e:
-            result.status = "failed"
-            result.error = str(e)[:200]
-            return result
+            # Retry SSL errors without verification
+            if "CERTIFICATE_VERIFY_FAILED" in str(e):
+                try:
+                    with httpx.Client(verify=False, timeout=30) as insecure:
+                        r = insecure.get(url, headers=HEADERS, follow_redirects=True)
+                        r.raise_for_status()
+                        html = r.text
+                        log.info("    SSL bypass OK for %s", url[:60])
+                except Exception as e2:
+                    result.status = "failed"
+                    result.error = str(e2)[:200]
+                    return result
+            # Retry 403s with Playwright (anti-bot pages)
+            elif "403" in str(e) and _has_playwright():
+                try:
+                    from playwright.sync_api import sync_playwright
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=True)
+                        page = browser.new_page()
+                        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                        page.wait_for_timeout(3000)
+                        html = page.content()
+                        browser.close()
+                        log.info("    Playwright bypass OK for %s", url[:60])
+                except Exception as e2:
+                    result.status = "failed"
+                    result.error = str(e2)[:200]
+                    return result
+            else:
+                result.status = "failed"
+                result.error = str(e)[:200]
+                return result
 
         soup = BeautifulSoup(html, "html.parser")
 
