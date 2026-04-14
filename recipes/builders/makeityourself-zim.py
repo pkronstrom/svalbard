@@ -13,6 +13,7 @@ Usage:
     python3 makeityourself-zim.py --workdir /data/miy --force
     python3 makeityourself-zim.py --workdir /data/miy --force-stage verify
     python3 makeityourself-zim.py --workdir /data/miy --retry-failed
+    python3 makeityourself-zim.py --workdir /data/miy --retry-dead
 
 Environment variables:
     MIY_THINGIVERSE_TOKEN  — Thingiverse API app token (required for STL downloads).
@@ -75,6 +76,138 @@ MAX_RETRIES = 3
 VERIFY_CONCURRENCY = 10
 VERIFY_DELAY = 0.2
 CRAWL_DELAY_PER_DOMAIN = 1.5  # seconds between requests to same domain
+
+THINGIVERSE_COOKIES_FILE = "thingiverse_cookies.json"
+
+# Headers that match a real Chrome browser — Cloudflare checks these alongside cookies
+_TV_CDN_HEADERS = {
+    "User-Agent": BROWSER_UA,
+    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.thingiverse.com/",
+    "Sec-Ch-Ua": '"Chromium";v="120", "Google Chrome";v="120", "Not?A_Brand";v="8"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"macOS"',
+    "Sec-Fetch-Dest": "image",
+    "Sec-Fetch-Mode": "no-cors",
+    "Sec-Fetch-Site": "same-site",
+}
+
+
+def _test_tv_cookies(cookies: dict[str, str]) -> bool:
+    """Test if Thingiverse CDN cookies work."""
+    try:
+        r = httpx.get(
+            "https://cdn.thingiverse.com/site/img/favicons/favicon-32x32.png",
+            cookies=cookies, headers=_TV_CDN_HEADERS, timeout=10,
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _load_thingiverse_cookies(workdir: Path) -> dict[str, str] | None:
+    """Load cached Thingiverse Cloudflare cookies from disk."""
+    cookie_path = workdir / THINGIVERSE_COOKIES_FILE
+    if not cookie_path.exists():
+        return None
+    try:
+        data = json.loads(cookie_path.read_text())
+        cookies = data.get("cookies", data) if isinstance(data, dict) and "cookies" in data else data
+        ua = data.get("user_agent", BROWSER_UA) if isinstance(data, dict) and "user_agent" in data else BROWSER_UA
+        # Update the CDN headers to match the captured UA
+        _TV_CDN_HEADERS["User-Agent"] = ua
+        if _test_tv_cookies(cookies):
+            log.info("  Thingiverse cookies: valid (loaded from cache)")
+            return cookies
+        log.info("  Thingiverse cookies: expired")
+    except Exception:
+        pass
+    return None
+
+
+def _capture_thingiverse_cookies(workdir: Path) -> dict[str, str] | None:
+    """Open a visible browser to Thingiverse, wait for Cloudflare, capture cookies."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        log.warning("  Playwright not installed — cannot capture Thingiverse cookies")
+        return None
+
+    log.info("  Opening browser to pass Thingiverse Cloudflare challenge...")
+    log.info("  (solve the CAPTCHA if prompted, or just wait)")
+
+    try:
+        with sync_playwright() as p:
+            # Don't override user_agent — let Playwright use its default so
+            # Cloudflare's TLS/UA fingerprint check is consistent
+            browser = p.chromium.launch(headless=False)
+            ctx = browser.new_context()
+            page = ctx.new_page()
+
+            # Capture the actual User-Agent the browser is using
+            actual_ua = page.evaluate("() => navigator.userAgent")
+            log.debug("  Browser UA: %s", actual_ua[:80])
+
+            page.goto("https://www.thingiverse.com/thing:1015178", timeout=60000)
+
+            # Wait until we get past Cloudflare
+            for _ in range(120):
+                title = page.title()
+                if "just a moment" not in title.lower() and "checking" not in title.lower():
+                    break
+                page.wait_for_timeout(1000)
+            else:
+                log.warning("  Timed out waiting for Cloudflare challenge")
+                browser.close()
+                return None
+
+            page.wait_for_timeout(2000)
+
+            # Test a CDN download from within the browser context
+            cdn_test = page.evaluate("""
+                async () => {
+                    const r = await fetch('https://cdn.thingiverse.com/site/img/favicons/favicon-32x32.png');
+                    return {status: r.status, ok: r.ok};
+                }
+            """)
+            log.info("  In-browser CDN test: %s", cdn_test)
+
+            # Extract all cookies
+            raw_cookies = ctx.cookies()
+            cookies = {}
+            for c in raw_cookies:
+                if c["domain"].endswith("thingiverse.com") or c["domain"].endswith("cloudflare.com"):
+                    cookies[c["name"]] = c["value"]
+
+            browser.close()
+
+            if "cf_clearance" in cookies:
+                log.info("  Cloudflare cleared — captured %d cookies (cf_clearance present)", len(cookies))
+            else:
+                log.info("  Captured %d cookies (no cf_clearance — may not have been challenged)", len(cookies))
+
+            # Update CDN headers to match the browser's actual UA
+            _TV_CDN_HEADERS["User-Agent"] = actual_ua
+
+            if _test_tv_cookies(cookies):
+                log.info("  Cookie+UA test passed — CDN downloads will work")
+                (workdir / THINGIVERSE_COOKIES_FILE).write_text(
+                    json.dumps({"cookies": cookies, "user_agent": actual_ua}, indent=2)
+                )
+                return cookies
+
+            log.warning("  Cookie test failed — Cloudflare may require matching TLS fingerprint")
+            log.warning("  Saving cookies anyway in case they work for some requests")
+            (workdir / THINGIVERSE_COOKIES_FILE).write_text(
+                json.dumps({"cookies": cookies, "user_agent": actual_ua}, indent=2)
+            )
+            return cookies
+
+    except Exception as e:
+        log.warning("  Browser cookie capture failed: %s", str(e)[:100])
+        return None
 
 
 # ── Data Models ────────────────────────────────────────────────────────────
@@ -372,6 +505,8 @@ EXTRACTOR_MAP: dict[str, str] = {
     "www.github.com": "github",
     "www.instructables.com": "instructables",
     "instructables.com": "instructables",
+    "cults3d.com": "cults3d",
+    "www.cults3d.com": "cults3d",
 }
 
 
@@ -480,12 +615,51 @@ async def _run_verify(links: list[LinkEntry], existing: dict[str, dict]) -> list
     return results
 
 
-def stage_verify(state: PipelineState, links: list[LinkEntry]) -> list[VerifiedLink]:
+async def _retry_dead_wayback(existing: dict[str, dict]) -> list[VerifiedLink]:
+    """Re-check Wayback Machine for entries currently marked 'dead'."""
+    dead = [VerifiedLink(**v) for v in existing.values() if v.get("status") == "dead" and not v.get("wayback_url")]
+    if not dead:
+        log.info("  No dead links without Wayback URLs to retry")
+        return [VerifiedLink(**v) for v in existing.values()]
+
+    log.info("  Retrying Wayback for %d dead links...", len(dead))
+    recovered = 0
+    async with httpx.AsyncClient() as client:
+        for v in dead:
+            wayback = await _check_wayback(client, v.url)
+            if wayback:
+                v.status = "wayback"
+                v.wayback_url = wayback
+                existing[v.url] = asdict(v)
+                recovered += 1
+                log.info("    Recovered: %s → %s", v.url[:60], wayback[:60])
+            await asyncio.sleep(0.5)
+
+    log.info("  Wayback retry: %d/%d recovered", recovered, len(dead))
+    return [VerifiedLink(**v) for v in existing.values()]
+
+
+def stage_verify(
+    state: PipelineState, links: list[LinkEntry], *, retry_dead: bool = False,
+) -> list[VerifiedLink]:
     """Verify all links and classify by extractor type."""
     existing = {}
     if state.verified_file.exists():
         for entry in _read_jsonl(state.verified_file):
             existing[entry["url"]] = entry
+
+    if retry_dead and existing:
+        log.info("Stage 2: Retrying Wayback for dead links...")
+        results = asyncio.run(_retry_dead_wayback(existing))
+        _write_jsonl(state.verified_file, results)
+        state.stage = "verify"
+        state.save()
+        by_status = {}
+        for r in results:
+            by_status.setdefault(r.status, []).append(r)
+        for status, items in sorted(by_status.items()):
+            log.info("  %s: %d", status, len(items))
+        return results
 
     if len(existing) >= len(links):
         log.info("Stage 2: All %d links already verified", len(existing))
@@ -521,13 +695,19 @@ def _download_file_sync(url: str, dest: Path, *, timeout: float = 60) -> None:
                 f.write(chunk)
 
 
-def _download_file(client: httpx.Client, url: str, dest: Path, *, timeout: float = 120) -> bool:
+def _download_file(
+    client: httpx.Client, url: str, dest: Path, *,
+    timeout: float = 120, headers: dict | None = None, cookies: dict | None = None,
+) -> bool:
     """Download a file to dest. Returns True on success."""
     if dest.exists() and dest.stat().st_size > 0:
         return True
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with client.stream("GET", url, follow_redirects=True, timeout=timeout, headers=HEADERS) as r:
+        kwargs: dict = dict(follow_redirects=True, timeout=timeout, headers=headers or HEADERS)
+        if cookies:
+            kwargs["cookies"] = cookies
+        with client.stream("GET", url, **kwargs) as r:
             r.raise_for_status()
             with open(dest, "wb") as f:
                 for chunk in r.iter_bytes(65536):
@@ -687,11 +867,13 @@ def _playwright_recrawl(url: str, site_dir: Path, meta: ProjectMeta) -> bool:
         return False
 
     log.debug("    Playwright re-crawl: %s", url[:60])
+    is_thingiverse = "thingiverse.com" in url
+    initial_images = len(meta.images)
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.set_viewport_size({"width": 1280, "height": 800})
+            ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+            page = ctx.new_page()
             page.goto(url, wait_until="networkidle", timeout=30000)
 
             # Wait for images to lazy-load
@@ -699,6 +881,13 @@ def _playwright_recrawl(url: str, site_dir: Path, meta: ProjectMeta) -> bool:
             page.wait_for_timeout(2000)
             page.evaluate("window.scrollTo(0, 0)")
             page.wait_for_timeout(1000)
+
+            # Thingiverse SPA: click through gallery to trigger image loads
+            if is_thingiverse:
+                try:
+                    page.wait_for_selector("img[class*='gallery'], img[class*='thumb'], .thing-image img", timeout=5000)
+                except Exception:
+                    pass
 
             # Save rendered HTML
             html = page.content()
@@ -719,14 +908,14 @@ def _playwright_recrawl(url: str, site_dir: Path, meta: ProjectMeta) -> bool:
             for img_url in img_urls[:20]:
                 if img_count >= 20:
                     break
-                # Skip tiny images
+                # Skip tiny images (icons, spacers)
                 try:
-                    dims = page.evaluate(f"""
-                        () => {{
-                            const img = document.querySelector('img[src="{img_url}"]');
-                            return img ? {{w: img.naturalWidth, h: img.naturalHeight}} : null;
-                        }}
-                    """)
+                    dims = page.evaluate("""
+                        (url) => {
+                            const img = document.querySelector(`img[src="${url}"]`);
+                            return img ? {w: img.naturalWidth, h: img.naturalHeight} : null;
+                        }
+                    """, img_url)
                     if dims and (dims["w"] < 50 or dims["h"] < 50):
                         continue
                 except Exception:
@@ -738,6 +927,7 @@ def _playwright_recrawl(url: str, site_dir: Path, meta: ProjectMeta) -> bool:
                 if rel_path in seen:
                     continue
                 try:
+                    # page.request uses the browser's cookies/session — bypasses CDN 403s
                     resp = page.request.get(img_url)
                     if resp.ok:
                         (images_dir / fname).write_bytes(resp.body())
@@ -747,6 +937,29 @@ def _playwright_recrawl(url: str, site_dir: Path, meta: ProjectMeta) -> bool:
                             img_count += 1
                 except Exception:
                     pass
+
+            # Thingiverse: also try to grab og:image and gallery data from DOM
+            if is_thingiverse and img_count == initial_images:
+                og_urls = page.evaluate("""
+                    () => {
+                        const metas = document.querySelectorAll('meta[property="og:image"]');
+                        return Array.from(metas).map(m => m.content).filter(Boolean);
+                    }
+                """)
+                for og_url in og_urls[:5]:
+                    if img_count >= 20:
+                        break
+                    fname = f"img_{img_count:02d}.jpg"
+                    rel_path = f"images/{fname}"
+                    try:
+                        resp = page.request.get(og_url)
+                        if resp.ok:
+                            (images_dir / fname).write_bytes(resp.body())
+                            if (images_dir / fname).stat().st_size > 1000:
+                                meta.images.append(rel_path)
+                                img_count += 1
+                    except Exception:
+                        pass
 
             # Extract description if missing
             if len(meta.description.strip()) < 30:
@@ -760,9 +973,7 @@ def _playwright_recrawl(url: str, site_dir: Path, meta: ProjectMeta) -> bool:
                     meta.description = desc[:2000]
 
             browser.close()
-
-            improved = len(meta.images) > len(seen) - len(meta.images) or len(meta.description) > 30
-            return improved
+            return len(meta.images) > initial_images or len(meta.description) > 30
     except Exception as e:
         log.debug("    Playwright failed: %s", str(e)[:100])
         return False
@@ -1063,9 +1274,10 @@ class PrintablesExtractor(BaseExtractor):
 class ThingiverseExtractor(BaseExtractor):
     name = "thingiverse"
 
-    def __init__(self, client: httpx.Client, sites_dir: Path, api_token: str = ""):
+    def __init__(self, client: httpx.Client, sites_dir: Path, api_token: str = "", cdn_cookies: dict[str, str] | None = None):
         super().__init__(client, sites_dir)
         self.api_token = api_token
+        self.cdn_cookies = cdn_cookies or {}
 
     def _extract_thing_id(self, url: str) -> str | None:
         m = re.search(r"thing:(\d+)", url)
@@ -1152,46 +1364,79 @@ class ThingiverseExtractor(BaseExtractor):
                     meta.title, meta.author = m.group(1), m.group(2)
             thumb_url = None
 
-        # Download thumbnail/image — try multiple sources
         images_dir = site_dir / "images"
         images_dir.mkdir(exist_ok=True)
-        if thumb_url and thumb_url.startswith("http"):
-            if _download_file(self.client, thumb_url, images_dir / "thumb.jpg"):
-                meta.images.append("images/thumb.jpg")
-                total_size += (images_dir / "thumb.jpg").stat().st_size
-            time.sleep(0.3)
-        # Fallback: try all content image URLs from the raw HTML
-        if not meta.images and html:
-            cdn_urls = re.findall(r'https?://cdn\.thingiverse\.com/[^"\'<>\s]+\.(?:jpg|png|jpeg)', html)
-            for i, img_url in enumerate(dict.fromkeys(cdn_urls)):  # dedupe preserving order
-                if i >= 5:
-                    break
-                fname = f"img_{i:02d}.jpg"
-                if _download_file(self.client, img_url, images_dir / fname):
-                    meta.images.append(f"images/{fname}")
-                    total_size += (images_dir / fname).stat().st_size
-                time.sleep(0.2)
 
-        # Try Thingiverse API for files (requires app token)
+        # Thingiverse API: images, files, and better metadata (requires token)
         if self.api_token:
             api_base = "https://api.thingiverse.com"
             api_headers = {**HEADERS, "Authorization": f"Bearer {self.api_token}"}
+
+            # API metadata (richer than JSON-LD)
+            try:
+                r = self.client.get(
+                    f"{api_base}/things/{thing_id}", headers=api_headers, timeout=30,
+                )
+                if r.status_code == 200:
+                    api_data = r.json()
+                    meta.title = meta.title or api_data.get("name", "")
+                    if not meta.description or len(meta.description) < 50:
+                        meta.description = (api_data.get("description") or "")[:2000]
+                    creator = api_data.get("creator") or {}
+                    meta.author = meta.author or creator.get("name", "")
+                    meta.license = meta.license or api_data.get("license", "")
+                time.sleep(0.3)
+            except Exception:
+                pass
+
+            # CDN headers + cookies for Cloudflare bypass
+            cdn_cookies = self.cdn_cookies or None
+            cdn_headers = {**_TV_CDN_HEADERS}
+
+            # For file downloads: merge API auth into CDN headers
+            cdn_auth_headers = {**cdn_headers, "Authorization": f"Bearer {self.api_token}"}
+
+            # API images
+            try:
+                r = self.client.get(
+                    f"{api_base}/things/{thing_id}/images",
+                    headers=api_headers, timeout=30,
+                )
+                if r.status_code == 200:
+                    for i, img_data in enumerate(r.json()[:12]):
+                        sizes = img_data.get("sizes", [])
+                        large = [s for s in sizes if s.get("type") == "display" and s.get("size") == "large"]
+                        medium = [s for s in sizes if s.get("type") == "display" and s.get("size") == "medium"]
+                        url_entry = large[0] if large else (medium[0] if medium else (sizes[0] if sizes else None))
+                        if not url_entry:
+                            continue
+                        img_url = url_entry.get("url", "")
+                        if not img_url.startswith("http"):
+                            continue
+                        fname = f"img_{i:02d}.jpg"
+                        if _download_file(self.client, img_url, images_dir / fname, headers=cdn_headers, cookies=cdn_cookies):
+                            meta.images.append(f"images/{fname}")
+                            total_size += (images_dir / fname).stat().st_size
+                        time.sleep(0.3)
+                time.sleep(CRAWL_DELAY_PER_DOMAIN)
+            except Exception as e:
+                log.debug("  Thingiverse images API error: %s", e)
+
+            # API files (STL downloads) — need both auth header AND CDN cookies
             try:
                 r = self.client.get(
                     f"{api_base}/things/{thing_id}/files",
                     headers=api_headers, timeout=30,
                 )
                 if r.status_code == 200:
-                    files_data = r.json()
                     artifacts_dir = site_dir / "artifacts"
                     artifacts_dir.mkdir(exist_ok=True)
-                    for f_info in files_data:
-                        # direct_url is CDN (no auth needed once we have it)
-                        dl_url = f_info.get("direct_url") or f_info.get("public_url")
+                    for f_info in r.json():
+                        dl_url = f_info.get("download_url") or f_info.get("direct_url") or f_info.get("public_url")
                         if not dl_url:
                             continue
                         fname = _sanitize_filename(f_info.get("name", "file"))
-                        if _download_file(self.client, dl_url, artifacts_dir / fname):
+                        if _download_file(self.client, dl_url, artifacts_dir / fname, headers=cdn_auth_headers, cookies=cdn_cookies):
                             fsize = (artifacts_dir / fname).stat().st_size
                             meta.artifacts.append({
                                 "filename": f"artifacts/{fname}",
@@ -1204,7 +1449,26 @@ class ThingiverseExtractor(BaseExtractor):
                     log.warning("  Thingiverse API returned 401 — token may be invalid")
                 time.sleep(CRAWL_DELAY_PER_DOMAIN)
             except Exception as e:
-                log.debug("  Thingiverse API error for thing:%s: %s", thing_id, e)
+                log.debug("  Thingiverse files API error: %s", e)
+
+        else:
+            # No token: try CDN image URLs from JSON-LD / HTML (often blocked)
+            thumb_url_val = thumb_url if jsonld else None
+            if thumb_url_val and thumb_url_val.startswith("http"):
+                if _download_file(self.client, thumb_url_val, images_dir / "thumb.jpg"):
+                    meta.images.append("images/thumb.jpg")
+                    total_size += (images_dir / "thumb.jpg").stat().st_size
+                time.sleep(0.3)
+            if not meta.images and html:
+                cdn_urls = re.findall(r'https?://cdn\.thingiverse\.com/[^"\'<>\s]+\.(?:jpg|png|jpeg)', html)
+                for i, img_url in enumerate(dict.fromkeys(cdn_urls)):
+                    if i >= 5:
+                        break
+                    fname = f"img_{i:02d}.jpg"
+                    if _download_file(self.client, img_url, images_dir / fname):
+                        meta.images.append(f"images/{fname}")
+                        total_size += (images_dir / fname).stat().st_size
+                    time.sleep(0.2)
 
         meta.title = meta.title or verified.title or f"Thingiverse Thing {thing_id}"
         _generate_project_page(site_dir, meta)
@@ -1507,6 +1771,140 @@ class InstructablesExtractor(BaseExtractor):
         return result
 
 
+class Cults3DExtractor(BaseExtractor):
+    name = "cults3d"
+
+    def extract(self, verified: VerifiedLink) -> CrawlResult:
+        url = verified.final_url or verified.url
+        site_dir = self.site_dir_for(url)
+        result = CrawlResult(url=verified.url, extractor=self.name)
+        total_size = 0
+
+        meta = ProjectMeta(
+            url=verified.url,
+            category=verified.category,
+            subcategory=verified.subcategory,
+            source_domain="cults3d.com",
+            crawled_at=datetime.now(timezone.utc).isoformat(),
+            source_status=verified.status,
+        )
+
+        try:
+            r = self.client.get(url, headers=HEADERS, timeout=30, follow_redirects=True)
+            r.raise_for_status()
+            html = r.text
+            (site_dir / "raw.html").write_text(html)
+        except Exception as e:
+            result.status = "failed"
+            result.error = str(e)[:200]
+            return result
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Extract JSON-LD (most reliable source)
+        for script in soup.find_all("script", type="application/ld+json"):
+            try:
+                data = json.loads(script.string)
+                if isinstance(data, dict) and data.get("@type") == "MediaObject":
+                    meta.title = data.get("name", "")
+                    meta.description = (data.get("description") or "")[:2000]
+                    creator = data.get("creator") or {}
+                    meta.author = creator.get("name", "")
+                    license_url = data.get("license", "")
+                    if "creativecommons.org" in license_url:
+                        # Extract short form: "CC BY 4.0" from URL
+                        m = re.search(r"/licenses/([^/]+)/", license_url)
+                        meta.license = f"CC {m.group(1).upper()}" if m else license_url
+                    else:
+                        meta.license = license_url
+                    break
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        # Fallback to OG tags / title
+        if not meta.title:
+            og_title = soup.find("meta", property="og:title")
+            meta.title = og_title["content"] if og_title else ""
+        if not meta.description:
+            og_desc = soup.find("meta", property="og:description")
+            meta.description = (og_desc["content"] if og_desc else "")[:2000]
+
+        # Images: gallery uses data-src for lazy loading, plus cover image
+        images_dir = site_dir / "images"
+        images_dir.mkdir(exist_ok=True)
+        img_count = 0
+        seen_bases: set[str] = set()
+
+        # Collect all image sources: eager src + lazy data-src
+        for img in soup.find_all("img"):
+            src = img.get("data-src") or img.get("src") or ""
+            if not src.startswith("http") or "images.cults3d.com" not in src:
+                continue
+            base = src.split("?")[0]
+            if base in seen_bases:
+                continue
+            seen_bases.add(base)
+            if img_count >= 12:
+                break
+            fname = f"img_{img_count:02d}.jpg"
+            # Request at reasonable resolution
+            dl_url = base + "?width=1024"
+            if _download_file(self.client, dl_url, images_dir / fname):
+                meta.images.append(f"images/{fname}")
+                total_size += (images_dir / fname).stat().st_size
+                img_count += 1
+            time.sleep(0.3)
+
+        # Also try <source> tags with data-srcset
+        for source in soup.find_all("source", attrs={"data-srcset": True}):
+            if img_count >= 12:
+                break
+            srcset = source["data-srcset"]
+            src = srcset.split(",")[0].strip().split(" ")[0]
+            if not src.startswith("http"):
+                continue
+            base = src.split("?")[0]
+            if base in seen_bases:
+                continue
+            seen_bases.add(base)
+            fname = f"img_{img_count:02d}.jpg"
+            dl_url = base + "?width=1024"
+            if _download_file(self.client, dl_url, images_dir / fname):
+                meta.images.append(f"images/{fname}")
+                total_size += (images_dir / fname).stat().st_size
+                img_count += 1
+            time.sleep(0.3)
+
+        # STL downloads require auth even for free models — record file names
+        info_table = soup.find("table", class_="information-table")
+        if info_table:
+            for row in info_table.find_all("tr"):
+                cells = row.find_all(["th", "td"])
+                if len(cells) >= 2:
+                    header = cells[0].get_text(strip=True).lower()
+                    if "file" in header or "fichier" in header:
+                        file_names = cells[1].get_text(strip=True)
+                        for fname in re.split(r'\s+', file_names):
+                            if any(fname.lower().endswith(ext) for ext in [".stl", ".3mf", ".step", ".obj"]):
+                                meta.artifacts.append({
+                                    "filename": f"artifacts/{fname}",
+                                    "type": Path(fname).suffix.lstrip("."),
+                                    "size_bytes": 0,
+                                    "download_requires_auth": True,
+                                })
+
+        meta.title = meta.title or verified.title or "Cults3D Project"
+        _generate_project_page(site_dir, meta)
+        _save_meta(site_dir, meta)
+
+        result.status = "completed"
+        result.title = meta.title
+        result.files = len(meta.artifacts) + len(meta.images)
+        result.size_bytes = total_size
+        result.ts = datetime.now(timezone.utc).isoformat()
+        return result
+
+
 class GenericExtractor(BaseExtractor):
     name = "generic"
 
@@ -1626,6 +2024,7 @@ EXTRACTORS: dict[str, type[BaseExtractor]] = {
     "thingiverse": ThingiverseExtractor,
     "github": GitHubExtractor,
     "instructables": InstructablesExtractor,
+    "cults3d": Cults3DExtractor,
     "generic": GenericExtractor,
 }
 
@@ -1638,6 +2037,7 @@ DOMAIN_CONCURRENCY: dict[str, int] = {
     "thingiverse": 1,
     "github": 2,
     "instructables": 2,
+    "cults3d": 1,
     "generic": 4,  # spread across many different domains
 }
 
@@ -1648,6 +2048,7 @@ def stage_crawl(
     retry_failed: bool = False,
     printables_token: str = "",
     thingiverse_token: str = "",
+    thingiverse_cookies: dict[str, str] | None = None,
     optimize: bool = True,
 ) -> list[CrawlResult]:
     """Crawl all verified links using appropriate extractors (parallel)."""
@@ -1706,7 +2107,7 @@ def stage_crawl(
             if name == "printables":
                 extractors[name] = cls(client, state.sites_dir, auth_token=printables_token)
             elif name == "thingiverse":
-                extractors[name] = cls(client, state.sites_dir, api_token=thingiverse_token)
+                extractors[name] = cls(client, state.sites_dir, api_token=thingiverse_token, cdn_cookies=thingiverse_cookies)
             else:
                 extractors[name] = cls(client, state.sites_dir)
 
@@ -1951,16 +2352,32 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
         except Exception:
             pass
 
+    # Category breadcrumb for navigation + FTS indexing
+    cat_slug = _slugify(meta.category) if meta.category else ""
+    cat_html = ""
+    if meta.category:
+        cat_link = f'<a href="../../category/{cat_slug}/index.html">{escape(meta.category)}</a>'
+        if meta.subcategory:
+            cat_html = f'<p class="breadcrumb">{cat_link} / {escape(meta.subcategory)}</p>'
+        else:
+            cat_html = f'<p class="breadcrumb">{cat_link}</p>'
+
+    # Artifact types as searchable keywords (e.g. "STL PDF" so FTS picks them up)
+    artifact_types = sorted({a.get("type", "").upper() for a in real_artifacts if a.get("type")})
+    keywords = " ".join(artifact_types)
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(meta.title)}</title>
+<meta name="keywords" content="{escape(meta.category)}, {escape(meta.subcategory)}, {escape(keywords)}">
 <style>{PROJECT_CSS}</style>
 </head>
 <body>
 <nav><a href="../../index.html">Home</a></nav>
+{cat_html}
 <h1>{escape(meta.title)}</h1>
 <p class="meta">
   <span class="author">{escape(meta.author)}</span>
@@ -2000,60 +2417,63 @@ IMAGE_JPEG_QUALITY = 85
 def _optimize_project(site_dir: Path, meta: ProjectMeta) -> int:
     """Optimize a crawled project's files in-place. Returns bytes saved."""
     saved = 0
-    has_exts = {p.suffix.lower() for p in site_dir.rglob("*") if p.is_file()}
 
-    # 1. Drop always-unwanted files
-    for f in list(site_dir.rglob("*")):
-        if f.is_file() and f.suffix.lower() in DROP_ALWAYS:
-            size = f.stat().st_size
-            f.unlink()
-            saved += size
-            log.debug("    drop %s (%d KB)", f.name, size // 1024)
+    # Single pass: collect all files with their extensions and sizes
+    all_files: list[Path] = []
+    has_exts: set[str] = set()
+    for f in site_dir.rglob("*"):
+        if f.is_file():
+            all_files.append(f)
+            has_exts.add(f.suffix.lower())
 
-    # 2. Drop gcode when STL/3MF exists
+    # Partition by what we need to do with them
+    to_drop: list[Path] = []
+    large_gifs: list[Path] = []
+    resizable: list[Path] = []
+
+    drop_exts = DROP_ALWAYS | DROP_CAD_NON_ESSENTIAL
+    # Add redundant extensions where better alternatives exist
     for ext, alternatives in DROP_IF_REDUNDANT.items():
         if has_exts & alternatives:
-            for f in list(site_dir.rglob(f"*{ext}")):
-                size = f.stat().st_size
-                f.unlink()
-                saved += size
-                log.debug("    drop redundant %s (%d KB)", f.name, size // 1024)
+            drop_exts.add(ext)
 
-    # 3. Drop non-essential CAD formats
-    for f in list(site_dir.rglob("*")):
-        if f.is_file() and f.suffix.lower() in DROP_CAD_NON_ESSENTIAL:
-            size = f.stat().st_size
-            f.unlink()
-            saved += size
-            log.debug("    drop CAD %s (%d KB)", f.name, size // 1024)
+    for f in all_files:
+        ext = f.suffix.lower()
+        if ext in drop_exts:
+            to_drop.append(f)
+        elif ext == ".gif" and f.stat().st_size > 500_000:
+            large_gifs.append(f)
+        elif ext in {".jpg", ".jpeg", ".png"} and f.stat().st_size >= 50_000:
+            resizable.append(f)
 
-    # 4. GIFs > 500KB → extract first frame as JPG
+    # 1. Drop unwanted files
+    for f in to_drop:
+        size = f.stat().st_size
+        f.unlink()
+        saved += size
+        log.debug("    drop %s (%d KB)", f.name, size // 1024)
+
+    # 2. GIFs > 500KB → extract first frame as JPG
     try:
         from PIL import Image as PILImage
-        for f in list(site_dir.rglob("*.gif")):
-            if f.stat().st_size > 500_000:
-                try:
-                    old_size = f.stat().st_size
-                    img = PILImage.open(f)
-                    img = img.convert("RGB")
-                    jpg_path = f.with_suffix(".jpg")
-                    img.save(str(jpg_path), "JPEG", quality=IMAGE_JPEG_QUALITY)
-                    new_size = jpg_path.stat().st_size
-                    f.unlink()
-                    saved += old_size - new_size
-                    # Update meta references
-                    old_rel = str(f.relative_to(site_dir))
-                    new_rel = str(jpg_path.relative_to(site_dir))
-                    meta.images = [new_rel if i == old_rel else i for i in meta.images]
-                except Exception:
-                    pass
+        for f in large_gifs:
+            try:
+                old_size = f.stat().st_size
+                img = PILImage.open(f)
+                img = img.convert("RGB")
+                jpg_path = f.with_suffix(".jpg")
+                img.save(str(jpg_path), "JPEG", quality=IMAGE_JPEG_QUALITY)
+                new_size = jpg_path.stat().st_size
+                f.unlink()
+                saved += old_size - new_size
+                old_rel = str(f.relative_to(site_dir))
+                new_rel = str(jpg_path.relative_to(site_dir))
+                meta.images = [new_rel if i == old_rel else i for i in meta.images]
+            except Exception:
+                pass
 
-        # 5. Resize large images
-        for f in list(site_dir.rglob("*")):
-            if f.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
-                continue
-            if f.stat().st_size < 50_000:  # skip tiny images
-                continue
+        # 3. Resize large images
+        for f in resizable:
             try:
                 old_size = f.stat().st_size
                 img = PILImage.open(f)
@@ -2076,13 +2496,12 @@ def _optimize_project(site_dir: Path, meta: ProjectMeta) -> int:
     except ImportError:
         log.debug("    Pillow not installed, skipping image optimization")
 
-    # 6. Update meta.json artifacts list (remove deleted files)
+    # 4. Update meta.json artifacts list (remove deleted files)
     meta.artifacts = [
         a for a in meta.artifacts
         if not a.get("download_failed")
         and (site_dir / a["filename"]).exists()
     ]
-    # Update sizes
     for a in meta.artifacts:
         p = site_dir / a["filename"]
         if p.exists():
@@ -2403,6 +2822,8 @@ nav a { color: #2563eb; text-decoration: none; }
 .license { font-size: 13px; color: #666; font-style: italic; }
 .step { margin: 16px 0; padding: 12px; background: #fff; border-radius: 6px;
   border: 1px solid #e5e7eb; }
+.breadcrumb { font-size: 13px; color: #666; margin-bottom: 4px; }
+.breadcrumb a { color: #2563eb; text-decoration: none; }
 .gallery a { display: inline-block; }
 .raw-content { margin-top: 24px; }
 .raw-content summary { cursor: pointer; font-weight: 600; color: #2563eb; padding: 8px 0; }
@@ -2693,6 +3114,10 @@ def main():
         help="Re-attempt only previously failed crawls",
     )
     parser.add_argument(
+        "--retry-dead", action="store_true",
+        help="Re-check Wayback Machine for links currently marked dead",
+    )
+    parser.add_argument(
         "--do-not-optimize", action="store_true",
         help="Skip post-crawl optimization (keep all files at original size)",
     )
@@ -2703,6 +3128,10 @@ def main():
     parser.add_argument(
         "--skip-thingiverse-check", action="store_true",
         help="Skip the Thingiverse token check (archive without STLs)",
+    )
+    parser.add_argument(
+        "--thingiverse-browser", action="store_true",
+        help="Open a browser to capture Thingiverse Cloudflare cookies for CDN downloads",
     )
     args = parser.parse_args()
 
@@ -2777,12 +3206,24 @@ def main():
     # Pipeline
     pdf_path = Path(args.pdf) if args.pdf else None
     links = stage_extract(state, pdf_path)
-    verified = stage_verify(state, links)
+    verified = stage_verify(state, links, retry_dead=args.retry_dead)
+
+    # Thingiverse CDN cookies (Cloudflare bypass)
+    tv_cookies = None
+    if thingiverse_token:
+        tv_cookies = _load_thingiverse_cookies(workdir)
+        if not tv_cookies and args.thingiverse_browser:
+            tv_cookies = _capture_thingiverse_cookies(workdir)
+        if not tv_cookies:
+            log.info("No Thingiverse CDN cookies — images/STLs will be skipped (metadata only)")
+            log.info("  Run with --thingiverse-browser to capture Cloudflare cookies")
+
     crawl_results = stage_crawl(
         state, verified,
         retry_failed=args.retry_failed,
         printables_token=printables_token,
         thingiverse_token=thingiverse_token,
+        thingiverse_cookies=tv_cookies,
         optimize=not args.do_not_optimize,
     )
     stage_package(state, verified, crawl_results, output_path)
