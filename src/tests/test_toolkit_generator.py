@@ -18,7 +18,7 @@ def _section_actions(runtime_config: dict, section: str) -> list[dict]:
 
 
 def test_generate_toolkit_creates_run_sh(tmp_path):
-    """run.sh should be created at the drive root."""
+    """run should be created at the drive root."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -34,14 +34,14 @@ def test_generate_toolkit_creates_run_sh(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    assert (tmp_path / "run.sh").exists()
+    assert (tmp_path / "run").exists()
     assert (tmp_path / ".svalbard" / "runtime.json").exists()
     assert (tmp_path / ".svalbard" / "actions" / "browse.sh").exists()
     assert (tmp_path / ".svalbard" / "lib" / "ui.sh").exists()
 
 
 def test_run_sh_is_executable(tmp_path):
-    """run.sh should have executable permission."""
+    """run should have executable permission."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -52,7 +52,7 @@ def test_run_sh_is_executable(tmp_path):
     generate_toolkit(tmp_path, "default-32")
 
     import os
-    assert os.access(tmp_path / "run.sh", os.X_OK)
+    assert os.access(tmp_path / "run", os.X_OK)
 
 
 def test_generate_toolkit_copies_platform_runtime_launchers(tmp_path):
@@ -79,7 +79,7 @@ def test_run_sh_execs_platform_runtime_binary(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    text = (tmp_path / "run.sh").read_text()
+    text = (tmp_path / "run").read_text()
     assert ".svalbard/runtime/" in text
     assert 'uname -s' in text
     assert 'exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive"' in text

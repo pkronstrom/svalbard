@@ -19,6 +19,10 @@ var (
 )
 
 func renderView(m Model) string {
+	if m.showingOutput {
+		return renderOutputView(m)
+	}
+
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("Svalbard"))
@@ -64,6 +68,25 @@ func renderView(m Model) string {
 		b.WriteString("\n")
 	}
 
+	return b.String()
+}
+
+func renderOutputView(m Model) string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render("Svalbard"))
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("Enter or Esc: back • q: quit"))
+	b.WriteString("\n\n")
+	b.WriteString(m.output)
+	if !strings.HasSuffix(m.output, "\n") {
+		b.WriteString("\n")
+	}
+	if m.lastErr != nil {
+		b.WriteString("\n")
+		b.WriteString(errorStyle.Render(fmt.Sprintf("Action failed: %v", m.lastErr)))
+		b.WriteString("\n")
+	}
 	return b.String()
 }
 

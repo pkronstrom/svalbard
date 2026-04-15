@@ -765,7 +765,7 @@ def index(path, strategy, yes):
     if strategy == "semantic":
         console.print(f"  Embeddings: {db.embedding_count()}")
 
-    # Regenerate toolkit so search appears in run.sh menu
+    # Regenerate toolkit so search appears in the drive launcher
     from svalbard.manifest import Manifest
 
     manifest_path = drive_path / "manifest.yaml"

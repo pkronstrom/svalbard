@@ -290,7 +290,7 @@ def _build_drive_runtime_binaries(platform_filter: str | None = None) -> dict[st
     return _filter_runtime_binaries(binaries, platform_filter)
 
 
-# ── run.sh template ─────────────────────────────────────────────────────────
+# ── run template ────────────────────────────────────────────────────────────
 
 RUN_SH = r'''#!/usr/bin/env bash
 set -euo pipefail
@@ -345,7 +345,7 @@ def generate_toolkit(drive_path: Path, preset_name: str, platform_filter: str | 
     1. Copy action scripts to .svalbard/actions/
     2. Copy lib helpers to .svalbard/lib/
     3. Generate runtime.json
-    4. Write run.sh
+    4. Write run
     """
     svalbard_dir = drive_path / ".svalbard"
     actions_dest = svalbard_dir / "actions"
@@ -405,9 +405,13 @@ def generate_toolkit(drive_path: Path, preset_name: str, platform_filter: str | 
         if guide.exists():
             shutil.copy2(guide, pio_dir / "README.md")
 
-    # Write run.sh
-    run_sh = drive_path / "run.sh"
-    run_sh.write_text(RUN_SH)
-    _make_executable(run_sh)
+    # Write run
+    run_file = drive_path / "run"
+    run_file.write_text(RUN_SH)
+    _make_executable(run_file)
 
-    return run_sh
+    legacy_run_sh = drive_path / "run.sh"
+    if legacy_run_sh.exists():
+        legacy_run_sh.unlink()
+
+    return run_file

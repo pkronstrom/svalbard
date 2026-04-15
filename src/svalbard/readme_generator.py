@@ -91,7 +91,7 @@ def generate_drive_readme(drive_path: Path) -> Path:
         "",
         "```bash",
         "cd /path/to/this/drive",
-        "./run.sh",
+        "./run",
         "```",
         "",
         "The script starts the Svalbard drive launcher, which opens a",

@@ -13,18 +13,25 @@ type actionFinishedMsg struct {
 	err error
 }
 
+type actionOutputMsg struct {
+	output string
+	err    error
+}
+
 type Model struct {
 	cfg       config.RuntimeConfig
 	driveRoot string
 	runner    actions.Runner
 
-	selected  int
-	filter    string
-	filtering bool
-	width     int
-	height    int
-	status    string
-	lastErr   error
+	selected      int
+	filter        string
+	filtering     bool
+	width         int
+	height        int
+	status        string
+	lastErr       error
+	showingOutput bool
+	output        string
 }
 
 func NewModel(cfg config.RuntimeConfig, driveRoot string) Model {
@@ -53,7 +60,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Action finished"
 		}
 		return m, nil
+	case actionOutputMsg:
+		m.lastErr = msg.err
+		if msg.err != nil {
+			m.status = "Action failed"
+		} else {
+			m.status = ""
+		}
+		m.output = msg.output
+		m.showingOutput = true
+		return m, nil
 	case tea.KeyMsg:
+		if m.showingOutput {
+			switch msg.String() {
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			case "enter", "esc":
+				m.showingOutput = false
+				m.output = ""
+				m.status = ""
+				m.lastErr = nil
+				return m, nil
+			}
+			return m, nil
+		}
+
 		if m.filtering {
 			switch msg.String() {
 			case "esc":
@@ -97,13 +128,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
-			cmd, err := m.runner.Command(action.Action, action.Args)
+			resolved, err := m.runner.Resolve(action.Action, action.Args)
 			if err != nil {
 				m.lastErr = err
 				m.status = "Action failed"
 				return m, nil
 			}
-			return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			if resolved.Mode == actions.ModeCaptureOutput {
+				return m, func() tea.Msg {
+					err := resolved.Cmd.Run()
+					output := ""
+					if resolved.Cmd.Stdout != nil {
+						if buf, ok := resolved.Cmd.Stdout.(interface{ String() string }); ok {
+							output = buf.String()
+						}
+					}
+					if resolved.Cmd.Stderr != nil {
+						if buf, ok := resolved.Cmd.Stderr.(interface{ String() string }); ok {
+							output += buf.String()
+						}
+					}
+					return actionOutputMsg{output: output, err: err}
+				}
+			}
+			return m, tea.ExecProcess(resolved.Cmd, func(err error) tea.Msg {
 				return actionFinishedMsg{err: err}
 			})
 		}

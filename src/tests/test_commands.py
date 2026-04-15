@@ -11,10 +11,10 @@ from svalbard.presets import load_preset
 
 
 def test_init_drive_creates_files(tmp_path):
-    """init_drive should create manifest.yaml, run.sh, and README.md."""
+    """init_drive should create manifest.yaml, run, and README.md."""
     init_drive(str(tmp_path), "finland-128")
     assert (tmp_path / "manifest.yaml").exists()
-    assert (tmp_path / "run.sh").exists()
+    assert (tmp_path / "run").exists()
     assert (tmp_path / "README.md").exists()
     assert (tmp_path / ".svalbard" / "runtime.json").exists()
 

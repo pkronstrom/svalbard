@@ -1,10 +1,11 @@
-package menu_test
+package menu
 
 import (
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/menu"
 )
 
 func sampleConfig() config.RuntimeConfig {
@@ -20,7 +21,7 @@ func sampleConfig() config.RuntimeConfig {
 }
 
 func TestFilterMatchesLabelAndSection(t *testing.T) {
-	m := menu.NewModel(sampleConfig(), "/tmp/drive")
+	m := NewModel(sampleConfig(), "/tmp/drive")
 	m.SetFilter("map")
 
 	items := m.VisibleActions()
@@ -33,12 +34,44 @@ func TestFilterMatchesLabelAndSection(t *testing.T) {
 }
 
 func TestMoveSelectionStaysAtLastItem(t *testing.T) {
-	m := menu.NewModel(sampleConfig(), "/tmp/drive")
+	m := NewModel(sampleConfig(), "/tmp/drive")
 	m.SetSelected(len(m.VisibleActions()) - 1)
 
 	m.MoveDown()
 
 	if got, want := m.SelectedIndex(), len(m.VisibleActions())-1; got != want {
 		t.Fatalf("SelectedIndex() = %d, want %d", got, want)
+	}
+}
+
+func TestCapturedOutputReplacesMenuUntilDismissed(t *testing.T) {
+	m := NewModel(sampleConfig(), "/tmp/drive")
+
+	updated, _ := m.Update(actionOutputMsg{output: "Drive contents\nzim/\n", err: nil})
+	got := updated.(Model)
+
+	if !got.showingOutput {
+		t.Fatal("showingOutput = false, want true")
+	}
+	if got.output != "Drive contents\nzim/\n" {
+		t.Fatalf("output = %q", got.output)
+	}
+	if view := got.View(); view == "" || view == renderView(m) {
+		t.Fatalf("View() did not switch to output rendering: %q", view)
+	}
+}
+
+func TestEnterDismissesCapturedOutput(t *testing.T) {
+	m := NewModel(sampleConfig(), "/tmp/drive")
+	m.showingOutput = true
+	m.output = "Drive contents"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+	if got.showingOutput {
+		t.Fatal("showingOutput = true, want false")
+	}
+	if got.output != "" {
+		t.Fatalf("output = %q, want empty", got.output)
 	}
 }

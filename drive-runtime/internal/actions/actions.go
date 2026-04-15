@@ -1,11 +1,24 @@
 package actions
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 )
+
+type Mode int
+
+const (
+	ModeExecProcess Mode = iota
+	ModeCaptureOutput
+)
+
+type ResolvedAction struct {
+	Mode Mode
+	Cmd  *exec.Cmd
+}
 
 type Runner struct {
 	driveRoot string
@@ -15,19 +28,33 @@ func NewRunner(driveRoot string) Runner {
 	return Runner{driveRoot: driveRoot}
 }
 
-func (r Runner) Command(actionID string, args map[string]string) (*exec.Cmd, error) {
+func (r Runner) Resolve(actionID string, args map[string]string) (ResolvedAction, error) {
 	script, argv, err := r.scriptFor(actionID, args)
 	if err != nil {
-		return nil, err
+		return ResolvedAction{}, err
 	}
 
 	cmd := exec.Command("bash", append([]string{script}, argv...)...)
 	cmd.Dir = r.driveRoot
 	cmd.Env = append(os.Environ(), "DRIVE_ROOT="+r.driveRoot)
+	if actionID == "inspect" {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		return ResolvedAction{
+			Mode: ModeCaptureOutput,
+			Cmd:  cmd,
+		}, nil
+	}
+
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd, nil
+	return ResolvedAction{
+		Mode: ModeExecProcess,
+		Cmd:  cmd,
+	}, nil
 }
 
 func (r Runner) scriptFor(actionID string, args map[string]string) (string, []string, error) {
