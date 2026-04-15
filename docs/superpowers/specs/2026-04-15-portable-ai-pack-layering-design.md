@@ -253,6 +253,28 @@ Directional takeaways to reflect during implementation:
 
 These are recommendations for implementation-time evaluation, not hard commitments in this design.
 
+### Stock Quant Policy
+
+Built-in presets should not ship full-precision model weights by default.
+
+The default stock quant policy should be:
+
+- prefer sane GGUF quants such as `Q4_K_M` and `Q5_K_M`
+- use `Q4_K_M` as the default floor for built-in presets unless there is a strong validated reason to go lower
+- use `Q5_K_M` when a RAM tier has enough headroom and the quality gain is worth the added footprint
+- reserve full-precision or similarly heavy variants for custom presets, not stock presets
+
+The stock model-selection heuristic should be:
+
+- prefer a bigger model at a sane lower quant, down to `Q4`, over a smaller model at a higher quant
+
+In practice, this means pack composition should usually favor:
+
+- a larger-capability model at `Q4_K_M`
+- instead of a smaller-capability model at a heavier quant chosen only to preserve precision
+
+This rule is meant to guide stock pack composition, not forbid advanced users from choosing different tradeoffs in custom presets.
+
 ### Runtime Defaults to Evaluate First
 
 For llama.cpp-backed agentic flows, the first implementation pass should evaluate the following defaults:
@@ -290,6 +312,8 @@ The approved v1 contract is:
 - presets are curated additive products
 - AI packs are RAM-tier-first
 - each RAM-tier AI pack contains both a general model and a coding model
+- stock presets prefer sane `Q4`/`Q5` quants instead of full weights
+- stock model selection prefers a bigger model at lower sane quant over a smaller model at higher quant
 - higher presets add stronger options without dropping smaller-machine compatibility
 - stock presets stay simple
 - custom presets may use either packs or individual recipes directly
