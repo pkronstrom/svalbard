@@ -204,3 +204,31 @@ def test_wizard_preset_mode_preserves_sources_missing_from_packs(tmp_path, monke
     assert "kiwix-serve" in source_ids
     assert orphan_ids
     assert orphan_ids <= source_ids
+
+
+def test_run_wizard_passes_platform_filter_to_sync(tmp_path, monkeypatch):
+    target = tmp_path / "drive"
+    target.mkdir()
+
+    monkeypatch.setattr(wizard, "_clear", lambda: None)
+    monkeypatch.setattr(wizard, "pick_sources_via_packs", lambda *args, **kwargs: {"gemma-4-e2b-it", "llama-server"})
+    monkeypatch.setattr(wizard, "local_sources_for_space", lambda *args, **kwargs: [])
+    confirm_answers = iter([True, True])
+    monkeypatch.setattr(wizard.Confirm, "ask", lambda *args, **kwargs: next(confirm_answers))
+
+    with (
+        monkeypatch.context() as m,
+    ):
+        init_calls = []
+        sync_calls = []
+        m.setattr(wizard, "init_drive", lambda *args, **kwargs: init_calls.append((args, kwargs)))
+        m.setattr(wizard, "sync_drive", lambda *args, **kwargs: sync_calls.append((args, kwargs)))
+        wizard.run_wizard(
+            target_path=str(target),
+            preset_name="test-ai-small",
+            workspace=tmp_path,
+            platform="host",
+        )
+
+    assert init_calls
+    assert sync_calls == [((str(target),), {"platform_filter": "host"})]

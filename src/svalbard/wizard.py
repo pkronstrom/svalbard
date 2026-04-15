@@ -259,6 +259,7 @@ def run_wizard(
     preset_name: str | None = None,
     browse_only: bool = False,
     workspace: Path | str | None = None,
+    platform: str | None = None,
 ):
     """Run the interactive setup wizard."""
     _clear()
@@ -519,7 +520,7 @@ def run_wizard(
     console.print(f"  [bold]Preset:[/bold]  {preset.name} — {len(sources)} sources, {total_gb:.1f} GB\n")
     if Confirm.ask("  Start downloading now?", default=True):
         _clear()
-        sync_drive(target_path)
+        sync_drive(target_path, platform_filter=platform)
 
         # Offer to build search index after sync
         from pathlib import Path as P

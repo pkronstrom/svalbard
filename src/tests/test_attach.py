@@ -98,4 +98,21 @@ def test_init_command_routes_through_picker_flow(tmp_path):
         target_path=str(drive),
         preset_name="finland-32",
         browse_only=True,
+        platform=None,
+    )
+
+
+def test_init_command_forwards_platform_filter(tmp_path):
+    from svalbard.cli import main
+
+    drive = tmp_path / "drive"
+    with patch("svalbard.cli.run_wizard") as run_wizard_mock:
+        result = CliRunner().invoke(main, ["init", str(drive), "--preset", "finland-32", "--platform", "host"])
+
+    assert result.exit_code == 0
+    run_wizard_mock.assert_called_once_with(
+        target_path=str(drive),
+        preset_name="finland-32",
+        browse_only=True,
+        platform="host",
     )

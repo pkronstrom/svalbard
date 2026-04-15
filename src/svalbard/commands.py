@@ -2,6 +2,7 @@ import signal
 import shutil
 import re
 import subprocess
+import platform as host_platform
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -71,6 +72,60 @@ class DownloadJob:
     dest_dir: Path
     source: Source
     platform: str = ""
+
+
+def _detect_host_platform() -> str:
+    system = host_platform.system().lower()
+    machine = host_platform.machine().lower()
+
+    if system == "darwin":
+        if machine in {"arm64", "aarch64"}:
+            return "macos-arm64"
+        if machine in {"x86_64", "amd64"}:
+            return "macos-x86_64"
+    if system == "linux":
+        if machine in {"arm64", "aarch64"}:
+            return "linux-arm64"
+        if machine in {"x86_64", "amd64"}:
+            return "linux-x86_64"
+    raise ValueError(f"Unsupported host platform: system={system} machine={machine}")
+
+
+def _normalize_platform_filter(platform_filter: str | None) -> str | None:
+    if not platform_filter:
+        return None
+
+    normalized = platform_filter.strip().lower()
+    aliases = {
+        "host": "host",
+        "arm64": "arm64",
+        "aarch64": "arm64",
+        "x86_64": "x86_64",
+        "x64": "x86_64",
+        "amd64": "x86_64",
+        "macos-arm64": "macos-arm64",
+        "macos-x86_64": "macos-x86_64",
+        "linux-arm64": "linux-arm64",
+        "linux-x86_64": "linux-x86_64",
+    }
+    if normalized not in aliases:
+        raise ValueError(f"Unsupported platform filter: {platform_filter}")
+
+    resolved = aliases[normalized]
+    if resolved == "host":
+        return _detect_host_platform()
+    return resolved
+
+
+def _platform_matches(job_platform: str, platform_filter: str | None) -> bool:
+    normalized = _normalize_platform_filter(platform_filter)
+    if normalized is None:
+        return True
+    if normalized == "arm64":
+        return job_platform.endswith("-arm64")
+    if normalized == "x86_64":
+        return job_platform.endswith("-x86_64")
+    return job_platform == normalized
 
 
 def _normalized_source_slug(source_id: str) -> str:
@@ -194,11 +249,17 @@ def add_local_source(
     return normalized_id
 
 
-def expand_source_downloads(source: Source, drive_path: Path) -> list[DownloadJob]:
+def expand_source_downloads(
+    source: Source,
+    drive_path: Path,
+    platform_filter: str | None = None,
+) -> list[DownloadJob]:
     """Expand one source into one or more concrete download jobs."""
     if source.platforms:
         jobs = []
         for platform, url in sorted(source.platforms.items()):
+            if not _platform_matches(platform, platform_filter):
+                continue
             if source.type == "toolchain":
                 dest = drive_path / "tools" / "platformio" / "packages" / platform
             else:
@@ -285,7 +346,13 @@ def _artifact_path_for_build(source: Source, drive_path: Path) -> Path | None:
     return path if path.exists() else None
 
 
-def sync_drive(path: str, update: bool = False, force: bool = False, parallel: int = 5):
+def sync_drive(
+    path: str,
+    update: bool = False,
+    force: bool = False,
+    parallel: int = 5,
+    platform_filter: str | None = None,
+):
     """Download/update content on an initialized drive."""
     drive_path = Path(path)
     if not Manifest.exists(drive_path):
@@ -345,7 +412,7 @@ def sync_drive(path: str, update: bool = False, force: bool = False, parallel: i
 
     for source in download_sources_list:
         try:
-            jobs = expand_source_downloads(source, drive_path)
+            jobs = expand_source_downloads(source, drive_path, platform_filter=platform_filter)
         except Exception as e:
             console.print(f"  [red]FAIL[/red] {source.id}: {e}")
             continue

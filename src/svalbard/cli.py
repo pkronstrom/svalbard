@@ -68,21 +68,32 @@ def _show_menu(path: str):
 @main.command()
 @click.option("--path", default=None, help="Target drive path (skip target selection)")
 @click.option("--preset", default=None, help="Preset name (skip region and preset selection)")
-def wizard(path: str | None, preset: str | None) -> None:
+@click.option(
+    "--platform",
+    default=None,
+    help="Download only matching binary platforms: host, arm64, x86_64, macos-arm64, macos-x86_64, linux-arm64, linux-x86_64",
+)
+def wizard(path: str | None, preset: str | None, platform: str | None) -> None:
     """Interactive setup wizard."""
-    run_wizard(target_path=path, preset_name=preset)
+    run_wizard(target_path=path, preset_name=preset, platform=platform)
 
 
 @main.command()
 @click.argument("path")
 @click.option("--preset", default=None, help="Preset name to pre-check before browsing")
+@click.option(
+    "--platform",
+    default=None,
+    help="Download only matching binary platforms: host, arm64, x86_64, macos-arm64, macos-x86_64, linux-arm64, linux-x86_64",
+)
 @click.option("--workspace", default=None, help="Workspace root")
-def init(path: str, preset: str, workspace: str | None) -> None:
+def init(path: str, preset: str, platform: str | None, workspace: str | None) -> None:
     """Initialize a drive via the interactive pack picker."""
     kwargs = {
         "target_path": path,
         "preset_name": preset,
         "browse_only": True,
+        "platform": platform,
     }
     if workspace is not None:
         kwargs["workspace"] = workspace
@@ -94,11 +105,16 @@ def init(path: str, preset: str, workspace: str | None) -> None:
 @click.option("--update", is_flag=True, help="Check for and download newer versions")
 @click.option("--force", is_flag=True, help="Re-download everything")
 @click.option("--parallel", "-j", default=5, type=int, help="Parallel downloads (default: 5)")
-def sync(path: str, update: bool, force: bool, parallel: int) -> None:
+@click.option(
+    "--platform",
+    default=None,
+    help="Download only matching binary platforms: host, arm64, x86_64, macos-arm64, macos-x86_64, linux-arm64, linux-x86_64",
+)
+def sync(path: str, update: bool, force: bool, parallel: int, platform: str | None) -> None:
     """Download/update content on initialized drive."""
     from svalbard.commands import sync_drive
 
-    sync_drive(path, update=update, force=force, parallel=parallel)
+    sync_drive(path, update=update, force=force, parallel=parallel, platform_filter=platform)
 
 
 @main.command()

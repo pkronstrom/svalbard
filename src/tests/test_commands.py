@@ -107,6 +107,34 @@ def test_expand_source_downloads_creates_one_job_per_platform(tmp_path):
     assert all(job.dest_dir.parent == tmp_path / "bin" for job in jobs)
 
 
+def test_expand_source_downloads_filters_exact_platform(tmp_path):
+    preset = load_preset("finland-128")
+    source = next(source for source in preset.sources if source.id == "kiwix-serve")
+
+    jobs = expand_source_downloads(source, tmp_path, platform_filter="macos-arm64")
+
+    assert [job.platform for job in jobs] == ["macos-arm64"]
+
+
+def test_expand_source_downloads_filters_arch_family(tmp_path):
+    preset = load_preset("finland-128")
+    source = next(source for source in preset.sources if source.id == "kiwix-serve")
+
+    jobs = expand_source_downloads(source, tmp_path, platform_filter="arm64")
+
+    assert [job.platform for job in jobs] == ["linux-arm64", "macos-arm64"]
+
+
+def test_expand_source_downloads_resolves_host_platform_alias(tmp_path, monkeypatch):
+    preset = load_preset("finland-128")
+    source = next(source for source in preset.sources if source.id == "kiwix-serve")
+    monkeypatch.setattr("svalbard.commands._detect_host_platform", lambda: "macos-arm64")
+
+    jobs = expand_source_downloads(source, tmp_path, platform_filter="host")
+
+    assert [job.platform for job in jobs] == ["macos-arm64"]
+
+
 def test_show_status_handles_platformed_binary_sources(tmp_path):
     init_drive(str(tmp_path), "finland-128")
     manifest = Manifest.load(tmp_path / "manifest.yaml")

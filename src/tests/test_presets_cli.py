@@ -24,3 +24,14 @@ def test_preset_copy_writes_workspace_owned_preset(tmp_path):
 
     assert result.exit_code == 0
     assert (tmp_path / "local" / "presets" / "my-pack.yaml").exists()
+
+
+def test_sync_command_forwards_platform_filter(tmp_path):
+    from svalbard.cli import main
+    from unittest.mock import patch
+
+    with patch("svalbard.commands.sync_drive") as sync_drive_mock:
+        result = CliRunner().invoke(main, ["sync", str(tmp_path), "--platform", "host"])
+
+    assert result.exit_code == 0
+    sync_drive_mock.assert_called_once_with(str(tmp_path), update=False, force=False, parallel=5, platform_filter="host")
