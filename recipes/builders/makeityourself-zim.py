@@ -990,7 +990,10 @@ class ImgTagImages(ImageStrategy):
                 continue
             elif not self.domain_filter:
                 if img_domain != base_domain and not any(
-                    cdn in img_domain for cdn in ["cloudfront", "cdn", "imgur", "wp.com", "squarespace"]
+                    cdn in img_domain for cdn in [
+                        "cloudfront", "cdn", "imgur", "wp.com", "squarespace",
+                        "imgix", "media.", "images.", "static.", "assets.",
+                    ]
                 ):
                     continue
             base = src.split("?")[0]
@@ -2561,11 +2564,12 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
                     x in str(c).lower() for x in ["ad-", "sidebar", "newsletter", "popup", "cookie", "social"]
                 )):
                     tag.decompose()
-                # Fix image paths — make relative to site_dir
+                # Strip external images — they won't resolve offline
                 for img in main.find_all("img"):
-                    src = img.get("src") or img.get("data-src")
-                    if src:
-                        img["src"] = src
+                    src = img.get("src") or img.get("data-src") or ""
+                    if src.startswith("http"):
+                        img.decompose()
+                    elif src:
                         img["loading"] = "lazy"
                         img["style"] = "max-width:100%;height:auto;"
                 content_text = main.get_text(strip=True)
