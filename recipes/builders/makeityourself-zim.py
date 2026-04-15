@@ -2904,10 +2904,27 @@ def stage_package(
     if images_fixed:
         log.info("  Fixed image references for %d projects", images_fixed)
 
-    # Compute quality scores for badges
+    # Compute quality scores for badges and logging
+    log.info("  Computing quality scores...")
     for proj in projects:
         proj_dir = state.sites_dir / proj["_dir"]
         proj["_quality"] = _quality_score(proj_dir)
+
+    # Log quality distribution
+    q_high = sum(1 for p in projects if p["_quality"]["score"] >= 6)
+    q_good = sum(1 for p in projects if 4 <= p["_quality"]["score"] < 6)
+    q_basic = sum(1 for p in projects if 1 <= p["_quality"]["score"] < 4)
+    q_none = sum(1 for p in projects if p["_quality"]["score"] == 0)
+    q_avg = sum(p["_quality"]["score"] for p in projects) / max(len(projects), 1)
+    issue_counts: dict[str, int] = {}
+    for p in projects:
+        for issue in p["_quality"].get("issues", []):
+            issue_counts[issue] = issue_counts.get(issue, 0) + 1
+    log.info("  Quality: %.1f avg — ★★★ %d, ★★ %d, ★ %d, none %d",
+             q_avg, q_high, q_good, q_basic, q_none)
+    if issue_counts:
+        issues_str = ", ".join(f"{k}: {v}" for k, v in sorted(issue_counts.items(), key=lambda x: -x[1]))
+        log.info("  Issues: %s", issues_str)
 
     # Regenerate all project pages with latest template
     log.info("  Regenerating project pages...")
