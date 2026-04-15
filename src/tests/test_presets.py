@@ -212,6 +212,40 @@ def test_test_ai_small_includes_one_model_and_core_ai_tools():
     assert "qwen-9b" not in ids
 
 
+def test_test_runtime_2gb_covers_maximum_drive_runtime_surface():
+    preset = load_preset("test-runtime-2gb")
+    ids = {source.id for source in preset.sources}
+
+    assert preset.region == "finland"
+    assert "wikipedia-en-100-mini" in ids
+    assert "alpinelinux-wiki" in ids
+    assert "kiwix-serve" in ids
+    assert "osm-uusimaa" in ids
+    assert "maplibre-vendor" in ids
+    assert "qwen-0.8b" in ids
+    assert "llama-server" in ids
+    assert "opencode" in ids
+    assert "crush" in ids
+    assert "goose" in ids
+    assert "sqlite3" in ids
+    assert "nomic-embed-text-v1.5" in ids
+    assert "sqliteviz" in ids
+    assert "fimea" in ids
+    assert "toolchain-xtensa-esp-elf" in ids
+    assert "framework-espidf" in ids
+    assert "tool-esptoolpy" in ids
+    assert "toolchain-esp32ulp" in ids
+    assert "tool-openocd-esp32" in ids
+    assert "gemma-4-e2b-it" not in ids
+
+
+def test_test_runtime_2gb_stays_under_budget_with_headroom():
+    preset = load_preset("test-runtime-2gb")
+    total_size = sum(source.size_gb for source in preset.sources)
+
+    assert total_size < 1.7
+
+
 def test_finland_128_uses_standalone_sources_only():
     preset = load_preset("finland-128")
     ids = {source.id for source in preset.sources}

@@ -24,7 +24,9 @@ func Resolve(name, driveRoot string, detectPlatform func() (string, error)) (str
 		return "", err
 	}
 	for _, dir := range []string{
+		filepath.Join(driveRoot, "bin", platformName, name),
 		filepath.Join(driveRoot, "bin", platformName),
+		filepath.Join(driveRoot, "bin", name),
 		filepath.Join(driveRoot, "bin"),
 	} {
 		if path, err := resolveFromDir(name, dir); err == nil {
@@ -43,15 +45,11 @@ func resolveFromDir(name, dir string) (string, error) {
 		return "", fmt.Errorf("%s not found in %s", name, dir)
 	}
 
-	direct := filepath.Join(dir, name)
-	if isExecutable(direct) {
-		return direct, nil
-	}
-
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", err
 	}
+	extracted := false
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -62,16 +60,23 @@ func resolveFromDir(name, dir string) (string, error) {
 			if err := extractTarGz(path, dir); err != nil {
 				return "", err
 			}
+			extracted = true
 		case strings.HasSuffix(entry.Name(), ".zip"):
 			if err := extractZip(path, dir); err != nil {
 				return "", err
 			}
+			extracted = true
 		default:
 			continue
 		}
-		if promoted, err := promoteMatchingBinary(dir, name); err == nil {
-			return promoted, nil
+	}
+	if extracted {
+		if found, err := findMatchingBinary(dir, name); err == nil {
+			return found, nil
 		}
+	}
+	if found, err := findMatchingBinary(dir, name); err == nil {
+		return found, nil
 	}
 	return "", fmt.Errorf("%s not found in %s", name, dir)
 }
@@ -164,34 +169,32 @@ func extractZip(archivePath, destDir string) error {
 	return nil
 }
 
-func promoteMatchingBinary(dir, name string) (string, error) {
-	target := filepath.Join(dir, name)
-	if isExecutable(target) {
-		return target, nil
-	}
-
-	var found string
+func findMatchingBinary(dir, name string) (string, error) {
+	var direct string
+	var nested string
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || filepath.Base(path) != name {
+		if d.IsDir() || filepath.Base(path) != name || !isExecutable(path) {
 			return nil
 		}
-		found = path
+		if filepath.Dir(path) == dir {
+			direct = path
+			return nil
+		}
+		nested = path
 		return io.EOF
 	})
 	if err != nil && err != io.EOF {
 		return "", err
 	}
+	found := nested
+	if found == "" {
+		found = direct
+	}
 	if found == "" {
 		return "", fmt.Errorf("%s not found in extracted archive", name)
-	}
-	if found != target {
-		if err := os.Rename(found, target); err != nil {
-			return "", err
-		}
-		found = target
 	}
 	if err := os.Chmod(found, 0o755); err != nil {
 		return "", err

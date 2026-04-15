@@ -1,12 +1,15 @@
 package menu
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/actions"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimesearch"
 )
 
 type actionFinishedMsg struct {
@@ -18,10 +21,30 @@ type actionOutputMsg struct {
 	err    error
 }
 
+type searchSession interface {
+	Info() runtimesearch.SessionInfo
+	Search(ctx context.Context, mode runtimesearch.Mode, query string) (runtimesearch.SearchResponse, error)
+	OpenResult(result runtimesearch.Result) error
+	Close() error
+}
+
+type searchResultMsg struct {
+	token    int
+	query    string
+	response runtimesearch.SearchResponse
+	err      error
+}
+
+type searchOpenMsg struct {
+	token int
+	err   error
+}
+
 type Model struct {
 	cfg       config.RuntimeConfig
 	driveRoot string
 	runner    actions.Runner
+	searchFactory func(string) (searchSession, error)
 
 	groupSelected int
 	itemSelected  int
@@ -36,6 +59,19 @@ type Model struct {
 	lastErr       error
 	showingOutput bool
 	output        string
+
+	searchActive       bool
+	searchToken        int
+	searchSession      searchSession
+	searchInfo         runtimesearch.SessionInfo
+	searchMode         runtimesearch.Mode
+	searchQuery        string
+	searchResults      []runtimesearch.Result
+	searchSelected     int
+	searchResultsFocus bool
+	searchLoading      bool
+	searchStatus       string
+	searchErr          error
 }
 
 func NewModel(cfg config.RuntimeConfig, driveRoot string) Model {
@@ -43,6 +79,9 @@ func NewModel(cfg config.RuntimeConfig, driveRoot string) Model {
 		cfg:       cfg,
 		driveRoot: driveRoot,
 		runner:    actions.NewRunner(driveRoot),
+		searchFactory: func(root string) (searchSession, error) {
+			return runtimesearch.NewSession(root, nil)
+		},
 	}
 }
 
@@ -74,7 +113,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.output = msg.output
 		m.showingOutput = true
 		return m, nil
+	case searchResultMsg:
+		if !m.searchActive || msg.token != m.searchToken {
+			return m, nil
+		}
+		m.searchLoading = false
+		m.searchErr = msg.err
+		if msg.err != nil {
+			m.searchStatus = "Search failed"
+			return m, nil
+		}
+		m.searchMode = msg.response.EffectiveMode
+		m.searchResults = limitSearchResults(msg.response.Results)
+		m.searchSelected = 0
+		m.searchResultsFocus = len(m.searchResults) > 0
+		switch {
+		case msg.response.Status != "":
+			m.searchStatus = msg.response.Status
+		case len(m.searchResults) == 0:
+			m.searchStatus = fmt.Sprintf("No results for %q", msg.query)
+		default:
+			m.searchStatus = fmt.Sprintf("%d results", len(m.searchResults))
+		}
+		return m, nil
+	case searchOpenMsg:
+		if !m.searchActive || msg.token != m.searchToken {
+			return m, nil
+		}
+		m.searchErr = msg.err
+		if msg.err != nil {
+			m.searchStatus = "Open failed"
+			return m, nil
+		}
+		m.searchStatus = "Opened in browser"
+		return m, nil
 	case tea.KeyMsg:
+		if m.searchActive {
+			return m.updateSearch(msg)
+		}
 		if m.showingOutput {
 			switch msg.String() {
 			case "q", "ctrl+c":
@@ -112,7 +188,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "ctrl+c":
+			return m, tea.Quit
+		case "q":
+			if m.inGroup {
+				m.inGroup = false
+				m.activeGroup = ""
+				m.itemSelected = 0
+				m.filter = ""
+				m.filtering = false
+				return m, nil
+			}
 			return m, tea.Quit
 		case "up", "k":
 			m.MoveUp()
@@ -153,6 +239,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
+			if builtin, err := item.Action.DecodeBuiltin(); err == nil && item.Action.Type == "builtin" && builtin.Name == "search" {
+				if err := m.openSearchSession(); err != nil {
+					m.lastErr = err
+					m.status = "Action failed"
+				}
+				return m, nil
+			}
 			resolved, err := m.runner.Resolve(item.Action)
 			if err != nil {
 				m.lastErr = err
@@ -183,6 +276,170 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "tab":
+		if m.searchInfo.SemanticEnabled {
+			if m.searchMode == runtimesearch.ModeSemantic {
+				m.searchMode = runtimesearch.ModeKeyword
+			} else {
+				m.searchMode = runtimesearch.ModeSemantic
+			}
+			m.searchStatus = fmt.Sprintf("Mode: %s", m.searchMode)
+			m.searchErr = nil
+		}
+		return m, nil
+	case "up", "k":
+		if m.searchResultsFocus {
+			if m.searchSelected > 0 {
+				m.searchSelected--
+			} else {
+				m.searchResultsFocus = false
+			}
+		}
+		return m, nil
+	case "down", "j":
+		if len(m.searchResults) == 0 {
+			return m, nil
+		}
+		if !m.searchResultsFocus {
+			m.searchResultsFocus = true
+			return m, nil
+		}
+		if m.searchSelected < len(m.searchResults)-1 {
+			m.searchSelected++
+		}
+		return m, nil
+	case "enter":
+		if m.searchResultsFocus {
+			if len(m.searchResults) == 0 {
+				return m, nil
+			}
+			result := m.searchResults[m.searchSelected]
+			token := m.searchToken
+			m.searchStatus = "Opening result..."
+			m.searchErr = nil
+			session := m.searchSession
+			return m, func() tea.Msg {
+				err := session.OpenResult(result)
+				return searchOpenMsg{token: token, err: err}
+			}
+		}
+		query := strings.TrimSpace(m.searchQuery)
+		if query == "" || m.searchLoading || m.searchSession == nil {
+			return m, nil
+		}
+		token := m.searchToken
+		mode := m.searchMode
+		session := m.searchSession
+		m.searchLoading = true
+		m.searchErr = nil
+		if mode == runtimesearch.ModeSemantic {
+			m.searchStatus = "Starting semantic backend..."
+		} else {
+			m.searchStatus = "Searching..."
+		}
+		return m, func() tea.Msg {
+			response, err := session.Search(context.Background(), mode, query)
+			return searchResultMsg{token: token, query: query, response: response, err: err}
+		}
+	case "esc":
+		if m.searchResultsFocus {
+			m.searchResultsFocus = false
+			return m, nil
+		}
+		if m.searchQuery != "" {
+			m.searchQuery = ""
+			m.searchResults = nil
+			m.searchSelected = 0
+			m.searchStatus = ""
+			m.searchErr = nil
+			return m, nil
+		}
+		m.closeSearchSession()
+		return m, nil
+	case "q":
+		if m.searchResultsFocus {
+			m.searchResultsFocus = false
+			return m, nil
+		}
+		if strings.TrimSpace(m.searchQuery) == "" {
+			m.closeSearchSession()
+			return m, nil
+		}
+	case "backspace":
+		if !m.searchResultsFocus && len(m.searchQuery) > 0 {
+			runes := []rune(m.searchQuery)
+			m.searchQuery = string(runes[:len(runes)-1])
+		}
+		return m, nil
+	}
+
+	if !m.searchResultsFocus && msg.Type == tea.KeyRunes {
+		m.searchQuery += msg.String()
+	}
+	return m, nil
+}
+
+func (m *Model) openSearchSession() error {
+	m.closeSearchSession()
+	session, err := m.searchFactory(m.driveRoot)
+	if err != nil {
+		return err
+	}
+	m.searchSession = session
+	m.searchInfo = session.Info()
+	m.searchMode = m.searchInfo.BestMode
+	if m.searchMode == "" {
+		m.searchMode = runtimesearch.ModeKeyword
+	}
+	m.searchQuery = ""
+	m.searchResults = nil
+	m.searchSelected = 0
+	m.searchResultsFocus = false
+	m.searchLoading = false
+	m.searchStatus = ""
+	m.searchErr = nil
+	m.searchActive = true
+	m.searchToken++
+	m.inGroup = false
+	m.activeGroup = ""
+	m.itemSelected = 0
+	m.filter = ""
+	m.filtering = false
+	return nil
+}
+
+func (m *Model) closeSearchSession() {
+	if m.searchSession != nil {
+		_ = m.searchSession.Close()
+	}
+	m.searchSession = nil
+	m.searchActive = false
+	m.searchToken++
+	m.searchQuery = ""
+	m.searchResults = nil
+	m.searchSelected = 0
+	m.searchResultsFocus = false
+	m.searchLoading = false
+	m.searchStatus = ""
+	m.searchErr = nil
+	m.inGroup = false
+	m.activeGroup = ""
+	m.filter = ""
+	m.filtering = false
+}
+
+func limitSearchResults(results []runtimesearch.Result) []runtimesearch.Result {
+	const maxResults = 20
+	if len(results) <= maxResults {
+		return append([]runtimesearch.Result(nil), results...)
+	}
+	return append([]runtimesearch.Result(nil), results[:maxResults]...)
 }
 
 func (m Model) View() string {

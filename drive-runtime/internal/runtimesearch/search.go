@@ -268,7 +268,7 @@ func findEmbeddingModel(driveRoot string) string {
 }
 
 func scalarInt(sqliteBin, dbPath, sql string) (int, error) {
-	out, err := exec.Command(sqliteBin, dbPath, sql).Output()
+	out, err := runSQLite(sqliteBin, dbPath, sql)
 	if err != nil {
 		return 0, err
 	}
@@ -283,7 +283,14 @@ func keywordSearch(sqliteBin, dbPath, query string) ([]Result, error) {
 			"JOIN sources s ON s.id = a.source_id WHERE articles_fts MATCH '%s' ORDER BY rank LIMIT 20;",
 		ftsQuery,
 	)
-	return queryResults(sqliteBin, dbPath, sql)
+	results, err := queryResults(sqliteBin, dbPath, sql)
+	if err == nil {
+		return results, nil
+	}
+	if fallback, fallbackErr := pythonKeywordSearch(dbPath, ftsQuery); fallbackErr == nil {
+		return fallback, nil
+	}
+	return nil, err
 }
 
 func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort int) ([]Result, error) {
@@ -294,7 +301,7 @@ func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort int
 			"SELECT a.id FROM articles_fts JOIN articles a ON a.id = articles_fts.rowid "+
 				"WHERE articles_fts MATCH '%s' ORDER BY rank LIMIT 200;", ftsQuery,
 		)
-		out, err := exec.Command(sqliteBin, dbPath, sql).Output()
+		out, err := runSQLite(sqliteBin, dbPath, sql)
 		if err != nil {
 			return nil, err
 		}
@@ -305,7 +312,7 @@ func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort int
 			}
 		}
 	} else {
-		out, err := exec.Command(sqliteBin, dbPath, "SELECT id FROM articles;").Output()
+		out, err := runSQLite(sqliteBin, dbPath, "SELECT id FROM articles;")
 		if err != nil {
 			return nil, err
 		}
@@ -325,7 +332,7 @@ func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort int
 		return nil, err
 	}
 	sql := fmt.Sprintf("SELECT article_id, hex(vector) FROM embeddings WHERE article_id IN (%s);", intsToCSV(candidateIDs))
-	out, err := exec.Command(sqliteBin, "-separator", "\t", dbPath, sql).Output()
+	out, err := runSQLite(sqliteBin, dbPath, "-separator", "\t", sql)
 	if err != nil {
 		return nil, err
 	}
@@ -374,7 +381,7 @@ func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort int
 }
 
 func queryResults(sqliteBin, dbPath, sql string) ([]Result, error) {
-	out, err := exec.Command(sqliteBin, "-separator", "\t", dbPath, sql).Output()
+	out, err := runSQLite(sqliteBin, dbPath, "-separator", "\t", sql)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +474,7 @@ func startKiwix(ctx context.Context, driveRoot string, port int) (*exec.Cmd, err
 	if err != nil || len(zims) == 0 {
 		return nil, fmt.Errorf("no ZIM files found")
 	}
-	args := []string{"--port", fmt.Sprintf("%d", port)}
+	args := []string{"--port", fmt.Sprintf("%d", port), "--address", "127.0.0.1"}
 	args = append(args, zims...)
 	cmd := exec.CommandContext(ctx, kiwixBin, args...)
 	cmd.Stdout = io.Discard
@@ -477,6 +484,85 @@ func startKiwix(ctx context.Context, driveRoot string, port int) (*exec.Cmd, err
 	}
 	time.Sleep(2 * time.Second)
 	return cmd, nil
+}
+
+func runSQLite(sqliteBin, dbPath string, args ...string) ([]byte, error) {
+	var cmdArgs []string
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		cmdArgs = append(cmdArgs, args[:len(args)-1]...)
+		cmdArgs = append(cmdArgs, dbPath, args[len(args)-1])
+	} else {
+		cmdArgs = append([]string{dbPath}, args...)
+	}
+	out, err := exec.Command(sqliteBin, cmdArgs...).CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return nil, fmt.Errorf("sqlite3 failed: %s", msg)
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+func pythonKeywordSearch(dbPath, ftsQuery string) ([]Result, error) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		return nil, err
+	}
+	script := `
+import json
+import sqlite3
+import sys
+
+conn = sqlite3.connect(sys.argv[1])
+rows = conn.execute(
+    """SELECT a.id, s.filename, a.path, a.title,
+              snippet(articles_fts, 1, '»', '«', '...', 12)
+       FROM articles_fts
+       JOIN articles a ON a.id = articles_fts.rowid
+       JOIN sources s ON s.id = a.source_id
+       WHERE articles_fts MATCH ?
+       ORDER BY rank
+       LIMIT 20""",
+    (sys.argv[2],),
+).fetchall()
+print(json.dumps(rows))
+`
+	out, err := exec.Command(python, "-c", script, dbPath, ftsQuery).CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return nil, fmt.Errorf("python sqlite fallback failed: %s", msg)
+		}
+		return nil, err
+	}
+	var raw [][]any
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, err
+	}
+	results := make([]Result, 0, len(raw))
+	for _, row := range raw {
+		if len(row) < 4 {
+			continue
+		}
+		id, _ := row[0].(float64)
+		filename, _ := row[1].(string)
+		path, _ := row[2].(string)
+		title, _ := row[3].(string)
+		snippet := ""
+		if len(row) > 4 {
+			snippet, _ = row[4].(string)
+		}
+		results = append(results, Result{
+			ID:       int(id),
+			Filename: filename,
+			Path:     path,
+			Title:    title,
+			Snippet:  snippet,
+		})
+	}
+	return results, nil
 }
 
 func intsToCSV(values []int) string {

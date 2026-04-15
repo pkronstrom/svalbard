@@ -63,7 +63,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	}
 
 	args := []string{"--port", fmt.Sprintf("%d", port)}
-	args = append(args, targets...)
+	args = buildKiwixArgs(port, targets)
 	cmd := exec.CommandContext(ctx, kiwixBin, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
@@ -91,6 +91,12 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	case err := <-waitCh:
 		return err
 	}
+}
+
+func buildKiwixArgs(port int, targets []string) []string {
+	args := []string{"--port", fmt.Sprintf("%d", port), "--address", "127.0.0.1"}
+	args = append(args, targets...)
+	return args
 }
 
 func findAvailablePort(host string, preferred int) (int, error) {

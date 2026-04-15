@@ -52,18 +52,27 @@ def _find_llama_server(drive_path: str | Path | None = None) -> str:
         os_name = "macos" if _platform.system() == "Darwin" else "linux"
         arch = "arm64" if _platform.machine() in ("aarch64", "arm64") else "x86_64"
         bin_dir = Path(drive_path) / "bin" / f"{os_name}-{arch}"
-        candidate = bin_dir / "llama-server"
-        if candidate.exists() and candidate.stat().st_mode & 0o111:
-            return str(candidate)
-        # Try extracting archives if binary not found
-        if bin_dir.exists():
-            for archive in bin_dir.iterdir():
+        tool_dir = bin_dir / "llama-server"
+        candidates = [
+            tool_dir / "llama-server",
+            bin_dir / "llama-server",
+        ]
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file() and candidate.stat().st_mode & 0o111:
+                return str(candidate)
+
+        archive_dirs = [tool_dir, bin_dir]
+        for archive_dir in archive_dirs:
+            if not archive_dir.exists() or not archive_dir.is_dir():
+                continue
+            for archive in archive_dir.iterdir():
                 name = archive.name.lower()
                 if not any(name.endswith(s) for s in (".tar.gz", ".tar.xz", ".zip")):
                     continue
-                _extract_archive_to(archive, bin_dir)
-                if (bin_dir / "llama-server").exists():
-                    return str(bin_dir / "llama-server")
+                _extract_archive_to(archive, archive_dir)
+                extracted = archive_dir / "llama-server"
+                if extracted.exists() and extracted.is_file():
+                    return str(extracted)
     path = shutil.which("llama-server")
     if path:
         return path

@@ -1,4 +1,5 @@
 import json
+import signal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -95,6 +96,36 @@ def test_sync_drive_skips_downloaded(tmp_path):
     # Should still have the entry
     reloaded = Manifest.load(tmp_path / "manifest.yaml")
     assert reloaded.entry_by_id(source.id) is not None
+
+
+def test_sync_drive_interrupts_active_download_cleanly(tmp_path, capsys):
+    """Ctrl-C during download should abort sync cleanly without a traceback."""
+    init_drive(str(tmp_path), "finland-128")
+    preset = load_preset("finland-128")
+    source = next(source for source in preset.sources if source.type == "zim")
+    minimal_preset = Preset(
+        name="finland-128",
+        description="test",
+        target_size_gb=128,
+        region="finland",
+        sources=[source],
+    )
+    original_handler = signal.getsignal(signal.SIGINT)
+
+    def interrupting_download(*args, **kwargs):
+        handler = signal.getsignal(signal.SIGINT)
+        handler(signal.SIGINT, None)
+        raise AssertionError("download continued after SIGINT")
+
+    with patch("svalbard.commands.load_preset", return_value=minimal_preset), \
+         patch("svalbard.commands.resolve_url", return_value="https://example.com/test.zim"), \
+         patch("svalbard.commands.fetch_sha256_sidecar", return_value=""), \
+         patch("svalbard.commands.download_sources", side_effect=interrupting_download):
+        sync_drive(str(tmp_path))
+
+    out = capsys.readouterr().out
+    assert "Interrupted" in out
+    assert signal.getsignal(signal.SIGINT) is original_handler
 
 
 def test_show_status_no_manifest(tmp_path):

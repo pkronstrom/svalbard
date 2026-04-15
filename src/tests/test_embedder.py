@@ -1,12 +1,9 @@
-"""Tests for svalbard.embedder — pure-function tests only.
-
-start_embedding_server and embed_batch require a running llama-server
-and are NOT tested here.
-"""
+"""Tests for svalbard.embedder — pure-function tests only."""
 
 import struct
+from pathlib import Path
 
-from svalbard.embedder import vectors_to_blob
+from svalbard.embedder import _find_llama_server, vectors_to_blob
 
 
 def test_vectors_to_blob():
@@ -43,3 +40,18 @@ def test_vectors_to_blob_single_dim():
     blobs = vectors_to_blob([[42.0]])
     assert len(blobs) == 1
     assert struct.unpack("<1f", blobs[0]) == (42.0,)
+
+
+def test_find_llama_server_prefers_tool_specific_platform_dir(tmp_path, monkeypatch):
+    """_find_llama_server should resolve the executable inside bin/{platform}/llama-server/."""
+    tool_dir = tmp_path / "bin" / "macos-arm64" / "llama-server"
+    tool_dir.mkdir(parents=True)
+    binary = tool_dir / "llama-server"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+
+    monkeypatch.setattr("svalbard.embedder._platform.system", lambda: "Darwin")
+    monkeypatch.setattr("svalbard.embedder._platform.machine", lambda: "arm64")
+    monkeypatch.setattr("svalbard.embedder.shutil.which", lambda _: None)
+
+    assert _find_llama_server(tmp_path) == str(binary)

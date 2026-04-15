@@ -542,6 +542,7 @@ def sync_drive(
         nonlocal interrupted
         interrupted = True
         console.print("\n[yellow]Interrupted — saving progress...[/yellow]")
+        raise KeyboardInterrupt
 
     old_handler = signal.signal(signal.SIGINT, _handle_interrupt)
 
@@ -719,6 +720,8 @@ def sync_drive(
                 manifest.last_synced = datetime.now().isoformat(timespec="seconds")
                 manifest.save(manifest_path)
                 console.print(f"  [green]OK[/green] {source.id}")
+    except KeyboardInterrupt:
+        interrupted = True
     finally:
         signal.signal(signal.SIGINT, old_handler)
         # Final save

@@ -1,12 +1,14 @@
 package menu
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimesearch"
 )
 
 func sampleGroupedConfig() config.RuntimeConfig {
@@ -92,6 +94,21 @@ func TestEscReturnsFromGroupScreen(t *testing.T) {
 	}
 }
 
+func TestQReturnsFromGroupScreen(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	m.inGroup = true
+	m.activeGroup = "library"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	got := updated.(Model)
+	if got.inGroup {
+		t.Fatal("inGroup = true, want false")
+	}
+	if got.activeGroup != "" {
+		t.Fatalf("activeGroup = %q, want empty", got.activeGroup)
+	}
+}
+
 func TestFilterMatchesGroupItemsInsideGroup(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	m.inGroup = true
@@ -136,5 +153,124 @@ func TestEnterDismissesCapturedOutput(t *testing.T) {
 	}
 	if got.output != "" {
 		t.Fatalf("output = %q, want empty", got.output)
+	}
+}
+
+type fakeSearchSession struct {
+	info       runtimesearch.SessionInfo
+	response   runtimesearch.SearchResponse
+	searchErr  error
+	openErr    error
+	searches   []string
+	opened     []runtimesearch.Result
+	closed     bool
+}
+
+func (f *fakeSearchSession) Info() runtimesearch.SessionInfo {
+	return f.info
+}
+
+func (f *fakeSearchSession) Search(_ context.Context, mode runtimesearch.Mode, query string) (runtimesearch.SearchResponse, error) {
+	f.searches = append(f.searches, string(mode)+":"+query)
+	return f.response, f.searchErr
+}
+
+func (f *fakeSearchSession) OpenResult(result runtimesearch.Result) error {
+	f.opened = append(f.opened, result)
+	return f.openErr
+}
+
+func (f *fakeSearchSession) Close() error {
+	f.closed = true
+	return nil
+}
+
+func TestEnterOnSearchItemOpensSearchSession(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	fake := &fakeSearchSession{
+		info: runtimesearch.SessionInfo{
+			SourceCount: 2,
+			ArticleCount: 10,
+			BestMode: runtimesearch.ModeKeyword,
+		},
+	}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	m.inGroup = true
+	m.activeGroup = "search"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+	if !got.searchActive {
+		t.Fatal("searchActive = false, want true")
+	}
+	if got.inGroup {
+		t.Fatal("inGroup = true, want false")
+	}
+	if got.searchMode != runtimesearch.ModeKeyword {
+		t.Fatalf("searchMode = %q", got.searchMode)
+	}
+}
+
+func TestSearchEscClearsQueryThenLeavesSession(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	fake := &fakeSearchSession{info: runtimesearch.SessionInfo{BestMode: runtimesearch.ModeKeyword}}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	if err := m.openSearchSession(); err != nil {
+		t.Fatalf("openSearchSession() error = %v", err)
+	}
+	m.searchQuery = "linux"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	got := updated.(Model)
+	if got.searchQuery != "" {
+		t.Fatalf("searchQuery = %q, want empty", got.searchQuery)
+	}
+	if !got.searchActive {
+		t.Fatal("searchActive = false after first esc, want true")
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	got = updated.(Model)
+	if got.searchActive {
+		t.Fatal("searchActive = true after second esc, want false")
+	}
+	if !fake.closed {
+		t.Fatal("search session was not closed")
+	}
+}
+
+func TestSearchEnterRunsQueryAndShowsResults(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	fake := &fakeSearchSession{
+		info: runtimesearch.SessionInfo{BestMode: runtimesearch.ModeKeyword},
+		response: runtimesearch.SearchResponse{
+			EffectiveMode: runtimesearch.ModeKeyword,
+			Results: []runtimesearch.Result{
+				{Filename: "wiki.zim", Path: "A/Linux", Title: "Linux", Snippet: "kernel"},
+			},
+		},
+	}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	if err := m.openSearchSession(); err != nil {
+		t.Fatalf("openSearchSession() error = %v", err)
+	}
+	m.searchQuery = "linux"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+	if !got.searchLoading {
+		t.Fatal("searchLoading = false, want true")
+	}
+	msg := cmd()
+	updated, _ = got.Update(msg)
+	got = updated.(Model)
+	if len(got.searchResults) != 1 {
+		t.Fatalf("len(searchResults) = %d, want 1", len(got.searchResults))
+	}
+	if !got.searchResultsFocus {
+		t.Fatal("searchResultsFocus = false, want true")
+	}
+	if len(fake.searches) != 1 || fake.searches[0] != "keyword:linux" {
+		t.Fatalf("searches = %v", fake.searches)
 	}
 }
