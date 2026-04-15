@@ -41,9 +41,9 @@ type searchOpenMsg struct {
 }
 
 type Model struct {
-	cfg       config.RuntimeConfig
-	driveRoot string
-	runner    actions.Runner
+	cfg           config.RuntimeConfig
+	driveRoot     string
+	runner        actions.Runner
 	searchFactory func(string) (searchSession, error)
 
 	groupSelected int
@@ -365,10 +365,6 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		if m.searchResultsFocus {
 			m.searchResultsFocus = false
-			return m, nil
-		}
-		if strings.TrimSpace(m.searchQuery) == "" {
-			m.closeSearchSession()
 			return m, nil
 		}
 	case "backspace":

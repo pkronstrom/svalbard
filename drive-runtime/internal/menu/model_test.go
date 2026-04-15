@@ -157,13 +157,13 @@ func TestEnterDismissesCapturedOutput(t *testing.T) {
 }
 
 type fakeSearchSession struct {
-	info       runtimesearch.SessionInfo
-	response   runtimesearch.SearchResponse
-	searchErr  error
-	openErr    error
-	searches   []string
-	opened     []runtimesearch.Result
-	closed     bool
+	info      runtimesearch.SessionInfo
+	response  runtimesearch.SearchResponse
+	searchErr error
+	openErr   error
+	searches  []string
+	opened    []runtimesearch.Result
+	closed    bool
 }
 
 func (f *fakeSearchSession) Info() runtimesearch.SessionInfo {
@@ -189,9 +189,9 @@ func TestEnterOnSearchItemOpensSearchSession(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	fake := &fakeSearchSession{
 		info: runtimesearch.SessionInfo{
-			SourceCount: 2,
+			SourceCount:  2,
 			ArticleCount: 10,
-			BestMode: runtimesearch.ModeKeyword,
+			BestMode:     runtimesearch.ModeKeyword,
 		},
 	}
 	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
@@ -272,5 +272,57 @@ func TestSearchEnterRunsQueryAndShowsResults(t *testing.T) {
 	}
 	if len(fake.searches) != 1 || fake.searches[0] != "keyword:linux" {
 		t.Fatalf("searches = %v", fake.searches)
+	}
+}
+
+func TestSearchQTypesIntoQueryInput(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	fake := &fakeSearchSession{info: runtimesearch.SessionInfo{BestMode: runtimesearch.ModeKeyword}}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	if err := m.openSearchSession(); err != nil {
+		t.Fatalf("openSearchSession() error = %v", err)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	got := updated.(Model)
+	if got.searchQuery != "q" {
+		t.Fatalf("searchQuery = %q, want q", got.searchQuery)
+	}
+	if !got.searchActive {
+		t.Fatal("searchActive = false, want true")
+	}
+}
+
+func TestSearchViewShowsTitleFirstAndSourceOnlyInMetadata(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	fake := &fakeSearchSession{
+		info: runtimesearch.SessionInfo{BestMode: runtimesearch.ModeKeyword},
+		response: runtimesearch.SearchResponse{
+			EffectiveMode: runtimesearch.ModeKeyword,
+			Results: []runtimesearch.Result{
+				{Filename: "wiki.zim", Path: "A/Linux", Title: "Linux", Snippet: "kernel and userspace"},
+			},
+		},
+	}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	if err := m.openSearchSession(); err != nil {
+		t.Fatalf("openSearchSession() error = %v", err)
+	}
+	m.searchQuery = "linux"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	msg := cmd()
+	updated, _ = updated.(Model).Update(msg)
+	got := updated.(Model)
+
+	view := got.View()
+	if !strings.Contains(view, "01") || !strings.Contains(view, "Linux") {
+		t.Fatalf("View() missing stable numbered result row: %q", view)
+	}
+	if strings.Contains(view, "[wiki]") {
+		t.Fatalf("View() still shows source name in row prefix: %q", view)
+	}
+	if !strings.Contains(view, "Source: wiki.zim") {
+		t.Fatalf("View() missing selected result metadata: %q", view)
 	}
 }

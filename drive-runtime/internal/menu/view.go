@@ -8,13 +8,16 @@ import (
 )
 
 var (
-	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	sectionStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
-	selectedStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	descriptionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	statusStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
-	errorStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	helpStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	titleStyle          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	sectionStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
+	selectedStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	descriptionStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	statusStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	errorStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	helpStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	selectedRowStyle    = lipgloss.NewStyle().Background(lipgloss.Color("236"))
+	numberStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	selectedNumberStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 )
 
 func renderView(m Model) string {
@@ -51,7 +54,7 @@ func renderSearchView(m Model) string {
 
 	b.WriteString(titleStyle.Render("Svalbard / Search"))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Enter: search/open • Tab: toggle mode • j/k: move • Esc: back/clear • q: back"))
+	b.WriteString(helpStyle.Render("Enter: search/open • Tab: toggle mode • j/k: move • Esc: clear/back"))
 	b.WriteString("\n\n")
 
 	modeLine := fmt.Sprintf("Mode: %s", m.searchMode)
@@ -91,18 +94,22 @@ func renderSearchView(m Model) string {
 	}
 
 	for idx, result := range m.searchResults {
-		line := fmt.Sprintf("  %d. [%s] %s", idx+1, strings.TrimSuffix(result.Filename, ".zim"), result.Title)
+		number := numberStyle.Render(fmt.Sprintf("%02d", idx+1))
 		if idx == m.searchSelected {
-			prefix := "> "
-			if !m.searchResultsFocus {
-				prefix = "• "
-			}
-			line = selectedStyle.Render(prefix + fmt.Sprintf("[%s] %s", strings.TrimSuffix(result.Filename, ".zim"), result.Title))
+			number = selectedNumberStyle.Render(fmt.Sprintf("%02d", idx+1))
+		}
+		line := fmt.Sprintf("%s  %s %s", number, sourceDot(result.Filename), result.Title)
+		if idx == m.searchSelected {
+			line = selectedRowStyle.Render(" " + line + " ")
 		}
 		b.WriteString(line)
 		b.WriteString("\n")
 		if result.Snippet != "" {
-			b.WriteString(descriptionStyle.Render("    " + result.Snippet))
+			snippet := descriptionStyle.Render("      " + result.Snippet)
+			if idx == m.searchSelected {
+				snippet = selectedRowStyle.Render(" " + snippet + " ")
+			}
+			b.WriteString(snippet)
 			b.WriteString("\n")
 		}
 	}
@@ -123,6 +130,25 @@ func renderSearchView(m Model) string {
 	}
 
 	return b.String()
+}
+
+func sourceDot(filename string) string {
+	palette := []lipgloss.Color{
+		lipgloss.Color("2"),
+		lipgloss.Color("4"),
+		lipgloss.Color("5"),
+		lipgloss.Color("6"),
+		lipgloss.Color("11"),
+		lipgloss.Color("12"),
+		lipgloss.Color("13"),
+		lipgloss.Color("14"),
+	}
+	var sum int
+	for _, b := range []byte(strings.ToLower(filename)) {
+		sum += int(b)
+	}
+	color := palette[sum%len(palette)]
+	return lipgloss.NewStyle().Foreground(color).Render("●")
 }
 
 func renderTopLevelView(b *strings.Builder, m Model) {
