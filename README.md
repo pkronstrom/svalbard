@@ -32,7 +32,7 @@ Deploy a 2 GB emergency kit on your phone with a few apps and be offgrid-certifi
 
 A svalbard drive is not a bootable image or a compressed archive — it's a plain directory of standard open formats (ZIM, PMTiles, GGUF, HTML). No extraction, no installation. The drive includes its own binaries and tools for viewing and accessing data.
 
-**On a computer** — plug in the drive, open a terminal, run `./run`. The drive launcher opens a keyboard-driven terminal UI where you can browse encyclopedias, search across all content, view maps, chat with local AI, and launch bundled AI clients like OpenCode, Crush, and Goose against the local models already on the drive. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
+**On a computer** — plug in the drive, open a terminal, run `./run`. The drive launcher opens a keyboard-driven terminal UI with grouped menus for `Search`, `Library`, `Maps`, `Local AI`, and `Tools`, plus any pack-defined extras on the drive. You can jump straight into archives, view maps, chat with local models, launch bundled AI clients like OpenCode, Crush, and Goose, inspect the drive, and share it over the local network. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
 
 **On a phone or tablet** — carry a USB-C stick, plug it into your phone, and open the files directly with apps like Kiwix (encyclopedias), OsmAnd (maps), or any PDF/EPUB reader. Or just copy the directory (or a zip of it) to your phone's filesystem — the files are standard formats that any compatible app can open. See `provisioning/` for recommended apps on iOS and Android.
 
@@ -66,7 +66,7 @@ pip install git+https://github.com/pkronstrom/svalbard          # classic
 svalbard wizard
 
 # 3. Done — unplug and go
-cd /Volumes/MyStick && ./run        # browse, search, maps, AI chat
+cd /Volumes/MyStick && ./run        # search, library, maps, local AI, tools
 ```
 
 ### Add your own content

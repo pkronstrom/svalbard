@@ -23,7 +23,11 @@ type Model struct {
 	driveRoot string
 	runner    actions.Runner
 
-	selected      int
+	groupSelected int
+	itemSelected  int
+	activeGroup   string
+	inGroup       bool
+
 	filter        string
 	filtering     bool
 	width         int
@@ -90,7 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				m.filter = ""
 				m.filtering = false
-				m.selected = 0
+				m.clampSelection()
 			case "enter":
 				m.filtering = false
 			case "backspace":
@@ -120,15 +124,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filtering = true
 			return m, nil
 		case "esc":
+			if m.inGroup {
+				m.inGroup = false
+				m.activeGroup = ""
+				m.itemSelected = 0
+				m.filter = ""
+				m.filtering = false
+				return m, nil
+			}
 			m.filter = ""
-			m.selected = 0
+			m.groupSelected = 0
 			return m, nil
 		case "enter":
-			action, ok := m.SelectedAction()
+			if !m.inGroup {
+				group, ok := m.SelectedGroup()
+				if !ok {
+					return m, nil
+				}
+				m.inGroup = true
+				m.activeGroup = group.ID
+				m.itemSelected = 0
+				m.filter = ""
+				m.filtering = false
+				return m, nil
+			}
+
+			item, ok := m.SelectedItem()
 			if !ok {
 				return m, nil
 			}
-			resolved, err := m.runner.Resolve(action.Action, action.Args)
+			resolved, err := m.runner.Resolve(item.Action)
 			if err != nil {
 				m.lastErr = err
 				m.status = "Action failed"
@@ -170,67 +195,149 @@ func (m *Model) SetFilter(value string) {
 }
 
 func (m *Model) SetSelected(index int) {
-	m.selected = index
+	if m.inGroup {
+		m.itemSelected = index
+	} else {
+		m.groupSelected = index
+	}
 	m.clampSelection()
 }
 
 func (m Model) SelectedIndex() int {
-	return m.selected
+	if m.inGroup {
+		return m.itemSelected
+	}
+	return m.groupSelected
 }
 
 func (m *Model) MoveDown() {
-	if len(m.VisibleActions()) == 0 {
-		m.selected = 0
+	visibleCount := len(m.visibleEntries())
+	if visibleCount == 0 {
+		m.SetSelected(0)
 		return
 	}
-	if m.selected < len(m.VisibleActions())-1 {
-		m.selected++
+	if m.SelectedIndex() < visibleCount-1 {
+		m.SetSelected(m.SelectedIndex() + 1)
 	}
 }
 
 func (m *Model) MoveUp() {
-	if m.selected > 0 {
-		m.selected--
+	if m.SelectedIndex() > 0 {
+		m.SetSelected(m.SelectedIndex() - 1)
 	}
 }
 
-func (m Model) SelectedAction() (config.MenuAction, bool) {
-	visible := m.VisibleActions()
+func (m Model) SelectedGroup() (config.MenuGroup, bool) {
+	visible := m.VisibleGroups()
 	if len(visible) == 0 {
-		return config.MenuAction{}, false
+		return config.MenuGroup{}, false
 	}
-	if m.selected < 0 || m.selected >= len(visible) {
-		return config.MenuAction{}, false
+	if m.groupSelected < 0 || m.groupSelected >= len(visible) {
+		return config.MenuGroup{}, false
 	}
-	return visible[m.selected], true
+	return visible[m.groupSelected], true
+}
+
+func (m Model) SelectedItem() (config.MenuItem, bool) {
+	visible := m.VisibleItems()
+	if len(visible) == 0 {
+		return config.MenuItem{}, false
+	}
+	if m.itemSelected < 0 || m.itemSelected >= len(visible) {
+		return config.MenuItem{}, false
+	}
+	return visible[m.itemSelected], true
 }
 
 func (m *Model) clampSelection() {
-	visible := m.VisibleActions()
-	if len(visible) == 0 {
-		m.selected = 0
+	visibleCount := len(m.visibleEntries())
+	if visibleCount == 0 {
+		if m.inGroup {
+			m.itemSelected = 0
+		} else {
+			m.groupSelected = 0
+		}
 		return
 	}
-	if m.selected >= len(visible) {
-		m.selected = len(visible) - 1
+	if m.inGroup {
+		if m.itemSelected >= visibleCount {
+			m.itemSelected = visibleCount - 1
+		}
+		if m.itemSelected < 0 {
+			m.itemSelected = 0
+		}
+		return
 	}
-	if m.selected < 0 {
-		m.selected = 0
+	if m.groupSelected >= visibleCount {
+		m.groupSelected = visibleCount - 1
+	}
+	if m.groupSelected < 0 {
+		m.groupSelected = 0
 	}
 }
 
-func (m Model) VisibleActions() []config.MenuAction {
+func (m Model) CurrentGroup() (config.MenuGroup, bool) {
+	for _, group := range m.cfg.Groups {
+		if group.ID == m.activeGroup {
+			return group, true
+		}
+	}
+	return config.MenuGroup{}, false
+}
+
+func (m Model) VisibleGroups() []config.MenuGroup {
 	if strings.TrimSpace(m.filter) == "" {
-		return append([]config.MenuAction(nil), m.cfg.Actions...)
+		return append([]config.MenuGroup(nil), m.cfg.Groups...)
 	}
 
 	needle := strings.ToLower(strings.TrimSpace(m.filter))
-	visible := make([]config.MenuAction, 0, len(m.cfg.Actions))
-	for _, action := range m.cfg.Actions {
-		if strings.Contains(strings.ToLower(action.Label), needle) ||
-			strings.Contains(strings.ToLower(action.Section), needle) {
-			visible = append(visible, action)
+	visible := make([]config.MenuGroup, 0, len(m.cfg.Groups))
+	for _, group := range m.cfg.Groups {
+		if strings.Contains(strings.ToLower(group.Label), needle) ||
+			strings.Contains(strings.ToLower(group.Description), needle) ||
+			strings.Contains(strings.ToLower(group.ID), needle) {
+			visible = append(visible, group)
 		}
 	}
 	return visible
+}
+
+func (m Model) VisibleItems() []config.MenuItem {
+	group, ok := m.CurrentGroup()
+	if !ok {
+		return []config.MenuItem{}
+	}
+	if strings.TrimSpace(m.filter) == "" {
+		return append([]config.MenuItem(nil), group.Items...)
+	}
+
+	needle := strings.ToLower(strings.TrimSpace(m.filter))
+	visible := make([]config.MenuItem, 0, len(group.Items))
+	for _, item := range group.Items {
+		if strings.Contains(strings.ToLower(item.Label), needle) ||
+			strings.Contains(strings.ToLower(item.Description), needle) ||
+			strings.Contains(strings.ToLower(item.Subheader), needle) ||
+			strings.Contains(strings.ToLower(item.ID), needle) {
+			visible = append(visible, item)
+		}
+	}
+	return visible
+}
+
+func (m Model) visibleEntries() []string {
+	if m.inGroup {
+		items := m.VisibleItems()
+		result := make([]string, 0, len(items))
+		for _, item := range items {
+			result = append(result, item.ID)
+		}
+		return result
+	}
+
+	groups := m.VisibleGroups()
+	result := make([]string, 0, len(groups))
+	for _, group := range groups {
+		result = append(result, group.ID)
+	}
+	return result
 }

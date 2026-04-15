@@ -8,20 +8,57 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 )
 
-func TestLoadRuntimeConfig(t *testing.T) {
+func TestLoadGroupedActionsConfig(t *testing.T) {
 	t.Helper()
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "runtime.json")
+	path := filepath.Join(dir, "actions.json")
 	content := `{
-  "version": 1,
+  "version": 2,
   "preset": "default-32",
-  "actions": [
+  "groups": [
     {
-      "section": "browse",
-      "label": "Browse encyclopedias",
-      "action": "browse",
-      "args": {}
+      "id": "search",
+      "label": "Search",
+      "description": "Search across indexed archives and documents.",
+      "order": 100,
+      "items": [
+        {
+          "id": "search-all-content",
+          "label": "Search all content",
+          "description": "Query the on-drive search index across packaged sources.",
+          "action": {
+            "type": "builtin",
+            "config": {
+              "name": "search",
+              "args": {}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "library",
+      "label": "Library",
+      "description": "Browse packaged offline archives and documents.",
+      "order": 200,
+      "items": [
+        {
+          "id": "wikipedia-en-nopic",
+          "label": "Wikipedia (text only)",
+          "description": "Browse the image-free English Wikipedia archive.",
+          "subheader": "Archives",
+          "action": {
+            "type": "builtin",
+            "config": {
+              "name": "browse",
+              "args": {
+                "zim": "wikipedia-en-nopic.zim"
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }`
@@ -35,10 +72,20 @@ func TestLoadRuntimeConfig(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if got, want := cfg.Version, 1; got != want {
+	if got, want := cfg.Version, 2; got != want {
 		t.Fatalf("Version = %d, want %d", got, want)
 	}
-	if got, want := cfg.Actions[0].Action, "browse"; got != want {
-		t.Fatalf("Actions[0].Action = %q, want %q", got, want)
+	if got, want := cfg.Groups[0].ID, "search"; got != want {
+		t.Fatalf("Groups[0].ID = %q, want %q", got, want)
+	}
+	if got, want := cfg.Groups[1].Items[0].Subheader, "Archives"; got != want {
+		t.Fatalf("Groups[1].Items[0].Subheader = %q, want %q", got, want)
+	}
+	builtin, err := cfg.Groups[1].Items[0].Action.DecodeBuiltin()
+	if err != nil {
+		t.Fatalf("DecodeBuiltin() error = %v", err)
+	}
+	if got, want := builtin.Args["zim"], "wikipedia-en-nopic.zim"; got != want {
+		t.Fatalf("builtin.Args[zim] = %q, want %q", got, want)
 	}
 }

@@ -13,7 +13,12 @@ platforms:
   macos-arm64: https://github.com/sst/opencode/releases/latest/download/opencode-darwin-arm64.zip
   macos-x86_64: https://github.com/sst/opencode/releases/latest/download/opencode-darwin-x64.zip
 description: OpenCode terminal coding assistant
+menu:
+  group: local-ai
+  subheader: AI Clients
+  label: OpenCode
+  description: Launch the OpenCode terminal client against local models
+  order: 200
 license:
   id: MIT
   attribution: OpenCode contributors
-

@@ -13,7 +13,12 @@ platforms:
   macos-arm64: https://github.com/block/goose/releases/latest/download/goose-aarch64-apple-darwin.tar.bz2
   macos-x86_64: https://github.com/block/goose/releases/latest/download/goose-x86_64-apple-darwin.tar.bz2
 description: Goose terminal coding and agent client
+menu:
+  group: local-ai
+  subheader: AI Clients
+  label: Goose
+  description: Launch the Goose terminal client against local models
+  order: 220
 license:
   id: Apache-2.0
   attribution: Block and Goose contributors
-

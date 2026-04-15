@@ -16,11 +16,11 @@ def test_init_drive_creates_files(tmp_path):
     assert (tmp_path / "manifest.yaml").exists()
     assert (tmp_path / "run").exists()
     assert (tmp_path / "README.md").exists()
-    assert (tmp_path / ".svalbard" / "runtime.json").exists()
+    assert (tmp_path / ".svalbard" / "actions.json").exists()
 
-    runtime = json.loads((tmp_path / ".svalbard" / "runtime.json").read_text())
-    assert runtime["version"] == 1
-    assert runtime["actions"]
+    runtime = json.loads((tmp_path / ".svalbard" / "actions.json").read_text())
+    assert runtime["version"] == 2
+    assert runtime["groups"]
 
     manifest = Manifest.load(tmp_path / "manifest.yaml")
     assert manifest.preset == "finland-128"

@@ -15,6 +15,12 @@ depth: comprehensive
 size_gb: 48.0
 url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_nopic_{date}.zim
 description: English Wikipedia without pictures
+menu:
+  group: library
+  subheader: Archives
+  label: Wikipedia (text only)
+  description: Browse the image-free English Wikipedia archive
+  order: 100
 license:
   id: CC-BY-SA-3.0
   attribution: Wikimedia Foundation contributors

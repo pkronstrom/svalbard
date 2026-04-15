@@ -5,6 +5,12 @@ tags: [data, database]
 depth: reference-only
 size_gb: 0.005
 description: SQLiteViz — browser-based SQLite explorer and visualizer
+menu:
+  group: tools
+  subheader: Apps
+  label: SQLiteViz
+  description: Open the bundled SQLite explorer and visualizer
+  order: 200
 strategy: build
 
 build:
