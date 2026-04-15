@@ -70,8 +70,6 @@ ARTIFACT_EXTS = {
     ".gerber", ".brd", ".drl",
 }
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-
 MAX_RETRIES = 3
 VERIFY_CONCURRENCY = 10
 VERIFY_DELAY = 0.2
@@ -1028,8 +1026,7 @@ class LinkArtifacts(ArtifactStrategy):
                 continue
             fname = _sanitize_filename(Path(urlparse(href).path).name)
             if _download_file(client, href, artifacts_dir / fname):
-                fsize = (artifacts_dir / fname).stat().st_size
-                new_artifacts.append({"filename": f"artifacts/{fname}", "type": ext.lstrip("."), "size_bytes": fsize})
+                new_artifacts.append(_artifact_entry(fname, artifacts_dir))
             time.sleep(0.3)
         return new_artifacts
 
@@ -1163,6 +1160,18 @@ class SiteScraper:
 
 # Module-level config populated by stage_crawl before creating scrapers
 _RUNTIME_CONFIG: dict = {}
+
+_DEFAULT_FETCH_CHAIN = [HttpFetcher(), SslBypassFetcher(), PlaywrightFetcher()]
+
+
+def _artifact_entry(fname: str, artifacts_dir: Path) -> dict:
+    """Build a standard artifact metadata dict."""
+    fsize = (artifacts_dir / fname).stat().st_size if (artifacts_dir / fname).exists() else 0
+    return {
+        "filename": f"artifacts/{fname}",
+        "type": Path(fname).suffix.lstrip("."),
+        "size_bytes": fsize,
+    }
 
 
 # ── Printables ───────────────────────────────────────────────────────────
@@ -1340,12 +1349,7 @@ def _printables_post_parse(
                 fname = _sanitize_filename(f_info.get("name", f"file_{fid}"))
                 if dl_url:
                     if _download_file(client, dl_url, artifacts_dir / fname):
-                        fsize = (artifacts_dir / fname).stat().st_size
-                        meta.artifacts.append({
-                            "filename": f"artifacts/{fname}",
-                            "type": Path(fname).suffix.lstrip("."),
-                            "size_bytes": fsize,
-                        })
+                        meta.artifacts.append(_artifact_entry(fname, artifacts_dir))
                     time.sleep(0.5)
                 else:
                     meta.artifacts.append({
@@ -1363,12 +1367,11 @@ def _printables_post_parse(
 PRINTABLES_CONFIG = SiteConfig(
     name="printables",
     domain="printables.com",
-    fetch_chain=[HttpFetcher(), SslBypassFetcher(), PlaywrightFetcher()],
+    fetch_chain=_DEFAULT_FETCH_CHAIN,
     metadata_strategies=[JsonLdMetadata(), OpenGraphMetadata(), HtmlMetadata()],
     image_strategies=[],  # Images handled in post_parse via GraphQL
-    artifact_strategies=[],  # Artifacts handled in post_parse via GraphQL
+    artifact_strategies=[],
     post_parse=_printables_post_parse,
-    rate_limit=CRAWL_DELAY_PER_DOMAIN,
 )
 
 
@@ -1500,12 +1503,7 @@ def _thingiverse_post_parse(
                         continue
                     fname = _sanitize_filename(f_info.get("name", "file"))
                     if _download_file(client, dl_url, artifacts_dir / fname, headers=cdn_auth_headers, cookies=cdn_cookies or None):
-                        fsize = (artifacts_dir / fname).stat().st_size
-                        meta.artifacts.append({
-                            "filename": f"artifacts/{fname}",
-                            "type": Path(fname).suffix.lstrip("."),
-                            "size_bytes": fsize,
-                        })
+                        meta.artifacts.append(_artifact_entry(fname, artifacts_dir))
                     time.sleep(0.5)
             elif r.status_code == 401:
                 log.warning("  Thingiverse API returned 401 — token may be invalid")
@@ -1537,10 +1535,10 @@ def _thingiverse_post_parse(
 THINGIVERSE_CONFIG = SiteConfig(
     name="thingiverse",
     domain="thingiverse.com",
-    fetch_chain=[HttpFetcher(), SslBypassFetcher(), PlaywrightFetcher()],
+    fetch_chain=_DEFAULT_FETCH_CHAIN,
     metadata_strategies=[JsonLdMetadata(type_filter="Product"), OpenGraphMetadata(), HtmlMetadata()],
     image_strategies=[],  # Images handled in post_parse via API
-    artifact_strategies=[],  # Artifacts handled in post_parse via API
+    artifact_strategies=[],
     pre_fetch=_thingiverse_pre_fetch,
     post_parse=_thingiverse_post_parse,
     rate_limit=2.0,
@@ -1678,12 +1676,11 @@ def _github_post_parse(
 GITHUB_CONFIG = SiteConfig(
     name="github",
     domain="github.com",
-    fetch_chain=[HttpFetcher(), SslBypassFetcher(), PlaywrightFetcher()],
+    fetch_chain=_DEFAULT_FETCH_CHAIN,
     metadata_strategies=[OpenGraphMetadata(), HtmlMetadata()],
     image_strategies=[],  # OG image handled in post_parse
     artifact_strategies=[],  # ZIP handled in post_parse
     post_parse=_github_post_parse,
-    rate_limit=CRAWL_DELAY_PER_DOMAIN,
 )
 
 
@@ -1767,12 +1764,7 @@ def _instructables_post_parse(
         if ext in ARTIFACT_EXTS:
             fname = _sanitize_filename(Path(parsed.path).name)
             if _download_file(client, href, artifacts_dir / fname):
-                fsize = (artifacts_dir / fname).stat().st_size
-                meta.artifacts.append({
-                    "filename": f"artifacts/{fname}",
-                    "type": ext.lstrip("."),
-                    "size_bytes": fsize,
-                })
+                meta.artifacts.append(_artifact_entry(fname, artifacts_dir))
             time.sleep(0.3)
 
     # Save steps
@@ -1785,12 +1777,11 @@ def _instructables_post_parse(
 INSTRUCTABLES_CONFIG = SiteConfig(
     name="instructables",
     domain="instructables.com",
-    fetch_chain=[HttpFetcher(), SslBypassFetcher(), PlaywrightFetcher()],
+    fetch_chain=_DEFAULT_FETCH_CHAIN,
     metadata_strategies=[OpenGraphMetadata(), HtmlMetadata()],
     image_strategies=[],  # Images handled in post_parse (CDN regex)
-    artifact_strategies=[],  # Artifacts handled in post_parse
+    artifact_strategies=[],
     post_parse=_instructables_post_parse,
-    rate_limit=CRAWL_DELAY_PER_DOMAIN,
 )
 
 
@@ -1897,7 +1888,7 @@ def _cults3d_post_parse(
 CULTS3D_CONFIG = SiteConfig(
     name="cults3d",
     domain="cults3d.com",
-    fetch_chain=[HttpFetcher(), SslBypassFetcher(), PlaywrightFetcher()],
+    fetch_chain=_DEFAULT_FETCH_CHAIN,
     metadata_strategies=[Cults3DJsonLdMetadata(), OpenGraphMetadata(), HtmlMetadata()],
     image_strategies=[Cults3DImages()],
     artifact_strategies=[],  # File names extracted in post_parse (downloads require auth)
@@ -1911,11 +1902,10 @@ CULTS3D_CONFIG = SiteConfig(
 GENERIC_CONFIG = SiteConfig(
     name="generic",
     domain="",
-    fetch_chain=[HttpFetcher(), SslBypassFetcher(), PlaywrightFetcher(), WaybackFetcher()],
+    fetch_chain=[*_DEFAULT_FETCH_CHAIN, WaybackFetcher()],
     metadata_strategies=[JsonLdMetadata(), OpenGraphMetadata(), HtmlMetadata()],
     image_strategies=[ImgTagImages(max_images=20), OgImages()],
     artifact_strategies=[LinkArtifacts()],
-    rate_limit=CRAWL_DELAY_PER_DOMAIN,
 )
 
 
