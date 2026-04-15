@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -201,7 +200,7 @@ func run(srcPath, outDir, redirectsPath string, maxWidth uint, jpegQuality, numW
 		go func(e contentEntry) {
 			defer wg.Done()
 
-			outPath := filepath.Join(outDir, e.path)
+			outPath := outputPathForEntry(filepath.Join(outDir, e.path), e.mime, false)
 			if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 				skipped.Add(1)
 				return
@@ -214,10 +213,7 @@ func run(srcPath, outDir, redirectsPath string, maxWidth uint, jpegQuality, numW
 				sem <- struct{}{}
 				if processed, err := resizeImage(data, maxWidth, jpegQuality); err == nil {
 					data = processed
-					// Change extension to .jpg for resized images
-					if e.mime != "image/jpeg" {
-						outPath = strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".jpg"
-					}
+					outPath = outputPathForEntry(outPath, e.mime, true)
 					resized.Add(1)
 				}
 				<-sem
@@ -240,6 +236,12 @@ func run(srcPath, outDir, redirectsPath string, maxWidth uint, jpegQuality, numW
 	log.Printf("done: %d written, %d images resized, %d skipped",
 		written.Load(), resized.Load(), skipped.Load())
 	return nil
+}
+
+func outputPathForEntry(outPath, mime string, resized bool) string {
+	_ = mime
+	_ = resized
+	return outPath
 }
 
 func writeIllustration(outDir string, icon []byte) error {

@@ -68,3 +68,11 @@ func TestWriteRedirectsReturnsErrorWhenParentIsFile(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestOutputPathForImagePreservesOriginalAssetPath(t *testing.T) {
+	got := outputPathForEntry("/tmp/_assets_/Hookworms.JPG", "image/png", true)
+	want := "/tmp/_assets_/Hookworms.JPG"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
