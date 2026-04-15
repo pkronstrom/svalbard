@@ -233,3 +233,76 @@ def test_shared_source_toggle_is_global():
     comm_pack = tree[1].packs[0]  # Communications
     assert eng_pack.checked_count(checked) == 1  # only devdocs-c
     assert comm_pack.checked_count(checked) == 1  # only stackexchange-amateur-radio
+
+
+def test_run_picker_returns_none_on_quit(monkeypatch):
+    import svalbard.picker as picker
+
+    tree, checked = build_picker_tree(
+        packs=[
+            Preset(
+                name="tools",
+                description="Core tools",
+                target_size_gb=1,
+                region="",
+                kind="pack",
+                display_group="Tools",
+                sources=[_source("kiwix")],
+            ),
+        ]
+    )
+
+    class DummyLive:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def update(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr(picker, "Live", DummyLive)
+    monkeypatch.setattr(picker.readchar, "readkey", lambda: "q")
+
+    assert picker.run_picker(tree, checked, free_gb=1) is None
+
+
+def test_run_picker_applies_selection_with_a(monkeypatch):
+    import svalbard.picker as picker
+
+    tree, checked = build_picker_tree(
+        packs=[
+            Preset(
+                name="tools",
+                description="Core tools",
+                target_size_gb=1,
+                region="",
+                kind="pack",
+                display_group="Tools",
+                sources=[_source("kiwix")],
+            ),
+        ]
+    )
+
+    class DummyLive:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def update(self, *args, **kwargs):
+            pass
+
+    keys = iter(["j", " ", "a"])
+    monkeypatch.setattr(picker, "Live", DummyLive)
+    monkeypatch.setattr(picker.readchar, "readkey", lambda: next(keys))
+
+    assert picker.run_picker(tree, checked, free_gb=1) == {"kiwix"}

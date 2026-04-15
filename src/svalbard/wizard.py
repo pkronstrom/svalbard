@@ -194,7 +194,7 @@ def pick_sources_via_packs(
     free_gb: float,
     workspace: Path | str | None = None,
     checked_ids: set[str] | None = None,
-) -> set[str]:
+) -> set[str] | None:
     """Open the interactive pack picker with optional pre-checked source ids."""
     from svalbard.presets import _build_recipe_index, _source_from_recipe
 
@@ -210,7 +210,10 @@ def pick_sources_via_packs(
             if sid in recipe_index:
                 hidden_gb += _source_from_recipe(recipe_index[sid]).size_gb
     tree, initial_checked = build_picker_tree(packs, checked_ids=checked_ids)
-    return run_picker(tree, initial_checked, free_gb=free_gb, hidden_gb=hidden_gb) | hidden_checked_ids
+    selected_ids = run_picker(tree, initial_checked, free_gb=free_gb, hidden_gb=hidden_gb)
+    if selected_ids is None:
+        return None
+    return selected_ids | hidden_checked_ids
 
 
 def write_custom_preset(

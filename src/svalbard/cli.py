@@ -134,6 +134,8 @@ def _browse_drive_builtin_sources(drive_path: Path, workspace: str | None) -> st
         workspace=workspace_root,
         checked_ids=checked_ids,
     )
+    if selected_ids is None:
+        return ""
     preset_name = _persist_drive_builtin_selection(drive_path, manifest, workspace_root, selected_ids)
     sync_drive(str(drive_path))
     return preset_name
@@ -318,6 +320,9 @@ def add_command(
     if browse:
         drive_arg = source_id if source_id and path == "." else path
         preset_name = _browse_drive_builtin_sources(resolve_drive_path(drive_arg), workspace)
+        if not preset_name:
+            console.print("[yellow]Cancelled.[/yellow]")
+            return
         console.print(f"[green]Updated preset:[/green] {preset_name}")
         return
 

@@ -233,7 +233,7 @@ def _build_display(
             f"  Total: {total_gb:.1f} / {free_gb:.0f} GB{' ' * 16}"
             f"[red]✗ {total_gb - free_gb:.1f} GB over[/red]"
         )
-    lines.append("  [dim]↑↓/jk navigate  SPACE toggle  ENTER expand/collapse  q done[/dim]")
+    lines.append("  [dim]↑↓/jk navigate  SPACE toggle  ENTER expand/collapse  a apply  q cancel[/dim]")
     return "\n".join(lines)
 
 
@@ -257,8 +257,8 @@ def run_picker(
     checked_ids: set[str],
     free_gb: float = 0,
     hidden_gb: float = 0,
-) -> set[str]:
-    """Run the interactive pack picker and return selected source ids."""
+) -> set[str] | None:
+    """Run the interactive pack picker and return selected source ids, or None on cancel."""
     console = Console()
     width = min(100, max(40, console.width - 2))
     collapsed_groups = {group.display_group: False for group in tree}
@@ -299,7 +299,9 @@ def run_picker(
                 cursor = _move_cursor(rows, cursor, 1)
                 continue
             if key in ("q", readchar.key.ESC):
-                break
+                return None
+            if key == "a":
+                return set(checked_ids)
             if key not in (" ", readchar.key.ENTER) or not (0 <= cursor < len(rows)):
                 continue
 

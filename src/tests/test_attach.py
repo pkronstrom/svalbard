@@ -106,6 +106,26 @@ def test_add_browse_updates_manifest_preset_and_syncs(tmp_path):
     sync_drive_mock.assert_called_once_with(str(drive))
 
 
+def test_add_browse_quit_cancels_without_applying(tmp_path):
+    from svalbard.cli import main
+    from svalbard.commands import init_drive
+    from svalbard.manifest import Manifest
+
+    drive = tmp_path / "drive"
+    init_drive(str(drive), "default-32", workspace_root=str(tmp_path))
+    original_manifest = Manifest.load(drive / "manifest.yaml")
+
+    with patch("svalbard.cli.pick_sources_via_packs", return_value=None), patch(
+        "svalbard.cli.sync_drive"
+    ) as sync_drive_mock:
+        result = CliRunner().invoke(main, ["add", "--browse", str(drive), "--workspace", str(tmp_path)])
+
+    assert result.exit_code == 0
+    manifest = Manifest.load(drive / "manifest.yaml")
+    assert manifest.preset == original_manifest.preset
+    sync_drive_mock.assert_not_called()
+
+
 def test_attach_command_is_not_available():
     from svalbard.cli import main
 
