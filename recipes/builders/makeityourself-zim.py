@@ -2439,6 +2439,79 @@ def _strip_html(html: str) -> str:
     return soup.get_text(separator=" ", strip=True)
 
 
+def _raw_img_local_path(site_dir: Path, url: str) -> Path | None:
+    """Return the expected local path for a raw content image URL."""
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+    raw_imgs = site_dir / "raw_images"
+    for ext in (".jpg", ".webp"):
+        p = raw_imgs / f"{url_hash}{ext}"
+        if p.exists():
+            return p
+    return raw_imgs / f"{url_hash}.jpg"  # default expected path
+
+
+def _localize_raw_images(projects: list[dict], state: "PipelineState") -> None:
+    """Download external images from raw.html and save locally for offline viewing."""
+    total_downloaded = 0
+    total_skipped = 0
+
+    try:
+        from PIL import Image as PILImage
+    except ImportError:
+        PILImage = None
+
+    with httpx.Client(timeout=20, follow_redirects=True, headers=HEADERS) as client:
+        for proj in projects:
+            proj_dir = state.sites_dir / proj["_dir"]
+            raw_path = proj_dir / "raw.html"
+            if not raw_path.exists() or raw_path.stat().st_size < 500:
+                continue
+
+            soup = BeautifulSoup(raw_path.read_text(), "html.parser")
+            external_imgs = []
+            for img in soup.find_all("img"):
+                src = img.get("src") or img.get("data-src") or ""
+                if src.startswith("http"):
+                    external_imgs.append(src)
+
+            if not external_imgs:
+                continue
+
+            raw_imgs_dir = proj_dir / "raw_images"
+            raw_imgs_dir.mkdir(exist_ok=True)
+
+            for src in external_imgs[:20]:  # cap per project
+                url_hash = hashlib.md5(src.encode()).hexdigest()[:12]
+                dest = raw_imgs_dir / f"{url_hash}.jpg"
+                if dest.exists():
+                    total_skipped += 1
+                    continue
+                try:
+                    r = client.get(src, timeout=10)
+                    if r.status_code != 200 or len(r.content) < 2000:
+                        continue
+                    dest.write_bytes(r.content)
+                    # Resize to max 600px for inline content
+                    if PILImage:
+                        try:
+                            im = PILImage.open(dest)
+                            if max(im.size) > 600:
+                                ratio = 600 / max(im.size)
+                                im = im.resize((int(im.size[0] * ratio), int(im.size[1] * ratio)), PILImage.LANCZOS)
+                            if im.mode in ("RGBA", "P"):
+                                im = im.convert("RGB")
+                            im.save(str(dest), "JPEG", quality=75)
+                        except Exception:
+                            pass
+                    total_downloaded += 1
+                except Exception:
+                    dest.unlink(missing_ok=True)
+                time.sleep(0.1)
+
+    if total_downloaded:
+        log.info("  Downloaded %d raw content images (%d already cached)", total_downloaded, total_skipped)
+
+
 def _clean_description_html(html: str) -> str:
     """Clean description HTML: keep safe tags, strip scripts/styles."""
     soup = BeautifulSoup(html, "html.parser")
@@ -2564,12 +2637,18 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
                     x in str(c).lower() for x in ["ad-", "sidebar", "newsletter", "popup", "cookie", "social"]
                 )):
                     tag.decompose()
-                # Strip external images — they won't resolve offline
+                # Rewrite images to local paths (downloaded by _localize_raw_images)
                 for img in main.find_all("img"):
                     src = img.get("src") or img.get("data-src") or ""
                     if src.startswith("http"):
-                        img.decompose()
-                    elif src:
+                        # Check if a localized version exists
+                        local = _raw_img_local_path(site_dir, src)
+                        if local and local.exists():
+                            img["src"] = str(local.relative_to(site_dir))
+                        else:
+                            img.decompose()
+                            continue
+                    if src:
                         img["loading"] = "lazy"
                         img["style"] = "max-width:100%;height:auto;"
                 content_text = main.get_text(strip=True)
@@ -2946,6 +3025,10 @@ def stage_package(
     _refetch_truncated_descriptions(projects, state)
     _enrich_descriptions_from_raw_html(projects, state)
 
+    # Download external images from raw.html for offline viewing
+    log.info("  Localizing raw content images...")
+    _localize_raw_images(projects, state)
+
     # Optimize existing crawl data (drop redundant files, resize large images)
     # Runs before image validation since it may rename/delete image files.
     log.info("  Optimizing project assets...")
@@ -3149,6 +3232,17 @@ def stage_package(
                     added_paths.add(zim_path)
                     mime = mimetypes.guess_type(str(full_path))[0] or "image/jpeg"
                     zim.add_item(FileItem(zim_path, mime, full_path))
+
+            # Raw content images (localized from external URLs)
+            raw_imgs_dir = proj_dir / "raw_images"
+            if raw_imgs_dir.is_dir():
+                for img_file in raw_imgs_dir.iterdir():
+                    if img_file.is_file():
+                        zim_path = f"{zim_prefix}/raw_images/{img_file.name}"
+                        if zim_path not in added_paths:
+                            added_paths.add(zim_path)
+                            mime = mimetypes.guess_type(str(img_file))[0] or "image/jpeg"
+                            zim.add_item(FileItem(zim_path, mime, img_file))
 
             # Artifacts
             for art in proj.get("artifacts", []):
