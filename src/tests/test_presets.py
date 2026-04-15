@@ -120,31 +120,69 @@ def test_communications_pack_includes_rf_supporting_references():
     assert "libretexts-engineering" in ids
 
 
-def test_default_512_includes_portable_qwen_model():
+def test_list_presets_includes_ai_pack_family():
+    presets = list_presets()
+    assert "ai/harnesses" in presets
+    assert "ai/models-8gb-ram" in presets
+    assert "ai/models-16gb-ram" in presets
+    assert "ai/models-24gb-ram" in presets
+    assert "ai/models-64gb-ram" in presets
+
+
+def test_resolve_nested_ai_pack():
+    path = resolve_preset_path("ai/models-8gb-ram")
+    assert path.exists()
+    assert path.name == "models-8gb-ram.yaml"
+    assert "ai" in path.parts
+
+
+def test_ai_harnesses_pack_contains_local_ai_clients():
+    preset = load_preset("ai/harnesses")
+    ids = {source.id for source in preset.sources}
+    assert "llama-server" in ids
+    assert "opencode" in ids
+    assert "crush" in ids
+    assert "goose" in ids
+
+
+def test_ai_models_8gb_pack_contains_general_and_coding_models():
+    preset = load_preset("ai/models-8gb-ram")
+    ids = {source.id for source in preset.sources}
+    assert "gemma-4-e2b-it" in ids
+    assert "qwen-9b" in ids
+
+
+def test_default_512_uses_curated_ai_pair():
     preset = load_preset("default-512")
     ids = {source.id for source in preset.sources}
+    assert "llama-server" in ids
+    assert "opencode" in ids
+    assert "gemma-4-e2b-it" in ids
     assert "qwen-9b" in ids
-    assert "llama-server" in ids
-    assert "llama-3b" not in ids
+    assert "gemma-4-e4b-it" not in ids
+    assert "qwen-35b-a3b" not in ids
 
 
-def test_default_1tb_includes_large_qwen_model_under_24gb():
+def test_default_1tb_uses_curated_mainstream_and_high_tier_ai_set():
     preset = load_preset("default-1tb")
-    large_model = next(source for source in preset.sources if source.id == "qwen-35b-a3b")
-    assert large_model.size_gb < 24.0
     ids = {source.id for source in preset.sources}
+    assert "gemma-4-e2b-it" not in ids
+    assert "gemma-4-e4b-it" in ids
+    assert "gemma-4-26b-a4b-it" in ids
+    assert "gemma-4-31b-it" not in ids
+    assert "qwen-9b" in ids
     assert "qwen-35b-a3b" in ids
-    assert "llama-server" in ids
-    assert "llama-70b" not in ids
 
 
-def test_default_2tb_uses_qwen_models_only():
+def test_default_2tb_uses_full_curated_ai_set():
     preset = load_preset("default-2tb")
     ids = {source.id for source in preset.sources}
-    assert "qwen-35b-a3b" in ids
+    assert "gemma-4-e2b-it" not in ids
+    assert "gemma-4-e4b-it" in ids
+    assert "gemma-4-26b-a4b-it" in ids
+    assert "gemma-4-31b-it" in ids
     assert "qwen-9b" in ids
-    assert "llama-70b" not in ids
-    assert "llama-3b" not in ids
+    assert "qwen-35b-a3b" in ids
 
 
 def test_default_2tb_stays_region_neutral():

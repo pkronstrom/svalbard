@@ -51,6 +51,21 @@ def _human_size(size_bytes: int) -> str:
     return f"{size_bytes / 1e3:.0f} KB"
 
 
+def _visible_chat_entries(manifest: Manifest) -> list:
+    embed_keywords = {"embed", "nomic-embed", "bge-", "e5-", "arctic-embed"}
+    gguf_entries = [e for e in manifest.entries if e.type == "gguf"]
+    return [
+        e for e in gguf_entries
+        if not any(keyword in e.id.lower() for keyword in embed_keywords)
+    ]
+
+
+def _available_ai_clients(manifest: Manifest) -> list[str]:
+    client_ids = {"opencode": "OpenCode", "crush": "Crush", "goose": "Goose"}
+    available_ids = {entry.id for entry in manifest.entries if entry.type == "binary"}
+    return [client_id for client_id in client_ids if client_id in available_ids]
+
+
 def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> str:
     """Build entries.tab content based on what's on the drive."""
     lines = [f"# Svalbard · {preset_name} — run.sh menu"]
@@ -93,13 +108,7 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
         lines.append("")
 
     # ── AI ──────────────────────────────────────────────────────────────
-    # Exclude embedding models — they're not for chat
-    _EMBED_KEYWORDS = {"embed", "nomic-embed", "bge-", "e5-", "arctic-embed"}
-    gguf_entries = [e for e in manifest.entries if e.type == "gguf"]
-    chat_entries = [
-        e for e in gguf_entries
-        if not any(kw in e.id.lower() for kw in _EMBED_KEYWORDS)
-    ]
+    chat_entries = _visible_chat_entries(manifest)
     if chat_entries:
         lines.append("[ai]")
         for entry in chat_entries:
@@ -110,6 +119,13 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
                 f"Chat with {desc}"
                 f"\t.svalbard/actions/chat.sh\t{model_path}"
             )
+        if "llama-server" in {entry.id for entry in manifest.entries if entry.type == "binary"}:
+            client_labels = {"opencode": "OpenCode", "crush": "Crush", "goose": "Goose"}
+            for client_id in _available_ai_clients(manifest):
+                lines.append(
+                    f"{client_labels[client_id]} with local model"
+                    f"\t.svalbard/actions/agent.sh\t{client_id}"
+                )
         lines.append("")
 
     # ── Apps ────────────────────────────────────────────────────────────
@@ -159,7 +175,7 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
         lines.append("")
 
     # ── Serve ───────────────────────────────────────────────────────────
-    has_services = zim_count > 0 or pmtiles_count > 0 or bool(gguf_entries)
+    has_services = zim_count > 0 or pmtiles_count > 0 or bool(chat_entries)
     if has_services:
         lines.append("[serve]")
         lines.append("Serve everything\t.svalbard/actions/serve-all.sh")

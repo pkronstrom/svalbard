@@ -27,6 +27,14 @@ If you run `attach`, `detach`, `sync`, `status`, or `audit` from inside the driv
 
 For the smallest Finland-oriented bundle, `finland-2` is the compact emergency field-kit preset.
 
+For the AI-capable stock presets:
+
+- `default-512` carries a conservative local AI pair: `gemma-4-e2b-it` and `qwen-9b`
+- `default-1tb` adds stronger mainstream options for roughly `16-24 GB` RAM hosts
+- `default-2tb` carries the full curated Gemma and Qwen ladder
+
+Those presets are built from reusable `ai/*` packs under `presets/packs/ai/`. Custom presets can reuse those packs directly or reference individual recipes.
+
 ## Workspace Location
 
 Svalbard resolves the active workspace like this:

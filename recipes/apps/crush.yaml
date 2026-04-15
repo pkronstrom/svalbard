@@ -1,0 +1,15 @@
+id: crush
+type: binary
+display_group: tools
+tags:
+- computing
+- agentic
+- coding
+depth: reference-only
+size_gb: 0.03
+url: https://github.com/charmbracelet/crush
+description: Crush terminal coding agent
+license:
+  id: MIT
+  attribution: Charmbracelet
+

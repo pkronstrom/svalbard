@@ -22,7 +22,7 @@ The project ships with sanely curated presets built from open recipes, but it's 
 - **Practical knowledge** — iFixit repair guides, Stack Exchange Q&A, Practical Action field guides
 - **Books and courses** — Project Gutenberg, Wikibooks, Khan Academy
 - **Maps** — OpenStreetMap regional extracts, geodata overlays
-- **AI models** — Portable LLMs that run locally from the drive
+- **AI models** — Portable Gemma 4 and Qwen 3.5 GGUFs that run locally from the drive
 - **Search** — Full-text and semantic search across all content — find answers, not just keywords
 - **Tools** — CyberChef, Kiwix server, everything self-contained
 
@@ -32,7 +32,7 @@ Deploy a 2 GB emergency kit on your phone with a few apps and be offgrid-certifi
 
 A svalbard drive is not a bootable image or a compressed archive — it's a plain directory of standard open formats (ZIM, PMTiles, GGUF, HTML). No extraction, no installation. The drive includes its own binaries and tools for viewing and accessing data.
 
-**On a computer** — plug in the drive, open a terminal, run `./run.sh`. A shell menu lets you browse encyclopedias, search across all content, view maps, chat with local AI, and launch bundled tools. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
+**On a computer** — plug in the drive, open a terminal, run `./run.sh`. A shell menu lets you browse encyclopedias, search across all content, view maps, chat with local AI, and launch bundled AI clients like OpenCode, Crush, and Goose against the local models already on the drive. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
 
 **On a phone or tablet** — carry a USB-C stick, plug it into your phone, and open the files directly with apps like Kiwix (encyclopedias), OsmAnd (maps), or any PDF/EPUB reader. Or just copy the directory (or a zip of it) to your phone's filesystem — the files are standard formats that any compatible app can open. See `provisioning/` for recommended apps on iOS and Android.
 
@@ -46,8 +46,9 @@ Presets scale from pocket-sized emergency kits to full archives:
 | `finland-2` | 2 GB | Finnish emergency field kit — extends default-2 with Finnish pharma registry |
 | `default-32` | 32 GB | Core reference — Wikipedia, WikiMed, survival guides, repair manuals |
 | `default-128` | 128 GB | Broad reference — adds dictionaries, books, Khan Academy, maps |
-| `default-512` | 512 GB | Deep archive — adds full-picture Wikipedia, AI models, more Stack Exchange |
-| `default-2tb` | 2 TB | Everything — full Wikipedia, large AI models, comprehensive coverage |
+| `default-512` | 512 GB | Deep archive — adds full-picture Wikipedia plus a conservative local AI pair (`gemma-4-e2b-it`, `qwen-9b`) |
+| `default-1tb` | 1 TB | Mainstream AI archive — adds stronger Gemma and Qwen options for 16-24 GB RAM hosts |
+| `default-2tb` | 2 TB | Everything — full Wikipedia plus the full curated Gemma/Qwen ladder |
 
 Finnish presets (`finland-*`) add Finnish-language Wikipedia, Wiktionary, Finnish maps, open geodata (recreation structures, nature reserves), and Finnish-specific guides on top of the English baseline.
 
@@ -135,7 +136,7 @@ svalbard wizard --preset my-pack
 - [ ] Search across all content — index PDFs, geodata, and reference databases alongside ZIMs
 - [ ] RAG — query all drive content through the bundled local LLM
 - [ ] Offline routing — turn-by-turn navigation from preprocessed OSM graphs
-- [ ] Offline coding assistant — bundled LLM + editor (opencode) as a self-contained dev environment
+- [x] Offline coding assistant bootstrap — bundled llama.cpp runtime, portable models, and terminal AI clients
 - [ ] Mobile workflow — guides and tooling for viewing drive content on phones via USB-C
 - [ ] Hardware and programming toolkit — offline compilers, embedded toolchains, EDA tools, and documentation
 - [ ] Go-based drive toolkit — replace shell scripts with portable static binaries

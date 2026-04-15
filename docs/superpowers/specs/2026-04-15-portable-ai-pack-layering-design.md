@@ -30,7 +30,6 @@ Higher-capacity presets must be additive. They add stronger model options withou
 
 - Automatic host hardware detection in v1.
 - A public role-specific pack matrix for v1.
-- Choosing the exact final model recipes in this design document. The structure is the contract; concrete recipes can evolve separately.
 
 ## Design Decisions
 
@@ -123,28 +122,39 @@ These role distinctions remain real, but they are not exposed as separate public
 
 ### 5. Preset Semantics
 
-Built-in presets must be additive capability bundles.
+Built-in presets must remain pack-composed, but the stock matrix is curated rather than fully cumulative.
 
 Rules:
 
 - higher-capacity presets add stronger options
-- higher-capacity presets do not remove smaller, lower-RAM-compatible models
 - model choice happens at use time, not during preset resolution
+- stock presets may selectively remove lower-tier recipes after pack composition to keep the shipped set intentional
+- custom presets remain free to use purely additive pack composition
 
-Initial stock mapping:
+### 5a. Initial Curated Stock Matrix
+
+The stock preset family should start with a conservative mainstream assumption: most target hosts have roughly `16 GB` to `24 GB` of RAM.
+
+The initial curated stock matrix is:
 
 - `default-512`
-  - includes `ai/harnesses`
-  - includes `ai/models-8gb-ram`
+  - general: `gemma-4-e2b-it`
+  - coding: `qwen-9b`
 - `default-1tb`
-  - extends `default-512`
-  - adds `ai/models-16gb-ram`
+  - general: `gemma-4-e4b-it`, `gemma-4-26b-a4b-it`
+  - coding: `qwen-9b`, `qwen-35b-a3b`
 - `default-2tb`
-  - extends `default-1tb`
-  - adds `ai/models-24gb-ram`
-  - adds `ai/models-64gb-ram`
+  - general: `gemma-4-e4b-it`, `gemma-4-26b-a4b-it`, `gemma-4-31b-it`
+  - coding: `qwen-9b`, `qwen-35b-a3b`
 
-This mapping is intentionally conservative. If later storage-budget analysis shows that `default-1tb` can comfortably carry `24gb-ram` models too, that can be changed without altering the overall architecture.
+The RAM-tier packs remain the reusable capability catalog:
+
+- `ai/models-8gb-ram` = `gemma-4-e2b-it` + `qwen-9b`
+- `ai/models-16gb-ram` = `gemma-4-e4b-it` + `qwen-9b`
+- `ai/models-24gb-ram` = `gemma-4-26b-a4b-it` + `qwen-35b-a3b`
+- `ai/models-64gb-ram` = `gemma-4-31b-it` + `qwen-35b-a3b`
+
+Built-in presets may compose those packs with selective removals where needed to keep the stock matrix curated rather than fully cumulative.
 
 ### 6. Launcher and Runtime UX
 
@@ -202,10 +212,10 @@ Recipe ids should stay concrete and artifact-specific.
 
 Examples:
 
-- `gemma-4-4b-tool`
-- `gemma-4-12b-tool`
-- `qwen3-coder-7b`
-- `qwen3-coder-14b`
+- `gemma-4-e4b-it`
+- `gemma-4-26b-a4b-it`
+- `qwen-9b`
+- `qwen-35b-a3b`
 
 This allows:
 
@@ -296,12 +306,14 @@ The initial recipe shortlist should bias toward:
 
 - small RAM tiers:
   - a Gemma 4 general/tool-call model
-  - a compact coding-oriented model
+  - a compact current-generation Qwen 3.5 coding-capable model
 - larger RAM tiers:
   - stronger Qwen 3.5 coding-oriented models
   - a validated general/tool-use model, which may remain Gemma if stability and tooling behavior are acceptable
 
 The final stock recipes should be chosen only after local validation against Svalbard's actual portable workflow requirements.
+
+The stock coding track should stay on the current Qwen 3.5 family for consistency with the existing repository model line. Older Qwen 2.5 coder variants should not be introduced into the stock preset family unless a later validation step identifies a hard blocker with the newer line.
 
 ## Final Contract
 

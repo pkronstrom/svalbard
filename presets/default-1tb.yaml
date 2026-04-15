@@ -1,9 +1,11 @@
 name: default-1tb
-description: Region-neutral full reference archive with a large local LLM tier
+description: Region-neutral full reference archive with mainstream and higher-tier local AI options
 target_size_gb: 1024
 region: default
 extends:
   - default-512
+  - ai/models-16gb-ram
+  - ai/models-24gb-ram
 sources:
 # ── Wikipedia upgrade ──
 - -wikipedia-en-nopic
@@ -14,6 +16,5 @@ sources:
 - stackexchange-engineering
 # ── Preparedness ──
 - lrn-self-reliance
-# ── Local AI upgrade ──
-- -qwen-9b
-- qwen-35b-a3b
+# ── Curated AI matrix ──
+- -gemma-4-e2b-it

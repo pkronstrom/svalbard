@@ -234,3 +234,78 @@ def test_entries_tab_omits_embedded_when_no_toolchains(tmp_path):
 
     tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
     assert "[embedded]" not in tab_content
+
+
+def test_generate_toolkit_copies_agent_launcher(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-512",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [],
+    })
+
+    generate_toolkit(tmp_path, "default-512")
+
+    assert (tmp_path / ".svalbard" / "actions" / "agent.sh").exists()
+
+
+def test_entries_tab_includes_ai_clients_when_models_and_binaries_exist(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-512",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [
+            {"id": "gemma-4-e2b-it", "type": "gguf",
+             "filename": "gemma-4-e2b-it-Q4_0.gguf",
+             "size_bytes": 3_040_000_000, "tags": ["tool-calling"], "depth": "overview"},
+            {"id": "qwen-9b", "type": "gguf",
+             "filename": "Qwen3.5-9B-Q4_K_M.gguf",
+             "size_bytes": 5_900_000_000, "tags": ["coding"], "depth": "overview"},
+            {"id": "llama-server", "type": "binary",
+             "filename": "llama-b8586-bin-macos-arm64.tar.gz",
+             "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
+            {"id": "opencode", "type": "binary",
+             "filename": "opencode-darwin-arm64.zip",
+             "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
+            {"id": "crush", "type": "binary",
+             "filename": "crush-darwin-arm64.tar.gz",
+             "size_bytes": 30_000_000, "tags": [], "depth": "reference-only"},
+            {"id": "goose", "type": "binary",
+             "filename": "goose-aarch64-apple-darwin.tar.bz2",
+             "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
+        ],
+    })
+
+    generate_toolkit(tmp_path, "default-512")
+
+    entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
+    assert "[ai]" in entries
+    assert "Chat with Gemma 4 E2B IT" in entries
+    assert "Chat with Qwen3.5 9B Instruct" in entries
+    assert "OpenCode with local model" in entries
+    assert "Crush with local model" in entries
+    assert "Goose with local model" in entries
+    assert ".svalbard/actions/agent.sh\topencode" in entries
+    assert ".svalbard/actions/agent.sh\tcrush" in entries
+    assert ".svalbard/actions/agent.sh\tgoose" in entries
+
+
+def test_entries_tab_omits_ai_clients_without_llama_server(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-512",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [
+            {"id": "gemma-4-e2b-it", "type": "gguf",
+             "filename": "gemma-4-e2b-it-Q4_0.gguf",
+             "size_bytes": 3_040_000_000, "tags": ["tool-calling"], "depth": "overview"},
+            {"id": "opencode", "type": "binary",
+             "filename": "opencode-darwin-arm64.zip",
+             "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
+        ],
+    })
+
+    generate_toolkit(tmp_path, "default-512")
+
+    entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
+    assert "OpenCode with local model" not in entries

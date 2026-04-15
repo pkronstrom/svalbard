@@ -1,0 +1,9 @@
+name: ai/models-8gb-ram
+kind: pack
+display_group: AI
+description: General and coding models sized for 8 GB RAM class hosts
+target_size_gb: 10
+sources:
+- gemma-4-e2b-it
+- qwen-9b
+

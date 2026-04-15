@@ -1,10 +1,10 @@
 name: default-2tb
-description: Maximum region-neutral archive with full English references and multiple
-  local LLMs
+description: Maximum region-neutral archive with full English references and a full curated local AI ladder
 target_size_gb: 2048
 region: default
 extends:
   - default-1tb
+  - ai/models-64gb-ram
 sources:
 # ── Wikipedia upgrade ──
 - -wikipedia-en-maxi
@@ -12,5 +12,3 @@ sources:
 # ── Q&A ──
 - stackexchange-serverfault
 - stackexchange-superuser
-# ── Local AI — re-add smaller model alongside large ──
-- qwen-9b

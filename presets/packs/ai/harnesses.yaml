@@ -1,0 +1,11 @@
+name: ai/harnesses
+kind: pack
+display_group: AI
+description: Shared local AI runtimes and terminal clients
+target_size_gb: 1
+sources:
+- llama-server
+- opencode
+- crush
+- goose
+

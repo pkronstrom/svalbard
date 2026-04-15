@@ -62,3 +62,4 @@ the opinionated tiered builds.
 - `sciences`: science learning and reference across major disciplines
 - `fi-*`: Finland-specific language, geodata, and regional capability packs
 - `embedded/*`: hardware-specific offline development packs
+- `ai/*`: RAM-tiered local AI bundles. `ai/harnesses` carries shared runtimes and terminal clients. `ai/models-*-ram` packs each include one general/tool-call model and one coding model.

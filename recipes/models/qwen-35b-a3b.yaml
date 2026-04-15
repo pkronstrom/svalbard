@@ -3,13 +3,12 @@ type: gguf
 display_group: models
 tags:
 - computing
-- general-reference
-- education-pedagogy
+- coding
+- agentic
 depth: comprehensive
 size_gb: 20.7
 url: https://huggingface.co/bartowski/Qwen_Qwen3.5-35B-A3B-GGUF/resolve/main/Qwen3.5-35B-A3B-Q4_K_S.gguf
-description: Qwen3.5 35B-A3B Instruct (Q4_K_S) — strong local model kept under a 24
-  GB RAM budget
+description: Qwen3.5 35B-A3B Instruct (Q4_K_S) — stronger coding model for 24-64 GB RAM hosts
 license:
   id: Apache-2.0
   attribution: Alibaba Cloud / Qwen Team
