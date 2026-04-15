@@ -2632,8 +2632,8 @@ DROP_IF_REDUNDANT = {
 DROP_CAD_NON_ESSENTIAL = {".blend", ".skp"}
 
 # Max image dimension (pixels) for resized images
-IMAGE_MAX_DIM = 1200
-IMAGE_JPEG_QUALITY = 85
+IMAGE_MAX_DIM = 800
+IMAGE_JPEG_QUALITY = 80
 
 
 def _optimize_project(site_dir: Path, meta: ProjectMeta) -> int:
