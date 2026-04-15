@@ -1,23 +1,47 @@
 """Svalbard CLI entry point."""
 
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.prompt import Prompt
 
 from svalbard.commands import remove_source_artifacts, sync_drive
 from svalbard.drive_config import load_snapshot_preset, write_drive_snapshot
 from svalbard.importer import run_import
 from svalbard.bundle import run_bundle_build
-from svalbard.attach import attach_local_source, detach_local_source, resolve_drive_path
 from svalbard.local_sources import load_local_sources
 from svalbard.manifest import Manifest
+from svalbard.membership import (
+    add_local_source_to_drive,
+    remove_local_source_from_drive,
+    resolve_drive_path,
+)
 from svalbard.paths import workspace_root as resolve_workspace_root
-from svalbard.presets import builtin_recipe_ids, copy_preset_to_workspace, list_presets, load_preset
+from svalbard.presets import (
+    _source_from_recipe,
+    builtin_recipe_ids,
+    copy_preset_to_workspace,
+    list_presets,
+    load_preset,
+    recipe_data_by_id,
+)
 from svalbard.wizard import pick_sources_via_packs, run_wizard, write_custom_preset
 
 console = Console()
+
+
+@dataclass
+class BuiltinSelectionReview:
+    added_ids: list[str]
+    removed_ids: list[str]
+    will_download_ids: list[str]
+    will_remove_ids: list[str]
+    current_total_gb: float
+    selected_total_gb: float
+    size_delta_gb: float
 
 
 @click.group(invoke_without_command=True)
@@ -113,6 +137,50 @@ def _persist_drive_builtin_selection(
     return preset_name
 
 
+def _compute_builtin_selection_review(
+    *,
+    manifest: Manifest,
+    current_ids: set[str],
+    selected_ids: set[str],
+    source_lookup: dict[str, object],
+) -> BuiltinSelectionReview:
+    added_ids = sorted(selected_ids - current_ids)
+    removed_ids = sorted(current_ids - selected_ids)
+    downloaded_ids = {entry.id for entry in manifest.entries}
+    will_download_ids = [source_id for source_id in added_ids if source_id not in downloaded_ids]
+    will_remove_ids = [source_id for source_id in removed_ids if manifest.entries_by_id(source_id)]
+    current_total_gb = sum(source_lookup[source_id].size_gb for source_id in current_ids if source_id in source_lookup)
+    selected_total_gb = sum(
+        source_lookup[source_id].size_gb for source_id in selected_ids if source_id in source_lookup
+    )
+    return BuiltinSelectionReview(
+        added_ids=added_ids,
+        removed_ids=removed_ids,
+        will_download_ids=will_download_ids,
+        will_remove_ids=will_remove_ids,
+        current_total_gb=round(current_total_gb, 1),
+        selected_total_gb=round(selected_total_gb, 1),
+        size_delta_gb=round(selected_total_gb - current_total_gb, 1),
+    )
+
+
+def _review_builtin_selection(review: BuiltinSelectionReview) -> str:
+    def _render_list(label: str, values: list[str]) -> None:
+        joined = ", ".join(values) if values else "none"
+        console.print(f"  [bold]{label}:[/bold] {joined}")
+
+    delta = f"{review.size_delta_gb:+.1f} GB"
+    console.print("\n[bold]Review Selection[/bold]")
+    _render_list("Added", review.added_ids)
+    _render_list("Removed", review.removed_ids)
+    _render_list("Will download", review.will_download_ids)
+    _render_list("Will remove", review.will_remove_ids)
+    console.print(f"  [bold]Current total:[/bold] {review.current_total_gb:.1f} GB")
+    console.print(f"  [bold]Selected total:[/bold] {review.selected_total_gb:.1f} GB")
+    console.print(f"  [bold]Estimated delta:[/bold] {delta}")
+    return Prompt.ask("\n  Select", choices=["a", "b", "q"], default="b")
+
+
 def _browse_drive_builtin_sources(drive_path: Path, workspace: str | None) -> str:
     manifest_path = drive_path / "manifest.yaml"
     manifest = Manifest.load(manifest_path)
@@ -126,19 +194,38 @@ def _browse_drive_builtin_sources(drive_path: Path, workspace: str | None) -> st
     except (FileNotFoundError, ValueError, KeyError):
         preset = load_snapshot_preset(drive_path)
     if preset is not None:
-        checked_ids = {source.id for source in preset.sources if not source.id.startswith("local:")}
+        current_ids = {source.id for source in preset.sources if not source.id.startswith("local:")}
     else:
-        checked_ids = {entry.id for entry in manifest.entries if not entry.id.startswith("local:")}
-    selected_ids = pick_sources_via_packs(
-        free_gb=free_gb,
-        workspace=workspace_root,
-        checked_ids=checked_ids,
-    )
-    if selected_ids is None:
-        return ""
-    preset_name = _persist_drive_builtin_selection(drive_path, manifest, workspace_root, selected_ids)
-    sync_drive(str(drive_path))
-    return preset_name
+        current_ids = {entry.id for entry in manifest.entries if not entry.id.startswith("local:")}
+    checked_ids = set(current_ids)
+    source_lookup = {
+        source_id: _source_from_recipe(recipe_data_by_id(source_id))
+        for source_id in builtin_recipe_ids()
+    }
+
+    while True:
+        selected_ids = pick_sources_via_packs(
+            free_gb=free_gb,
+            workspace=workspace_root,
+            checked_ids=checked_ids,
+        )
+        if selected_ids is None:
+            return ""
+        review = _compute_builtin_selection_review(
+            manifest=manifest,
+            current_ids=current_ids,
+            selected_ids=selected_ids,
+            source_lookup=source_lookup,
+        )
+        action = _review_builtin_selection(review)
+        if action == "q":
+            return ""
+        if action == "b":
+            checked_ids = selected_ids
+            continue
+        preset_name = _persist_drive_builtin_selection(drive_path, manifest, workspace_root, selected_ids)
+        sync_drive(str(drive_path))
+        return preset_name
 
 
 def _resolve_source_reference(raw_source_id: str, workspace_root: Path) -> tuple[str, str]:
@@ -335,7 +422,7 @@ def add_command(
     resolved_source_id, source_kind = _resolve_source_reference(source_id, workspace_root)
 
     if source_kind == "local":
-        attach_local_source(drive_path, resolved_source_id, workspace=workspace_root)
+        add_local_source_to_drive(drive_path, resolved_source_id, workspace=workspace_root)
         console.print(f"[green]Added local source:[/green] {resolved_source_id}")
         return
 
@@ -363,7 +450,7 @@ def remove_command(source_id: str, path: str, workspace: str | None) -> None:
     resolved_source_id, source_kind = _resolve_source_reference(source_id, workspace_root)
 
     if source_kind == "local":
-        detach_local_source(drive_path, resolved_source_id)
+        remove_local_source_from_drive(drive_path, resolved_source_id)
         console.print(f"[green]Removed local source:[/green] {resolved_source_id}")
         return
 

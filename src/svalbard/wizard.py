@@ -432,6 +432,9 @@ def run_wizard(
         workspace=workspace_root,
         checked_ids=checked_ids,
     )
+    if selected_ids is None:
+        console.print("[dim]Cancelled.[/dim]")
+        return
     preset_name = write_custom_preset(
         selected_ids,
         workspace=workspace_root,

@@ -232,3 +232,26 @@ def test_run_wizard_passes_platform_filter_to_sync(tmp_path, monkeypatch):
 
     assert init_calls
     assert sync_calls == [((str(target),), {"platform_filter": "host"})]
+
+
+def test_run_wizard_cancels_when_picker_quits(tmp_path, monkeypatch):
+    target = tmp_path / "drive"
+    target.mkdir()
+
+    monkeypatch.setattr(wizard, "_clear", lambda: None)
+    monkeypatch.setattr(wizard, "pick_sources_via_packs", lambda *args, **kwargs: None)
+
+    init_calls = []
+    sync_calls = []
+    monkeypatch.setattr(wizard, "init_drive", lambda *args, **kwargs: init_calls.append((args, kwargs)))
+    monkeypatch.setattr(wizard, "sync_drive", lambda *args, **kwargs: sync_calls.append((args, kwargs)))
+
+    wizard.run_wizard(
+        target_path=str(target),
+        preset_name="default-32",
+        workspace=tmp_path,
+    )
+
+    assert init_calls == []
+    assert sync_calls == []
+    assert not list((tmp_path / "local" / "presets").glob("custom-*.yaml"))

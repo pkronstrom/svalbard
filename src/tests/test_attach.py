@@ -2,6 +2,42 @@ from click.testing import CliRunner
 from unittest.mock import patch
 
 
+def test_compute_builtin_selection_review_classifies_changes():
+    from svalbard.cli import _compute_builtin_selection_review
+    from svalbard.manifest import Manifest, ManifestEntry
+    from svalbard.models import Source
+
+    manifest = Manifest(
+        preset="default-32",
+        region="default",
+        target_path="/tmp/drive",
+        entries=[
+            ManifestEntry(id="kiwix-serve", type="binary", filename="kiwix.tar.gz", size_bytes=10),
+            ManifestEntry(id="wikem", type="zim", filename="wikem.zim", size_bytes=10),
+        ],
+    )
+    source_lookup = {
+        "kiwix-serve": Source(id="kiwix-serve", type="binary", size_gb=0.2),
+        "wikem": Source(id="wikem", type="zim", size_gb=1.0),
+        "qwen-9b": Source(id="qwen-9b", type="gguf", size_gb=5.2),
+    }
+
+    review = _compute_builtin_selection_review(
+        manifest=manifest,
+        current_ids={"kiwix-serve", "wikem"},
+        selected_ids={"kiwix-serve", "qwen-9b"},
+        source_lookup=source_lookup,
+    )
+
+    assert review.added_ids == ["qwen-9b"]
+    assert review.removed_ids == ["wikem"]
+    assert review.will_download_ids == ["qwen-9b"]
+    assert review.will_remove_ids == ["wikem"]
+    assert review.current_total_gb == 1.2
+    assert review.selected_total_gb == 5.4
+    assert review.size_delta_gb == 4.2
+
+
 def test_add_accepts_bare_local_source_name(tmp_path):
     from svalbard.cli import main
     from svalbard.commands import add_local_source, init_drive
@@ -91,8 +127,8 @@ def test_add_browse_updates_manifest_preset_and_syncs(tmp_path):
     expected_checked_ids = {source.id for source in load_preset("default-32").sources}
 
     with patch("svalbard.cli.pick_sources_via_packs", return_value={"kiwix-serve", "wikem"}) as picker_mock, patch(
-        "svalbard.cli.sync_drive"
-    ) as sync_drive_mock:
+        "svalbard.cli._review_builtin_selection", return_value="a"
+    ), patch("svalbard.cli.sync_drive") as sync_drive_mock:
         result = CliRunner().invoke(main, ["add", "--browse", str(drive), "--workspace", str(tmp_path)])
 
     assert result.exit_code == 0
@@ -103,6 +139,27 @@ def test_add_browse_updates_manifest_preset_and_syncs(tmp_path):
         "kiwix-serve",
         "wikem",
     ]
+    sync_drive_mock.assert_called_once_with(str(drive))
+
+
+def test_add_browse_back_returns_to_picker_before_applying(tmp_path):
+    from svalbard.cli import main
+    from svalbard.commands import init_drive
+
+    drive = tmp_path / "drive"
+    init_drive(str(drive), "default-32", workspace_root=str(tmp_path))
+
+    picker_returns = [{"kiwix-serve"}, {"kiwix-serve", "wikem"}]
+    review_actions = ["b", "a"]
+
+    with patch("svalbard.cli.pick_sources_via_packs", side_effect=picker_returns) as picker_mock, patch(
+        "svalbard.cli._review_builtin_selection", side_effect=review_actions
+    ) as review_mock, patch("svalbard.cli.sync_drive") as sync_drive_mock:
+        result = CliRunner().invoke(main, ["add", "--browse", str(drive), "--workspace", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert picker_mock.call_count == 2
+    assert review_mock.call_count == 2
     sync_drive_mock.assert_called_once_with(str(drive))
 
 

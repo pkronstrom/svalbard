@@ -24,7 +24,11 @@ def _resolve_workspace_for_drive(manifest: Manifest, workspace: Path | str | Non
     return resolve_workspace_root()
 
 
-def attach_local_source(drive_path: Path, source_id: str, workspace: Path | str | None = None) -> None:
+def add_local_source_to_drive(
+    drive_path: Path,
+    source_id: str,
+    workspace: Path | str | None = None,
+) -> None:
     manifest_path = drive_path / "manifest.yaml"
     manifest = Manifest.load(manifest_path)
     if source_id not in manifest.local_sources:
@@ -35,7 +39,7 @@ def attach_local_source(drive_path: Path, source_id: str, workspace: Path | str 
     write_local_source_snapshot(drive_path, source_id, workspace_root)
 
 
-def detach_local_source(drive_path: Path, source_id: str) -> None:
+def remove_local_source_from_drive(drive_path: Path, source_id: str) -> None:
     manifest_path = drive_path / "manifest.yaml"
     manifest = Manifest.load(manifest_path)
     manifest.local_sources = [item for item in manifest.local_sources if item != source_id]
