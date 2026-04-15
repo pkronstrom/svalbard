@@ -2948,12 +2948,13 @@ def _make_index_page(
     total_artifacts: int,
     dead_count: int,
 ) -> str:
+    dead_label = '<a href="dead/index.html">Dead Links</a>' if dead_count > 0 else "Dead Links"
     stats = f"""
     <div class="stats">
       <div class="stat"><span class="stat-num">{total_projects}</span><span class="stat-label">Projects Archived</span></div>
       <div class="stat"><span class="stat-num">{total_artifacts}</span><span class="stat-label">Downloadable Files</span></div>
       <div class="stat"><span class="stat-num">{len(by_category)}</span><span class="stat-label">Categories</span></div>
-      <div class="stat"><span class="stat-num">{dead_count}</span><span class="stat-label">Dead Links</span></div>
+      <div class="stat"><span class="stat-num">{dead_count}</span><span class="stat-label">{dead_label}</span></div>
     </div>"""
 
     cat_cards = ""
