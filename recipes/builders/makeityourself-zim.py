@@ -507,6 +507,8 @@ EXTRACTOR_MAP: dict[str, str] = {
     "www.cults3d.com": "cults3d",
     "ana-white.com": "anawhite",
     "www.ana-white.com": "anawhite",
+    "hackaday.io": "hackaday",
+    "www.hackaday.io": "hackaday",
 }
 
 
@@ -1976,6 +1978,89 @@ ANAWHITE_CONFIG = SiteConfig(
 )
 
 
+# ── Hackaday.io ──────────────────────────────────────────────────────────
+
+
+def _hackaday_post_parse(
+    soup: BeautifulSoup, meta: ProjectMeta, site_dir: Path, client: httpx.Client, **kw
+) -> None:
+    """Hackaday.io post-parse: project images, description, author, files."""
+    # Author
+    creator = soup.find("a", class_="project-creator") or soup.find("a", class_="hacker-link")
+    if creator:
+        meta.author = meta.author or creator.get_text(strip=True)
+
+    # Better description from project detail
+    desc_el = soup.find("div", class_="project-description") or soup.find("section", id="project-description")
+    if desc_el:
+        text = desc_el.get_text(separator=" ", strip=True)
+        if len(text) > len(meta.description or ""):
+            meta.description = text[:2000]
+
+    # Images — project gallery and inline images
+    images_dir = site_dir / "images"
+    images_dir.mkdir(exist_ok=True)
+    img_count = 0
+    seen: set[str] = set()
+
+    # Main project image
+    for img in soup.find_all("img"):
+        if img_count >= 15:
+            break
+        src = img.get("data-src") or img.get("src") or ""
+        if not src.startswith("http"):
+            continue
+        # Accept hackaday CDN and common image hosts
+        if not any(d in src for d in ("cdn.hackaday.io", "hackaday.io", "cloudfront.net", "imgur.com")):
+            continue
+        base = src.split("?")[0]
+        if base in seen:
+            continue
+        seen.add(base)
+        ext = Path(urlparse(base).path).suffix.lower() or ".jpg"
+        if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+            continue
+        fname = f"img_{img_count:02d}{ext}"
+        if _download_file(client, src, images_dir / fname):
+            meta.images.append(f"images/{fname}")
+            img_count += 1
+        time.sleep(0.2)
+
+    # Fallback OG image
+    if not meta.images:
+        og_img = soup.find("meta", property="og:image")
+        if og_img and og_img.get("content", "").startswith("http"):
+            if _download_file(client, og_img["content"], images_dir / "og.jpg"):
+                meta.images.append("images/og.jpg")
+
+    # Downloadable files
+    artifacts_dir = site_dir / "artifacts"
+    artifacts_dir.mkdir(exist_ok=True)
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if not href.startswith("http"):
+            href = urljoin(meta.url, href)
+        ext = Path(urlparse(href).path).suffix.lower()
+        if ext in ARTIFACT_EXTS:
+            fname = _sanitize_filename(Path(urlparse(href).path).name)
+            if _download_file(client, href, artifacts_dir / fname):
+                meta.artifacts.append(_artifact_entry(fname, artifacts_dir))
+            time.sleep(0.3)
+
+    meta.title = meta.title or "Hackaday.io Project"
+
+
+HACKADAY_CONFIG = SiteConfig(
+    name="hackaday",
+    domain="hackaday.io",
+    fetch_chain=_DEFAULT_FETCH_CHAIN,
+    metadata_strategies=[JsonLdMetadata(), OpenGraphMetadata(), HtmlMetadata()],
+    image_strategies=[],  # Images handled in post_parse
+    artifact_strategies=[],
+    post_parse=_hackaday_post_parse,
+)
+
+
 # ── Generic ──────────────────────────────────────────────────────────────
 
 GENERIC_CONFIG = SiteConfig(
@@ -1997,6 +2082,7 @@ SITE_CONFIGS: dict[str, SiteConfig] = {
     "instructables": INSTRUCTABLES_CONFIG,
     "cults3d": CULTS3D_CONFIG,
     "anawhite": ANAWHITE_CONFIG,
+    "hackaday": HACKADAY_CONFIG,
     "generic": GENERIC_CONFIG,
 }
 
