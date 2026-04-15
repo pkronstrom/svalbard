@@ -77,10 +77,14 @@ trap cleanup_on_exit EXIT INT TERM
 
 port="$(find_free_port 8082)"
 model_name="$(basename "$model" .gguf)"
+host_root="http://127.0.0.1:${port}"
 base_url="http://127.0.0.1:${port}/v1"
+runtime_root_base="$DRIVE_ROOT/.svalbard/runtime/$client_name"
+llama_log="$runtime_root_base/llama-server.log"
+mkdir -p "$runtime_root_base"
 
 ui_status "Starting llama-server with ${model_name}"
-"$llama_bin" -m "$model" --jinja --host 127.0.0.1 --port "$port" &
+"$llama_bin" -m "$model" --jinja --host 127.0.0.1 --port "$port" >"$llama_log" 2>&1 &
 SVALBARD_PIDS+=($!)
 
 wait_for_llama "$port" || { ui_error "llama-server did not become healthy in time."; exit 1; }
@@ -105,15 +109,22 @@ if [ "$client_name" = "opencode" ]; then
     opencode_config="$config_root/opencode.json"
     cat > "$opencode_config" <<JSON
 {
-  "$schema": "https://opencode.ai/config.json",
-  "enabled_providers": ["openai"],
-  "model": "openai/$model_name",
-  "small_model": "openai/$model_name",
+  "\$schema": "https://opencode.ai/config.json",
+  "enabled_providers": ["llama.cpp"],
+  "model": "llama.cpp/$model_name",
+  "small_model": "llama.cpp/$model_name",
   "provider": {
-    "openai": {
+    "llama.cpp": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "llama-server (local)",
       "options": {
         "baseURL": "$base_url",
         "apiKey": "local"
+      },
+      "models": {
+        "$model_name": {
+          "name": "$model_name"
+        }
       }
     }
   }
@@ -125,7 +136,7 @@ JSON
     XDG_CACHE_HOME="$cache_root" \
     XDG_DATA_HOME="$data_root" \
     OPENCODE_CONFIG="$opencode_config" \
-    "$client_bin" -m "openai/$model_name"
+    "$client_bin" -m "llama.cpp/$model_name"
     exit $?
 fi
 
@@ -144,7 +155,7 @@ if [ "$client_name" = "goose" ]; then
     GOOSE_PROVIDER="openai" \
     GOOSE_MODEL="$model_name" \
     OPENAI_API_KEY="local" \
-    OPENAI_HOST="$base_url" \
+    OPENAI_HOST="$host_root" \
     "$client_bin"
     exit $?
 fi

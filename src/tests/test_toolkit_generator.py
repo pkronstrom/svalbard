@@ -320,7 +320,22 @@ def test_agent_launcher_isolates_opencode_from_host_config(tmp_path):
     assert 'cd "$DRIVE_ROOT"' in agent_script
     assert 'OPENCODE_CONFIG=' in agent_script
     assert 'XDG_CONFIG_HOME=' in agent_script
-    assert '"enabled_providers": ["openai"]' in agent_script
+    assert '"enabled_providers": ["llama.cpp"]' in agent_script
+    assert '"llama.cpp": {' in agent_script
+    assert '"npm": "@ai-sdk/openai-compatible"' in agent_script
+    assert '"name": "llama-server (local)"' in agent_script
+    assert '"models": {' in agent_script
+    assert "\"name\": \"" in agent_script
+    assert '"\\$schema": "https://opencode.ai/config.json"' in agent_script
+    assert 'runtime_root_base="$DRIVE_ROOT/.svalbard/runtime/$client_name"' in agent_script
+    assert 'llama_log="$runtime_root_base/llama-server.log"' in agent_script
+    assert '"$llama_bin" -m "$model" --jinja --host 127.0.0.1 --port "$port" >"$llama_log" 2>&1 &' in agent_script
+    assert '"model": "llama.cpp/$model_name"' in agent_script
+    assert '"small_model": "llama.cpp/$model_name"' in agent_script
+    assert '"model": "openai/$model_name"' not in agent_script
+    assert '"small_model": "openai/$model_name"' not in agent_script
+    assert '"$client_bin" -m "llama.cpp/$model_name"' in agent_script
+    assert '"$client_bin" -m "openai/$model_name"' not in agent_script
 
 
 def test_agent_launcher_configures_goose_local_provider(tmp_path):
@@ -336,8 +351,11 @@ def test_agent_launcher_configures_goose_local_provider(tmp_path):
     agent_script = (tmp_path / ".svalbard" / "actions" / "agent.sh").read_text()
     assert 'GOOSE_PROVIDER="openai"' in agent_script
     assert 'GOOSE_MODEL="$model_name"' in agent_script
-    assert 'OPENAI_HOST="$base_url"' in agent_script
+    assert 'host_root="http://127.0.0.1:${port}"' in agent_script
+    assert 'OPENAI_HOST="$host_root"' in agent_script
+    assert 'OPENAI_HOST="$base_url"' not in agent_script
     assert 'XDG_CONFIG_HOME="$config_root"' in agent_script
+    assert 'mkdir -p "$runtime_root_base"' in agent_script
 
 
 def test_generate_toolkit_copies_binary_helper_with_tool_subdir_lookup(tmp_path):
