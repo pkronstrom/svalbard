@@ -6,7 +6,7 @@ tags:
 - health
 - emergency-medicine
 depth: comprehensive
-size_gb: 0.4
+size_gb: 1.2
 strategy: build
 description: Wikipedia medical articles — diseases, drugs, anatomy, procedures with
   Bayer-dithered 8-color images (built from medicine_maxi via zim-dither)

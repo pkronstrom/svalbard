@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
-"""Download a Wikipedia ZIM and reprocess it with resized/dithered images.
+"""Download a Wikipedia ZIM and reprocess it with resized images.
 
-Uses the svalbard-tools Docker container for all heavy operations:
-  1. zimdump  — extract ZIM to filesystem
-  2. zim-dither — resize (and optionally dither) all images
-  3. zimwriterfs — repack into a new ZIM
+Pipeline (all inside a single Docker container):
+  1. zim-compact — read ZIM, resize images, extract content + redirects TSV
+  2. zimwriterfs — repack into a new ZIM
 
 Requirements: Docker with svalbard-tools:v2 image
 
 Usage:
+    python3 wikipedia-dithered-zim.py --source-zim input.zim --output out.zim --width 200 --quality 40
     python3 wikipedia-dithered-zim.py --source-url URL --output library/out.zim
-    python3 wikipedia-dithered-zim.py --source-zim input.zim --output library/out.zim
-    python3 wikipedia-dithered-zim.py --source-zim input.zim --output out.zim --no-dither --width 200 --quality 40
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import subprocess
 import sys
@@ -29,25 +26,43 @@ import httpx
 
 log = logging.getLogger("wikipedia-dithered")
 
-DEFAULT_WIDTH = 400
-DEFAULT_COLORS = 8
+DEFAULT_WIDTH = 200
 DEFAULT_QUALITY = 40
 DOCKER_IMAGE = "svalbard-tools:v2"
+WORK_VOLUME = "svalbard-zim-work"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "library"
 
 
-def _docker_run(cmd: list[str], mounts: dict[str, str] | None = None) -> None:
+def _docker_run(
+    cmd: list[str],
+    mounts: dict[str, str] | None = None,
+    volumes: dict[str, str] | None = None,
+    capture: bool = False,
+) -> subprocess.CompletedProcess | None:
     """Run a command in the svalbard-tools container."""
     docker_cmd = ["docker", "run", "--rm"]
     for host_path, container_path in (mounts or {}).items():
         docker_cmd.extend(["-v", f"{host_path}:{container_path}"])
+    for vol_name, container_path in (volumes or {}).items():
+        docker_cmd.extend(["-v", f"{vol_name}:{container_path}"])
     docker_cmd.append(DOCKER_IMAGE)
     docker_cmd.extend(cmd)
     log.info("docker: %s", " ".join(cmd))
+    if capture:
+        return subprocess.run(docker_cmd, capture_output=True, text=True)
     subprocess.run(docker_cmd, check=True)
+    return None
+
+
+def _volume_create(name: str) -> None:
+    subprocess.run(["docker", "volume", "create", name], capture_output=True, check=True)
+
+
+def _volume_remove(name: str) -> None:
+    subprocess.run(["docker", "volume", "rm", "-f", name], capture_output=True)
 
 
 def download_zim(url: str, dest: Path) -> Path:
@@ -88,105 +103,78 @@ def rewrite_zim(
     output_path: Path,
     *,
     max_width: int = DEFAULT_WIDTH,
-    num_colors: int = DEFAULT_COLORS,
     quality: int = DEFAULT_QUALITY,
-    no_dither: bool = False,
 ) -> None:
-    """Rewrite a ZIM with resized/dithered images via Docker."""
-    work_dir = Path(tempfile.mkdtemp(prefix="zim-reimage-"))
-    extract_dir = work_dir / "extracted"
-    extract_dir.mkdir()
+    """Rewrite a ZIM with resized images via Docker."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    _volume_remove(WORK_VOLUME)
+    _volume_create(WORK_VOLUME)
 
     mounts = {
         str(source_path.parent.resolve()): "/input",
-        str(work_dir): "/work",
         str(output_path.parent.resolve()): "/output",
     }
-
+    volumes = {WORK_VOLUME: "/work"}
     source_name = source_path.name
     output_name = output_path.name
 
-    # Phase 1: Extract ZIM
-    log.info("phase 1: extracting %s", source_name)
-    _docker_run(
-        ["zimdump", "dump", "--dir=/work/extracted", f"/input/{source_name}"],
-        mounts=mounts,
+    # Phase 1: zim-compact reads ZIM, resizes images, writes content + redirects
+    log.info("phase 1: zim-compact (width=%d, quality=%d)", max_width, quality)
+    result = _docker_run(
+        [
+            "zim-compact",
+            f"--width={max_width}",
+            f"--quality={quality}",
+            f"--redirects=/work/redirects.tsv",
+            f"/input/{source_name}",
+            "/work/extracted",
+        ],
+        mounts=mounts, volumes=volumes, capture=True,
     )
 
-    # Phase 2: Resize/dither images
-    mode = "resize-only" if no_dither else "dither"
-    log.info("phase 2: %s (width=%d, quality=%d)", mode, max_width, quality)
-    dither_cmd = [
-        "zim-dither", "batch",
-        "--width", str(max_width),
-        "--quality", str(quality),
-    ]
-    if no_dither:
-        dither_cmd.append("--no-dither")
-    else:
-        dither_cmd.extend(["--colors", str(num_colors), "--dither", "bayer"])
-    dither_cmd.append("/work/extracted")
-    _docker_run(dither_cmd, mounts=mounts)
+    if result and result.returncode != 0:
+        log.error("zim-compact failed:\n%s\n%s", result.stdout, result.stderr)
+        raise RuntimeError("zim-compact failed")
 
-    # Find the main page and illustration from the source ZIM
-    log.info("phase 2.5: reading source ZIM metadata")
-    result = subprocess.run(
-        ["docker", "run", "--rm",
-         "-v", f"{source_path.parent.resolve()}:/input",
-         DOCKER_IMAGE, "zimdump", "info", f"/input/{source_name}"],
-        capture_output=True, text=True,
-    )
-    main_page = "index"
-    illustration = ""
-    for line in result.stdout.splitlines():
-        if line.startswith("main page:"):
-            main_page = line.split(":", 1)[1].strip()
-        if line.startswith("favicon:"):
-            illustration = line.split(":", 1)[1].strip()
+    # Parse metadata from zim-compact stdout
+    meta = {}
+    for line in (result.stdout if result else "").splitlines():
+        if "=" in line:
+            key, _, val = line.partition("=")
+            meta[key.strip()] = val.strip()
+    log.info("zim-compact stderr:\n%s", result.stderr if result else "")
 
-    # Create a simple illustration if the extracted one isn't a standard file
-    illustration_flag = []
-    illust_path = extract_dir / illustration
-    if illust_path.exists():
-        illustration_flag = [f"--illustration={illustration}"]
-    else:
-        # Create a minimal 48x48 PNG
-        import struct, zlib
-        def _minimal_png() -> bytes:
-            width, height = 48, 48
-            raw = b""
-            for _ in range(height):
-                raw += b"\x00" + b"\x80\x80\x80" * width
-            compressed = zlib.compress(raw)
-            def chunk(ctype, data):
-                c = ctype + data
-                return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
-            ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-            return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", compressed) + chunk(b"IEND", b"")
-        (extract_dir / "illustration.png").write_bytes(_minimal_png())
-        illustration_flag = ["--illustration=illustration.png"]
+    main_page = meta.get("main_page", "index")
+    language = meta.get("language", "eng")
+    title = meta.get("title", "Wikipedia (compact)")
+    description = meta.get("description", "Wikipedia with resized images")
+    creator = meta.get("creator", "Wikipedia contributors")
 
-    # Phase 3: Repack into ZIM
-    log.info("phase 3: repacking into %s (main=%s)", output_name, main_page)
+    # Phase 2: zimwriterfs repacks into ZIM
+    log.info("phase 2: zimwriterfs (main=%s)", main_page)
     _docker_run(
         [
-            "zimwriterfs",
-            f"--welcome={main_page}",
-            *illustration_flag,
-            "--language=eng",
-            "--title=Wikipedia (compact)",
-            "--description=Wikipedia with resized images",
-            "--creator=Wikipedia contributors",
-            "--publisher=Svalbard",
-            "--name=wikipedia-compact",
-            "--withoutFTIndex",
-            "/work/extracted",
-            f"/output/{output_name}",
+            "sh", "-c",
+            f"""zimwriterfs \
+  '--welcome={main_page}' \
+  --illustration=illustration.png \
+  '--language={language}' \
+  '--title={title}' \
+  '--description={description}' \
+  '--creator={creator}' \
+  --publisher=Svalbard \
+  --name=wikipedia-compact \
+  --withoutFTIndex \
+  --redirects=/work/redirects.tsv \
+  '--threads='$(nproc) \
+  /work/extracted \
+  '/output/{output_name}'""",
         ],
-        mounts=mounts,
+        mounts=mounts, volumes=volumes,
     )
 
+    _volume_remove(WORK_VOLUME)
     log.info("done: %s", output_path)
 
 
@@ -200,9 +188,7 @@ def main():
         default=DEFAULT_OUTPUT_DIR / "wikipedia-en-medicine-compact.zim",
     )
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH)
-    parser.add_argument("--colors", type=int, default=DEFAULT_COLORS)
     parser.add_argument("--quality", type=int, default=DEFAULT_QUALITY)
-    parser.add_argument("--no-dither", action="store_true", help="Resize only, no dithering")
     parser.add_argument("--workdir", type=Path, help="Download directory")
     args = parser.parse_args()
 
@@ -222,11 +208,7 @@ def main():
         filename = Path(urlparse(args.source_url).path).name
         source_zim = download_zim(args.source_url, work / filename)
 
-    rewrite_zim(
-        source_zim, args.output,
-        max_width=args.width, num_colors=args.colors,
-        quality=args.quality, no_dither=args.no_dither,
-    )
+    rewrite_zim(source_zim, args.output, max_width=args.width, quality=args.quality)
 
     in_mb = source_zim.stat().st_size / (1024 * 1024)
     out_mb = args.output.stat().st_size / (1024 * 1024)

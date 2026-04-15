@@ -30,12 +30,22 @@ RUN ARCH=$(uname -m) && \
     cp /tmp/zim-tools/zimdump /tmp/zim-tools/zimwriterfs /tmp/zim-tools/zimcheck /usr/local/bin/ && \
     rm -r /tmp/zim-tools
 
+# Build magic.mgc compatible with the static zimwriterfs binary (libmagic 5.44)
+# Must use glibc (Ubuntu) to match the struct layout of the prebuilt binary
+FROM ubuntu:22.04 AS magic-builder
+RUN apt-get update -qq && apt-get install -y -qq curl build-essential autoconf automake libtool > /dev/null 2>&1
+RUN curl -fsSL "https://github.com/file/file/archive/refs/tags/FILE5_44.tar.gz" \
+    | tar xz && cd file-FILE5_44 \
+    && autoreconf -fi && ./configure --quiet && make -j$(nproc) --quiet \
+    && cp magic/magic.mgc /magic.mgc
+
 # Build zim-dither (Go image processing tool)
 FROM golang:1.25-alpine AS go-builder
 RUN apk add --no-cache git
 COPY build-tools/ /src/
 WORKDIR /src
-RUN go build -o /usr/local/bin/zim-dither ./cmd/zim-dither/
+RUN go build -o /usr/local/bin/zim-dither ./cmd/zim-dither/ \
+    && go build -o /usr/local/bin/zim-compact ./cmd/zim-compact/
 
 FROM python:3.12-alpine3.21
 
@@ -53,7 +63,10 @@ COPY --from=builder /usr/local/bin/pmtiles /usr/local/bin/
 COPY --from=builder /usr/local/bin/zimdump /usr/local/bin/
 COPY --from=builder /usr/local/bin/zimwriterfs /usr/local/bin/
 COPY --from=builder /usr/local/bin/zimcheck /usr/local/bin/
+COPY --from=magic-builder /magic.mgc /usr/share/misc/magic.mgc
+ENV MAGIC=/usr/share/misc/magic.mgc
 COPY --from=go-builder /usr/local/bin/zim-dither /usr/local/bin/
+COPY --from=go-builder /usr/local/bin/zim-compact /usr/local/bin/
 
 RUN pip install --no-cache-dir \
     libzim \
