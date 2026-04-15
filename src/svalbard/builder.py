@@ -8,6 +8,7 @@ the final artifact that lives on the drive.
 from __future__ import annotations
 
 import logging
+import os
 import platform as _platform
 import shutil
 import subprocess
@@ -19,7 +20,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from svalbard.docker import TOOLS_IMAGE, has_docker, ensure_tools_image, run_container
+from svalbard.docker import TOOLS_IMAGE, _PROJECT_ROOT, has_docker, ensure_tools_image, run_container
 from svalbard.models import Source
 
 log = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ TOOL_REQUIREMENTS: dict[str, list[str]] = {
     "osm-extract": ["pmtiles"],
     "reference-static": [],
     "app-bundle": [],
+    "custom": [],  # deps handled per-builder via requirements.txt
 }
 
 # Tools that can fall back to Docker when not installed locally
@@ -501,3 +503,105 @@ def build_app_bundle(source: Source, drive_path: Path, cache: Path) -> BuildResu
                 tf.extractall(dest_dir, filter="data")
 
     return BuildResult(source.id, True, artifact=dest_dir)
+
+
+# ── custom (standalone builder scripts) ────────────────────────────────────
+
+# Output directory per source type (mirrors TYPE_DIRS in commands.py)
+_TYPE_DIRS = {
+    "zim": "zim", "pmtiles": "maps", "pdf": "books",
+    "epub": "books", "sqlite": "data", "app": "apps",
+}
+
+
+def _find_uv() -> str | None:
+    return shutil.which("uv")
+
+
+@_register("custom")
+def build_custom(source: Source, drive_path: Path, cache: Path) -> BuildResult:
+    """Run a standalone builder script with its own requirements.
+
+    Locates ``recipes/builders/<builder>`` and a matching ``.requirements.txt``.
+    Prefers ``uv run`` for dependency isolation; falls back to Docker.
+
+    The builder script is invoked with:
+        <script> --workdir <cache> --output <dest>
+    Extra CLI args can be passed via ``source.build["args"]`` (list of strings).
+    Environment variables prefixed with ``MIY_`` are forwarded automatically.
+    """
+    b = source.build
+    builder_name = b.get("builder", "")
+    if not builder_name:
+        return BuildResult(source.id, False, error="No 'builder' specified in build config")
+
+    script = _PROJECT_ROOT / "recipes" / "builders" / builder_name
+    if not script.exists():
+        return BuildResult(source.id, False, error=f"Builder script not found: {script}")
+
+    reqs = script.with_suffix(".requirements.txt")
+
+    # Determine output path
+    type_dir = _TYPE_DIRS.get(source.type, "other")
+    dest_dir = drive_path / type_dir
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    ext = {"pmtiles": "pmtiles", "sqlite": "sqlite"}.get(source.type, source.type)
+    output = dest_dir / f"{source.id}.{ext}"
+
+    # Build command args
+    extra_args = b.get("args", [])
+    script_args = [
+        "--workdir", str(cache / "workspace"),
+        "--output", str(output),
+        *extra_args,
+    ]
+
+    # Forward MIY_* env vars (tokens, config)
+    env_passthrough = {k: v for k, v in os.environ.items() if k.startswith("MIY_")}
+
+    uv = _find_uv()
+    if uv:
+        cmd = [uv, "run", "--quiet"]
+        if reqs.exists():
+            cmd.extend(["--with-requirements", str(reqs)])
+        cmd.extend([str(script), *script_args])
+
+        log.info("Running: %s", " ".join(cmd))
+        env = {**os.environ, **env_passthrough}
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    elif has_docker():
+        # Fall back to Docker with python:3.12-slim
+        mounts = {
+            str(_PROJECT_ROOT): "/svalbard",
+            str(cache): "/cache",
+            str(drive_path): "/drive",
+        }
+        docker_cmd = ["docker", "run", "--rm"]
+        for host, cont in mounts.items():
+            docker_cmd.extend(["-v", f"{host}:{cont}"])
+        for k, v in env_passthrough.items():
+            docker_cmd.extend(["-e", f"{k}={v}"])
+        docker_cmd.extend([
+            "python:3.12-slim", "bash", "-c",
+            (
+                f"pip install -q -r /svalbard/recipes/builders/{reqs.name} && "
+                f"python3 /svalbard/recipes/builders/{builder_name} "
+                f"--workdir /cache/workspace "
+                f"--output /drive/{type_dir}/{source.id}.{ext} "
+                + " ".join(extra_args)
+            ),
+        ])
+
+        log.info("Running: %s", " ".join(docker_cmd))
+        result = subprocess.run(docker_cmd, capture_output=True, text=True)
+    else:
+        return BuildResult(source.id, False, error="Neither uv nor Docker available")
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "")[-500:]
+        log.error("Builder failed:\n%s", stderr)
+        return BuildResult(source.id, False, error=f"Builder exited {result.returncode}: {stderr}")
+
+    if output.exists():
+        return BuildResult(source.id, True, artifact=output)
+    return BuildResult(source.id, False, error=f"Builder completed but output not found: {output}")
