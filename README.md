@@ -71,7 +71,7 @@ cd /Volumes/MyStick && ./run.sh     # browse, search, maps, AI chat
 
 ### Add your own content
 
-`svalbard import` downloads content, transforms it as needed, and packages it into a browsable ZIM archive in `library/`. From there you can attach it to any drive.
+`svalbard import` downloads content, transforms it as needed, and packages it into a browsable ZIM archive in `library/`. From there you can add it to any drive.
 
 ```bash
 # Import a local file — registers it as a source
@@ -86,8 +86,8 @@ svalbard import https://youtube.com/watch?v=...
 # Bundle multiple documents into one browsable ZIM
 svalbard import --bundle my-library docs/*.pdf
 
-# Attach to a specific drive (one-off)
-svalbard attach local:my-library /Volumes/MyStick
+# Add to a specific drive (one-off)
+svalbard add my-library /Volumes/MyStick
 svalbard sync /Volumes/MyStick
 ```
 
@@ -118,7 +118,8 @@ svalbard wizard --preset my-pack
 | `svalbard status <path>` | Show drive contents |
 | `svalbard audit <path>` | Coverage gap report |
 | `svalbard import <input>` | Import files, URLs, or bundles into `library/` |
-| `svalbard attach / detach` | Add or remove sources from a drive |
+| `svalbard add <source-id> <path>` | Add a built-in or local source to a drive |
+| `svalbard remove <source-id> <path>` | Remove a built-in or local source from a drive |
 | `svalbard index <path>` | Build cross-content search index |
 | `svalbard preset list / copy` | List or customize presets |
 

@@ -10,20 +10,20 @@ The CLI is built around that split.
 ## Core Flow
 
 1. Initialize a drive from a preset.
-2. Add extra content into the workspace.
-3. Attach selected workspace sources to a drive.
+2. Import extra content into the workspace.
+3. Add selected sources to a drive.
 4. Sync the drive.
 
 Example:
 
 ```bash
 uv run svalbard init /Volumes/MyDrive/svalbard --preset default-128
-uv run svalbard add https://www.youtube.com/watch?v=Zhu2NCpT7T8
-uv run svalbard attach local:you-can-legally-claim-u-s-land /Volumes/MyDrive/svalbard
+uv run svalbard import https://www.youtube.com/watch?v=Zhu2NCpT7T8
+uv run svalbard add you-can-legally-claim-u-s-land /Volumes/MyDrive/svalbard
 uv run svalbard sync /Volumes/MyDrive/svalbard
 ```
 
-If you run `attach`, `detach`, `sync`, `status`, or `audit` from inside the drive directory, the path argument is optional.
+If you run `add`, `remove`, `sync`, `status`, or `audit` from inside the drive directory, the path argument is optional.
 
 For the smallest Finland-oriented bundle, `finland-2` is the compact emergency field-kit preset.
 
@@ -53,7 +53,7 @@ Workspace directories:
 
 ## Commands
 
-### `svalbard add <input>`
+### `svalbard import <input>`
 
 Register or acquire content into the active workspace.
 
@@ -72,19 +72,23 @@ Useful flags:
 
 Remote ingestion currently defaults to Docker-backed runners.
 
-### `svalbard attach <source-id> [drive-path]`
+### `svalbard add <source-id> [drive-path]`
 
-Attach a workspace-local source to a drive manifest and snapshot its metadata into the drive.
+Add a built-in recipe or local source to a drive.
+
+- Plain names work for both built-in recipes and local sources
+- `--browse` reopens the interactive picker for built-in content
 
 Example:
 
 ```bash
-uv run svalbard attach local:example-docs /Volumes/MyDrive/svalbard
+uv run svalbard add qwen-9b /Volumes/MyDrive/svalbard
+uv run svalbard add example-docs /Volumes/MyDrive/svalbard
 ```
 
-### `svalbard detach <source-id> [drive-path]`
+### `svalbard remove <source-id> [drive-path]`
 
-Remove an attached source from the drive manifest and remove its drive-local snapshot.
+Remove a built-in recipe or local source from a drive.
 
 ### `svalbard sync [drive-path]`
 
@@ -126,6 +130,6 @@ This lets a drive stay understandable and reproducible even if the installed Sva
 
 ## Notes
 
-- `svalbard add` creates reusable sources in the workspace. It does not automatically include them in any drive.
-- `attach` changes drive membership. `sync` copies the selected content onto the drive.
+- `svalbard import` creates reusable sources in the workspace. It does not automatically include them in any drive.
+- `add` changes drive membership. `sync` copies the selected content onto the drive.
 - Built-in presets are read-only; customize them with `preset copy` instead of editing package files.

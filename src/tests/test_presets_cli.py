@@ -71,7 +71,7 @@ def test_refresh_command_removes_and_resyncs_single_source(tmp_path):
         ],
     ).save(drive / "manifest.yaml")
 
-    with patch("svalbard.commands.sync_drive") as sync_drive_mock:
+    with patch("svalbard.cli.sync_drive") as sync_drive_mock:
         result = CliRunner().invoke(main, ["refresh", "llama-server", str(drive), "--platform", "host"])
 
     assert result.exit_code == 0

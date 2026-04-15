@@ -6,14 +6,15 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from svalbard.commands import sync_drive
+from svalbard.commands import remove_source_artifacts, sync_drive
 from svalbard.drive_config import load_snapshot_preset, write_drive_snapshot
 from svalbard.importer import run_import
 from svalbard.bundle import run_bundle_build
 from svalbard.attach import attach_local_source, detach_local_source, resolve_drive_path
+from svalbard.local_sources import load_local_sources
 from svalbard.manifest import Manifest
 from svalbard.paths import workspace_root as resolve_workspace_root
-from svalbard.presets import copy_preset_to_workspace, list_presets, load_preset
+from svalbard.presets import builtin_recipe_ids, copy_preset_to_workspace, list_presets, load_preset
 from svalbard.wizard import pick_sources_via_packs, run_wizard, write_custom_preset
 
 console = Console()
@@ -63,6 +64,105 @@ def _show_menu(path: str):
         click.echo(generate_audit(P(path)))
     elif choice == "w":
         run_wizard()
+
+
+def _drive_workspace_root(manifest: Manifest, workspace: str | None) -> Path:
+    if workspace is not None:
+        return resolve_workspace_root(workspace)
+    if manifest.workspace_root:
+        return Path(manifest.workspace_root).resolve()
+    return resolve_workspace_root()
+
+
+def _current_builtin_source_ids(drive_path: Path, manifest: Manifest, workspace_root: Path) -> set[str]:
+    try:
+        preset = load_preset(manifest.preset, workspace=workspace_root)
+    except (FileNotFoundError, ValueError, KeyError):
+        preset = load_snapshot_preset(drive_path)
+    if preset is not None:
+        return {source.id for source in preset.sources if not source.id.startswith("local:")}
+    return {entry.id for entry in manifest.entries if not entry.id.startswith("local:")}
+
+
+def _persist_drive_builtin_selection(
+    drive_path: Path,
+    manifest: Manifest,
+    workspace_root: Path,
+    selected_ids: set[str],
+) -> str:
+    try:
+        target_size_gb = shutil.disk_usage(drive_path).free / 1e9
+    except OSError:
+        target_size_gb = 0
+
+    preset_name = write_custom_preset(
+        selected_ids,
+        workspace=workspace_root,
+        target_size_gb=target_size_gb,
+        region=manifest.region,
+        description=f"Attached selection for {drive_path.name}",
+    )
+    write_drive_snapshot(
+        drive_path,
+        preset_name=preset_name,
+        workspace_root=workspace_root,
+        local_source_ids=manifest.local_sources,
+    )
+    manifest.preset = preset_name
+    manifest.save(drive_path / "manifest.yaml")
+    return preset_name
+
+
+def _browse_drive_builtin_sources(drive_path: Path, workspace: str | None) -> str:
+    manifest_path = drive_path / "manifest.yaml"
+    manifest = Manifest.load(manifest_path)
+    workspace_root = _drive_workspace_root(manifest, workspace)
+    try:
+        free_gb = shutil.disk_usage(drive_path).free / 1e9
+    except OSError:
+        free_gb = 0
+    try:
+        preset = load_preset(manifest.preset, workspace=workspace_root)
+    except (FileNotFoundError, ValueError, KeyError):
+        preset = load_snapshot_preset(drive_path)
+    if preset is not None:
+        checked_ids = {source.id for source in preset.sources if not source.id.startswith("local:")}
+    else:
+        checked_ids = {entry.id for entry in manifest.entries if not entry.id.startswith("local:")}
+    selected_ids = pick_sources_via_packs(
+        free_gb=free_gb,
+        workspace=workspace_root,
+        checked_ids=checked_ids,
+    )
+    preset_name = _persist_drive_builtin_selection(drive_path, manifest, workspace_root, selected_ids)
+    sync_drive(str(drive_path))
+    return preset_name
+
+
+def _resolve_source_reference(raw_source_id: str, workspace_root: Path) -> tuple[str, str]:
+    if raw_source_id.startswith("local:"):
+        local_ids = {source.id for source in load_local_sources(workspace_root)}
+        if raw_source_id not in local_ids:
+            raise click.UsageError(f"Local source not found: {raw_source_id}")
+        return raw_source_id, "local"
+
+    builtin_ids = builtin_recipe_ids()
+    local_matches = [
+        source.id
+        for source in load_local_sources(workspace_root)
+        if raw_source_id in {source.id, source.id.split(":", 1)[-1]}
+    ]
+    builtin_match = raw_source_id if raw_source_id in builtin_ids else None
+
+    if builtin_match and local_matches:
+        raise click.UsageError(
+            f"Ambiguous source '{raw_source_id}'; use 'local:{raw_source_id}' for the workspace source or the exact built-in id."
+        )
+    if local_matches:
+        return local_matches[0], "local"
+    if builtin_match:
+        return builtin_match, "builtin"
+    raise click.UsageError(f"Source not found: {raw_source_id}")
 
 
 @main.command()
@@ -203,63 +303,21 @@ def import_command(
     console.print(f"[green]Imported:[/green] {source_id}")
 
 
-@main.command("attach")
+@main.command("add")
 @click.argument("source_id", required=False)
 @click.argument("path", required=False, default=".")
-@click.option("--browse", is_flag=True, help="Browse and select pack content interactively")
+@click.option("--browse", is_flag=True, help="Browse and select vault content interactively")
 @click.option("--workspace", default=None, help="Workspace root")
-def attach_command(
+def add_command(
     source_id: str | None,
     path: str,
     browse: bool,
     workspace: str | None,
 ) -> None:
-    """Attach a local source or browse pack content for an existing drive."""
+    """Add a built-in or local source to an existing drive."""
     if browse:
         drive_arg = source_id if source_id and path == "." else path
-        drive_path = resolve_drive_path(drive_arg)
-        manifest_path = drive_path / "manifest.yaml"
-        manifest = Manifest.load(manifest_path)
-        workspace_root = (
-            resolve_workspace_root(workspace)
-            if workspace is not None
-            else Path(manifest.workspace_root).resolve()
-            if manifest.workspace_root
-            else resolve_workspace_root()
-        )
-        try:
-            free_gb = shutil.disk_usage(drive_path).free / 1e9
-        except OSError:
-            free_gb = 0
-        try:
-            preset = load_preset(manifest.preset, workspace=workspace_root)
-        except (FileNotFoundError, ValueError, KeyError):
-            preset = load_snapshot_preset(drive_path)
-        if preset is not None:
-            checked_ids = {source.id for source in preset.sources if not source.id.startswith("local:")}
-        else:
-            checked_ids = {entry.id for entry in manifest.entries if not entry.id.startswith("local:")}
-        selected_ids = pick_sources_via_packs(
-            free_gb=free_gb,
-            workspace=workspace_root,
-            checked_ids=checked_ids,
-        )
-        preset_name = write_custom_preset(
-            selected_ids,
-            workspace=workspace_root,
-            target_size_gb=free_gb,
-            region=manifest.region,
-            description=f"Attached selection for {drive_path.name}",
-        )
-        write_drive_snapshot(
-            drive_path,
-            preset_name=preset_name,
-            workspace_root=workspace_root,
-            local_source_ids=manifest.local_sources,
-        )
-        manifest.preset = preset_name
-        manifest.save(manifest_path)
-        sync_drive(str(drive_path))
+        preset_name = _browse_drive_builtin_sources(resolve_drive_path(drive_arg), workspace)
         console.print(f"[green]Updated preset:[/green] {preset_name}")
         return
 
@@ -267,19 +325,55 @@ def attach_command(
         raise click.UsageError("SOURCE_ID is required unless --browse is used")
 
     drive_path = resolve_drive_path(path)
-    attach_local_source(drive_path, source_id, workspace=workspace)
-    console.print(f"[green]Attached:[/green] {source_id}")
+    manifest = Manifest.load(drive_path / "manifest.yaml")
+    workspace_root = _drive_workspace_root(manifest, workspace)
+    resolved_source_id, source_kind = _resolve_source_reference(source_id, workspace_root)
+
+    if source_kind == "local":
+        attach_local_source(drive_path, resolved_source_id, workspace=workspace_root)
+        console.print(f"[green]Added local source:[/green] {resolved_source_id}")
+        return
+
+    selected_ids = _current_builtin_source_ids(drive_path, manifest, workspace_root)
+    if resolved_source_id in selected_ids:
+        console.print(f"[yellow]Already present:[/yellow] {resolved_source_id}")
+        return
+
+    selected_ids.add(resolved_source_id)
+    preset_name = _persist_drive_builtin_selection(drive_path, manifest, workspace_root, selected_ids)
+    sync_drive(str(drive_path))
+    console.print(f"[green]Added source:[/green] {resolved_source_id}")
+    console.print(f"[green]Updated preset:[/green] {preset_name}")
 
 
-@main.command("detach")
+@main.command("remove")
 @click.argument("source_id")
 @click.argument("path", required=False, default=".")
 @click.option("--workspace", default=None, help="Workspace root")
-def detach_command(source_id: str, path: str, workspace: str | None) -> None:
-    """Detach a local source from an existing drive."""
+def remove_command(source_id: str, path: str, workspace: str | None) -> None:
+    """Remove a built-in or local source from an existing drive."""
     drive_path = resolve_drive_path(path)
-    detach_local_source(drive_path, source_id)
-    console.print(f"[green]Detached:[/green] {source_id}")
+    manifest = Manifest.load(drive_path / "manifest.yaml")
+    workspace_root = _drive_workspace_root(manifest, workspace)
+    resolved_source_id, source_kind = _resolve_source_reference(source_id, workspace_root)
+
+    if source_kind == "local":
+        detach_local_source(drive_path, resolved_source_id)
+        console.print(f"[green]Removed local source:[/green] {resolved_source_id}")
+        return
+
+    selected_ids = _current_builtin_source_ids(drive_path, manifest, workspace_root)
+    if resolved_source_id not in selected_ids:
+        console.print(f"[yellow]Not present:[/yellow] {resolved_source_id}")
+        return
+
+    selected_ids.remove(resolved_source_id)
+    preset_name = _persist_drive_builtin_selection(drive_path, manifest, workspace_root, selected_ids)
+    removed = remove_source_artifacts(drive_path, manifest, resolved_source_id)
+    manifest.save(drive_path / "manifest.yaml")
+    console.print(f"[green]Removed source:[/green] {resolved_source_id}")
+    console.print(f"[green]Updated preset:[/green] {preset_name}")
+    console.print(f"[green]Removed artifacts:[/green] {removed}")
 
 
 @main.command("refresh")
@@ -292,8 +386,6 @@ def detach_command(source_id: str, path: str, workspace: str | None) -> None:
 )
 def refresh_command(source_id: str, path: str, platform: str | None) -> None:
     """Delete and re-sync one built-in source from a drive."""
-    from svalbard.commands import remove_source_artifacts, sync_drive
-
     drive_path = resolve_drive_path(path)
     if not Manifest.exists(drive_path):
         console.print("[red]No manifest found.[/red]")
