@@ -1796,7 +1796,7 @@ class Cults3DJsonLdMetadata(MetadataStrategy):
         for script in soup.find_all("script", type="application/ld+json"):
             try:
                 data = json.loads(script.string)
-                if isinstance(data, dict) and data.get("@type") == "MediaObject":
+                if isinstance(data, dict) and data.get("@type") in ("MediaObject", "3DModel", "Product"):
                     meta.title = meta.title or data.get("name", "")
                     meta.description = meta.description or (data.get("description") or "")[:2000]
                     creator = data.get("creator") or {}
@@ -1824,7 +1824,7 @@ class Cults3DImages(ImageStrategy):
         # Collect all image sources: eager src + lazy data-src
         for img in soup.find_all("img"):
             src = img.get("data-src") or img.get("src") or ""
-            if not src.startswith("http") or "images.cults3d.com" not in src:
+            if not src.startswith("http") or not any(d in src for d in ("images.cults3d.com", "static.cults3d.com", "files.cults3d.com")):
                 continue
             base = src.split("?")[0]
             if base in seen_bases:
