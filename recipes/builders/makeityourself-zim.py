@@ -2974,6 +2974,7 @@ def stage_package(
     # Validate image paths: drop references to missing files, discover actual images on disk
     log.info("  Validating image paths...")
     images_fixed = 0
+    tiny_stripped = 0
     for proj in projects:
         proj_dir = state.sites_dir / proj["_dir"]
         images = proj.get("images", [])
@@ -2990,12 +2991,22 @@ def stage_package(
                     if img not in seen:
                         valid.append(img)
                         seen.add(img)
-            if valid != images:
-                proj["images"] = valid
-                _patch_meta(proj_dir, images=valid)
-                images_fixed += 1
+        # Strip tiny/broken images (<2KB = tracking pixels, error pages, placeholders)
+        clean = []
+        for img in valid:
+            img_path = proj_dir / img
+            if img_path.exists() and img_path.stat().st_size >= 2000:
+                clean.append(img)
+            else:
+                tiny_stripped += 1
+        if clean != images:
+            proj["images"] = clean
+            _patch_meta(proj_dir, images=clean)
+            images_fixed += 1
     if images_fixed:
         log.info("  Fixed image references for %d projects", images_fixed)
+    if tiny_stripped:
+        log.info("  Stripped %d tiny/broken images (<2KB)", tiny_stripped)
 
     # Compute quality scores for badges and logging
     log.info("  Computing quality scores...")
