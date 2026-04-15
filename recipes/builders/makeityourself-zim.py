@@ -2624,7 +2624,8 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
 # ── Post-crawl optimization ────────────────────────────────────────────────
 
 # Extensions to always drop (compiler output, installers, redundant formats)
-DROP_ALWAYS = {".o", ".crf", ".exe", ".wrl", ".ttf", ".iges", ".igs"}
+DROP_ALWAYS = {".o", ".crf", ".exe", ".dll", ".so", ".dylib", ".wrl", ".ttf", ".otf",
+               ".woff", ".woff2", ".iges", ".igs", ".pyc", ".pyo", ".class", ".DS_Store"}
 
 # Extensions to drop when a better alternative exists in the same project
 DROP_IF_REDUNDANT = {
@@ -2632,7 +2633,13 @@ DROP_IF_REDUNDANT = {
 }
 
 # Non-essential CAD source formats (proprietary, or redundant when .step exists)
-DROP_CAD_NON_ESSENTIAL = {".blend", ".skp"}
+DROP_CAD_NON_ESSENTIAL = {".blend", ".blend1", ".skp", ".f3z", ".3dm"}
+
+# Extensions to strip when repacking zip archives (not useful for rebuilding)
+DROP_INSIDE_ZIPS = (
+    DROP_ALWAYS | DROP_CAD_NON_ESSENTIAL
+    | {".gif", ".mp3", ".mp4", ".wav", ".avi", ".mov"}  # media demos
+)
 
 # Max image dimension (pixels) for resized images
 IMAGE_MAX_DIM = 800
@@ -2750,7 +2757,42 @@ def _optimize_project(site_dir: Path, meta: ProjectMeta) -> int:
         if p.exists():
             a["size_bytes"] = p.stat().st_size
 
-    # 6. Bundle artifacts into a single ZIP per project
+    # 6. Repack existing zip archives — strip non-essential files
+    for a in meta.artifacts:
+        fpath = site_dir / a["filename"]
+        if fpath.suffix.lower() != ".zip" or not fpath.exists():
+            continue
+        try:
+            old_size = fpath.stat().st_size
+            tmp_path = fpath.with_suffix(".zip.tmp")
+            dropped = 0
+            kept = 0
+            with zipfile.ZipFile(fpath, "r") as src, zipfile.ZipFile(tmp_path, "w") as dst:
+                for info in src.infolist():
+                    if info.is_dir():
+                        continue
+                    ext = Path(info.filename).suffix.lower()
+                    name_lower = Path(info.filename).name.lower()
+                    if ext in DROP_INSIDE_ZIPS or name_lower in {".ds_store", "thumbs.db"}:
+                        dropped += info.file_size
+                        continue
+                    data = src.read(info.filename)
+                    dst.writestr(info, data)
+                    kept += 1
+            if dropped > 0 and kept > 0:
+                new_size = tmp_path.stat().st_size
+                tmp_path.replace(fpath)
+                a["size_bytes"] = new_size
+                saved += old_size - new_size
+                log.debug("    repack %s: %d KB → %d KB (dropped %d KB)",
+                          fpath.name, old_size // 1024, new_size // 1024, dropped // 1024)
+            else:
+                tmp_path.unlink()
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    # 7. Bundle artifacts into a single ZIP per project
     real_arts = [a for a in meta.artifacts if (site_dir / a["filename"]).exists()]
     if real_arts:
         _ALREADY_COMPRESSED = {".zip", ".gz", ".7z", ".rar", ".3mf", ".tar"}
