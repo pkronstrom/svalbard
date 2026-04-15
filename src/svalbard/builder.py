@@ -43,6 +43,8 @@ TOOL_REQUIREMENTS: dict[str, list[str]] = {
     "osm-extract": ["pmtiles"],
     "reference-static": [],
     "app-bundle": [],
+    "raster-tms": ["pmtiles"],
+    "mml-topo": ["ogr2ogr", "tippecanoe"],
 }
 
 # Tools that can fall back to Docker when not installed locally
@@ -501,3 +503,300 @@ def build_app_bundle(source: Source, drive_path: Path, cache: Path) -> BuildResu
                 tf.extractall(dest_dir, filter="data")
 
     return BuildResult(source.id, True, artifact=dest_dir)
+
+
+# ── raster-tms ─────────────────────────────────────────────────────────────
+
+@_register("raster-tms")
+def build_raster_tms(source: Source, drive_path: Path, cache: Path) -> BuildResult:
+    """Download raster tiles from a TMS endpoint and package as raster PMTiles."""
+    import math
+    import sqlite3
+
+    b = source.build
+    tms_url = b["tms_url"]  # e.g. "https://tiles.kartat.kapsi.fi/maastokartta"
+    bbox_str = b.get("bbox", "23.8,59.8,26.8,61.7")
+    min_zoom = b.get("min_zoom", 0)
+    max_zoom = b.get("max_zoom", 13)
+    tile_ext = b.get("tile_format", "jpg")
+
+    west, south, east, north = (float(x) for x in bbox_str.split(","))
+
+    def _lon_to_x(lon: float, z: int) -> int:
+        n = 2 ** z
+        return max(0, min(n - 1, int((lon + 180) / 360 * n)))
+
+    def _lat_to_y(lat: float, z: int) -> int:
+        n = 2 ** z
+        r = math.radians(lat)
+        return max(0, min(n - 1, int((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * n)))
+
+    mbtiles_path = cache / f"{source.id}.mbtiles"
+
+    if not mbtiles_path.exists():
+        conn = sqlite3.connect(str(mbtiles_path))
+        conn.execute("CREATE TABLE metadata (name text, value text)")
+        conn.execute("CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)")
+        conn.execute("CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)")
+        fmt = "jpeg" if tile_ext == "jpg" else tile_ext
+        for k, v in [
+            ("name", source.id), ("format", fmt), ("type", "baselayer"),
+            ("bounds", bbox_str), ("minzoom", str(min_zoom)), ("maxzoom", str(max_zoom)),
+        ]:
+            conn.execute("INSERT INTO metadata VALUES (?, ?)", (k, v))
+        conn.commit()
+
+        total = 0
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            for z in range(min_zoom, max_zoom + 1):
+                x0, x1 = _lon_to_x(west, z), _lon_to_x(east, z)
+                y0, y1 = _lat_to_y(north, z), _lat_to_y(south, z)
+                batch = []
+                for x in range(x0, x1 + 1):
+                    for y in range(y0, y1 + 1):
+                        url = f"{tms_url}/{z}/{x}/{y}.{tile_ext}"
+                        try:
+                            r = client.get(url)
+                            r.raise_for_status()
+                            tms_y = (2 ** z) - 1 - y  # MBTiles uses TMS-flipped y
+                            batch.append((z, x, tms_y, r.content))
+                        except httpx.HTTPError:
+                            pass
+                conn.executemany("INSERT OR REPLACE INTO tiles VALUES (?,?,?,?)", batch)
+                conn.commit()
+                total += len(batch)
+                log.info("z%d: %d tiles for %s", z, len(batch), source.id)
+
+        log.info("Total: %d raster tiles for %s", total, source.id)
+        conn.close()
+
+    # Convert MBTiles → PMTiles
+    dest_dir = drive_path / "maps"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    pmtiles_path = dest_dir / f"{source.id}.pmtiles"
+
+    if not pmtiles_path.exists():
+        binary, image = _resolve_tool("pmtiles", drive_path)
+        if binary:
+            _run([binary, "convert", str(mbtiles_path), str(pmtiles_path)])
+        elif image:
+            dm = {str(cache): "/cache", str(dest_dir): "/dest"}
+            run_container(
+                ["pmtiles", "convert", _docker_path(mbtiles_path, dm), _docker_path(pmtiles_path, dm)],
+                mounts=dm, check=True, capture_output=True, text=True,
+            )
+        else:
+            raise RuntimeError("pmtiles CLI not found. Install go-pmtiles or Docker.")
+
+    return BuildResult(source.id, True, artifact=pmtiles_path)
+
+
+# ── mml-topo ───────────────────────────────────────────────────────────────
+
+# Mapping from maastotietokanta GeoPackage table names to MML taustakartta
+# vector-tile source-layer names.  Features carry a `kohdeluokka` attribute
+# that the MML style JSON uses for filtering/coloring.
+_MML_LAYER_GROUPS: dict[str, list[str]] = {
+    "vesisto_alue": [
+        "jarvi", "virtavesialue", "meri", "matalikko", "kaislikko",
+        "maatuvavesialue", "tulvaalue",
+    ],
+    "vesisto_viiva": [
+        "virtavesikapea", "koski", "lahde", "vesikivi", "vesikivikko",
+    ],
+    "maasto_alue": [
+        "suo", "soistuma", "kallioalue", "kalliohalkeama", "kivikko",
+        "hietikko", "jyrkanne", "luiska", "kivi", "niitty",
+        "kansallispuisto", "luonnonpuisto", "luonnonsuojelualue",
+        "rauhoitettukohde", "retkeilyalue", "suojametsa",
+        "suojelualueenreunaviiva", "merkittavaluontokohde",
+    ],
+    "maankaytto": [
+        "maatalousmaa", "metsamaankasvillisuus", "metsamaanmuokkaus",
+        "metsanraja", "taajama", "puisto", "puu", "puurivi",
+        "muuavoinalue", "autoliikennealue", "lentokenttaalue",
+        "satamaalue", "hautausmaa", "kaatopaikka", "louhos",
+        "maaaineksenottoalue", "varastoalue", "urheilujavirkistysalue",
+        "taytemaa",
+    ],
+    "liikenne": [
+        "tieviiva", "tiesymboli", "tienroteksti",
+        "rautatie", "rautatieliikennepaikka", "rautatiensymboli",
+        "vesikulkuvayla", "turvalaite", "ankkuripaikka", "hylky",
+        "sahkolinja", "sahkolinjansymboli", "suurjannitelinjanpylvas",
+        "muuntaja", "muuntoasema", "vesitorni",
+        "aallonmurtaja", "aita", "allas", "masto", "mastonkorkeus",
+        "savupiippu", "savupiipunkorkeus", "tuulivoimala",
+        "nakotorni", "muistomerkki", "tulentekopaikka", "portti",
+        "kellotapuli", "tervahauta", "pato", "tunnelinaukko",
+        "rakennelma", "rakennusreunaviiva",
+    ],
+    "rakennus": ["rakennus"],
+    "korkeus": [
+        "korkeuskayra", "korkeuskayrankorkeusarvo",
+        "syvyyskayra", "syvyyskayransyvyysarvo",
+        "syvyyspiste", "viettoviiva",
+    ],
+    "maastoaluereuna": ["maastokuvionreuna"],
+}
+
+
+def _download_large(url: str, dest: Path, *, timeout: float = 7200) -> Path:
+    """Stream-download a large file with progress logging."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with httpx.stream("GET", url, follow_redirects=True, timeout=timeout) as r:
+        r.raise_for_status()
+        total = int(r.headers.get("content-length", 0))
+        downloaded = 0
+        last_log_mb = 0
+        with open(dest, "wb") as f:
+            for chunk in r.iter_bytes(chunk_size=1_048_576):
+                f.write(chunk)
+                downloaded += len(chunk)
+                mb = downloaded // (1024 * 1024)
+                if mb - last_log_mb >= 500:
+                    total_mb = total // (1024 * 1024) if total else "?"
+                    log.info("Downloaded %d / %s MB", mb, total_mb)
+                    last_log_mb = mb
+    return dest
+
+
+def _gpkg_tables(gpkg_path: Path) -> set[str]:
+    """Return the set of feature-table names in a GeoPackage."""
+    import sqlite3
+    conn = sqlite3.connect(str(gpkg_path))
+    try:
+        rows = conn.execute(
+            "SELECT table_name FROM gpkg_contents WHERE data_type='features'"
+        ).fetchall()
+        return {r[0] for r in rows}
+    finally:
+        conn.close()
+
+
+@_register("mml-topo")
+def build_mml_topo(source: Source, drive_path: Path, cache: Path) -> BuildResult:
+    """Build vector PMTiles from MML maastotietokanta GeoPackage.
+
+    Downloads the all-Finland GeoPackage(s) from kartat.kapsi.fi, clips to
+    the requested bounding box, groups tables into MML taustakartta source-
+    layers, and runs tippecanoe to produce a single multi-layer PMTiles file.
+    """
+    b = source.build
+    maasto_url = b.get(
+        "maasto_url",
+        "http://kartat.kapsi.fi/files/maastotietokanta/geopackage_maasto/mtkmaasto.zip",
+    )
+    korkeus_url = b.get(
+        "korkeus_url",
+        "http://kartat.kapsi.fi/files/maastotietokanta/geopackage_korkeus/mtkkorkeus.zip",
+    )
+    bbox_str = b.get("bbox", "23.8,59.8,26.8,61.7")
+    max_zoom = b.get("max_zoom", 14)
+
+    raw_dir = cache / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    layers_dir = cache / "layers"
+    layers_dir.mkdir(parents=True, exist_ok=True)
+
+    docker_mounts = {str(cache): "/data", str(drive_path): "/drive"}
+
+    # ── 1. Download & extract GeoPackages ─────────────────────────────────
+    gpkg_files: list[Path] = []
+    for label, url in [("maasto", maasto_url), ("korkeus", korkeus_url)]:
+        zip_name = Path(urlparse(url).path).name
+        zip_path = raw_dir / zip_name
+        if not zip_path.exists():
+            log.info("Downloading %s (%s)…", label, url)
+            _download_large(url, zip_path)
+
+        extract_dir = raw_dir / label
+        if not extract_dir.exists():
+            extract_dir.mkdir()
+            log.info("Extracting %s…", zip_name)
+            _safe_extract_zip(zip_path, extract_dir)
+
+        for gpkg in extract_dir.rglob("*.gpkg"):
+            gpkg_files.append(gpkg)
+
+    if not gpkg_files:
+        return BuildResult(source.id, False, error="No .gpkg files found after extraction")
+
+    # ── 2. Export & merge tables per source-layer ─────────────────────────
+    gpkg_table_cache: dict[str, set[str]] = {}
+    for gpkg in gpkg_files:
+        gpkg_table_cache[str(gpkg)] = _gpkg_tables(gpkg)
+
+    available: set[str] = set()
+    for tables in gpkg_table_cache.values():
+        available.update(tables)
+
+    west, south, east, north = bbox_str.split(",")
+
+    for layer_name, tables in _MML_LAYER_GROUPS.items():
+        merged = layers_dir / f"{layer_name}.geojsonseq"
+        if merged.exists():
+            continue
+
+        parts_written = 0
+        with open(merged, "wb") as out:
+            for table in tables:
+                if table not in available:
+                    continue
+                gpkg = next(
+                    (g for g in gpkg_files if table in gpkg_table_cache[str(g)]),
+                    None,
+                )
+                if gpkg is None:
+                    continue
+
+                part = layers_dir / f"_part_{table}.geojsonseq"
+                try:
+                    _run_ogr2ogr([
+                        "-f", "GeoJSONSeq",
+                        "-t_srs", "EPSG:4326",
+                        "-spat", west, south, east, north,
+                        "-spat_srs", "EPSG:4326",
+                        _docker_path(part, docker_mounts),
+                        _docker_path(gpkg, docker_mounts),
+                        table,
+                    ], drive_path, docker_mounts)
+                    if part.exists() and part.stat().st_size > 0:
+                        with open(part, "rb") as inp:
+                            shutil.copyfileobj(inp, out)
+                        parts_written += 1
+                except Exception:
+                    log.warning("Skipping table %s (ogr2ogr failed)", table)
+                finally:
+                    if part.exists():
+                        part.unlink()
+
+        if parts_written == 0:
+            merged.unlink(missing_ok=True)
+        else:
+            log.info("Exported %s: %d tables merged", layer_name, parts_written)
+
+    # ── 3. Run tippecanoe ─────────────────────────────────────────────────
+    dest_dir = drive_path / "maps"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    pmtiles_path = dest_dir / f"{source.id}.pmtiles"
+
+    if not pmtiles_path.exists():
+        tc_args = [
+            "-o", _docker_path(pmtiles_path, docker_mounts),
+            f"-z{max_zoom}",
+            "--drop-densest-as-needed",
+            "--extend-zooms-if-still-dropping",
+            "-P",  # parallel reads
+        ]
+        layer_files = sorted(layers_dir.glob("*.geojsonseq"))
+        if not layer_files:
+            return BuildResult(source.id, False, error="No layer data exported")
+
+        for lf in layer_files:
+            lname = lf.stem
+            tc_args.extend(["-L", f"{lname}:{_docker_path(lf, docker_mounts)}"])
+
+        _run_tippecanoe(tc_args, drive_path, docker_mounts)
+
+    return BuildResult(source.id, True, artifact=pmtiles_path)

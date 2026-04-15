@@ -17,7 +17,7 @@ def _make_source(id: str, family: str, **build_extra) -> Source:
 
 
 def test_handler_registry_has_all_families():
-    expected = {"vector-static", "vector-service", "osm-extract", "reference-static", "app-bundle"}
+    expected = {"vector-static", "vector-service", "osm-extract", "reference-static", "app-bundle", "raster-tms", "mml-topo"}
     assert set(HANDLERS.keys()) == expected
 
 

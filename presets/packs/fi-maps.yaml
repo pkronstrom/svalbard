@@ -11,6 +11,8 @@ target_size_gb: 4
 sources:
 - natural-earth
 - osm-finland
+- mml-maastokartta
+- mml-topo-uusimaa
 - pohjavesialueet
 - luonnonsuojelualueet
 - virtavesien-lohikalakannat
