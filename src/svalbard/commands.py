@@ -287,7 +287,13 @@ def expand_source_downloads(
     ]
 
 
-def _init_drive(path: str, preset_name: str, workspace_root_path: str = "", local_sources: list[str] | None = None):
+def _init_drive(
+    path: str,
+    preset_name: str,
+    workspace_root_path: str = "",
+    local_sources: list[str] | None = None,
+    platform_filter: str | None = None,
+):
     """Initialize a drive with a preset."""
     drive_path = Path(path)
     drive_path.mkdir(parents=True, exist_ok=True)
@@ -318,7 +324,7 @@ def _init_drive(path: str, preset_name: str, workspace_root_path: str = "", loca
     if any(s.type == "pmtiles" for s in sources):
         generate_map_viewer(drive_path, preset_name)
 
-    generate_toolkit(drive_path, preset_name)
+    generate_toolkit(drive_path, preset_name, platform_filter=platform_filter)
 
     console.print(f"[bold green]Initialized:[/bold green] {drive_path}")
     console.print(f"  Preset: {preset.name}")
@@ -328,8 +334,20 @@ def _init_drive(path: str, preset_name: str, workspace_root_path: str = "", loca
     return manifest
 
 
-def init_drive(path: str, preset_name: str, workspace_root: str = "", local_sources: list[str] | None = None):
-    return _init_drive(path, preset_name, workspace_root_path=workspace_root, local_sources=local_sources)
+def init_drive(
+    path: str,
+    preset_name: str,
+    workspace_root: str = "",
+    local_sources: list[str] | None = None,
+    platform_filter: str | None = None,
+):
+    return _init_drive(
+        path,
+        preset_name,
+        workspace_root_path=workspace_root,
+        local_sources=local_sources,
+        platform_filter=platform_filter,
+    )
 
 
 def _artifact_path_for_build(source: Source, drive_path: Path) -> Path | None:
@@ -664,7 +682,7 @@ def sync_drive(
     if any(s.type == "pmtiles" for s in active_sources):
         generate_map_viewer(drive_path, manifest.preset)
     generate_drive_readme(drive_path)
-    generate_toolkit(drive_path, manifest.preset)
+    generate_toolkit(drive_path, manifest.preset, platform_filter=platform_filter)
 
     total = len(downloads) + len(build_sources) + len(selected_local_sources) - skipped
     if interrupted:

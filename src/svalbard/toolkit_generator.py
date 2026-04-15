@@ -1,13 +1,16 @@
-"""Generate the run.sh toolkit on the drive.
+"""Generate the drive runtime toolkit on the drive.
 
 Copies action scripts and lib helpers from recipes/actions/ to .svalbard/
-on the drive, and generates entries.tab based on actual drive content.
+on the drive, and generates runtime.json based on actual drive content.
 """
 
+import json
 import os
+import platform as host_platform
 import shutil
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 
 from svalbard.drive_config import load_snapshot_preset
@@ -32,9 +35,61 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ACTIONS_DIR = _PROJECT_ROOT / "recipes" / "actions"
 LIB_DIR = ACTIONS_DIR / "lib"
 DOCS_DIR = ACTIONS_DIR / "docs"
+DRIVE_RUNTIME_DIR = _PROJECT_ROOT / "drive-runtime"
+_RUNTIME_BINARY_CACHE: dict[str, Path] | None = None
 
 
-# ── entries.tab generation ──────────────────────────────────────────────────
+def _detect_host_runtime_platform() -> str:
+    system = host_platform.system().lower()
+    machine = host_platform.machine().lower()
+
+    if system == "darwin":
+        if machine in {"arm64", "aarch64"}:
+            return "macos-arm64"
+        if machine in {"x86_64", "amd64"}:
+            return "macos-x86_64"
+    if system == "linux":
+        if machine in {"arm64", "aarch64"}:
+            return "linux-arm64"
+        if machine in {"x86_64", "amd64"}:
+            return "linux-x86_64"
+    raise ValueError(f"Unsupported host platform: system={system} machine={machine}")
+
+
+def _filter_runtime_binaries(
+    binaries: dict[str, Path],
+    platform_filter: str | None,
+) -> dict[str, Path]:
+    if not platform_filter:
+        return binaries
+
+    normalized = platform_filter.strip().lower()
+    aliases = {
+        "host": _detect_host_runtime_platform(),
+        "arm64": "arm64",
+        "aarch64": "arm64",
+        "x86_64": "x86_64",
+        "x64": "x86_64",
+        "amd64": "x86_64",
+        "macos-arm64": "macos-arm64",
+        "macos-x86_64": "macos-x86_64",
+        "linux-arm64": "linux-arm64",
+        "linux-x86_64": "linux-x86_64",
+    }
+    if normalized not in aliases:
+        raise ValueError(f"Unsupported platform filter: {platform_filter}")
+
+    resolved = aliases[normalized]
+    if resolved in {"arm64", "x86_64"}:
+        return {
+            platform: binary
+            for platform, binary in binaries.items()
+            if platform.endswith(f"-{resolved}")
+        }
+    return {resolved: binaries[resolved]}
+
+
+# ── runtime.json generation ─────────────────────────────────────────────────
 
 
 def _count_files(directory: Path, pattern: str) -> int:
@@ -66,67 +121,67 @@ def _available_ai_clients(manifest: Manifest) -> list[str]:
     return [client_id for client_id in client_ids if client_id in available_ids]
 
 
-def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> str:
-    """Build entries.tab content based on what's on the drive."""
-    lines = [f"# Svalbard · {preset_name} — run.sh menu"]
-    lines.append("# Format: label\\tscript\\targs")
-    lines.append("")
-
+def _build_runtime_config(drive_path: Path, manifest: Manifest, preset_name: str) -> dict:
+    """Build runtime.json content based on what's on the drive."""
     preset = load_snapshot_preset(drive_path) or load_preset(
         preset_name,
         workspace=manifest.workspace_root or None,
     )
+    actions: list[dict] = []
+
+    def add_action(section: str, label: str, action: str, args: dict[str, str] | None = None) -> None:
+        actions.append({
+            "section": section,
+            "label": label,
+            "action": action,
+            "args": args or {},
+        })
 
     # ── Browse ──────────────────────────────────────────────────────────
     zim_count = _count_files(drive_path / TYPE_DIRS["zim"], "*.zim")
     if zim_count > 0:
-        lines.append("[browse]")
-        lines.append(
-            f"Browse encyclopedias — {zim_count} ZIM files"
-            f"\t.svalbard/actions/browse.sh"
+        add_action(
+            "browse",
+            f"Browse encyclopedias — {zim_count} ZIM files",
+            "browse",
         )
-        lines.append("")
 
     # ── Search ──────────────────────────────────────────────────────────
     search_db = drive_path / "data" / "search.db"
     if search_db.exists():
-        lines.append("[search]")
-        lines.append(
-            f"Search all content"
-            f"\t.svalbard/actions/search.sh"
-        )
-        lines.append("")
+        add_action("search", "Search all content", "search")
 
     # ── Maps ────────────────────────────────────────────────────────────
     pmtiles_count = _count_files(drive_path / TYPE_DIRS["pmtiles"], "*.pmtiles")
     if pmtiles_count > 0:
-        lines.append("[maps]")
-        lines.append(
-            f"View maps — {pmtiles_count} tile layers"
-            f"\t.svalbard/actions/maps.sh"
+        add_action(
+            "maps",
+            f"View maps — {pmtiles_count} tile layers",
+            "maps",
         )
-        lines.append("")
 
     # ── AI ──────────────────────────────────────────────────────────────
     chat_entries = _visible_chat_entries(manifest)
     if chat_entries:
-        lines.append("[ai]")
         for entry in chat_entries:
             source = next((s for s in preset.sources if s.id == entry.id), None)
             desc = source.description if source else entry.id
             model_path = f"{TYPE_DIRS['gguf']}/{entry.filename}"
-            lines.append(
-                f"Chat with {desc}"
-                f"\t.svalbard/actions/chat.sh\t{model_path}"
+            add_action(
+                "ai",
+                f"Chat with {desc}",
+                "chat",
+                {"model": model_path},
             )
         if "llama-server" in {entry.id for entry in manifest.entries if entry.type == "binary"}:
             client_labels = {"opencode": "OpenCode", "crush": "Crush", "goose": "Goose"}
             for client_id in _available_ai_clients(manifest):
-                lines.append(
-                    f"{client_labels[client_id]} with local model"
-                    f"\t.svalbard/actions/agent.sh\t{client_id}"
+                add_action(
+                    "ai",
+                    f"{client_labels[client_id]} with local model",
+                    "agent",
+                    {"client": client_id},
                 )
-        lines.append("")
 
     # ── Apps ────────────────────────────────────────────────────────────
     # Exclude vendor/support libraries (maplibre-vendor etc.) — they're not user-facing
@@ -142,111 +197,118 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
             if app_dir.exists():
                 visible_apps.append(source)
     if visible_apps:
-        lines.append("[apps]")
         for source in visible_apps:
-            lines.append(
-                f"Open {source.description or source.id}"
-                f"\t.svalbard/actions/apps.sh\t{source.id}"
+            add_action(
+                "apps",
+                f"Open {source.description or source.id}",
+                "apps",
+                {"app": source.id},
             )
-        lines.append("")
 
     # ── Data ────────────────────────────────────────────────────────────
     db_entries = [e for e in manifest.entries if e.type == "sqlite"]
     sqliteviz_available = (drive_path / "apps" / "sqliteviz").exists()
     if db_entries and sqliteviz_available:
-        lines.append("[data]")
         for entry in sorted(db_entries, key=lambda e: e.id):
             source = next((s for s in preset.sources if s.id == entry.id), None)
             desc = source.description if source else entry.id
-            lines.append(
-                f"Query {desc}"
-                f"\t.svalbard/actions/apps.sh\tsqliteviz"
+            add_action(
+                "data",
+                f"Query {desc}",
+                "apps",
+                {"app": "sqliteviz", "dataset": entry.id},
             )
-        lines.append("")
 
     # ── Embedded Dev ───────────────────────────────────────────────────
     toolchain_entries = [e for e in manifest.entries if e.type == "toolchain"]
     if toolchain_entries:
-        lines.append("[embedded]")
-        lines.append(
-            "Open embedded dev shell"
-            "\t.svalbard/actions/pio-setup.sh"
-        )
-        lines.append("")
+        add_action("embedded", "Open embedded dev shell", "embedded-shell")
 
     # ── Serve ───────────────────────────────────────────────────────────
     has_services = zim_count > 0 or pmtiles_count > 0 or bool(chat_entries)
     if has_services:
-        lines.append("[serve]")
-        lines.append("Serve everything\t.svalbard/actions/serve-all.sh")
-        lines.append("Share on local network\t.svalbard/actions/share.sh")
-        lines.append("")
+        add_action("serve", "Serve everything", "serve-all")
+        add_action("serve", "Share on local network", "share")
 
     # ── Info ─────────────────────────────────────────────────────────────
-    lines.append("[info]")
-    lines.append("List drive contents\t.svalbard/actions/inspect.sh")
+    add_action("info", "List drive contents", "inspect")
     has_checksums = any(e.checksum_sha256 for e in manifest.entries)
     if has_checksums:
-        lines.append("Verify checksums\t.svalbard/actions/verify.sh")
-    lines.append("")
+        add_action("info", "Verify checksums", "verify")
 
-    return "\n".join(lines)
+    return {
+        "version": 1,
+        "preset": preset_name,
+        "actions": actions,
+    }
+
+
+# ── runtime launcher helpers ────────────────────────────────────────────────
+
+
+def _build_drive_runtime_binaries(platform_filter: str | None = None) -> dict[str, Path]:
+    """Build platform-specific drive runtime binaries once per Python process."""
+    global _RUNTIME_BINARY_CACHE
+    if _RUNTIME_BINARY_CACHE is not None:
+        return _filter_runtime_binaries(_RUNTIME_BINARY_CACHE, platform_filter)
+
+    targets = {
+        "macos-arm64": ("darwin", "arm64"),
+        "macos-x86_64": ("darwin", "amd64"),
+        "linux-arm64": ("linux", "arm64"),
+        "linux-x86_64": ("linux", "amd64"),
+    }
+
+    build_root = Path(tempfile.mkdtemp(prefix="svalbard-drive-runtime-"))
+    go_cache = build_root / ".gocache"
+    go_cache.mkdir(parents=True, exist_ok=True)
+
+    binaries: dict[str, Path] = {}
+    for platform, (goos, goarch) in targets.items():
+        out_dir = build_root / platform
+        out_dir.mkdir(parents=True, exist_ok=True)
+        output = out_dir / "svalbard-drive"
+        env = os.environ.copy()
+        env.update({
+            "CGO_ENABLED": "0",
+            "GOOS": goos,
+            "GOARCH": goarch,
+            "GOCACHE": str(go_cache),
+        })
+        subprocess.run(
+            ["go", "build", "-o", str(output), "./cmd/svalbard-drive"],
+            cwd=DRIVE_RUNTIME_DIR,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        _make_executable(output)
+        binaries[platform] = output
+
+    _RUNTIME_BINARY_CACHE = binaries
+    return _filter_runtime_binaries(binaries, platform_filter)
 
 
 # ── run.sh template ─────────────────────────────────────────────────────────
 
 RUN_SH = r'''#!/usr/bin/env bash
+set -euo pipefail
 DRIVE_ROOT="$(cd "$(dirname "$0")" && pwd)"
 export DRIVE_ROOT
 
-ENTRIES="$DRIVE_ROOT/.svalbard/entries.tab"
-[ -f "$ENTRIES" ] || { echo "entries.tab not found"; exit 1; }
+case "$(uname -s):$(uname -m)" in
+    Darwin:arm64) platform="macos-arm64" ;;
+    Darwin:x86_64) platform="macos-x86_64" ;;
+    Linux:aarch64|Linux:arm64) platform="linux-arm64" ;;
+    Linux:x86_64) platform="linux-x86_64" ;;
+    *)
+        echo "Unsupported platform: $(uname -s) $(uname -m)" >&2
+        exit 1
+        ;;
+esac
 
-# Parse
-labels=(); scripts=(); args=(); groups=(); g=""
-while IFS=$'\t' read -r l s a <&3 || [ -n "$l" ]; do
-    [[ -z "$l" || "$l" = \#* ]] && continue
-    [[ "$l" = \[*\] ]] && { g="${l:1:${#l}-2}"; continue; }
-    labels+=("$l"); scripts+=("${s:-}"); args+=("${a:-}"); groups+=("$g")
-done 3< "$ENTRIES"
-
-total=${#labels[@]}
-[ "$total" -eq 0 ] && { echo "No entries."; exit 1; }
-
-while true; do
-    echo ""
-    echo "Svalbard"
-    echo "────────────────────────────────"
-    for (( i=0; i<total; i++ )); do
-        printf "  %2d) %s\n" "$((i+1))" "${labels[$i]}"
-    done
-    echo ""
-    echo "   q) Quit"
-    echo ""
-    read -rp "  > " ch
-
-    [[ "$ch" = q || "$ch" = Q || -z "$ch" ]] && exit 0
-    [[ "$ch" =~ ^[0-9]+$ ]] || continue
-    (( ch >= 1 && ch <= total )) 2>/dev/null || continue
-    idx=$((ch - 1))
-
-    target="$DRIVE_ROOT/${scripts[$idx]}"
-    [ -f "$target" ] || { echo "Not found: ${scripts[$idx]}"; read -rp "Enter..."; continue; }
-
-    export DRIVE_ROOT
-    source "$DRIVE_ROOT/.svalbard/lib/ui.sh"
-    source "$DRIVE_ROOT/.svalbard/lib/platform.sh"
-    source "$DRIVE_ROOT/.svalbard/lib/binaries.sh"
-    source "$DRIVE_ROOT/.svalbard/lib/ports.sh"
-    source "$DRIVE_ROOT/.svalbard/lib/process.sh"
-
-    chmod +x "$target" 2>/dev/null || true
-    if [ -n "${args[$idx]}" ]; then
-        "$target" "${args[$idx]}" || true
-    else
-        "$target" || true
-    fi
-done
+exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive"
 '''
 
 
@@ -277,30 +339,34 @@ def _make_executable(path: Path) -> None:
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def generate_toolkit(drive_path: Path, preset_name: str) -> Path:
+def generate_toolkit(drive_path: Path, preset_name: str, platform_filter: str | None = None) -> Path:
     """Assemble the full .svalbard/ toolkit on the drive.
 
     1. Copy action scripts to .svalbard/actions/
     2. Copy lib helpers to .svalbard/lib/
-    3. Generate entries.tab
+    3. Generate runtime.json
     4. Write run.sh
     """
     svalbard_dir = drive_path / ".svalbard"
     actions_dest = svalbard_dir / "actions"
     lib_dest = svalbard_dir / "lib"
+    runtime_dest = svalbard_dir / "runtime"
+    runtime_path = svalbard_dir / "runtime.json"
     entries_path = svalbard_dir / "entries.tab"
 
     # Refresh toolkit-managed files but preserve config snapshots.
-    for managed_dir in (actions_dest, lib_dest):
+    for managed_dir in (actions_dest, lib_dest, runtime_dest):
         if managed_dir.exists():
             shutil.rmtree(managed_dir, ignore_errors=True)
         if managed_dir.exists():
             # Fallback: subprocess rm for stubborn filesystems (FAT32/exFAT USB)
             subprocess.run(["rm", "-rf", str(managed_dir)], check=False)
-    if entries_path.exists():
-        entries_path.unlink()
+    for managed_file in (runtime_path, entries_path):
+        if managed_file.exists():
+            managed_file.unlink()
     actions_dest.mkdir(parents=True)
     lib_dest.mkdir(parents=True)
+    runtime_dest.mkdir(parents=True)
 
     # Copy action scripts
     if ACTIONS_DIR.exists():
@@ -316,10 +382,17 @@ def generate_toolkit(drive_path: Path, preset_name: str) -> Path:
                 dest = lib_dest / script.name
                 shutil.copy2(script, dest)
 
-    # Generate entries.tab
+    # Generate runtime.json
     manifest = Manifest.load(drive_path / "manifest.yaml")
-    tab_content = _build_entries(drive_path, manifest, preset_name)
-    entries_path.write_text(tab_content)
+    runtime_config = _build_runtime_config(drive_path, manifest, preset_name)
+    runtime_path.write_text(json.dumps(runtime_config, indent=2) + "\n")
+
+    # Copy platform-specific Go drive runtime launchers
+    for platform, binary in _build_drive_runtime_binaries(platform_filter=platform_filter).items():
+        dest = runtime_dest / platform / "svalbard-drive"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(binary, dest)
+        _make_executable(dest)
 
     # Generate checksums.sha256 from manifest entries
     _generate_checksums(svalbard_dir, manifest)
