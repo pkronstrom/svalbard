@@ -2720,6 +2720,11 @@ def stage_package(
     if images_fixed:
         log.info("  Fixed image references for %d projects", images_fixed)
 
+    # Compute quality scores for badges
+    for proj in projects:
+        proj_dir = state.sites_dir / proj["_dir"]
+        proj["_quality"] = _quality_score(proj_dir)
+
     # Regenerate all project pages with latest template
     log.info("  Regenerating project pages...")
     for proj in projects:
@@ -2922,6 +2927,9 @@ h2 { font-size: 20px; color: #444; margin-top: 32px; }
 .badge-artifacts { background: #dcfce7; color: #166534; }
 .badge-wayback { background: #fef3c7; color: #92400e; }
 .badge-dead { background: #fee2e2; color: #991b1b; }
+.badge-quality-high { background: #fef3c7; color: #92400e; }
+.badge-quality-good { background: #e0f2fe; color: #075985; }
+.badge-quality-basic { background: #f3f4f6; color: #6b7280; }
 .credit { margin-top: 40px; padding: 16px; background: #f9fafb; border-radius: 8px;
   font-size: 13px; color: #666; line-height: 1.6; }
 .credit a { color: #2563eb; }
@@ -3006,6 +3014,13 @@ def _make_category_page(cat_name: str, projects: list[dict]) -> str:
             badges += f' <span class="badge badge-artifacts">{n_artifacts} files</span>'
         if status == "wayback":
             badges += ' <span class="badge badge-wayback">Wayback</span>'
+        qscore = proj.get("_quality", {}).get("score", 0)
+        if qscore >= 6:
+            badges += ' <span class="badge badge-quality-high">★★★</span>'
+        elif qscore >= 4:
+            badges += ' <span class="badge badge-quality-good">★★</span>'
+        elif qscore >= 1:
+            badges += ' <span class="badge badge-quality-basic">★</span>'
 
         cards += f"""
         <a href="../../sites/{proj_dir}/index.html" class="project-card">
