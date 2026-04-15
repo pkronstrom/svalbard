@@ -5,6 +5,7 @@ dist/
 build/
 .venv/
 .worktrees/
+build-tools/zim-compact
 
 *.zim
 *.pmtiles

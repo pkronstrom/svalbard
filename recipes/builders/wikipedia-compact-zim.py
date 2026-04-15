@@ -8,28 +8,30 @@ Pipeline (all inside a single Docker container):
 Requirements: Docker with svalbard-tools:v2 image
 
 Usage:
-    python3 wikipedia-dithered-zim.py --source-zim input.zim --output out.zim --width 200 --quality 40
-    python3 wikipedia-dithered-zim.py --source-url URL --output library/out.zim
+    python3 wikipedia-compact-zim.py --source-zim input.zim --output out.zim --width 200 --quality 40
+    python3 wikipedia-compact-zim.py --source-url URL --output library/out.zim
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
 
-log = logging.getLogger("wikipedia-dithered")
+log = logging.getLogger("wikipedia-compact")
 
 DEFAULT_WIDTH = 200
 DEFAULT_QUALITY = 40
 DOCKER_IMAGE = "svalbard-tools:v2"
-WORK_VOLUME = "svalbard-zim-work"
+WORK_VOLUME_PREFIX = "svalbard-zim-work"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
@@ -63,6 +65,10 @@ def _volume_create(name: str) -> None:
 
 def _volume_remove(name: str) -> None:
     subprocess.run(["docker", "volume", "rm", "-f", name], capture_output=True)
+
+
+def _work_volume_name() -> str:
+    return f"{WORK_VOLUME_PREFIX}-{uuid.uuid4().hex}"
 
 
 def download_zim(url: str, dest: Path) -> Path:
@@ -107,79 +113,80 @@ def rewrite_zim(
 ) -> None:
     """Rewrite a ZIM with resized images via Docker."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    _volume_remove(WORK_VOLUME)
-    _volume_create(WORK_VOLUME)
+    work_volume = _work_volume_name()
+    _volume_create(work_volume)
 
     mounts = {
         str(source_path.parent.resolve()): "/input",
         str(output_path.parent.resolve()): "/output",
     }
-    volumes = {WORK_VOLUME: "/work"}
+    volumes = {work_volume: "/work"}
     source_name = source_path.name
     output_name = output_path.name
 
-    # Phase 1: zim-compact reads ZIM, resizes images, writes content + redirects
-    log.info("phase 1: zim-compact (width=%d, quality=%d)", max_width, quality)
-    result = _docker_run(
-        [
-            "zim-compact",
-            f"--width={max_width}",
-            f"--quality={quality}",
-            f"--redirects=/work/redirects.tsv",
-            f"/input/{source_name}",
-            "/work/extracted",
-        ],
-        mounts=mounts, volumes=volumes, capture=True,
-    )
+    try:
+        # Phase 1: zim-compact reads ZIM, resizes images, writes content + redirects
+        log.info("phase 1: zim-compact (width=%d, quality=%d)", max_width, quality)
+        result = _docker_run(
+            [
+                "zim-compact",
+                f"--width={max_width}",
+                f"--quality={quality}",
+                f"--redirects=/work/redirects.tsv",
+                f"/input/{source_name}",
+                "/work/extracted",
+            ],
+            mounts=mounts, volumes=volumes, capture=True,
+        )
 
-    if result and result.returncode != 0:
-        log.error("zim-compact failed:\n%s\n%s", result.stdout, result.stderr)
-        raise RuntimeError("zim-compact failed")
+        if result and result.returncode != 0:
+            log.error("zim-compact failed:\n%s\n%s", result.stdout, result.stderr)
+            raise RuntimeError("zim-compact failed")
 
-    # Parse metadata from zim-compact stdout
-    meta = {}
-    for line in (result.stdout if result else "").splitlines():
-        if "=" in line:
-            key, _, val = line.partition("=")
-            meta[key.strip()] = val.strip()
-    log.info("zim-compact stderr:\n%s", result.stderr if result else "")
+        # Parse metadata from zim-compact stdout
+        meta = {}
+        for line in (result.stdout if result else "").splitlines():
+            if "=" in line:
+                key, _, val = line.partition("=")
+                meta[key.strip()] = val.strip()
+        log.info("zim-compact stderr:\n%s", result.stderr if result else "")
 
-    main_page = meta.get("main_page", "index")
-    language = meta.get("language", "eng")
-    title = meta.get("title", "Wikipedia (compact)")
-    description = meta.get("description", "Wikipedia with resized images")
-    creator = meta.get("creator", "Wikipedia contributors")
+        main_page = meta.get("main_page", "index")
+        language = meta.get("language", "eng")
+        title = meta.get("title", "Wikipedia (compact)")
+        description = meta.get("description", "Wikipedia with resized images")
+        creator = meta.get("creator", "Wikipedia contributors")
+        threads = str(os.cpu_count() or 1)
 
-    # Phase 2: zimwriterfs repacks into ZIM
-    log.info("phase 2: zimwriterfs (main=%s)", main_page)
-    _docker_run(
-        [
-            "sh", "-c",
-            f"""zimwriterfs \
-  '--welcome={main_page}' \
-  --illustration=illustration.png \
-  '--language={language}' \
-  '--title={title}' \
-  '--description={description}' \
-  '--creator={creator}' \
-  --publisher=Svalbard \
-  --name=wikipedia-compact \
-  --withoutFTIndex \
-  --redirects=/work/redirects.tsv \
-  '--threads='$(nproc) \
-  /work/extracted \
-  '/output/{output_name}'""",
-        ],
-        mounts=mounts, volumes=volumes,
-    )
+        # Phase 2: zimwriterfs repacks into ZIM
+        log.info("phase 2: zimwriterfs (main=%s)", main_page)
+        _docker_run(
+            [
+                "zimwriterfs",
+                f"--welcome={main_page}",
+                "--illustration=illustration.png",
+                f"--language={language}",
+                f"--title={title}",
+                f"--description={description}",
+                f"--creator={creator}",
+                "--publisher=Svalbard",
+                "--name=wikipedia-compact",
+                "--withoutFTIndex",
+                "--redirects=/work/redirects.tsv",
+                f"--threads={threads}",
+                "/work/extracted",
+                f"/output/{output_name}",
+            ],
+            mounts=mounts, volumes=volumes,
+        )
 
-    _volume_remove(WORK_VOLUME)
-    log.info("done: %s", output_path)
+        log.info("done: %s", output_path)
+    finally:
+        _volume_remove(work_volume)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download and reprocess a Wikipedia ZIM")
+    parser = argparse.ArgumentParser(description="Download and reprocess a compact Wikipedia ZIM")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--source-url", help="URL to download source ZIM")
     source.add_argument("--source-zim", type=Path, help="Path to existing source ZIM")
@@ -204,7 +211,7 @@ def main():
             log.error("not found: %s", source_zim)
             sys.exit(1)
     else:
-        work = args.workdir or Path(tempfile.mkdtemp(prefix="zim-dither-"))
+        work = args.workdir or Path(tempfile.mkdtemp(prefix="zim-compact-"))
         filename = Path(urlparse(args.source_url).path).name
         source_zim = download_zim(args.source_url, work / filename)
 

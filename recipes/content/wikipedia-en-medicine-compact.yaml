@@ -1,4 +1,4 @@
-id: wikipedia-en-medicine-dithered
+id: wikipedia-en-medicine-compact
 type: zim
 display_group: practical
 tags:
@@ -9,14 +9,14 @@ depth: comprehensive
 size_gb: 1.2
 strategy: build
 description: Wikipedia medical articles — diseases, drugs, anatomy, procedures with
-  Bayer-dithered 8-color images (built from medicine_maxi via zim-dither)
+  resized compressed images for space-constrained packs (built from medicine_maxi
+  via zim-compact)
 build:
-  family: zim-dither
+  family: zim-compact
   source_url: https://download.kiwix.org/zim/wikipedia/wikipedia_en_medicine_maxi_{date}.zim
-  output: wikipedia-en-medicine-dithered.zim
-  width: 400
-  colors: 8
-  dither: bayer
+  output: wikipedia-en-medicine-compact.zim
+  width: 200
+  quality: 40
 license:
   id: CC-BY-SA-3.0
   attribution: Wikimedia Foundation contributors

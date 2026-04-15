@@ -36,6 +36,18 @@ import (
 	"github.com/stazelabs/gozim/zim"
 )
 
+type contentEntry struct {
+	path string
+	mime string
+	data []byte
+}
+
+type redirectEntry struct {
+	path       string
+	title      string
+	targetPath string
+}
+
 var imageTypes = map[string]bool{
 	"image/jpeg": true,
 	"image/png":  true,
@@ -119,24 +131,13 @@ func run(srcPath, outDir, redirectsPath string, maxWidth uint, jpegQuality, numW
 
 	// Write illustration
 	if icon, err := a.Illustration(48); err == nil && len(icon) > 0 {
-		illPath := filepath.Join(outDir, "illustration.png")
-		os.MkdirAll(filepath.Dir(illPath), 0o755)
-		os.WriteFile(illPath, icon, 0o644)
+		if err := writeIllustration(outDir, icon); err != nil {
+			return fmt.Errorf("write illustration: %w", err)
+		}
 		log.Printf("wrote illustration (%d bytes)", len(icon))
 	}
 
 	// Collect entries: separate content from redirects
-	type contentEntry struct {
-		path     string
-		mime     string
-		data     []byte
-	}
-	type redirectEntry struct {
-		path       string
-		title      string
-		targetPath string
-	}
-
 	var contents []contentEntry
 	var redirects []redirectEntry
 
@@ -185,14 +186,9 @@ func run(srcPath, outDir, redirectsPath string, maxWidth uint, jpegQuality, numW
 	log.Printf("found %d content entries, %d redirects", len(contents), len(redirects))
 
 	// Write redirects TSV
-	rFile, err := os.Create(redirectsPath)
-	if err != nil {
-		return fmt.Errorf("create redirects TSV: %w", err)
+	if err := writeRedirects(redirectsPath, redirects); err != nil {
+		return fmt.Errorf("write redirects TSV: %w", err)
 	}
-	for _, r := range redirects {
-		fmt.Fprintf(rFile, "%s\t%s\t%s\n", r.path, r.title, r.targetPath)
-	}
-	rFile.Close()
 	log.Printf("wrote %d redirects to %s", len(redirects), redirectsPath)
 
 	// Write content entries, resizing images concurrently
@@ -243,6 +239,37 @@ func run(srcPath, outDir, redirectsPath string, maxWidth uint, jpegQuality, numW
 
 	log.Printf("done: %d written, %d images resized, %d skipped",
 		written.Load(), resized.Load(), skipped.Load())
+	return nil
+}
+
+func writeIllustration(outDir string, icon []byte) error {
+	illPath := filepath.Join(outDir, "illustration.png")
+	if err := os.MkdirAll(filepath.Dir(illPath), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(illPath, icon, 0o644); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeRedirects(redirectsPath string, redirects []redirectEntry) error {
+	if err := os.MkdirAll(filepath.Dir(redirectsPath), 0o755); err != nil {
+		return err
+	}
+	rFile, err := os.Create(redirectsPath)
+	if err != nil {
+		return err
+	}
+	for _, r := range redirects {
+		if _, err := fmt.Fprintf(rFile, "%s\t%s\t%s\n", r.path, r.title, r.targetPath); err != nil {
+			rFile.Close()
+			return err
+		}
+	}
+	if err := rFile.Close(); err != nil {
+		return err
+	}
 	return nil
 }
 

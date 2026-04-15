@@ -72,6 +72,13 @@ def test_default_64_is_region_neutral():
     assert all(source.display_group != "regional" for source in preset.sources)
 
 
+def test_default_2_uses_compact_medicine_wikipedia_source():
+    preset = load_preset("default-2")
+    ids = {source.id for source in preset.sources}
+    assert "wikipedia-en-medicine-compact" in ids
+    assert "wikipedia-en-medicine-dithered" not in ids
+
+
 def test_sciences_pack_includes_core_libretexts_subjects():
     preset = load_preset("packs/sciences")
     ids = {source.id for source in preset.sources}

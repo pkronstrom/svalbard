@@ -9,8 +9,8 @@ sources:
 - sqlite3
 - 7z
 - toybox
-# ── Reference + Medical (dithered — full articles with 8-color images) ──
-- wikipedia-en-medicine-dithered
+# ── Reference + Medical (compact — full articles with resized images) ──
+- wikipedia-en-medicine-compact
 - wikipedia-en-100-maxi
 # ── Medical ──
 - wikem

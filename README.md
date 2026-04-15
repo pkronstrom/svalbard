@@ -130,7 +130,7 @@ svalbard wizard --preset my-pack
 - [x] Drive toolkit — run.sh shell menu, Kiwix server, bundled tools
 - [x] Coverage audit reports
 - [ ] Fully curated and verified presets — every source checked, sized, and tested across tiers
-- [ ] Custom Wikipedia ZIM builds — dithered/compressed images for space-constrained tiers
+- [ ] Custom Wikipedia ZIM builds — compact/resized images for space-constrained tiers
 - [ ] Regional geodata packs — Finnish survival layers (shelters, water, foraging) as a first regional pack
 - [ ] Search across all content — index PDFs, geodata, and reference databases alongside ZIMs
 - [ ] RAG — query all drive content through the bundled local LLM
