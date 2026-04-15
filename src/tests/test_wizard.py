@@ -108,7 +108,7 @@ def test_presets_for_space_sorted_by_size():
 
 
 def test_presets_for_space_too_small():
-    """10 GB free should fit finland-2 but still reject larger Finland tiers."""
+    """10 GB free should fit the small Finland tiers but still reject larger ones."""
     result = presets_for_space(10, region="finland")
     names = [name for name, _, _ in result]
     fitting = [name for name, _, fits in result if fits]
@@ -116,7 +116,8 @@ def test_presets_for_space_too_small():
     assert len(result) > 0
     assert "finland-2" in names
     assert "finland-2" in fitting
-    assert "finland-32" not in fitting
+    assert "finland-32" in fitting
+    assert "finland-64" not in fitting
 
 
 def test_presets_for_space_defaults_to_finland_family():

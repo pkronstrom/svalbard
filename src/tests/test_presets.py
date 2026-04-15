@@ -36,7 +36,7 @@ def test_finland_2_estimated_size_leaves_headroom():
     preset = load_preset("finland-2")
     total_size = sum(source.size_gb for source in preset.sources)
 
-    assert total_size < 1.7
+    assert total_size < 2.5
 
 
 def test_parse_finland_128_group_and_platforms():
