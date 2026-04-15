@@ -2218,42 +2218,20 @@ def stage_crawl(
                         ts=datetime.now(timezone.utc).isoformat(),
                     )
 
-            # Post-crawl: quality check -> Playwright fallback -> optimize
+            # Post-crawl: quality check, Playwright fallback, optimization
             if result.status == "completed":
                 site_dir = scraper.site_dir_for(v.final_url or v.url)
                 meta_path = site_dir / "meta.json"
                 if meta_path.exists():
                     try:
-                        meta_data = json.loads(meta_path.read_text())
-                        meta_obj = _meta_from_dict(meta_data)
-
-                        # GitHub: extract description from README if missing
-                        if not meta_obj.description or len(meta_obj.description.strip()) < 30:
-                            readme = site_dir / "README.md"
-                            if readme.exists():
-                                text = readme.read_text()
-                                # Skip title line, get first real paragraph
-                                lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#") and not l.startswith("!")]
-                                if lines:
-                                    meta_obj.description = " ".join(lines[:3])[:2000]
-
-                        # Quality check -> Playwright fallback
-                        quality = _quality_score(site_dir)
-                        if "no_images" in quality["issues"] and _has_playwright():
-                            url_to_crawl = v.final_url or v.url
-                            if _playwright_recrawl(url_to_crawl, site_dir, meta_obj):
-                                _save_meta(site_dir, meta_obj)
-                                result.files = len(meta_obj.artifacts) + len(meta_obj.images)
-                                log.debug("    Playwright improved: +%d images", len(meta_obj.images))
-
-                        # Optimize (drop redundant files, resize images)
+                        meta_obj = _meta_from_dict(json.loads(meta_path.read_text()))
+                        scraper.post_extract(site_dir, meta_obj, v.final_url or v.url)
                         if optimize:
                             bytes_saved = _optimize_project(site_dir, meta_obj)
                             if bytes_saved > 0:
                                 result.size_bytes -= bytes_saved
-                                result.files = len(meta_obj.artifacts) + len(meta_obj.images)
-
                         _save_meta(site_dir, meta_obj)
+                        result.files = len(meta_obj.artifacts) + len(meta_obj.images)
                     except Exception as e:
                         log.debug("    post-crawl error: %s", e)
 
