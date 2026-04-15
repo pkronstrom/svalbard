@@ -2922,7 +2922,7 @@ def stage_package(
     log.info("  Creating ZIM: %s", output_path)
     zim = Creator(str(output_path))
     zim.config_indexing(True, "eng")
-    zim.config_clustersize(2048)
+    zim.config_clustersize(2097152)  # 2 MB — larger clusters improve LZMA compression
     zim.set_mainpath("index.html")
 
     with zim:
