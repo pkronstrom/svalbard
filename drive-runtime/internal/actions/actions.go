@@ -103,6 +103,15 @@ func (r Runner) resolveBuiltinAction(actionID string, args map[string]string) (R
 	return r.resolveNativeAction(subcommand, actionID, args)
 }
 
+func shouldCaptureNativeAction(actionID string) bool {
+	switch actionID {
+	case "inspect", "verify":
+		return true
+	default:
+		return false
+	}
+}
+
 func (r Runner) resolveNativeAction(subcommand, actionID string, args map[string]string) (ResolvedAction, error) {
 	bin, err := os.Executable()
 	if err != nil {
@@ -139,22 +148,22 @@ func (r Runner) resolveNativeAction(subcommand, actionID string, args map[string
 	cmd := exec.Command(bin, argv...)
 	cmd.Dir = r.driveRoot
 	cmd.Env = append(os.Environ(), "DRIVE_ROOT="+r.driveRoot)
-	if actionID == "share" || actionID == "browse" || actionID == "apps" || actionID == "maps" || actionID == "chat" || actionID == "agent" || actionID == "serve-all" || actionID == "search" || actionID == "embedded-shell" {
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+	if shouldCaptureNativeAction(actionID) {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
 		return ResolvedAction{
-			Mode: ModeExecProcess,
+			Mode: ModeCaptureOutput,
 			Cmd:  cmd,
 		}, nil
 	}
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	return ResolvedAction{
-		Mode: ModeCaptureOutput,
+		Mode: ModeExecProcess,
 		Cmd:  cmd,
 	}, nil
 }

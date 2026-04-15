@@ -22,7 +22,7 @@ def _group_items(runtime_config: dict, group_id: str) -> list[dict]:
     return [] if group is None else group["items"]
 
 
-def test_generate_toolkit_creates_run_sh(tmp_path):
+def test_generate_toolkit_creates_run(tmp_path):
     """run should be created at the drive root."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
@@ -41,11 +41,11 @@ def test_generate_toolkit_creates_run_sh(tmp_path):
 
     assert (tmp_path / "run").exists()
     assert (tmp_path / ".svalbard" / "actions.json").exists()
-    assert (tmp_path / ".svalbard" / "actions" / "browse.sh").exists()
-    assert (tmp_path / ".svalbard" / "lib" / "ui.sh").exists()
+    assert not (tmp_path / ".svalbard" / "actions").exists()
+    assert not (tmp_path / ".svalbard" / "lib").exists()
 
 
-def test_run_sh_is_executable(tmp_path):
+def test_run_is_executable(tmp_path):
     """run should have executable permission."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
@@ -74,7 +74,7 @@ def test_generate_toolkit_copies_platform_runtime_launchers(tmp_path):
         assert (tmp_path / ".svalbard" / "runtime" / platform / "svalbard-drive").exists()
 
 
-def test_run_sh_execs_platform_runtime_binary(tmp_path):
+def test_run_execs_platform_runtime_binary(tmp_path):
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -241,8 +241,8 @@ def test_runtime_config_always_has_info(tmp_path):
     assert "Verify checksums" not in labels  # no entries = no checksums
 
 
-def test_regeneration_cleans_old_svalbard_dir(tmp_path):
-    """Calling generate_toolkit twice should clean managed subdirs (.svalbard/actions/, .svalbard/lib/)."""
+def test_regeneration_cleans_legacy_shell_runtime_artifacts(tmp_path):
+    """Calling generate_toolkit should remove old shell-runtime artifacts from earlier drives."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -251,12 +251,17 @@ def test_regeneration_cleans_old_svalbard_dir(tmp_path):
     })
 
     generate_toolkit(tmp_path, "default-32")
-    # Add a stale file inside a managed subdir
+    (tmp_path / ".svalbard" / "actions").mkdir(parents=True)
+    (tmp_path / ".svalbard" / "lib").mkdir(parents=True)
     (tmp_path / ".svalbard" / "actions" / "stale.sh").write_text("old")
+    (tmp_path / ".svalbard" / "lib" / "ui.sh").write_text("old")
+    (tmp_path / ".svalbard" / "entries.tab").write_text("old")
 
     generate_toolkit(tmp_path, "default-32")
 
-    assert not (tmp_path / ".svalbard" / "actions" / "stale.sh").exists()
+    assert not (tmp_path / ".svalbard" / "actions").exists()
+    assert not (tmp_path / ".svalbard" / "lib").exists()
+    assert not (tmp_path / ".svalbard" / "entries.tab").exists()
 
 
 def test_runtime_config_includes_search_when_db_exists(tmp_path):
@@ -359,19 +364,6 @@ def test_runtime_config_omits_embedded_when_no_toolchains(tmp_path):
     assert "Open embedded dev shell" not in {
         item["label"] for item in _group_items(_read_actions_config(tmp_path), "tools")
     }
-
-
-def test_generate_toolkit_copies_agent_launcher(tmp_path):
-    _write_manifest(tmp_path, {
-        "preset": "default-512",
-        "region": "default",
-        "target_path": str(tmp_path),
-        "entries": [],
-    })
-
-    generate_toolkit(tmp_path, "default-512")
-
-    assert (tmp_path / ".svalbard" / "actions" / "agent.sh").exists()
 
 
 def test_runtime_config_includes_ai_clients_when_models_and_binaries_exist(tmp_path):

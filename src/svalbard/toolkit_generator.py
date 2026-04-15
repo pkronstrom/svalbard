@@ -29,9 +29,7 @@ TYPE_DIRS = {
 }
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-ACTIONS_DIR = _PROJECT_ROOT / "recipes" / "actions"
-LIB_DIR = ACTIONS_DIR / "lib"
-DOCS_DIR = ACTIONS_DIR / "docs"
+DOCS_DIR = _PROJECT_ROOT / "recipes" / "actions" / "docs"
 DRIVE_RUNTIME_DIR = _PROJECT_ROOT / "drive-runtime"
 _RUNTIME_BINARY_CACHE: dict[str, Path] | None = None
 
@@ -93,14 +91,6 @@ def _count_files(directory: Path, pattern: str) -> int:
     if not directory.exists():
         return 0
     return len(list(directory.glob(pattern)))
-
-
-def _human_size(size_bytes: int) -> str:
-    if size_bytes >= 1e9:
-        return f"{size_bytes / 1e9:.1f} GB"
-    if size_bytes >= 1e6:
-        return f"{size_bytes / 1e6:.0f} MB"
-    return f"{size_bytes / 1e3:.0f} KB"
 
 
 def _visible_chat_entries(manifest: Manifest) -> list:
@@ -589,9 +579,9 @@ def _make_executable(path: Path) -> None:
 def generate_toolkit(drive_path: Path, preset_name: str, platform_filter: str | None = None) -> Path:
     """Assemble the full .svalbard/ toolkit on the drive.
 
-    1. Copy action scripts to .svalbard/actions/
-    2. Copy lib helpers to .svalbard/lib/
-    3. Generate actions.json
+    1. Remove legacy shell-runtime artifacts from older drives
+    2. Generate actions.json
+    3. Copy platform-specific Go launcher binaries
     4. Write run
     """
     svalbard_dir = drive_path / ".svalbard"
@@ -611,23 +601,7 @@ def generate_toolkit(drive_path: Path, preset_name: str, platform_filter: str | 
     for managed_file in (actions_path, entries_path):
         if managed_file.exists():
             managed_file.unlink()
-    actions_dest.mkdir(parents=True)
-    lib_dest.mkdir(parents=True)
     runtime_dest.mkdir(parents=True)
-
-    # Copy action scripts
-    if ACTIONS_DIR.exists():
-        for script in ACTIONS_DIR.glob("*.sh"):
-            dest = actions_dest / script.name
-            shutil.copy2(script, dest)
-            _make_executable(dest)
-
-    # Copy lib scripts and support files
-    if LIB_DIR.exists():
-        for pattern in ("*.sh", "*.py"):
-            for script in LIB_DIR.glob(pattern):
-                dest = lib_dest / script.name
-                shutil.copy2(script, dest)
 
     # Generate actions.json
     manifest = Manifest.load(drive_path / "manifest.yaml")

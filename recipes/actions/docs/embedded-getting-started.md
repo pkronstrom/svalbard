@@ -17,7 +17,7 @@ shell configures the environment for both CLI and IDE use.
 
 ### 1. Open the dev shell
 
-From the drive menu (`./run.sh`), select **Open embedded dev shell**.
+From the drive menu (`./run`), select **Open embedded dev shell**.
 
 This extracts the toolchains to a fast location on your computer and drops
 you into a terminal with everything configured. You'll see:
