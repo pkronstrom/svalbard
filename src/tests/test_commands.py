@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,12 +11,16 @@ from svalbard.presets import load_preset
 
 
 def test_init_drive_creates_files(tmp_path):
-    """init_drive should create manifest.yaml, run.sh, and README.md."""
+    """init_drive should create manifest.yaml, run, and README.md."""
     init_drive(str(tmp_path), "finland-128")
     assert (tmp_path / "manifest.yaml").exists()
-    assert (tmp_path / "run.sh").exists()
+    assert (tmp_path / "run").exists()
     assert (tmp_path / "README.md").exists()
-    assert (tmp_path / ".svalbard" / "entries.tab").exists()
+    assert (tmp_path / ".svalbard" / "actions.json").exists()
+
+    runtime = json.loads((tmp_path / ".svalbard" / "actions.json").read_text())
+    assert runtime["version"] == 2
+    assert runtime["groups"]
 
     manifest = Manifest.load(tmp_path / "manifest.yaml")
     assert manifest.preset == "finland-128"
@@ -27,6 +32,16 @@ def test_init_drive_records_canonical_preset_without_enabled_groups(tmp_path):
     manifest = Manifest.load(tmp_path / "manifest.yaml")
     assert manifest.preset == "finland-128"
     assert "enabled_groups" not in (tmp_path / "manifest.yaml").read_text()
+
+
+def test_init_drive_filters_runtime_binaries_by_platform(tmp_path):
+    init_drive(str(tmp_path), "finland-128", platform_filter="macos-arm64")
+
+    runtime_dir = tmp_path / ".svalbard" / "runtime"
+    assert (runtime_dir / "macos-arm64" / "svalbard-drive").exists()
+    assert not (runtime_dir / "macos-x86_64").exists()
+    assert not (runtime_dir / "linux-arm64").exists()
+    assert not (runtime_dir / "linux-x86_64").exists()
 
 
 def test_sync_drive_no_manifest(tmp_path, capsys):

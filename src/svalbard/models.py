@@ -16,6 +16,8 @@ class Source:
     id: str
     type: str  # zim, pmtiles, pdf, gguf, binary, app, iso
     display_group: str = ""  # UI section label: reference, practical, maps, tools
+    menu: dict = field(default_factory=dict)
+    action: dict = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
     depth: str = "comprehensive"  # comprehensive, overview, reference-only
     size_gb: float = 0.0

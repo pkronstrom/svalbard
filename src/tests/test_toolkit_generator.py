@@ -1,3 +1,4 @@
+import json
 import yaml
 from pathlib import Path
 
@@ -8,8 +9,21 @@ def _write_manifest(drive_path: Path, data: dict) -> None:
     (drive_path / "manifest.yaml").write_text(yaml.dump(data))
 
 
+def _read_actions_config(drive_path: Path) -> dict:
+    return json.loads((drive_path / ".svalbard" / "actions.json").read_text())
+
+
+def _group(runtime_config: dict, group_id: str) -> dict | None:
+    return next((group for group in runtime_config["groups"] if group["id"] == group_id), None)
+
+
+def _group_items(runtime_config: dict, group_id: str) -> list[dict]:
+    group = _group(runtime_config, group_id)
+    return [] if group is None else group["items"]
+
+
 def test_generate_toolkit_creates_run_sh(tmp_path):
-    """run.sh should be created at the drive root."""
+    """run should be created at the drive root."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -25,14 +39,14 @@ def test_generate_toolkit_creates_run_sh(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    assert (tmp_path / "run.sh").exists()
-    assert (tmp_path / ".svalbard" / "entries.tab").exists()
+    assert (tmp_path / "run").exists()
+    assert (tmp_path / ".svalbard" / "actions.json").exists()
     assert (tmp_path / ".svalbard" / "actions" / "browse.sh").exists()
     assert (tmp_path / ".svalbard" / "lib" / "ui.sh").exists()
 
 
 def test_run_sh_is_executable(tmp_path):
-    """run.sh should have executable permission."""
+    """run should have executable permission."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -43,11 +57,41 @@ def test_run_sh_is_executable(tmp_path):
     generate_toolkit(tmp_path, "default-32")
 
     import os
-    assert os.access(tmp_path / "run.sh", os.X_OK)
+    assert os.access(tmp_path / "run", os.X_OK)
 
 
-def test_entries_tab_omits_sections_without_content(tmp_path):
-    """Sections for missing content should not appear."""
+def test_generate_toolkit_copies_platform_runtime_launchers(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-32",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [],
+    })
+
+    generate_toolkit(tmp_path, "default-32")
+
+    for platform in ("macos-arm64", "macos-x86_64", "linux-arm64", "linux-x86_64"):
+        assert (tmp_path / ".svalbard" / "runtime" / platform / "svalbard-drive").exists()
+
+
+def test_run_sh_execs_platform_runtime_binary(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-32",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [],
+    })
+
+    generate_toolkit(tmp_path, "default-32")
+
+    text = (tmp_path / "run").read_text()
+    assert ".svalbard/runtime/" in text
+    assert 'uname -s' in text
+    assert 'exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive"' in text
+
+
+def test_runtime_config_omits_sections_without_content(tmp_path):
+    """Groups for missing content should not appear."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -63,14 +107,75 @@ def test_entries_tab_omits_sections_without_content(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "[browse]" in tab_content
-    assert "[ai]" not in tab_content
-    assert "[maps]" not in tab_content
+    runtime = _read_actions_config(tmp_path)
+    groups = [group["id"] for group in runtime["groups"]]
+    assert runtime["version"] == 2
+    assert groups == ["library", "tools"]
 
 
-def test_entries_tab_includes_maps_when_present(tmp_path):
-    """Maps section should appear when pmtiles exist."""
+def test_runtime_config_groups_top_level_menu(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-512",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [
+            {"id": "wikipedia-en-nopic", "type": "zim",
+             "filename": "wikipedia-en-nopic.zim",
+             "size_bytes": 4_500_000_000, "tags": [], "depth": "comprehensive"},
+            {"id": "gemma-4-e2b-it", "type": "gguf",
+             "filename": "gemma-4-e2b-it-Q4_0.gguf",
+             "size_bytes": 3_040_000_000, "tags": ["tool-calling"], "depth": "overview"},
+            {"id": "llama-server", "type": "binary",
+             "filename": "llama-b8586-bin-macos-arm64.tar.gz",
+             "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
+            {"id": "opencode", "type": "binary",
+             "filename": "opencode-darwin-arm64.zip",
+             "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
+            {"id": "osm-finland", "type": "pmtiles",
+             "filename": "osm-finland.pmtiles",
+             "size_bytes": 500_000_000, "tags": [], "depth": "comprehensive"},
+        ],
+    })
+    (tmp_path / "zim").mkdir()
+    (tmp_path / "zim" / "wikipedia-en-nopic.zim").touch()
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "gemma-4-e2b-it-Q4_0.gguf").touch()
+    (tmp_path / "maps").mkdir()
+    (tmp_path / "maps" / "osm-finland.pmtiles").touch()
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "search.db").touch()
+
+    generate_toolkit(tmp_path, "default-512")
+
+    runtime = _read_actions_config(tmp_path)
+    assert [group["id"] for group in runtime["groups"]] == ["search", "library", "maps", "local-ai", "tools"]
+
+
+def test_library_group_contains_format_subheaders(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-32",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [
+            {"id": "wikipedia-en-nopic", "type": "zim",
+             "filename": "wikipedia-en-nopic.zim",
+             "size_bytes": 4_500_000_000, "tags": [], "depth": "comprehensive"},
+        ],
+    })
+    (tmp_path / "zim").mkdir()
+    (tmp_path / "zim" / "wikipedia-en-nopic.zim").touch()
+
+    generate_toolkit(tmp_path, "default-32")
+
+    library = _group(_read_actions_config(tmp_path), "library")
+    assert library is not None
+    assert library["description"]
+    assert any(item.get("subheader") == "Archives" for item in library["items"])
+    assert all(item["description"] for item in library["items"])
+
+
+def test_runtime_config_includes_maps_when_present(tmp_path):
+    """Maps group should appear when pmtiles exist."""
     _write_manifest(tmp_path, {
         "preset": "finland-128",
         "region": "finland",
@@ -86,12 +191,20 @@ def test_entries_tab_includes_maps_when_present(tmp_path):
 
     generate_toolkit(tmp_path, "finland-128")
 
-    tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "[maps]" in tab_content
+    runtime = _read_actions_config(tmp_path)
+    items = _group_items(runtime, "maps")
+    assert len(items) == 1
+    assert items[0]["action"] == {
+        "type": "builtin",
+        "config": {
+            "name": "maps",
+            "args": {},
+        },
+    }
 
 
-def test_entries_tab_includes_serve_when_content_exists(tmp_path):
-    """Serve section should appear when there are servable files."""
+def test_runtime_config_includes_serve_when_content_exists(tmp_path):
+    """Network tools should appear when there are servable files."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -107,14 +220,13 @@ def test_entries_tab_includes_serve_when_content_exists(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "[serve]" in tab_content
-    assert "Serve everything" in tab_content
-    assert "Share on local network" in tab_content
+    labels = {item["label"] for item in _group_items(_read_actions_config(tmp_path), "tools")}
+    assert "Serve everything" in labels
+    assert "Share on local network" in labels
 
 
-def test_entries_tab_always_has_info(tmp_path):
-    """Info section should always be present."""
+def test_runtime_config_always_has_info(tmp_path):
+    """Drive tools should always be present."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -124,11 +236,9 @@ def test_entries_tab_always_has_info(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "[info]" in tab_content
-    assert "List drive contents" in tab_content
-    # Verify checksums only appears when manifest has entries with checksums
-    assert "Verify checksums" not in tab_content  # no entries = no checksums
+    labels = {item["label"] for item in _group_items(_read_actions_config(tmp_path), "tools")}
+    assert "List drive contents" in labels
+    assert "Verify checksums" not in labels  # no entries = no checksums
 
 
 def test_regeneration_cleans_old_svalbard_dir(tmp_path):
@@ -149,8 +259,8 @@ def test_regeneration_cleans_old_svalbard_dir(tmp_path):
     assert not (tmp_path / ".svalbard" / "actions" / "stale.sh").exists()
 
 
-def test_entries_tab_includes_search_when_db_exists(tmp_path):
-    """Search entry should appear when search.db exists."""
+def test_runtime_config_includes_search_when_db_exists(tmp_path):
+    """Search group should appear when search.db exists."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -168,13 +278,19 @@ def test_entries_tab_includes_search_when_db_exists(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "[search]" in entries
-    assert "search.sh" in entries
+    items = _group_items(_read_actions_config(tmp_path), "search")
+    assert len(items) == 1
+    assert items[0]["action"] == {
+        "type": "builtin",
+        "config": {
+            "name": "search",
+            "args": {},
+        },
+    }
 
 
-def test_entries_tab_omits_search_when_no_db(tmp_path):
-    """Search entry should NOT appear when search.db does not exist."""
+def test_runtime_config_omits_search_when_no_db(tmp_path):
+    """Search group should NOT appear when search.db does not exist."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -190,12 +306,11 @@ def test_entries_tab_omits_search_when_no_db(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "[search]" not in entries
+    assert not _group_items(_read_actions_config(tmp_path), "search")
 
 
-def test_entries_tab_includes_embedded_when_toolchains_present(tmp_path):
-    """Embedded dev section should appear when toolchain entries exist."""
+def test_runtime_config_includes_embedded_when_toolchains_present(tmp_path):
+    """Embedded dev tools should appear when toolchain entries exist."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -209,14 +324,23 @@ def test_entries_tab_includes_embedded_when_toolchains_present(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "[embedded]" in tab_content
-    assert "Open embedded dev shell" in tab_content
-    assert "pio-setup.sh" in tab_content
+    actions = _group_items(_read_actions_config(tmp_path), "tools")
+    embedded = [
+        item for item in actions
+        if item["action"] == {
+            "type": "builtin",
+            "config": {
+                "name": "embedded-shell",
+                "args": {},
+            },
+        }
+    ]
+    assert len(embedded) == 1
+    assert embedded[0]["label"] == "Open embedded dev shell"
 
 
-def test_entries_tab_omits_embedded_when_no_toolchains(tmp_path):
-    """Embedded dev section should NOT appear when no toolchain entries exist."""
+def test_runtime_config_omits_embedded_when_no_toolchains(tmp_path):
+    """Embedded dev tool should NOT appear when no toolchain entries exist."""
     _write_manifest(tmp_path, {
         "preset": "default-32",
         "region": "default",
@@ -232,8 +356,9 @@ def test_entries_tab_omits_embedded_when_no_toolchains(tmp_path):
 
     generate_toolkit(tmp_path, "default-32")
 
-    tab_content = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "[embedded]" not in tab_content
+    assert "Open embedded dev shell" not in {
+        item["label"] for item in _group_items(_read_actions_config(tmp_path), "tools")
+    }
 
 
 def test_generate_toolkit_copies_agent_launcher(tmp_path):
@@ -249,7 +374,7 @@ def test_generate_toolkit_copies_agent_launcher(tmp_path):
     assert (tmp_path / ".svalbard" / "actions" / "agent.sh").exists()
 
 
-def test_entries_tab_includes_ai_clients_when_models_and_binaries_exist(tmp_path):
+def test_runtime_config_includes_ai_clients_when_models_and_binaries_exist(tmp_path):
     _write_manifest(tmp_path, {
         "preset": "default-512",
         "region": "default",
@@ -267,6 +392,9 @@ def test_entries_tab_includes_ai_clients_when_models_and_binaries_exist(tmp_path
             {"id": "opencode", "type": "binary",
              "filename": "opencode-darwin-arm64.zip",
              "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
+            {"id": "crush", "type": "binary",
+             "filename": "crush-darwin-arm64.tar.gz",
+             "size_bytes": 30_000_000, "tags": [], "depth": "reference-only"},
             {"id": "goose", "type": "binary",
              "filename": "goose-aarch64-apple-darwin.tar.bz2",
              "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
@@ -275,17 +403,22 @@ def test_entries_tab_includes_ai_clients_when_models_and_binaries_exist(tmp_path
 
     generate_toolkit(tmp_path, "default-512")
 
-    entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "[ai]" in entries
-    assert "Chat with Gemma 4 E2B IT" in entries
-    assert "Chat with Qwen3.5 9B Instruct" in entries
-    assert "OpenCode with local model" in entries
-    assert "Goose with local model" in entries
-    assert ".svalbard/actions/agent.sh\topencode" in entries
-    assert ".svalbard/actions/agent.sh\tgoose" in entries
+    actions = _group_items(_read_actions_config(tmp_path), "local-ai")
+    labels = {action["label"] for action in actions}
+    assert any("Chat with Gemma 4 E2B IT" in label for label in labels)
+    assert any("Chat with Qwen3.5 9B Instruct" in label for label in labels)
+    assert "OpenCode with local model" in labels
+    assert "Crush with local model" in labels
+    assert "Goose with local model" in labels
+    agent_clients = {
+        action["action"]["config"]["args"]["client"]
+        for action in actions
+        if action["action"]["config"]["name"] == "agent"
+    }
+    assert agent_clients == {"opencode", "crush", "goose"}
 
 
-def test_entries_tab_omits_ai_clients_without_llama_server(tmp_path):
+def test_runtime_config_omits_ai_clients_without_llama_server(tmp_path):
     _write_manifest(tmp_path, {
         "preset": "default-512",
         "region": "default",
@@ -302,73 +435,63 @@ def test_entries_tab_omits_ai_clients_without_llama_server(tmp_path):
 
     generate_toolkit(tmp_path, "default-512")
 
-    entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
-    assert "OpenCode with local model" not in entries
+    labels = {action["label"] for action in _group_items(_read_actions_config(tmp_path), "local-ai")}
+    assert "OpenCode with local model" not in labels
 
 
-def test_agent_launcher_isolates_opencode_from_host_config(tmp_path):
+def test_actions_config_preserves_recipe_defined_exec_action(tmp_path):
     _write_manifest(tmp_path, {
-        "preset": "default-512",
+        "preset": "default-32",
         "region": "default",
         "target_path": str(tmp_path),
         "entries": [],
     })
 
-    generate_toolkit(tmp_path, "default-512")
+    config_root = tmp_path / ".svalbard" / "config"
+    recipes_dir = config_root / "recipes"
+    recipes_dir.mkdir(parents=True)
+    (config_root / "preset.yaml").write_text(
+        """name: default-32
+description: test
+target_size_gb: 32
+region: default
+sources:
+- sql-shell
+"""
+    )
+    (recipes_dir / "sql-shell.yaml").write_text(
+        """id: sql-shell
+type: app
+description: SQLite shell
+menu:
+  group: tools
+  label: SQLite shell
+  description: Open the bundled SQLite shell.
+action:
+  type: exec
+  config:
+    executable: sqlite3
+    resolve_from: drive-bin
+    args:
+      - "{drive_root}/data/search.db"
+    cwd: "{drive_root}"
+    mode: interactive
+"""
+    )
+    (tmp_path / "apps" / "sql-shell").mkdir(parents=True)
 
-    agent_script = (tmp_path / ".svalbard" / "actions" / "agent.sh").read_text()
-    assert 'cd "$DRIVE_ROOT"' in agent_script
-    assert 'OPENCODE_CONFIG=' in agent_script
-    assert 'XDG_CONFIG_HOME=' in agent_script
-    assert '"enabled_providers": ["llama.cpp"]' in agent_script
-    assert '"llama.cpp": {' in agent_script
-    assert '"npm": "@ai-sdk/openai-compatible"' in agent_script
-    assert '"name": "llama-server (local)"' in agent_script
-    assert '"models": {' in agent_script
-    assert "\"name\": \"" in agent_script
-    assert '"\\$schema": "https://opencode.ai/config.json"' in agent_script
-    assert 'runtime_root_base="$DRIVE_ROOT/.svalbard/runtime/$client_name"' in agent_script
-    assert 'llama_log="$runtime_root_base/llama-server.log"' in agent_script
-    assert '"$llama_bin" -m "$model" --jinja --host 127.0.0.1 --port "$port" >"$llama_log" 2>&1 &' in agent_script
-    assert '"model": "llama.cpp/$model_name"' in agent_script
-    assert '"small_model": "llama.cpp/$model_name"' in agent_script
-    assert '"model": "openai/$model_name"' not in agent_script
-    assert '"small_model": "openai/$model_name"' not in agent_script
-    assert '"$client_bin" -m "llama.cpp/$model_name"' in agent_script
-    assert '"$client_bin" -m "openai/$model_name"' not in agent_script
+    generate_toolkit(tmp_path, "default-32")
 
-
-def test_agent_launcher_configures_goose_local_provider(tmp_path):
-    _write_manifest(tmp_path, {
-        "preset": "default-512",
-        "region": "default",
-        "target_path": str(tmp_path),
-        "entries": [],
-    })
-
-    generate_toolkit(tmp_path, "default-512")
-
-    agent_script = (tmp_path / ".svalbard" / "actions" / "agent.sh").read_text()
-    assert 'GOOSE_PROVIDER="openai"' in agent_script
-    assert 'GOOSE_MODEL="$model_name"' in agent_script
-    assert 'host_root="http://127.0.0.1:${port}"' in agent_script
-    assert 'OPENAI_HOST="$host_root"' in agent_script
-    assert 'OPENAI_HOST="$base_url"' not in agent_script
-    assert 'XDG_CONFIG_HOME="$config_root"' in agent_script
-    assert 'mkdir -p "$runtime_root_base"' in agent_script
-
-
-def test_generate_toolkit_copies_binary_helper_with_tool_subdir_lookup(tmp_path):
-    _write_manifest(tmp_path, {
-        "preset": "default-512",
-        "region": "default",
-        "target_path": str(tmp_path),
-        "entries": [],
-    })
-
-    generate_toolkit(tmp_path, "default-512")
-
-    helper = (tmp_path / ".svalbard" / "lib" / "binaries.sh").read_text()
-    assert '"$dir"/*/' in helper
-    assert 'if [ -x "$subdir/$name" ]' in helper
-    assert 'if [ -x "$dir/$name" ]' not in helper
+    tools = _group(_read_actions_config(tmp_path), "tools")
+    assert tools is not None
+    item = next(item for item in tools["items"] if item["id"] == "sql-shell")
+    assert item["action"] == {
+        "type": "exec",
+        "config": {
+            "executable": "sqlite3",
+            "resolve_from": "drive-bin",
+            "args": ["{drive_root}/data/search.db"],
+            "cwd": "{drive_root}",
+        "mode": "interactive",
+        },
+    }

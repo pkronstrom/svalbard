@@ -520,6 +520,7 @@ def run_wizard(
         preset_name,
         workspace_root=str(workspace_root),
         local_sources=selected_local_ids,
+        platform_filter=platform,
     )
     _clear()
     console.print(f"\n  [green]Initialized:[/green] {target_path}")
