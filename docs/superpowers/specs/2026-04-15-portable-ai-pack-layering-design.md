@@ -240,6 +240,47 @@ If launcher/menu integration changes, the implementation should also verify:
 - Documentation should describe RAM tiers as target host-memory classes, not hard guarantees.
 - Documentation should explain that stock packs are intentionally coarse, while custom presets can mix packs and individual recipes.
 
+## Community Recommendations and Default Runtime Guidance
+
+An April 15, 2026 `r/LocalLLaMA` community thread is useful as directional input for v1 model selection and runtime defaults, but it should be treated as anecdotal evidence rather than as a benchmark source of truth.
+
+Directional takeaways to reflect during implementation:
+
+- Qwen 3.5 27B and Qwen 3.5 35B-A3B are strong candidates for higher-tier coding and agentic workloads.
+- Gemma 4 E4B looks like a strong smaller general/tool-use candidate, especially on 16 GB Apple Silicon class machines.
+- Gemma 4 26B A4B appears promising for higher-end general use, but stability should be verified locally before it is treated as a stock default.
+- Smaller 4-bit variants appear more practical than 8-bit variants on constrained machines or longer-context workloads.
+
+These are recommendations for implementation-time evaluation, not hard commitments in this design.
+
+### Runtime Defaults to Evaluate First
+
+For llama.cpp-backed agentic flows, the first implementation pass should evaluate the following defaults:
+
+- `parallel_tool_calls=true` for agent workflows
+- `chat_template_kwargs.enable_thinking=false` as the safer default
+- `--jinja` enabled to preserve template correctness
+- conservative context use instead of running close to the maximum by default
+
+If Gemma-based configurations show instability during local validation, the implementation should explicitly test:
+
+- reduced `--cache-ram`, including `4096` and `0`
+- lower default effective context occupancy
+- 4-bit variants before moving to heavier quants
+
+### Role Guidance for Initial Recipe Selection
+
+The initial recipe shortlist should bias toward:
+
+- small RAM tiers:
+  - a Gemma 4 general/tool-call model
+  - a compact coding-oriented model
+- larger RAM tiers:
+  - stronger Qwen 3.5 coding-oriented models
+  - a validated general/tool-use model, which may remain Gemma if stability and tooling behavior are acceptable
+
+The final stock recipes should be chosen only after local validation against Svalbard's actual portable workflow requirements.
+
 ## Final Contract
 
 The approved v1 contract is:
