@@ -263,7 +263,7 @@ def expand_source_downloads(
             if source.type == "toolchain":
                 dest = drive_path / "tools" / "platformio" / "packages" / platform
             else:
-                dest = drive_path / "bin" / platform
+                dest = drive_path / "bin" / platform / source.id
             jobs.append(
                 DownloadJob(
                     source_id=source.id,
@@ -332,6 +332,48 @@ def init_drive(path: str, preset_name: str, workspace_root: str = "", local_sour
     return _init_drive(path, preset_name, workspace_root_path=workspace_root, local_sources=local_sources)
 
 
+def _entry_disk_path(drive_path: Path, entry: ManifestEntry) -> Path:
+    if entry.relative_path:
+        return drive_path / entry.relative_path
+    if entry.platform:
+        return drive_path / "bin" / entry.platform / entry.filename
+    return drive_path / TYPE_DIRS.get(entry.type, "other") / entry.filename
+
+
+def remove_source_artifacts(
+    drive_path: Path,
+    manifest: Manifest,
+    source_id: str,
+    platform_filter: str | None = None,
+) -> int:
+    removed_entries: list[ManifestEntry] = []
+    kept_entries: list[ManifestEntry] = []
+
+    for entry in manifest.entries:
+        if entry.id != source_id:
+            kept_entries.append(entry)
+            continue
+        if entry.platform and not _platform_matches(entry.platform, platform_filter):
+            kept_entries.append(entry)
+            continue
+        removed_entries.append(entry)
+
+    for entry in removed_entries:
+        path = _entry_disk_path(drive_path, entry)
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.exists():
+            path.unlink()
+
+        if entry.platform and entry.type in {"binary", "app"}:
+            tool_dir = drive_path / "bin" / entry.platform / source_id
+            if tool_dir.exists():
+                shutil.rmtree(tool_dir, ignore_errors=True)
+
+    manifest.entries = kept_entries
+    return len(removed_entries)
+
+
 def _artifact_path_for_build(source: Source, drive_path: Path) -> Path | None:
     """Return the expected artifact path for a build source, or None."""
     type_dir = TYPE_DIRS.get(source.type, "other")
@@ -352,6 +394,7 @@ def sync_drive(
     force: bool = False,
     parallel: int = 5,
     platform_filter: str | None = None,
+    only_source_ids: list[str] | None = None,
 ):
     """Download/update content on an initialized drive."""
     drive_path = Path(path)
@@ -385,6 +428,10 @@ def sync_drive(
         except Exception as e:
             console.print(f"[yellow]Warning: could not refresh snapshot: {e}[/yellow]")
     manifest_path = drive_path / "manifest.yaml"
+
+    if only_source_ids:
+        selected_ids = set(only_source_ids)
+        preset.sources = [source for source in preset.sources if source.id in selected_ids]
     local_source_map = {
         source.id: source for source in load_local_sources(manifest.workspace_root or resolve_workspace_root())
     }
@@ -421,7 +468,7 @@ def sync_drive(
             existing = manifest.entry_by_id(job.source_id, job.platform)
 
             if existing and not force:
-                existing_path = job.dest_dir / existing.filename
+                existing_path = _entry_disk_path(drive_path, existing)
                 if existing_path.exists():
                     if not update:
                         skipped += 1
@@ -528,7 +575,7 @@ def sync_drive(
                 # Delete old file if this is an update with a different filename
                 existing = manifest.entry_by_id(job.source_id, job.platform)
                 if existing and existing.filename != r.filepath.name:
-                    old_path = job.dest_dir / existing.filename
+                    old_path = _entry_disk_path(drive_path, existing)
                     if old_path.exists():
                         old_path.unlink()
                         console.print(f"  [dim]Removed old: {existing.filename}[/dim]")
@@ -544,6 +591,7 @@ def sync_drive(
                     downloaded=datetime.now().isoformat(timespec="seconds"),
                     url=job.url,
                     checksum_sha256=r.sha256,
+                    relative_path=r.filepath.relative_to(drive_path).as_posix(),
                 )
                 manifest.entries = [
                     e for e in manifest.entries
@@ -724,7 +772,7 @@ def show_status(path: str, check_updates: bool = False):
                 if entry is None:
                     missing_platforms.append(platform)
                     continue
-                if not (drive_path / "bin" / platform / entry.filename).exists():
+                if not _entry_disk_path(drive_path, entry).exists():
                     missing_platforms.append(platform)
 
             if missing_platforms:
@@ -742,8 +790,7 @@ def show_status(path: str, check_updates: bool = False):
             total_bytes += entry.size_bytes
 
             # Check if file still exists on disk
-            dest_dir = drive_path / TYPE_DIRS.get(source.type, "other")
-            file_exists = (dest_dir / entry.filename).exists()
+            file_exists = _entry_disk_path(drive_path, entry).exists()
 
             if not file_exists:
                 status = "[red]✗ file missing[/red]"

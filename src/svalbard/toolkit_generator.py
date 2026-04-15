@@ -61,7 +61,7 @@ def _visible_chat_entries(manifest: Manifest) -> list:
 
 
 def _available_ai_clients(manifest: Manifest) -> list[str]:
-    client_ids = {"opencode": "OpenCode", "crush": "Crush", "goose": "Goose"}
+    client_ids = {"opencode": "OpenCode", "goose": "Goose"}
     available_ids = {entry.id for entry in manifest.entries if entry.type == "binary"}
     return [client_id for client_id in client_ids if client_id in available_ids]
 
@@ -120,7 +120,7 @@ def _build_entries(drive_path: Path, manifest: Manifest, preset_name: str) -> st
                 f"\t.svalbard/actions/chat.sh\t{model_path}"
             )
         if "llama-server" in {entry.id for entry in manifest.entries if entry.type == "binary"}:
-            client_labels = {"opencode": "OpenCode", "crush": "Crush", "goose": "Goose"}
+            client_labels = {"opencode": "OpenCode", "goose": "Goose"}
             for client_id in _available_ai_clients(manifest):
                 lines.append(
                     f"{client_labels[client_id]} with local model"

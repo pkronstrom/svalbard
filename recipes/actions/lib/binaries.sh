@@ -37,22 +37,21 @@ find_binary() {
     platform="$(detect_platform)"
 
     for dir in "$bin_dir/$platform" "$bin_dir"; do
-        # Direct executable match
-        if [ -x "$dir/$name" ]; then
-            echo "$dir/$name"
-            return 0
-        fi
-
-        # Look for archives that might contain this binary
         if [ -d "$dir" ]; then
-            for archive in "$dir"/*.tar.gz "$dir"/*.tar.xz "$dir"/*.tar.bz2 "$dir"/*.tgz "$dir"/*.zip; do
-                [ -f "$archive" ] || continue
-                # Extract and retry
-                _extract_archive "$archive" "$dir"
-                if [ -x "$dir/$name" ]; then
-                    echo "$dir/$name"
+            for subdir in "$dir"/*/; do
+                [ -d "$subdir" ] || continue
+                if [ -x "$subdir/$name" ]; then
+                    echo "$subdir/$name"
                     return 0
                 fi
+                for archive in "$subdir"/*.tar.gz "$subdir"/*.tar.xz "$subdir"/*.tar.bz2 "$subdir"/*.tgz "$subdir"/*.zip; do
+                    [ -f "$archive" ] || continue
+                    _extract_archive "$archive" "$subdir"
+                    if [ -x "$subdir/$name" ]; then
+                        echo "$subdir/$name"
+                        return 0
+                    fi
+                done
             done
         fi
     done

@@ -282,6 +282,30 @@ def detach_command(source_id: str, path: str, workspace: str | None) -> None:
     console.print(f"[green]Detached:[/green] {source_id}")
 
 
+@main.command("refresh")
+@click.argument("source_id")
+@click.argument("path", required=False, default=".")
+@click.option(
+    "--platform",
+    default=None,
+    help="Limit platformed binaries to host, arm64, x86_64, macos-arm64, macos-x86_64, linux-arm64, linux-x86_64",
+)
+def refresh_command(source_id: str, path: str, platform: str | None) -> None:
+    """Delete and re-sync one built-in source from a drive."""
+    from svalbard.commands import remove_source_artifacts, sync_drive
+
+    drive_path = resolve_drive_path(path)
+    if not Manifest.exists(drive_path):
+        console.print("[red]No manifest found.[/red]")
+        raise SystemExit(1)
+
+    manifest = Manifest.load(drive_path / "manifest.yaml")
+    removed = remove_source_artifacts(drive_path, manifest, source_id, platform_filter=platform)
+    manifest.save(drive_path / "manifest.yaml")
+    console.print(f"[green]Removed:[/green] {source_id} ({removed} artifact(s))")
+    sync_drive(str(drive_path), platform_filter=platform, only_source_ids=[source_id])
+
+
 @main.group("preset")
 def preset_group() -> None:
     """Manage presets."""

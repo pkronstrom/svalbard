@@ -6,10 +6,10 @@ tags:
 depth: reference-only
 size_gb: 0.04
 platforms:
-  linux-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b8586/llama-b8586-bin-ubuntu-x64.tar.gz
-  linux-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b8586/llama-b8586-bin-310p-openEuler-aarch64.tar.gz
-  macos-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b8586/llama-b8586-bin-macos-arm64.tar.gz
-  macos-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b8586/llama-b8586-bin-macos-x64.tar.gz
+  linux-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b8799/llama-b8799-bin-ubuntu-x64.tar.gz
+  linux-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b8799/llama-b8799-bin-ubuntu-arm64.tar.gz
+  macos-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b8799/llama-b8799-bin-macos-arm64.tar.gz
+  macos-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b8799/llama-b8799-bin-macos-x64.tar.gz
 description: llama.cpp server binary for serving GGUF models
 license:
   id: MIT

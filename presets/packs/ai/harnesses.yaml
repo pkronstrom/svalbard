@@ -6,6 +6,4 @@ target_size_gb: 1
 sources:
 - llama-server
 - opencode
-- crush
 - goose
-

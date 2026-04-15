@@ -267,9 +267,6 @@ def test_entries_tab_includes_ai_clients_when_models_and_binaries_exist(tmp_path
             {"id": "opencode", "type": "binary",
              "filename": "opencode-darwin-arm64.zip",
              "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
-            {"id": "crush", "type": "binary",
-             "filename": "crush-darwin-arm64.tar.gz",
-             "size_bytes": 30_000_000, "tags": [], "depth": "reference-only"},
             {"id": "goose", "type": "binary",
              "filename": "goose-aarch64-apple-darwin.tar.bz2",
              "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
@@ -283,10 +280,8 @@ def test_entries_tab_includes_ai_clients_when_models_and_binaries_exist(tmp_path
     assert "Chat with Gemma 4 E2B IT" in entries
     assert "Chat with Qwen3.5 9B Instruct" in entries
     assert "OpenCode with local model" in entries
-    assert "Crush with local model" in entries
     assert "Goose with local model" in entries
     assert ".svalbard/actions/agent.sh\topencode" in entries
-    assert ".svalbard/actions/agent.sh\tcrush" in entries
     assert ".svalbard/actions/agent.sh\tgoose" in entries
 
 
@@ -309,3 +304,53 @@ def test_entries_tab_omits_ai_clients_without_llama_server(tmp_path):
 
     entries = (tmp_path / ".svalbard" / "entries.tab").read_text()
     assert "OpenCode with local model" not in entries
+
+
+def test_agent_launcher_isolates_opencode_from_host_config(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-512",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [],
+    })
+
+    generate_toolkit(tmp_path, "default-512")
+
+    agent_script = (tmp_path / ".svalbard" / "actions" / "agent.sh").read_text()
+    assert 'cd "$DRIVE_ROOT"' in agent_script
+    assert 'OPENCODE_CONFIG=' in agent_script
+    assert 'XDG_CONFIG_HOME=' in agent_script
+    assert '"enabled_providers": ["openai"]' in agent_script
+
+
+def test_agent_launcher_configures_goose_local_provider(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-512",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [],
+    })
+
+    generate_toolkit(tmp_path, "default-512")
+
+    agent_script = (tmp_path / ".svalbard" / "actions" / "agent.sh").read_text()
+    assert 'GOOSE_PROVIDER="openai"' in agent_script
+    assert 'GOOSE_MODEL="$model_name"' in agent_script
+    assert 'OPENAI_HOST="$base_url"' in agent_script
+    assert 'XDG_CONFIG_HOME="$config_root"' in agent_script
+
+
+def test_generate_toolkit_copies_binary_helper_with_tool_subdir_lookup(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-512",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [],
+    })
+
+    generate_toolkit(tmp_path, "default-512")
+
+    helper = (tmp_path / ".svalbard" / "lib" / "binaries.sh").read_text()
+    assert '"$dir"/*/' in helper
+    assert 'if [ -x "$subdir/$name" ]' in helper
+    assert 'if [ -x "$dir/$name" ]' not in helper

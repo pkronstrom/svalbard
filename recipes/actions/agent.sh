@@ -92,4 +92,61 @@ export OPENAI_API_BASE="$base_url"
 export OPENAI_MODEL="$model_name"
 export OPENAI_DEFAULT_MODEL="$model_name"
 
+cd "$DRIVE_ROOT"
+
+if [ "$client_name" = "opencode" ]; then
+    runtime_root="$DRIVE_ROOT/.svalbard/runtime/opencode"
+    config_root="$runtime_root/config"
+    cache_root="$runtime_root/cache"
+    data_root="$runtime_root/data"
+    home_root="$runtime_root/home"
+    mkdir -p "$config_root" "$cache_root" "$data_root" "$home_root"
+
+    opencode_config="$config_root/opencode.json"
+    cat > "$opencode_config" <<JSON
+{
+  "$schema": "https://opencode.ai/config.json",
+  "enabled_providers": ["openai"],
+  "model": "openai/$model_name",
+  "small_model": "openai/$model_name",
+  "provider": {
+    "openai": {
+      "options": {
+        "baseURL": "$base_url",
+        "apiKey": "local"
+      }
+    }
+  }
+}
+JSON
+
+    HOME="$home_root" \
+    XDG_CONFIG_HOME="$config_root" \
+    XDG_CACHE_HOME="$cache_root" \
+    XDG_DATA_HOME="$data_root" \
+    OPENCODE_CONFIG="$opencode_config" \
+    "$client_bin" -m "openai/$model_name"
+    exit $?
+fi
+
+if [ "$client_name" = "goose" ]; then
+    runtime_root="$DRIVE_ROOT/.svalbard/runtime/goose"
+    config_root="$runtime_root/config"
+    cache_root="$runtime_root/cache"
+    data_root="$runtime_root/data"
+    home_root="$runtime_root/home"
+    mkdir -p "$config_root" "$cache_root" "$data_root" "$home_root"
+
+    HOME="$home_root" \
+    XDG_CONFIG_HOME="$config_root" \
+    XDG_CACHE_HOME="$cache_root" \
+    XDG_DATA_HOME="$data_root" \
+    GOOSE_PROVIDER="openai" \
+    GOOSE_MODEL="$model_name" \
+    OPENAI_API_KEY="local" \
+    OPENAI_HOST="$base_url" \
+    "$client_bin"
+    exit $?
+fi
+
 "$client_bin"

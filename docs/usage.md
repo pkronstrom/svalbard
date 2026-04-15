@@ -90,6 +90,14 @@ Remove an attached source from the drive manifest and remove its drive-local sna
 
 Materialize the selected preset sources and attached local sources onto the drive.
 
+Use `--platform host` when you only want the current machine's platformed binaries.
+
+### `svalbard refresh <source-id> [drive-path]`
+
+Remove one built-in source from the drive and sync just that source again.
+
+This is most useful for bundled tools like `llama-server`, `goose`, or `opencode`.
+
 ### `svalbard preset list`
 
 List both built-in presets and workspace-owned presets.

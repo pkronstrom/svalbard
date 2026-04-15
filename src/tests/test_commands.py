@@ -259,8 +259,8 @@ def test_expand_toolchain_source_no_platforms(tmp_path):
     assert jobs[0].dest_dir == tmp_path / "tools" / "platformio" / "packages"
 
 
-def test_expand_binary_source_still_goes_to_bin(tmp_path):
-    """Regular binary sources still go to bin/{platform}/ (regression check)."""
+def test_expand_binary_source_uses_tool_specific_platform_dir(tmp_path):
+    """Platformed binary sources go to bin/{platform}/{source-id}/."""
     from svalbard.models import Source
     from svalbard.commands import expand_source_downloads
 
@@ -274,8 +274,60 @@ def test_expand_binary_source_still_goes_to_bin(tmp_path):
     )
     jobs = expand_source_downloads(source, tmp_path)
     assert len(jobs) == 2
-    assert jobs[0].dest_dir == tmp_path / "bin" / "linux-x86_64"
-    assert jobs[1].dest_dir == tmp_path / "bin" / "macos-arm64"
+    assert jobs[0].dest_dir == tmp_path / "bin" / "linux-x86_64" / "kiwix-serve"
+    assert jobs[1].dest_dir == tmp_path / "bin" / "macos-arm64" / "kiwix-serve"
+
+
+def test_show_status_handles_platformed_binary_sources_in_tool_dirs(tmp_path):
+    init_drive(str(tmp_path), "finland-128")
+    manifest = Manifest.load(tmp_path / "manifest.yaml")
+    entry_path = tmp_path / "bin" / "linux-x86_64" / "kiwix-serve"
+    entry_path.mkdir(parents=True)
+    (entry_path / "kiwix-tools_linux-x86_64.tar.gz").write_bytes(b"data")
+    manifest.entries.append(ManifestEntry(
+        id="kiwix-serve",
+        type="binary",
+        platform="linux-x86_64",
+        filename="kiwix-tools_linux-x86_64.tar.gz",
+        size_bytes=123,
+        relative_path="bin/linux-x86_64/kiwix-serve/kiwix-tools_linux-x86_64.tar.gz",
+    ))
+    manifest.save(tmp_path / "manifest.yaml")
+
+    show_status(str(tmp_path))
+
+
+def test_remove_source_artifacts_deletes_tool_specific_binary_dir(tmp_path):
+    from svalbard.commands import remove_source_artifacts
+
+    drive = tmp_path / "drive"
+    drive.mkdir()
+    tool_dir = drive / "bin" / "macos-arm64" / "llama-server"
+    tool_dir.mkdir(parents=True)
+    (tool_dir / "llama-server").write_bytes(b"binary")
+    (tool_dir / "llama-b8799-bin-macos-arm64.tar.gz").write_bytes(b"archive")
+
+    manifest = Manifest(
+        preset="test-ai-small",
+        region="default",
+        target_path=str(drive),
+        entries=[
+            ManifestEntry(
+                id="llama-server",
+                type="binary",
+                platform="macos-arm64",
+                filename="llama-b8799-bin-macos-arm64.tar.gz",
+                size_bytes=10,
+                relative_path="bin/macos-arm64/llama-server/llama-b8799-bin-macos-arm64.tar.gz",
+            )
+        ],
+    )
+
+    removed = remove_source_artifacts(drive, manifest, "llama-server")
+
+    assert removed == 1
+    assert not tool_dir.exists()
+    assert manifest.entry_by_id("llama-server", "macos-arm64") is None
 
 
 def test_run_import_routes_youtube_urls_to_media_backend(tmp_path):

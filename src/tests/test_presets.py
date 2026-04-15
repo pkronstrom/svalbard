@@ -141,7 +141,6 @@ def test_ai_harnesses_pack_contains_local_ai_clients():
     ids = {source.id for source in preset.sources}
     assert "llama-server" in ids
     assert "opencode" in ids
-    assert "crush" in ids
     assert "goose" in ids
 
 
@@ -191,6 +190,18 @@ def test_default_2tb_stays_region_neutral():
     assert "wikipedia-fi-all" not in ids
     assert "wiktionary-fi" not in ids
     assert "wikipedia-sv-all" not in ids
+
+
+def test_test_ai_small_includes_one_model_and_core_ai_tools():
+    preset = load_preset("test-ai-small")
+    ids = {source.id for source in preset.sources}
+    assert preset.region == "default"
+    assert "gemma-4-e2b-it" in ids
+    assert "llama-server" in ids
+    assert "opencode" in ids
+    assert "goose" in ids
+    assert "crush" not in ids
+    assert "qwen-9b" not in ids
 
 
 def test_finland_128_uses_standalone_sources_only():
