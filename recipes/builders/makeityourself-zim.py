@@ -36,6 +36,7 @@ import mimetypes
 import re
 import sys
 import time
+import zipfile
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from html import escape, unescape
@@ -2467,7 +2468,9 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
             ftype = art.get("type", "").upper()
             fsize = art.get("size_bytes", 0)
             size_str = f"{fsize / 1024:.0f} KB" if fsize < 1_000_000 else f"{fsize / 1_000_000:.1f} MB"
-            artifacts_html += f'<li><a href="{escape(art["filename"])}">{escape(fname)}</a> <span class="badge">{ftype}</span> <span class="size">{size_str}</span></li>\n'
+            contents = art.get("contents", "")
+            contents_html = f' <span class="size">({escape(contents)})</span>' if contents else ""
+            artifacts_html += f'<li><a href="{escape(art["filename"])}">{escape(fname)}</a> <span class="badge">{ftype}</span> <span class="size">{size_str}</span>{contents_html}</li>\n'
         artifacts_html += "</ul>\n"
 
     # Steps (Instructables)
@@ -2746,6 +2749,50 @@ def _optimize_project(site_dir: Path, meta: ProjectMeta) -> int:
         p = site_dir / a["filename"]
         if p.exists():
             a["size_bytes"] = p.stat().st_size
+
+    # 6. Bundle artifacts into a single ZIP per project
+    real_arts = [a for a in meta.artifacts if (site_dir / a["filename"]).exists()]
+    if real_arts:
+        _ALREADY_COMPRESSED = {".zip", ".gz", ".7z", ".rar", ".3mf", ".tar"}
+        zip_path = site_dir / "artifacts.zip"
+        total_before = 0
+        try:
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                for a in real_arts:
+                    fpath = site_dir / a["filename"]
+                    total_before += fpath.stat().st_size
+                    ext = fpath.suffix.lower()
+                    compress = zipfile.ZIP_STORED if ext in _ALREADY_COMPRESSED else zipfile.ZIP_DEFLATED
+                    zf.write(fpath, fpath.name, compress_type=compress)
+            zip_size = zip_path.stat().st_size
+            # Only keep the zip if it actually saves space
+            if zip_size < total_before:
+                # Remove individual artifact files
+                for a in real_arts:
+                    fpath = site_dir / a["filename"]
+                    fpath.unlink(missing_ok=True)
+                # Clean up empty artifacts dir
+                arts_dir = site_dir / "artifacts"
+                if arts_dir.is_dir() and not any(arts_dir.iterdir()):
+                    arts_dir.rmdir()
+                # Build contents summary for display
+                type_counts: dict[str, int] = {}
+                for a in real_arts:
+                    t = a.get("type", "file").upper()
+                    type_counts[t] = type_counts.get(t, 0) + 1
+                contents = ", ".join(f"{c} {t}" for t, c in sorted(type_counts.items()))
+                meta.artifacts = [{
+                    "filename": "artifacts.zip",
+                    "type": "zip",
+                    "size_bytes": zip_size,
+                    "contents": contents,
+                }]
+                saved += total_before - zip_size
+                log.debug("    zip %d artifacts: %d KB → %d KB", len(real_arts), total_before // 1024, zip_size // 1024)
+            else:
+                zip_path.unlink()
+        except Exception:
+            zip_path.unlink(missing_ok=True)
 
     return saved
 
