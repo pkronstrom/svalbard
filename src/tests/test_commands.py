@@ -40,7 +40,7 @@ def test_sync_drive_skips_downloaded(tmp_path):
     init_drive(str(tmp_path), "finland-128")
     manifest = Manifest.load(tmp_path / "manifest.yaml")
     preset = load_preset("finland-128")
-    source = next(source for source in preset.sources if source.id == "wikipedia-en-nopic")
+    source = next(source for source in preset.sources if source.type == "zim")
 
     # Fake a downloaded entry
     from svalbard.manifest import ManifestEntry
@@ -51,7 +51,7 @@ def test_sync_drive_skips_downloaded(tmp_path):
     fake_file.write_bytes(b"fake")
 
     manifest.entries.append(ManifestEntry(
-        id="wikipedia-en-nopic",
+        id=source.id,
         type="zim",
         filename="test.zim",
         size_bytes=4,
@@ -79,7 +79,7 @@ def test_sync_drive_skips_downloaded(tmp_path):
 
     # Should still have the entry
     reloaded = Manifest.load(tmp_path / "manifest.yaml")
-    assert reloaded.entry_by_id("wikipedia-en-nopic") is not None
+    assert reloaded.entry_by_id(source.id) is not None
 
 
 def test_show_status_no_manifest(tmp_path):
@@ -104,7 +104,7 @@ def test_expand_source_downloads_creates_one_job_per_platform(tmp_path):
         "macos-arm64",
         "macos-x86_64",
     ]
-    assert all(job.dest_dir.parent == tmp_path / "bin" for job in jobs)
+    assert all(job.dest_dir == tmp_path / "bin" / job.platform / source.id for job in jobs)
 
 
 def test_expand_source_downloads_filters_exact_platform(tmp_path):

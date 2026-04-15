@@ -80,10 +80,10 @@ def test_import_command_passes_quality_and_audio_only_flags(tmp_path):
     assert run_import_mock.call_args.kwargs["audio_only"] is True
 
 
-def test_legacy_add_command_is_not_available():
+def test_add_command_requires_source_or_browse():
     result = CliRunner().invoke(main, ["add"])
     assert result.exit_code != 0
-    assert "No such command 'add'" in result.output
+    assert "SOURCE_ID is required unless --browse is used" in result.output
 
 
 def test_legacy_crawl_command_is_not_available():

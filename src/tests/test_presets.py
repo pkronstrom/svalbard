@@ -1,4 +1,12 @@
-from svalbard.presets import list_presets, load_preset, resolve_preset_path
+from svalbard.presets import PRESETS_DIR, list_presets, load_preset, resolve_preset_path
+
+
+def _builtin_preset_names() -> list[str]:
+    names: set[str] = set()
+    names.update(path.stem for path in PRESETS_DIR.glob("*.yaml"))
+    for path in (PRESETS_DIR / "packs").rglob("*.yaml"):
+        names.add(str(path.relative_to(PRESETS_DIR / "packs").with_suffix("")))
+    return sorted(names)
 
 
 def test_parse_finland_128():
@@ -229,7 +237,7 @@ def test_canonical_presets_do_not_use_legacy_source_fields():
 
 def test_all_preset_sources_resolve_from_recipes():
     """Every source ID in every preset must resolve to a recipe."""
-    for preset_name in list_presets():
+    for preset_name in _builtin_preset_names():
         preset = load_preset(preset_name)
         if preset.kind == "pack" and len(preset.sources) == 0:
             continue  # stub packs with only TODOs are valid

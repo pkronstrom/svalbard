@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 from rich.prompt import Prompt
+from rich.table import Table
 
 from svalbard.commands import remove_source_artifacts, sync_drive
 from svalbard.drive_config import load_snapshot_preset, write_drive_snapshot
@@ -124,7 +125,7 @@ def _persist_drive_builtin_selection(
         workspace=workspace_root,
         target_size_gb=target_size_gb,
         region=manifest.region,
-        description=f"Attached selection for {drive_path.name}",
+        description=f"Vault selection for {drive_path.name}",
     )
     write_drive_snapshot(
         drive_path,
@@ -165,19 +166,26 @@ def _compute_builtin_selection_review(
 
 
 def _review_builtin_selection(review: BuiltinSelectionReview) -> str:
-    def _render_list(label: str, values: list[str]) -> None:
-        joined = ", ".join(values) if values else "none"
-        console.print(f"  [bold]{label}:[/bold] {joined}")
-
-    delta = f"{review.size_delta_gb:+.1f} GB"
     console.print("\n[bold]Review Selection[/bold]")
-    _render_list("Added", review.added_ids)
-    _render_list("Removed", review.removed_ids)
-    _render_list("Will download", review.will_download_ids)
-    _render_list("Will remove", review.will_remove_ids)
-    console.print(f"  [bold]Current total:[/bold] {review.current_total_gb:.1f} GB")
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
+    table.add_column("Change", no_wrap=True)
+    table.add_column("Sources")
+    table.add_row("Added", ", ".join(review.added_ids) if review.added_ids else "[dim]none[/dim]")
+    table.add_row("Removed", ", ".join(review.removed_ids) if review.removed_ids else "[dim]none[/dim]")
+    table.add_row(
+        "Will download",
+        ", ".join(review.will_download_ids) if review.will_download_ids else "[dim]none[/dim]",
+    )
+    table.add_row(
+        "Will remove",
+        ", ".join(review.will_remove_ids) if review.will_remove_ids else "[dim]none[/dim]",
+    )
+    console.print(table)
+    delta_style = "green" if review.size_delta_gb <= 0 else "yellow"
+    console.print(f"  [bold]Current total:[/bold]  {review.current_total_gb:.1f} GB")
     console.print(f"  [bold]Selected total:[/bold] {review.selected_total_gb:.1f} GB")
-    console.print(f"  [bold]Estimated delta:[/bold] {delta}")
+    console.print(f"  [bold]Estimated delta:[/bold] [{delta_style}]{review.size_delta_gb:+.1f} GB[/{delta_style}]")
+    console.print("  [dim]a apply  b back to picker  q cancel[/dim]")
     return Prompt.ask("\n  Select", choices=["a", "b", "q"], default="b")
 
 
