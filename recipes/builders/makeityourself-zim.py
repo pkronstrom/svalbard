@@ -505,6 +505,8 @@ EXTRACTOR_MAP: dict[str, str] = {
     "instructables.com": "instructables",
     "cults3d.com": "cults3d",
     "www.cults3d.com": "cults3d",
+    "ana-white.com": "anawhite",
+    "www.ana-white.com": "anawhite",
 }
 
 
@@ -1897,6 +1899,83 @@ CULTS3D_CONFIG = SiteConfig(
 )
 
 
+# ── Ana-White ────────────────────────────────────────────────────────────
+
+
+def _anawhite_post_parse(
+    soup: BeautifulSoup, meta: ProjectMeta, site_dir: Path, client: httpx.Client, **kw
+) -> None:
+    """Ana-White post-parse: images from entry-content, author, PDF plan links."""
+    # Author from entry meta
+    author_el = soup.find("span", class_="entry-author") or soup.find("a", attrs={"rel": "author"})
+    if author_el:
+        meta.author = meta.author or author_el.get_text(strip=True)
+
+    # Images from main content area
+    content = soup.find("div", class_="entry-content") or soup.find("article")
+    images_dir = site_dir / "images"
+    images_dir.mkdir(exist_ok=True)
+    img_count = 0
+    seen: set[str] = set()
+    if content:
+        for img in content.find_all("img"):
+            if img_count >= 15:
+                break
+            src = img.get("data-src") or img.get("src") or ""
+            if not src.startswith("http"):
+                continue
+            base = src.split("?")[0]
+            if base in seen:
+                continue
+            seen.add(base)
+            # Skip tiny icons and ads
+            w = img.get("width", "")
+            if w and w.isdigit() and int(w) < 80:
+                continue
+            ext = Path(urlparse(base).path).suffix.lower() or ".jpg"
+            if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+                continue
+            fname = f"img_{img_count:02d}{ext}"
+            if _download_file(client, src, images_dir / fname):
+                meta.images.append(f"images/{fname}")
+                img_count += 1
+            time.sleep(0.2)
+
+    # Fallback OG image
+    if not meta.images:
+        og_img = soup.find("meta", property="og:image")
+        if og_img and og_img.get("content", "").startswith("http"):
+            if _download_file(client, og_img["content"], images_dir / "og.jpg"):
+                meta.images.append("images/og.jpg")
+
+    # PDF plan links
+    artifacts_dir = site_dir / "artifacts"
+    artifacts_dir.mkdir(exist_ok=True)
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if not href.startswith("http"):
+            href = urljoin(meta.url, href)
+        ext = Path(urlparse(href).path).suffix.lower()
+        if ext in ARTIFACT_EXTS:
+            fname = _sanitize_filename(Path(urlparse(href).path).name)
+            if _download_file(client, href, artifacts_dir / fname):
+                meta.artifacts.append(_artifact_entry(fname, artifacts_dir))
+            time.sleep(0.3)
+
+    meta.title = meta.title or "Ana White Project"
+
+
+ANAWHITE_CONFIG = SiteConfig(
+    name="anawhite",
+    domain="ana-white.com",
+    fetch_chain=_DEFAULT_FETCH_CHAIN,
+    metadata_strategies=[OpenGraphMetadata(), HtmlMetadata()],
+    image_strategies=[],  # Images handled in post_parse
+    artifact_strategies=[],
+    post_parse=_anawhite_post_parse,
+)
+
+
 # ── Generic ──────────────────────────────────────────────────────────────
 
 GENERIC_CONFIG = SiteConfig(
@@ -1917,6 +1996,7 @@ SITE_CONFIGS: dict[str, SiteConfig] = {
     "github": GITHUB_CONFIG,
     "instructables": INSTRUCTABLES_CONFIG,
     "cults3d": CULTS3D_CONFIG,
+    "anawhite": ANAWHITE_CONFIG,
     "generic": GENERIC_CONFIG,
 }
 
