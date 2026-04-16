@@ -21,6 +21,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/maps"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/menu"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/serveall"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/share"
@@ -139,6 +140,8 @@ func run() error {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return shell.Run(ctx, os.Stdout, driveRoot)
+		case actions.NativeMCPSubcommand:
+			return runMCPServe(driveRoot)
 		}
 		if item, ok := cfg.FindItemByAlias(os.Args[1]); ok {
 			runner := actions.NewRunnerWithWorkDir(driveRoot, workDir)
@@ -176,6 +179,33 @@ func runResolvedAction(resolved actions.ResolvedAction) error {
 	default:
 		return fmt.Errorf("unknown action mode: %d", resolved.Mode)
 	}
+}
+
+func runMCPServe(driveRoot string) error {
+	meta, _ := mcp.LoadMetadata(driveRoot)
+	srv := mcp.NewServer(
+		mcp.NewSearchCapability(driveRoot, meta),
+		mcp.NewVaultCapability(driveRoot, meta),
+		mcp.NewQueryCapability(driveRoot, meta),
+	)
+	defer srv.Close()
+
+	port, err := netutil.FindAvailablePort("127.0.0.1", 8090)
+	if err != nil {
+		return err
+	}
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintf(os.Stdout, "MCP server (SSE) listening on http://%s/sse\n", addr)
+	fmt.Fprintln(os.Stdout, "────────────────────────────────")
+	fmt.Fprintln(os.Stdout, "Connect from any MCP client with:")
+	fmt.Fprintf(os.Stdout, "  URL: http://%s/sse\n", addr)
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, "Press Ctrl+C to stop.")
+	fmt.Fprintln(os.Stdout)
+
+	return srv.ServeSSE(addr)
 }
 
 func runMCP(driveRoot string) error {

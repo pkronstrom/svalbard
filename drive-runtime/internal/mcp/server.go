@@ -161,6 +161,12 @@ func (s *Server) ServeStdio() error {
 	return mcpserver.ServeStdio(s.inner)
 }
 
+// ServeSSE starts the server as an SSE HTTP server on the given address (blocking).
+func (s *Server) ServeSSE(addr string) error {
+	sse := mcpserver.NewSSEServer(s.inner, mcpserver.WithBaseURL("http://"+addr))
+	return sse.Start(addr)
+}
+
 // Close shuts down all capabilities.
 func (s *Server) Close() error {
 	var firstErr error

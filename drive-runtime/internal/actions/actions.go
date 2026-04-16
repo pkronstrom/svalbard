@@ -33,6 +33,7 @@ const (
 	NativeSearchSubcommand   = "__native-search"
 	NativeEmbeddedSubcommand = "__native-embedded-shell"
 	NativeActivateSubcommand = "__native-activate-shell"
+	NativeMCPSubcommand      = "__native-mcp-serve"
 )
 
 type ResolvedAction struct {
@@ -101,6 +102,8 @@ func nativeSubcommandForAction(actionID string) (string, bool) {
 		return NativeEmbeddedSubcommand, true
 	case "activate-shell":
 		return NativeActivateSubcommand, true
+	case "mcp-serve":
+		return NativeMCPSubcommand, true
 	default:
 		return "", false
 	}

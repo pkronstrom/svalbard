@@ -482,6 +482,16 @@ def _build_actions_config(drive_path: Path, manifest: Manifest, preset_name: str
             subheader="Sharing",
             order=310,
         )
+        _add_group_item(
+            groups,
+            "tools",
+            item_id="mcp-serve",
+            label="Serve MCP",
+            description="Start the MCP server so AI tools can access the vault.",
+            action=_builtin_action("mcp-serve"),
+            subheader="Sharing",
+            order=320,
+        )
 
     # ── Info ─────────────────────────────────────────────────────────────
     _add_group_item(
