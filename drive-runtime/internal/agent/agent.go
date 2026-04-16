@@ -135,21 +135,19 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		if err != nil {
 			return LaunchConfig{}, fmt.Errorf("resolve mcp binary: %w", err)
 		}
-		mcpConfig := fmt.Sprintf(`{"svalbard":{"command":"%s","args":["mcp","--drive","%s"]}}`, mcpBinary, driveRoot)
-		mcpConfigPath := filepath.Join(configRoot, "mcp-servers.json")
-		if err := os.WriteFile(mcpConfigPath, []byte(mcpConfig), 0o644); err != nil {
-			return LaunchConfig{}, fmt.Errorf("write mcp config: %w", err)
+		gooseConfigPath := filepath.Join(configRoot, "goose", "config.yaml")
+		if err := ensureGooseStdioExtension(gooseConfigPath, mcpBinary, driveRoot); err != nil {
+			return LaunchConfig{}, fmt.Errorf("write goose extension config: %w", err)
 		}
 		cfg.Env = map[string]string{
-			"HOME":               homeRoot,
-			"XDG_CONFIG_HOME":    configRoot,
-			"XDG_CACHE_HOME":     cacheRoot,
-			"XDG_DATA_HOME":      dataRoot,
-			"GOOSE_PROVIDER":     "openai",
-			"GOOSE_MODEL":        modelName,
-			"OPENAI_API_KEY":     "local",
-			"OPENAI_HOST":        hostRoot,
-			"GOOSE_MCP_SERVERS":  mcpConfigPath,
+			"HOME":            homeRoot,
+			"XDG_CONFIG_HOME": configRoot,
+			"XDG_CACHE_HOME":  cacheRoot,
+			"XDG_DATA_HOME":   dataRoot,
+			"GOOSE_PROVIDER":  "openai",
+			"GOOSE_MODEL":     modelName,
+			"OPENAI_API_KEY":  "local",
+			"OPENAI_HOST":     hostRoot,
 		}
 	default:
 		cfg.Env = map[string]string{}
@@ -228,6 +226,102 @@ func envMapToList(values map[string]string) []string {
 	return out
 }
 
+func ensureGooseStdioExtension(configPath, mcpBinary, driveRoot string) error {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return err
+	}
+
+	content, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	updated := upsertGooseExtensionYAML(string(content), gooseExtensionBlock(mcpBinary, driveRoot))
+	return os.WriteFile(configPath, []byte(updated), 0o644)
+}
+
+func gooseExtensionBlock(mcpBinary, driveRoot string) string {
+	return fmt.Sprintf(`  svalbard:
+    enabled: true
+    type: stdio
+    name: svalbard
+    cmd: %q
+    args:
+      - "mcp"
+      - "--drive"
+      - %q
+    timeout: 300
+`, mcpBinary, driveRoot)
+}
+
+func upsertGooseExtensionYAML(existing, block string) string {
+	block = strings.TrimRight(block, "\n")
+	if strings.TrimSpace(existing) == "" {
+		return "extensions:\n" + block + "\n"
+	}
+
+	lines := strings.Split(existing, "\n")
+	extensionsIdx := -1
+	for i, line := range lines {
+		if line == "extensions:" {
+			extensionsIdx = i
+			break
+		}
+	}
+	if extensionsIdx == -1 {
+		existing = strings.TrimRight(existing, "\n")
+		return existing + "\nextensions:\n" + block + "\n"
+	}
+
+	sectionEnd := len(lines)
+	for i := extensionsIdx + 1; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+			sectionEnd = i
+			break
+		}
+	}
+
+	blockLines := strings.Split(block, "\n")
+	svalbardIdx := -1
+	for i := extensionsIdx + 1; i < sectionEnd; i++ {
+		if lines[i] == "  svalbard:" {
+			svalbardIdx = i
+			break
+		}
+	}
+	if svalbardIdx == -1 {
+		merged := append([]string{}, lines[:sectionEnd]...)
+		merged = append(merged, blockLines...)
+		merged = append(merged, lines[sectionEnd:]...)
+		return strings.TrimRight(strings.Join(merged, "\n"), "\n") + "\n"
+	}
+
+	svalbardEnd := sectionEnd
+	for i := svalbardIdx + 1; i < sectionEnd; i++ {
+		if isGooseExtensionKey(lines[i]) {
+			svalbardEnd = i
+			break
+		}
+	}
+
+	merged := append([]string{}, lines[:svalbardIdx]...)
+	merged = append(merged, blockLines...)
+	merged = append(merged, lines[svalbardEnd:]...)
+	return strings.TrimRight(strings.Join(merged, "\n"), "\n") + "\n"
+}
+
+func isGooseExtensionKey(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.HasPrefix(line, "  ") &&
+		!strings.HasPrefix(line, "    ") &&
+		trimmed != "" &&
+		!strings.HasPrefix(trimmed, "#")
+}
 
 func waitForHTTPReady(url string) error {
 	client := &http.Client{Timeout: 2 * time.Second}

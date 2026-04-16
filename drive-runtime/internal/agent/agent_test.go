@@ -156,48 +156,35 @@ func TestPrepareClientLaunchConfigGooseIncludesMCPServers(t *testing.T) {
 		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
 	}
 
-	mcpConfigPath := cfg.Env["GOOSE_MCP_SERVERS"]
-	if mcpConfigPath == "" {
-		t.Fatal("GOOSE_MCP_SERVERS not set in env")
+	if got := cfg.Env["GOOSE_MCP_SERVERS"]; got != "" {
+		t.Fatalf("GOOSE_MCP_SERVERS = %q, want empty", got)
 	}
 
-	data, err := os.ReadFile(mcpConfigPath)
+	configPath := filepath.Join(driveRoot, ".svalbard", "runtime", "goose", "config", "goose", "config.yaml")
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-
-	var parsed map[string]any
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable() error = %v", err)
 	}
 
-	svalbard, ok := parsed["svalbard"]
-	if !ok {
-		t.Fatal("mcp-servers.json missing svalbard entry")
-	}
-
-	srv := svalbard.(map[string]any)
-	if srv["command"] == "" {
-		t.Error("svalbard MCP server command is empty")
-	}
-
-	args, ok := srv["args"].([]any)
-	if !ok || len(args) < 3 {
-		t.Fatal("svalbard MCP server args missing or too short")
-	}
-	if args[0] != "mcp" {
-		t.Errorf("args[0] = %q, want %q", args[0], "mcp")
-	}
-	if args[1] != "--drive" {
-		t.Errorf("args[1] = %q, want %q", args[1], "--drive")
-	}
-	if args[2] != driveRoot {
-		t.Errorf("args[2] = %q, want %q", args[2], driveRoot)
-	}
-
-	expectedDir := filepath.Join(driveRoot, ".svalbard", "runtime", "goose", "config")
-	if filepath.Dir(mcpConfigPath) != expectedDir {
-		t.Errorf("mcp config dir = %q, want %q", filepath.Dir(mcpConfigPath), expectedDir)
+	content := string(data)
+	for _, want := range []string{
+		"extensions:",
+		"  svalbard:",
+		"    enabled: true",
+		"    type: stdio",
+		"    name: svalbard",
+		`    cmd: "` + exe + `"`,
+		"    args:",
+		`      - "` + driveRoot + `"`,
+		"    timeout: 300",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("config.yaml missing %q:\n%s", want, content)
+		}
 	}
 }
 
