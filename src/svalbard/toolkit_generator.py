@@ -670,6 +670,41 @@ def generate_toolkit(drive_path: Path, preset_name: str, platform_filter: str | 
     actions_config = _build_actions_config(drive_path, manifest, preset_name)
     actions_path.write_text(json.dumps(actions_config, indent=2) + "\n")
 
+    # Generate recipes.json — machine-readable source index for MCP and tooling
+    preset = load_snapshot_preset(drive_path) or load_preset(
+        preset_name,
+        workspace=manifest.workspace_root or None,
+    )
+    recipes_index = {}
+    for source in preset.sources:
+        recipes_index[source.id] = {
+            "id": source.id,
+            "type": source.type,
+            "description": source.description,
+            "tags": source.tags or [],
+            "build": source.build or {},
+        }
+    recipes_path = svalbard_dir / "recipes.json"
+    recipes_path.write_text(json.dumps(recipes_index, indent=2) + "\n")
+
+    # Generate mcp-server.sh — standalone MCP server launcher
+    mcp_script = svalbard_dir / "mcp-server.sh"
+    with open(mcp_script, "w") as f:
+        f.write('#!/bin/sh\n')
+        f.write('DRIVE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"\n')
+        f.write('OS="$(uname -s)"\n')
+        f.write('ARCH="$(uname -m)"\n')
+        f.write('case "$OS" in\n')
+        f.write('    Darwin) OS="macos" ;;\n')
+        f.write('    Linux)  OS="linux" ;;\n')
+        f.write('    *)      echo "Unsupported OS: $OS" >&2; exit 1 ;;\n')
+        f.write('esac\n')
+        f.write('case "$ARCH" in\n')
+        f.write('    aarch64) ARCH="arm64" ;;\n')
+        f.write('esac\n')
+        f.write('exec "$DRIVE_ROOT/.svalbard/runtime/$OS-$ARCH/svalbard-drive" mcp --drive "$DRIVE_ROOT"\n')
+    _make_executable(mcp_script)
+
     # Copy platform-specific Go drive runtime launchers
     for platform, binary in _build_drive_runtime_binaries(platform_filter=platform_filter).items():
         dest = runtime_dest / platform / "svalbard-drive"
