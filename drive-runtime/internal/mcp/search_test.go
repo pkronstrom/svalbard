@@ -44,9 +44,10 @@ func TestSearchCapabilityActions(t *testing.T) {
 	if searchAction == nil || readAction == nil {
 		t.Fatalf("expected both search and read actions, got %#v", actions)
 	}
-	if want := "Pass the returned source and path to search_read unchanged"; !strings.Contains(searchAction.Desc, want) {
-		t.Fatalf("search description %q does not contain %q", searchAction.Desc, want)
+	if want := "vault_sources"; !strings.Contains(searchAction.Desc, want) {
+		t.Fatalf("search description %q does not mention %q", searchAction.Desc, want)
 	}
+	// read action path should be optional (for browsing main page)
 	var pathParam *mcp.ParamDef
 	for _, param := range readAction.Params {
 		param := param
@@ -58,8 +59,8 @@ func TestSearchCapabilityActions(t *testing.T) {
 	if pathParam == nil {
 		t.Fatal("read action missing path param")
 	}
-	if want := "Use the exact path returned by search"; !strings.Contains(pathParam.Desc, want) {
-		t.Fatalf("path param description %q does not contain %q", pathParam.Desc, want)
+	if pathParam.Required {
+		t.Fatal("read path param should not be required (omit to browse main page)")
 	}
 }
 

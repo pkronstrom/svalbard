@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 
@@ -27,13 +26,15 @@ func NewSearchCapability(driveRoot string, meta DriveMetadata) *SearchCapability
 }
 
 func (c *SearchCapability) Tool() string        { return "search" }
-func (c *SearchCapability) Description() string { return "Search and read offline archives" }
+func (c *SearchCapability) Description() string {
+	return "Search and read offline ZIM archives on this drive. IMPORTANT: First call vault_sources to see what archives are available — searches only work against indexed content. Use specific terms matching the archive topics, not generic web-style queries."
+}
 
 func (c *SearchCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "search",
-			Desc: "Search packaged ZIM archives. Uses semantic search automatically when available, otherwise keyword search. Required: query. Results include exact source and path values. Pass the returned source and path to search_read unchanged; do not derive a path from the title. Do not use for SQLite data; use query_sql instead.",
+			Desc: "Search packaged ZIM archives by keyword. Call vault_sources first to see available archives and their topics. Use specific terms relevant to the archive content (e.g. 'acetaminophen dosage' not 'medicine'). Results include exact source and path — pass these to search_read unchanged. Do not use for SQLite data; use query_sql instead.",
 			Params: []ParamDef{
 				{Name: "query", Type: "string", Required: true, Desc: "Keyword query to search for, for example: nmap, grep, package manager"},
 				{Name: "source", Type: "string", Desc: "Optional ZIM source name to restrict results to one archive, for example: wikipedia_en_100_mini_2026-04"},
@@ -43,10 +44,10 @@ func (c *SearchCapability) Actions() []ActionDef {
 		},
 		{
 			Name: "read",
-			Desc: "Read a specific article from a packaged ZIM archive when you already know the source and article path. Use search first if you need to discover the article.",
+			Desc: "Read or browse a ZIM archive. Omit path to get the main page with navigable links (use this to discover what's inside an archive). Include path to read a specific article. Use the exact path from search results or from links returned by a previous read.",
 			Params: []ParamDef{
 				{Name: "source", Type: "string", Required: true, Desc: "ZIM source name without the .zim extension, for example: wikipedia_en_100_mini_2026-04"},
-				{Name: "path", Type: "string", Required: true, Desc: "Article path inside the ZIM archive. Use the exact path returned by search; do not reconstruct it from the title."},
+				{Name: "path", Type: "string", Desc: "Article path inside the ZIM. Omit to browse the main page and see available categories/links."},
 			},
 		},
 	}
@@ -183,9 +184,7 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 		return ActionResult{}, fmt.Errorf("missing required parameter: source")
 	}
 	path, _ := params["path"].(string)
-	if path == "" {
-		return ActionResult{}, fmt.Errorf("missing required parameter: path")
-	}
+	// path is optional — omit to browse the main page
 
 	session, err := c.getSession()
 	if err != nil {
@@ -231,11 +230,10 @@ func (c *SearchCapability) fetchPage(ctx context.Context, session *search.Sessio
 	}
 	port := session.KiwixPort()
 
-	pageURL := fmt.Sprintf("http://127.0.0.1:%d/content/%s/%s",
-		port,
-		url.PathEscape(source),
-		url.PathEscape(path),
-	)
+	// Source and path are used as-is — they come from search.db or the AI
+	// passing back values from vault_sources/search results. Kiwix expects
+	// the raw path (e.g. "A/Article_Name"), not URL-encoded.
+	pageURL := fmt.Sprintf("http://127.0.0.1:%d/content/%s/%s", port, source, path)
 
 	resp, err := http.Get(pageURL)
 	if err != nil {
