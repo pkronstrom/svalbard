@@ -49,6 +49,7 @@ type Model struct {
 	freeGB     float64
 	checkedIDs map[string]bool
 	presetName string
+	region     string
 }
 
 // New creates a new wizard Model with the given config.
@@ -61,11 +62,7 @@ func New(config WizardConfig) Model {
 		checkedIDs: make(map[string]bool),
 	}
 
-	if config.StartAtStep > 0 && config.StartAtStep <= int(stageReview) {
-		m.stage = stage(config.StartAtStep)
-	}
-
-	// Initialize path picker
+	// Always start at path picker — every wizard run needs a vault path
 	m.pathPicker = newPathPicker(config.Volumes, config.HomeVolume, config.PrefillPath)
 
 	return m
@@ -95,6 +92,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case presetDoneMsg:
 		m.presetName = msg.preset.Name
+		m.region = msg.preset.Region
 		m.checkedIDs = make(map[string]bool)
 		for _, id := range msg.preset.SourceIDs {
 			m.checkedIDs[id] = true
@@ -120,6 +118,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				VaultPath:   m.vaultPath,
 				SelectedIDs: m.selectedIDList(),
 				PresetName:  m.presetName,
+				Region:      m.region,
 			}}
 		}
 

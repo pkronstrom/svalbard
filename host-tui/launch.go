@@ -89,12 +89,9 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case welcome.SelectMsg:
 		config := m.defaultWizardConfig()
 		switch msg.ID {
-		case "init":
-			m.screen = screenWizard
-			m.wizard = wizard.New(config)
-			return m, nil
-		case "preset":
-			config.StartAtStep = 1
+		case "init", "preset":
+			// Both paths start the wizard at the path picker.
+			// Every wizard run needs a vault path selected first.
 			m.screen = screenWizard
 			m.wizard = wizard.New(config)
 			return m, nil

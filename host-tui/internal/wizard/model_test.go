@@ -219,11 +219,11 @@ func TestWizardReviewBackGoesToPacks(t *testing.T) {
 	}
 }
 
-func TestWizardStartAtStep(t *testing.T) {
+func TestWizardAlwaysStartsAtPath(t *testing.T) {
 	config := testConfig()
-	config.StartAtStep = 1
+	config.StartAtStep = 1 // should be ignored — wizard always starts at path
 	m := New(config)
-	if m.stage != stagePreset {
-		t.Errorf("expected stagePreset with StartAtStep=1, got %d", m.stage)
+	if m.stage != stagePath {
+		t.Errorf("expected stagePath regardless of StartAtStep, got %d", m.stage)
 	}
 }
