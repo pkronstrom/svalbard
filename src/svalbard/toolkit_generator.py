@@ -355,20 +355,33 @@ def _build_actions_config(drive_path: Path, manifest: Manifest, preset_name: str
             client_labels = {"opencode": "OpenCode", "goose": "Goose"}
             for index, client_id in enumerate(_available_ai_clients(manifest), start=1):
                 source = source_by_id.get(client_id)
-                _add_group_item(
-                    groups,
-                    "local-ai",
-                    item_id=client_id,
-                    label=f"{client_labels[client_id]} with local model",
-                    description=_source_description(
-                        source,
-                        f"Launch {client_labels[client_id]} against the local model runtime.",
-                    ),
-                    action=_source_action(source, "agent", {"client": client_id}),
-                    aliases=[client_id],
-                    subheader=_source_subheader(source, "AI Clients"),
-                    order=_source_order(source, 200 + index),
-                )
+                for model_index, entry in enumerate(chat_entries):
+                    model_source = source_by_id.get(entry.id)
+                    model_name = (
+                        model_source.description
+                        if model_source
+                        else _titleize_identifier(entry.id)
+                    )
+                    model_path = str(drive_path / TYPE_DIRS["gguf"] / entry.filename)
+                    aliases = [client_id] if model_index == 0 else None
+                    _add_group_item(
+                        groups,
+                        "local-ai",
+                        item_id=f"{client_id}-{entry.id}",
+                        label=f"{client_labels[client_id]} with {model_name}",
+                        description=_source_description(
+                            source,
+                            f"Launch {client_labels[client_id]} against {model_name} on the local model runtime.",
+                        ),
+                        action=_source_action(
+                            source,
+                            "agent",
+                            {"client": client_id, "model": model_path},
+                        ),
+                        aliases=aliases,
+                        subheader=_source_subheader(source, "AI Clients"),
+                        order=_source_order(source, 200 + index * 10 + model_index),
+                    )
 
     # ── Apps ────────────────────────────────────────────────────────────
     # Exclude vendor/support libraries (maplibre-vendor etc.) — they're not user-facing

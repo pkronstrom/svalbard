@@ -40,16 +40,43 @@ func TestToolsReturnsRegisteredTool(t *testing.T) {
 	defer srv.Close()
 
 	tools := srv.Tools()
-	if len(tools) != 1 {
-		t.Fatalf("expected 1 tool, got %d", len(tools))
+	if len(tools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(tools))
 	}
 
-	tool := tools[0]
-	if tool.Name != "test_tool" {
-		t.Errorf("expected tool name 'test_tool', got %q", tool.Name)
+	var pingTool, echoTool *mcp.ToolInfo
+	for i := range tools {
+		switch tools[i].Name {
+		case "test_tool_ping":
+			pingTool = &tools[i]
+		case "test_tool_echo":
+			echoTool = &tools[i]
+		}
 	}
-	if tool.Description != "A test tool" {
-		t.Errorf("expected description 'A test tool', got %q", tool.Description)
+	if pingTool == nil {
+		t.Fatal("expected explicit ping tool to be registered")
+	}
+	if echoTool == nil {
+		t.Fatal("expected explicit echo tool to be registered")
+	}
+	if pingTool.Description != "Returns pong" {
+		t.Errorf("expected ping description 'Returns pong', got %q", pingTool.Description)
+	}
+	if echoTool.Description != "Echoes input" {
+		t.Errorf("expected echo description 'Echoes input', got %q", echoTool.Description)
+	}
+	if got := echoTool.InputSchema.Required; len(got) != 1 || got[0] != "text" {
+		t.Fatalf("echo required fields = %v, want [text]", got)
+	}
+	textProp, ok := echoTool.InputSchema.Properties["text"].(map[string]any)
+	if !ok {
+		t.Fatalf("echo text property missing or wrong type: %#v", echoTool.InputSchema.Properties["text"])
+	}
+	if textProp["type"] != "string" {
+		t.Fatalf("echo text property type = %#v, want string", textProp["type"])
+	}
+	if echoTool.Annotations.ReadOnlyHint == nil || !*echoTool.Annotations.ReadOnlyHint {
+		t.Fatal("expected readOnlyHint=true")
 	}
 }
 

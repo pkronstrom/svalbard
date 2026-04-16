@@ -25,24 +25,24 @@ func (c *VaultCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "sources",
-			Desc: "List content sources on the drive",
+			Desc: "List packaged content sources on the drive, such as ZIM archives, SQLite databases, maps, and books. Use this to discover available offline sources before searching or querying them.",
 			Params: []ParamDef{
-				{Name: "type", Type: "string", Desc: "Filter by source type (zim, database, map, book)"},
+				{Name: "type", Type: "string", Desc: "Optional source type filter", Enum: []string{"zim", "database", "map", "book"}},
 			},
 		},
 		{
 			Name:   "databases",
-			Desc:   "List SQLite databases and their tables",
+			Desc:   "List packaged SQLite databases and their tables. Use this before query_describe or query_sql when you need to discover structured data sources.",
 			Params: nil,
 		},
 		{
 			Name:   "maps",
-			Desc:   "List PMTiles map files",
+			Desc:   "List packaged PMTiles map files available on the drive.",
 			Params: nil,
 		},
 		{
 			Name:   "stats",
-			Desc:   "Get drive summary statistics",
+			Desc:   "Get a high-level summary of the drive, including preset, region, creation date, and content counts.",
 			Params: nil,
 		},
 	}

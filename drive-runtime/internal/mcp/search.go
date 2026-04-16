@@ -33,28 +33,28 @@ func (c *SearchCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "keyword",
-			Desc: "Full-text keyword search across all ZIM archives",
+			Desc: "Search packaged ZIM archives by keyword. Use for article lookup in offline docs and encyclopedias. Required: query. Do not use for SQLite data; use query_sql instead.",
 			Params: []ParamDef{
-				{Name: "query", Type: "string", Required: true, Desc: "Search query"},
-				{Name: "detail", Type: "string", Desc: "Detail level: link, snippet, full", Default: "snippet", Enum: []string{"link", "snippet", "full"}},
-				{Name: "limit", Type: "integer", Desc: "Max results (1-50, default 10)", Default: 10},
+				{Name: "query", Type: "string", Required: true, Desc: "Keyword query to search for, for example: nmap, grep, package manager"},
+				{Name: "detail", Type: "string", Desc: "How much result content to return: link, snippet, or full article text", Default: "snippet", Enum: []string{"link", "snippet", "full"}},
+				{Name: "limit", Type: "integer", Desc: "Maximum number of results to return, from 1 to 50", Default: 10},
 			},
 		},
 		{
 			Name: "semantic",
-			Desc: "Semantic similarity search using embeddings",
+			Desc: "Semantic search across packaged ZIM archives using embeddings when available. Use for concept-level lookup when exact keywords are not enough. Required: query.",
 			Params: []ParamDef{
-				{Name: "query", Type: "string", Required: true, Desc: "Search query"},
-				{Name: "detail", Type: "string", Desc: "Detail level: link, snippet, full", Default: "snippet", Enum: []string{"link", "snippet", "full"}},
-				{Name: "limit", Type: "integer", Desc: "Max results (1-50, default 10)", Default: 10},
+				{Name: "query", Type: "string", Required: true, Desc: "Natural-language query describing what you want to find"},
+				{Name: "detail", Type: "string", Desc: "How much result content to return: link, snippet, or full article text", Default: "snippet", Enum: []string{"link", "snippet", "full"}},
+				{Name: "limit", Type: "integer", Desc: "Maximum number of results to return, from 1 to 50", Default: 10},
 			},
 		},
 		{
 			Name: "read",
-			Desc: "Read the full text of a specific article from a ZIM archive",
+			Desc: "Read a specific article from a packaged ZIM archive when you already know the source and article path. Use search_keyword or search_semantic first if you need to discover the article.",
 			Params: []ParamDef{
-				{Name: "source", Type: "string", Required: true, Desc: "ZIM source name (without .zim extension)"},
-				{Name: "path", Type: "string", Required: true, Desc: "Article path within the ZIM"},
+				{Name: "source", Type: "string", Required: true, Desc: "ZIM source name without the .zim extension, for example: wikipedia_en_100_mini_2026-04"},
+				{Name: "path", Type: "string", Required: true, Desc: "Article path inside the ZIM archive, as returned by search results"},
 			},
 		},
 	}

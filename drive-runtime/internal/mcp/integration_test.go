@@ -293,15 +293,25 @@ func TestIntegrationServerToolsList(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Close() })
 
 	tools := srv.Tools()
-	if len(tools) != 3 {
-		t.Fatalf("len(tools) = %d, want 3", len(tools))
+	if len(tools) != 9 {
+		t.Fatalf("len(tools) = %d, want 9", len(tools))
 	}
 
 	names := map[string]bool{}
 	for _, tool := range tools {
 		names[tool.Name] = true
 	}
-	for _, expected := range []string{"vault", "query", "search"} {
+	for _, expected := range []string{
+		"vault_sources",
+		"vault_databases",
+		"vault_maps",
+		"vault_stats",
+		"query_describe",
+		"query_sql",
+		"search_keyword",
+		"search_semantic",
+		"search_read",
+	} {
 		if !names[expected] {
 			t.Errorf("missing tool %q in %v", expected, names)
 		}

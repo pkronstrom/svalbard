@@ -112,33 +112,39 @@ func TestPrepareClientLaunchConfigOpenCodeIncludesMCPServers(t *testing.T) {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	mcpServers, ok := parsed["mcpServers"]
+	mcpServers, ok := parsed["mcp"]
 	if !ok {
-		t.Fatal("opencode.json missing mcpServers key")
+		t.Fatal("opencode.json missing mcp key")
 	}
 
 	svalbard, ok := mcpServers.(map[string]any)["svalbard"]
 	if !ok {
-		t.Fatal("mcpServers missing svalbard entry")
+		t.Fatal("mcp missing svalbard entry")
 	}
 
 	srv := svalbard.(map[string]any)
-	if srv["command"] == "" {
-		t.Error("svalbard MCP server command is empty")
+	if srv["type"] != "local" {
+		t.Errorf("type = %q, want %q", srv["type"], "local")
+	}
+	if srv["enabled"] != true {
+		t.Errorf("enabled = %v, want true", srv["enabled"])
 	}
 
-	args, ok := srv["args"].([]any)
-	if !ok || len(args) < 3 {
-		t.Fatal("svalbard MCP server args missing or too short")
+	command, ok := srv["command"].([]any)
+	if !ok || len(command) < 4 {
+		t.Fatal("svalbard MCP server command missing or too short")
 	}
-	if args[0] != "mcp" {
-		t.Errorf("args[0] = %q, want %q", args[0], "mcp")
+	if command[0] == "" {
+		t.Error("svalbard MCP server executable is empty")
 	}
-	if args[1] != "--drive" {
-		t.Errorf("args[1] = %q, want %q", args[1], "--drive")
+	if command[1] != "mcp" {
+		t.Errorf("command[1] = %q, want %q", command[1], "mcp")
 	}
-	if args[2] != driveRoot {
-		t.Errorf("args[2] = %q, want %q", args[2], driveRoot)
+	if command[2] != "--drive" {
+		t.Errorf("command[2] = %q, want %q", command[2], "--drive")
+	}
+	if command[3] != driveRoot {
+		t.Errorf("command[3] = %q, want %q", command[3], driveRoot)
 	}
 }
 

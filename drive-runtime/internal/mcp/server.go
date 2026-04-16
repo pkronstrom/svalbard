@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -13,7 +14,8 @@ import (
 type ToolInfo struct {
 	Name        string
 	Description string
-	Actions     []string
+	InputSchema gomcp.ToolInputSchema
+	Annotations gomcp.ToolAnnotation
 }
 
 // Server wraps an mcp-go MCPServer and routes calls to Capability instances.
@@ -41,48 +43,41 @@ func NewServer(caps ...Capability) *Server {
 
 // registerCapability turns a Capability into an mcp-go tool registration.
 func (s *Server) registerCapability(cap Capability) {
-	actions := cap.Actions()
-	actionNames := make([]string, len(actions))
-	for i, a := range actions {
-		actionNames[i] = a.Name
+	for _, action := range cap.Actions() {
+		tool := s.buildActionTool(cap, action)
+		handler := s.makeHandler(cap, action.Name)
+		s.inner.AddTool(tool, handler)
+	}
+}
+
+func (s *Server) buildActionTool(cap Capability, action ActionDef) gomcp.Tool {
+	options := []gomcp.ToolOption{
+		gomcp.WithDescription(action.Desc),
+		gomcp.WithTitleAnnotation(toolName(cap.Tool(), action.Name)),
+		gomcp.WithReadOnlyHintAnnotation(true),
+		gomcp.WithDestructiveHintAnnotation(false),
+		gomcp.WithIdempotentHintAnnotation(true),
+		gomcp.WithOpenWorldHintAnnotation(false),
 	}
 
-	// Build the tool's input schema: { action: enum, params: object }
-	tool := gomcp.NewTool(
-		cap.Tool(),
-		gomcp.WithDescription(cap.Description()),
-		gomcp.WithString("action",
-			gomcp.Required(),
-			gomcp.Description("Action to perform"),
-			gomcp.Enum(actionNames...),
-		),
-		gomcp.WithObject("params",
-			gomcp.Description("Action parameters"),
-		),
-	)
+	for _, param := range action.Params {
+		options = append(options, schemaOption(param))
+	}
 
-	handler := s.makeHandler(cap)
-	s.inner.AddTool(tool, handler)
+	return gomcp.NewTool(toolName(cap.Tool(), action.Name), options...)
 }
 
 // makeHandler returns a ToolHandlerFunc that routes to the capability.
-func (s *Server) makeHandler(cap Capability) mcpserver.ToolHandlerFunc {
+func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHandlerFunc {
 	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-		action := req.GetString("action", "")
-		if action == "" {
-			return gomcp.NewToolResultError("missing required parameter: action"), nil
-		}
-
 		params := map[string]any{}
 		if raw := req.GetArguments(); raw != nil {
-			if p, ok := raw["params"]; ok {
-				if m, ok := p.(map[string]any); ok {
-					params = m
-				}
+			for k, v := range raw {
+				params[k] = v
 			}
 		}
 
-		result, err := cap.Handle(ctx, action, params)
+		result, err := cap.Handle(ctx, actionName, params)
 		if err != nil {
 			return nil, err
 		}
@@ -102,25 +97,58 @@ func (s *Server) makeHandler(cap Capability) mcpserver.ToolHandlerFunc {
 func (s *Server) Tools() []ToolInfo {
 	tools := s.inner.ListTools()
 	out := make([]ToolInfo, 0, len(tools))
-	for name, st := range tools {
-		var actions []string
-		// Extract action enum from the input schema
-		if props, ok := st.Tool.InputSchema.Properties["action"]; ok {
-			if propMap, ok := props.(map[string]any); ok {
-				if enumRaw, ok := propMap["enum"]; ok {
-					if enumSlice, ok := enumRaw.([]string); ok {
-						actions = enumSlice
-					}
-				}
-			}
-		}
+	names := make([]string, 0, len(tools))
+	for name := range tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		st := tools[name]
 		out = append(out, ToolInfo{
 			Name:        name,
 			Description: st.Tool.Description,
-			Actions:     actions,
+			InputSchema: st.Tool.InputSchema,
+			Annotations: st.Tool.Annotations,
 		})
 	}
 	return out
+}
+
+func toolName(prefix, action string) string {
+	return prefix + "_" + action
+}
+
+func schemaOption(param ParamDef) gomcp.ToolOption {
+	opts := []gomcp.PropertyOption{
+		gomcp.Description(param.Desc),
+	}
+	if param.Required {
+		opts = append(opts, gomcp.Required())
+	}
+	if len(param.Enum) > 0 {
+		opts = append(opts, gomcp.Enum(param.Enum...))
+	}
+	if param.Default != nil {
+		switch value := param.Default.(type) {
+		case string:
+			opts = append(opts, gomcp.DefaultString(value))
+		case int:
+			opts = append(opts, gomcp.DefaultNumber(float64(value)))
+		case float64:
+			opts = append(opts, gomcp.DefaultNumber(value))
+		case bool:
+			opts = append(opts, gomcp.DefaultBool(value))
+		}
+	}
+
+	switch param.Type {
+	case "integer", "number":
+		return gomcp.WithNumber(param.Name, opts...)
+	case "boolean":
+		return gomcp.WithBoolean(param.Name, opts...)
+	default:
+		return gomcp.WithString(param.Name, opts...)
+	}
 }
 
 // ServeStdio starts the server on stdin/stdout (blocking).

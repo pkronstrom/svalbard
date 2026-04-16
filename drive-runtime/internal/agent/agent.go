@@ -105,10 +105,11 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
       }
     }
   },
-  "mcpServers": {
+  "mcp": {
     "svalbard": {
-      "command": "%[3]s",
-      "args": ["mcp", "--drive", "%[4]s"]
+      "type": "local",
+      "command": ["%[3]s", "mcp", "--drive", "%[4]s"],
+      "enabled": true
     }
   }
 }

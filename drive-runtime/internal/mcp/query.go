@@ -27,18 +27,18 @@ func (c *QueryCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "describe",
-			Desc: "Show database schema (tables, columns, FTS status, sample rows)",
+			Desc: "Inspect a packaged SQLite database schema. Use this before query_sql to discover tables, columns, FTS support, and sample rows.",
 			Params: []ParamDef{
-				{Name: "database", Type: "string", Required: true, Desc: "Database filename (e.g. medicines.sqlite)"},
-				{Name: "table", Type: "string", Desc: "Specific table to describe (omit for all tables)"},
+				{Name: "database", Type: "string", Required: true, Desc: "Database filename in the drive data directory, for example: fimea.sqlite"},
+				{Name: "table", Type: "string", Desc: "Optional table name to inspect. Omit to describe all tables."},
 			},
 		},
 		{
 			Name: "sql",
-			Desc: "Execute a read-only SQL query",
+			Desc: "Run a read-only SQL query against a packaged SQLite database. Use only for SELECT-style queries; write statements are rejected.",
 			Params: []ParamDef{
-				{Name: "database", Type: "string", Required: true, Desc: "Database filename (e.g. medicines.sqlite)"},
-				{Name: "sql", Type: "string", Required: true, Desc: "SQL SELECT query to execute"},
+				{Name: "database", Type: "string", Required: true, Desc: "Database filename in the drive data directory, for example: fimea.sqlite"},
+				{Name: "sql", Type: "string", Required: true, Desc: "Read-only SQL query to execute, typically a SELECT statement"},
 			},
 		},
 	}
