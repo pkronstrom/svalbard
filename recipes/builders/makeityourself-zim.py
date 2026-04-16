@@ -1702,10 +1702,22 @@ def _instructables_post_parse(
     """Instructables post-parse: CDN images, step extraction, file attachments."""
     url = meta.url
 
-    # Author
-    author_tag = soup.find("a", class_="member-header-display-name") or soup.find("a", attrs={"rel": "author"})
+    # Author — handle both classic and CSS-module class names
+    def _has_author_name_class(css):
+        return css and any(c == "member-header-display-name" or "authorName" in c for c in css.split())
+
+    author_tag = (
+        soup.find(class_=_has_author_name_class)
+        or soup.find("a", class_="member-header-display-name")
+        or soup.find("a", attrs={"rel": "author"})
+    )
     if author_tag:
-        meta.author = meta.author or author_tag.get_text().strip()
+        # CSS-module authorName wraps an <a> with the actual name
+        a_tag = author_tag.find("a") if author_tag.name != "a" else author_tag
+        meta.author = meta.author or (a_tag or author_tag).get_text().strip()
+        # Clean up "By " prefix
+        if meta.author.startswith("By "):
+            meta.author = meta.author[3:].strip()
 
     # Clean up title
     if meta.title:
@@ -1749,15 +1761,22 @@ def _instructables_post_parse(
             if _download_file(client, og_img["content"], images_dir / "og.jpg"):
                 meta.images.append("images/og.jpg")
 
-    # Extract steps
+    # Extract steps — handle both classic ("step") and CSS-module ("_step_xyz_1") class names
+    def _has_step_class(css):
+        return css and any(c == "step" or re.match(r"_step_[a-z0-9]+_\d+$", c) for c in css.split())
+
+    def _has_step_title_class(css):
+        return css and any(c == "step-title" or "stepTitle" in c for c in css.split())
+
+    def _has_step_body_class(css):
+        return css and any(c == "step-body" or "stepBody" in c for c in css.split())
+
     steps = []
-    step_elements = soup.find_all("div", class_="step")
-    if not step_elements:
-        step_elements = soup.find_all("section", class_="step")
+    step_elements = soup.find_all(["div", "section"], class_=_has_step_class)
     for step in step_elements:
-        step_title_el = step.find(["h2", "h3"])
+        step_title_el = step.find(class_=_has_step_title_class) or step.find(["h2", "h3"])
         step_title = step_title_el.get_text().strip() if step_title_el else ""
-        step_body = step.find("div", class_="step-body")
+        step_body = step.find(class_=_has_step_body_class) or step.find("div", class_="step-body")
         step_text = step_body.get_text().strip() if step_body else step.get_text().strip()
         steps.append({"title": step_title, "text": step_text[:2000]})
 

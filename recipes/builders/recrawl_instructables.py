@@ -65,16 +65,31 @@ def recrawl_project(project_dir: Path) -> dict:
     # Parse with BeautifulSoup
     soup = BeautifulSoup(html, "html.parser")
 
-    # Extract steps
+    # Extract steps — handle both classic ("step") and CSS-module ("_step_xyz_1") class names
+    def _has_step_class(css):
+        return css and any(
+            c == "step" or re.match(r"_step_[a-z0-9]+_\d+$", c) for c in css.split()
+        )
+
+    def _has_step_title_class(css):
+        return css and any(c == "step-title" or "stepTitle" in c for c in css.split())
+
+    def _has_step_body_class(css):
+        return css and any(c == "step-body" or "stepBody" in c for c in css.split())
+
     steps = []
-    step_elements = soup.find_all("div", class_="step")
-    if not step_elements:
-        step_elements = soup.find_all("section", class_="step")
+    step_elements = soup.find_all(["div", "section"], class_=_has_step_class)
     for step in step_elements:
-        step_title_el = step.find(["h2", "h3"])
+        step_title_el = step.find(class_=_has_step_title_class) or step.find(
+            ["h2", "h3"]
+        )
         step_title = step_title_el.get_text().strip() if step_title_el else ""
-        step_body = step.find("div", class_="step-body")
-        step_text = step_body.get_text().strip() if step_body else step.get_text().strip()
+        step_body = step.find(class_=_has_step_body_class) or step.find(
+            "div", class_="step-body"
+        )
+        step_text = (
+            step_body.get_text().strip() if step_body else step.get_text().strip()
+        )
         steps.append({"title": step_title, "text": step_text[:2000]})
 
     if steps:
@@ -82,13 +97,25 @@ def recrawl_project(project_dir: Path) -> dict:
             json.dumps(steps, ensure_ascii=False, indent=2)
         )
 
-    # Extract author if missing
+    # Extract author if missing — handle CSS-module class names
     if not meta.get("author"):
-        author_tag = soup.find("a", class_="member-header-display-name") or soup.find(
-            "a", attrs={"rel": "author"}
+        def _has_author_name_class(css):
+            return css and any(
+                c == "member-header-display-name" or "authorName" in c
+                for c in css.split()
+            )
+
+        author_tag = (
+            soup.find(class_=_has_author_name_class)
+            or soup.find("a", class_="member-header-display-name")
+            or soup.find("a", attrs={"rel": "author"})
         )
         if author_tag:
-            meta["author"] = author_tag.get_text().strip()
+            a_tag = author_tag.find("a") if author_tag.name != "a" else author_tag
+            author = (a_tag or author_tag).get_text().strip()
+            if author.startswith("By "):
+                author = author[3:].strip()
+            meta["author"] = author
 
     # Extract description if too short
     if len(meta.get("description", "").strip()) < 50:
