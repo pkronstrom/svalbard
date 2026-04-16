@@ -3108,14 +3108,16 @@ def stage_package(
                     if img not in seen:
                         valid.append(img)
                         seen.add(img)
-        # Strip tiny/broken images (<2KB = tracking pixels, error pages, placeholders)
+        # Strip tiny/broken images (<5KB = icons, tracking pixels, error pages)
+        # Sort largest first so category thumbnails use the best image
         clean = []
         for img in valid:
             img_path = proj_dir / img
-            if img_path.exists() and img_path.stat().st_size >= 2000:
+            if img_path.exists() and img_path.stat().st_size >= 5000:
                 clean.append(img)
             else:
                 tiny_stripped += 1
+        clean.sort(key=lambda i: (proj_dir / i).stat().st_size, reverse=True)
         if clean != images:
             proj["images"] = clean
             _patch_meta(proj_dir, images=clean)
