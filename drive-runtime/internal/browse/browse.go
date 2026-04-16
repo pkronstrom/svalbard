@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
@@ -57,7 +57,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if err != nil {
 		return fmt.Errorf("kiwix-serve not found")
 	}
-	port, err := findAvailablePort("127.0.0.1", 8080)
+	port, err := netutil.FindAvailablePort("127.0.0.1", 8080)
 	if err != nil {
 		return err
 	}
@@ -99,18 +99,3 @@ func buildKiwixArgs(port int, targets []string) []string {
 	return args
 }
 
-func findAvailablePort(host string, preferred int) (int, error) {
-	for port := preferred; port < preferred+20; port++ {
-		listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
-		if err == nil {
-			listener.Close()
-			return port, nil
-		}
-	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
-	if err != nil {
-		return 0, err
-	}
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port, nil
-}

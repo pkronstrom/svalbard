@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
@@ -149,7 +149,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	if err != nil {
 		return err
 	}
-	port, err := findAvailablePort("127.0.0.1", 8082)
+	port, err := netutil.FindAvailablePort("127.0.0.1", 8082)
 	if err != nil {
 		return err
 	}
@@ -207,21 +207,6 @@ func envMapToList(values map[string]string) []string {
 	return out
 }
 
-func findAvailablePort(host string, preferred int) (int, error) {
-	for port := preferred; port < preferred+20; port++ {
-		listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
-		if err == nil {
-			listener.Close()
-			return port, nil
-		}
-	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
-	if err != nil {
-		return 0, err
-	}
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port, nil
-}
 
 func waitForHTTPReady(url string) error {
 	client := &http.Client{Timeout: 2 * time.Second}

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -21,6 +20,7 @@ import (
 
 	drivebinary "github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
@@ -158,7 +158,7 @@ func Run(ctx context.Context, stdin io.Reader, stdout io.Writer, driveRoot, init
 		if effectiveMode == ModeSemantic {
 			if embedServer == nil {
 				if path, err := drivebinary.Resolve("llama-server", driveRoot, platform.Detect); err == nil && caps.EmbeddingModel != "" {
-					embedPort, _ = findAvailablePort("127.0.0.1", 8085)
+					embedPort, _ = netutil.FindAvailablePort("127.0.0.1", 8085)
 					embedServer, err = startEmbeddingServer(ctx, path, caps.EmbeddingModel, embedPort)
 					if err != nil {
 						embedServer = nil
@@ -207,7 +207,7 @@ func Run(ctx context.Context, stdin io.Reader, stdout io.Writer, driveRoot, init
 		}
 		if idx, err := strconv.Atoi(choice); err == nil && idx >= 1 && idx <= len(results) {
 			if kiwixServer == nil {
-				kiwixPort, _ = findAvailablePort("127.0.0.1", 8080)
+				kiwixPort, _ = netutil.FindAvailablePort("127.0.0.1", 8080)
 				kiwixServer, err = startKiwix(ctx, driveRoot, kiwixPort)
 				if err != nil {
 					fmt.Fprintf(stdout, "  kiwix-serve not available. Article: %s / %s\n", strings.TrimSuffix(results[idx-1].Filename, ".zim"), results[idx-1].Path)
@@ -585,18 +585,3 @@ func dotProduct(a []float32, b []float32) float64 {
 	return sum
 }
 
-func findAvailablePort(host string, preferred int) (int, error) {
-	for port := preferred; port < preferred+20; port++ {
-		listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
-		if err == nil {
-			listener.Close()
-			return port, nil
-		}
-	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
-	if err != nil {
-		return 0, err
-	}
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port, nil
-}

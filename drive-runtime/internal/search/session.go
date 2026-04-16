@@ -11,6 +11,7 @@ import (
 
 	drivebinary "github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
@@ -165,7 +166,7 @@ func (s *Session) ensureEmbedServer(ctx context.Context) error {
 	if !s.caps.HasLlamaServer || s.caps.EmbeddingModel == "" {
 		return fmt.Errorf("semantic backend unavailable")
 	}
-	port, err := findAvailablePort("127.0.0.1", 8085)
+	port, err := netutil.FindAvailablePort("127.0.0.1", 8085)
 	if err != nil {
 		return err
 	}
@@ -190,7 +191,7 @@ func (s *Session) ensureKiwix(ctx context.Context) error {
 		}
 		s.kiwixServer = nil
 	}
-	port, err := findAvailablePort("127.0.0.1", 8080)
+	port, err := netutil.FindAvailablePort("127.0.0.1", 8080)
 	if err != nil {
 		return err
 	}

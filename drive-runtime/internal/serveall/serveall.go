@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
@@ -52,7 +53,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 	var servers []*http.Server
 
 	if binaries["kiwix-serve"] != "" && hasMatchingFiles(filepath.Join(driveRoot, "zim"), ".zim") {
-		port, err := findAvailablePort(bind, 8080)
+		port, err := netutil.FindAvailablePort(bind, 8080)
 		if err != nil {
 			return err
 		}
@@ -72,7 +73,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 	if binaries["llama-server"] != "" {
 		model, err := firstChatModel(driveRoot)
 		if err == nil {
-			port, err := findAvailablePort(bind, 8082)
+			port, err := netutil.FindAvailablePort(bind, 8082)
 			if err != nil {
 				return err
 			}
@@ -87,7 +88,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 		}
 	}
 
-	filePort, err := findAvailablePort(bind, 8083)
+	filePort, err := netutil.FindAvailablePort(bind, 8083)
 	if err != nil {
 		return err
 	}
@@ -152,18 +153,3 @@ func firstChatModel(driveRoot string) (string, error) {
 	return "", fmt.Errorf("no chat model found")
 }
 
-func findAvailablePort(host string, preferred int) (int, error) {
-	for port := preferred; port < preferred+20; port++ {
-		listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
-		if err == nil {
-			listener.Close()
-			return port, nil
-		}
-	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
-	if err != nil {
-		return 0, err
-	}
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port, nil
-}
