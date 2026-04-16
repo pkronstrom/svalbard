@@ -2467,14 +2467,22 @@ def _localize_raw_images(projects: list[dict], state: "PipelineState") -> None:
             if not raw_path.exists() or raw_path.stat().st_size < 500:
                 continue
 
-            soup = BeautifulSoup(raw_path.read_text(), "html.parser")
+            # Collect external images from raw.html and description
             external_imgs = []
-            for img in soup.find_all("img"):
-                src = img.get("src") or img.get("data-src") or ""
-                if src.startswith("//"):
-                    src = "https:" + src
-                if src.startswith("http"):
-                    external_imgs.append(src)
+            seen_srcs: set[str] = set()
+            html_sources = [raw_path.read_text()]
+            desc = proj.get("description", "")
+            if "<img" in desc:
+                html_sources.append(desc)
+            for html_src in html_sources:
+                soup = BeautifulSoup(html_src, "html.parser")
+                for img in soup.find_all("img"):
+                    src = img.get("src") or img.get("data-src") or ""
+                    if src.startswith("//"):
+                        src = "https:" + src
+                    if src.startswith("http") and src not in seen_srcs:
+                        external_imgs.append(src)
+                        seen_srcs.add(src)
 
             if not external_imgs:
                 continue
@@ -2514,8 +2522,8 @@ def _localize_raw_images(projects: list[dict], state: "PipelineState") -> None:
         log.info("  Downloaded %d raw content images (%d already cached)", total_downloaded, total_skipped)
 
 
-def _clean_description_html(html: str) -> str:
-    """Clean description HTML: keep safe tags, strip scripts/styles."""
+def _clean_description_html(html: str, site_dir: Path | None = None) -> str:
+    """Clean description HTML: keep safe tags, strip scripts/styles, localize images."""
     soup = BeautifulSoup(html, "html.parser")
     # Remove scripts, styles, iframes
     for tag in soup.find_all(["script", "style", "iframe", "oembed"]):
@@ -2525,6 +2533,22 @@ def _clean_description_html(html: str) -> str:
     for tag in soup.find_all(True):
         if tag.name not in safe_tags:
             tag.unwrap()
+    # Localize or strip external images
+    if site_dir:
+        for img in list(soup.find_all("img")):
+            src = img.get("src") or ""
+            if src.startswith("//"):
+                src = "https:" + src
+            if src.startswith("http"):
+                local = _raw_img_local_path(site_dir, src)
+                if local and local.exists():
+                    img["src"] = str(local.relative_to(site_dir))
+                    img["loading"] = "lazy"
+                    img["style"] = "max-width:100%;height:auto;"
+                else:
+                    img.decompose()
+            elif src.startswith("data:"):
+                img.decompose()
     return str(soup).strip()
 
 
@@ -2567,7 +2591,7 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
     desc = unescape(desc)
 
     if "<p>" in desc or "<br" in desc or "<strong>" in desc:
-        desc_html = f'<div class="description">{_clean_description_html(desc)}</div>'
+        desc_html = f'<div class="description">{_clean_description_html(desc, site_dir)}</div>'
     else:
         desc_html = f'<p class="description">{escape(desc)}</p>' if desc else ""
 
