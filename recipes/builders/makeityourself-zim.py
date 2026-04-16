@@ -5,8 +5,8 @@ Downloads the Make It Yourself PDF, extracts all project links, verifies them,
 crawls each site with domain-specific extractors, and packages everything into
 a single searchable ZIM file with a responsive HTML frontpage.
 
-Requirements: pip install pymupdf httpx beautifulsoup4 libzim Pillow
-Optional: pip install playwright (for JS-heavy generic sites)
+Requirements: pip install pymupdf httpx beautifulsoup4 libzim Pillow playwright
+Optional: playwright install chromium (for Instructables and JS-heavy sites)
 
 Usage:
     python3 makeityourself-zim.py --workdir /data/miy
@@ -14,6 +14,7 @@ Usage:
     python3 makeityourself-zim.py --workdir /data/miy --force-stage verify
     python3 makeityourself-zim.py --workdir /data/miy --retry-failed
     python3 makeityourself-zim.py --workdir /data/miy --retry-dead
+    python3 makeityourself-zim.py --workdir /data/miy --recrawl-domain instructables.com
 
 Environment variables:
     MIY_THINGIVERSE_TOKEN  — Thingiverse API app token (required for STL downloads).
@@ -1785,7 +1786,9 @@ def _instructables_post_parse(
 INSTRUCTABLES_CONFIG = SiteConfig(
     name="instructables",
     domain="instructables.com",
-    fetch_chain=_DEFAULT_FETCH_CHAIN,
+    # Playwright first — HTTP returns only a page shell (header/footer/nav),
+    # step content and instructions are JS-rendered.
+    fetch_chain=[PlaywrightFetcher(), HttpFetcher(), SslBypassFetcher()],
     metadata_strategies=[OpenGraphMetadata(), HtmlMetadata()],
     image_strategies=[],  # Images handled in post_parse (CDN regex)
     artifact_strategies=[],
@@ -2290,6 +2293,7 @@ def stage_crawl(
     state: PipelineState,
     verified: list[VerifiedLink],
     retry_failed: bool = False,
+    recrawl_domain: str = "",
     printables_token: str = "",
     thingiverse_token: str = "",
     thingiverse_cookies: dict[str, str] | None = None,
@@ -2309,18 +2313,25 @@ def stage_crawl(
 
     # Determine what to crawl
     to_crawl = []
+    recrawl_count = 0
     for v in verified:
         if v.status == "dead":
             continue
         existing = progress.get(v.url)
         if existing:
             if existing["status"] == "completed":
-                continue  # never re-crawl completed items
+                # Re-crawl if domain matches --recrawl-domain
+                if recrawl_domain and recrawl_domain in urlparse(v.url).netloc:
+                    recrawl_count += 1
+                else:
+                    continue
             if existing["status"] == "failed":
                 if not retry_failed and existing.get("attempts", 0) >= MAX_RETRIES:
                     continue
                 # retry_failed=True → re-attempt failed items regardless of attempts
         to_crawl.append(v)
+    if recrawl_count:
+        log.info("  Re-crawling %d completed items from %s", recrawl_count, recrawl_domain)
 
     if not to_crawl:
         log.info("  All links already crawled")
@@ -3640,6 +3651,11 @@ def main():
         "--thingiverse-browser", action="store_true",
         help="Open a browser to capture Thingiverse Cloudflare cookies for CDN downloads",
     )
+    parser.add_argument(
+        "--recrawl-domain",
+        default="",
+        help="Re-crawl completed items matching this domain (e.g. 'instructables.com')",
+    )
     args = parser.parse_args()
 
     # Logging
@@ -3728,6 +3744,7 @@ def main():
     crawl_results = stage_crawl(
         state, verified,
         retry_failed=args.retry_failed,
+        recrawl_domain=args.recrawl_domain,
         printables_token=printables_token,
         thingiverse_token=thingiverse_token,
         thingiverse_cookies=tv_cookies,
