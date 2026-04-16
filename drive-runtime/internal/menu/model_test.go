@@ -9,6 +9,7 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
+	"github.com/pkronstrom/svalbard/tui"
 )
 
 func sampleGroupedConfig() config.RuntimeConfig {
@@ -108,12 +109,15 @@ func TestEscAtRootQuits(t *testing.T) {
 	}
 }
 
-func TestRootViewShowsSelectedDescriptionInFooter(t *testing.T) {
+func TestRootViewShowsSelectedDescriptionInDetailPane(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 
 	view := m.View()
-	if !strings.Contains(view, "Selected") || !strings.Contains(view, "Search across indexed archives and documents.") {
-		t.Fatalf("View() missing selected group footer: %q", view)
+	if !strings.Contains(view, "Search") {
+		t.Fatalf("View() missing selected group label in detail pane: %q", view)
+	}
+	if !strings.Contains(view, "Search across indexed archives and documents.") {
+		t.Fatalf("View() missing selected group description in detail pane: %q", view)
 	}
 }
 
@@ -135,7 +139,7 @@ func TestRootViewShowsFooterLegend(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 
 	view := m.View()
-	if !strings.Contains(view, "j/k or arrows: move • Enter: open • Esc/q: quit") {
+	if !strings.Contains(view, "j/k: move | Enter: open | Esc: back | q: quit") {
 		t.Fatalf("View() missing footer legend: %q", view)
 	}
 }
@@ -360,6 +364,192 @@ func TestSearchViewShowsTitleFirstAndSourceOnlyInMetadata(t *testing.T) {
 	}
 }
 
+func TestDriveSectionsHideWhenCapabilityAbsent(t *testing.T) {
+	cfg := config.RuntimeConfig{
+		Version: 2,
+		Preset:  "default-32",
+		Groups: []config.MenuGroup{
+			{
+				ID:    "search",
+				Label: "Search",
+				Items: []config.MenuItem{
+					{ID: "search-all", Label: "Search all content", Action: config.BuiltinAction("search", nil)},
+				},
+			},
+			{
+				ID:    "library",
+				Label: "Library",
+				Items: []config.MenuItem{
+					{ID: "wiki", Label: "Wikipedia", Action: config.BuiltinAction("browse", nil)},
+				},
+			},
+			{
+				ID:    "maps",
+				Label: "Maps",
+				Items: []config.MenuItem{},
+			},
+		},
+	}
+	m := NewModel(cfg, "/tmp/drive")
+	visible := m.VisibleGroups()
+
+	for _, g := range visible {
+		if g.ID == "maps" {
+			t.Fatal("maps section should be hidden when it has no items")
+		}
+	}
+	if len(visible) != 2 {
+		t.Fatalf("len(VisibleGroups()) = %d, want 2", len(visible))
+	}
+}
+
+func TestDriveCoreSectionsAlwaysVisible(t *testing.T) {
+	cfg := config.RuntimeConfig{
+		Version: 2,
+		Preset:  "default-32",
+		Groups: []config.MenuGroup{
+			{
+				ID:    "search",
+				Label: "Search",
+				Items: []config.MenuItem{},
+			},
+			{
+				ID:    "browse",
+				Label: "Browse",
+				Items: []config.MenuItem{},
+			},
+		},
+	}
+	m := NewModel(cfg, "/tmp/drive")
+	visible := m.VisibleGroups()
+
+	if len(visible) != 2 {
+		t.Fatalf("len(VisibleGroups()) = %d, want 2", len(visible))
+	}
+	ids := make(map[string]bool)
+	for _, g := range visible {
+		ids[g.ID] = true
+	}
+	if !ids["search"] {
+		t.Fatal("search should be visible even when empty")
+	}
+	if !ids["browse"] {
+		t.Fatal("browse should be visible even when empty")
+	}
+}
+
+func TestCapabilitySectionsVisibleWhenPopulated(t *testing.T) {
+	cfg := config.RuntimeConfig{
+		Version: 2,
+		Preset:  "default-32",
+		Groups: []config.MenuGroup{
+			{
+				ID:    "maps",
+				Label: "Maps",
+				Items: []config.MenuItem{
+					{ID: "world-map", Label: "World Map", Action: config.BuiltinAction("browse", nil)},
+				},
+			},
+		},
+	}
+	m := NewModel(cfg, "/tmp/drive")
+	visible := m.VisibleGroups()
+
+	if len(visible) != 1 {
+		t.Fatalf("len(VisibleGroups()) = %d, want 1", len(visible))
+	}
+	if visible[0].ID != "maps" {
+		t.Fatalf("visible[0].ID = %q, want maps", visible[0].ID)
+	}
+}
+
+func TestCtrlKOpensPalette(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
+	got := updated.(Model)
+	if !got.paletteActive {
+		t.Fatal("paletteActive = false, want true")
+	}
+}
+
+func TestPaletteCloseMsg(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	m.paletteActive = true
+	m.paletteModel = tui.NewPaletteModel(m.buildPaletteEntries(), m.theme)
+
+	updated, _ := m.Update(tui.PaletteCloseMsg{})
+	got := updated.(Model)
+	if got.paletteActive {
+		t.Fatal("paletteActive = true, want false")
+	}
+}
+
+func TestPaletteNotOpenedDuringSearch(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	fake := &fakeSearchSession{info: search.SessionInfo{BestMode: search.ModeKeyword}}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	if err := m.openSearchSession(); err != nil {
+		t.Fatalf("openSearchSession() error = %v", err)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
+	got := updated.(Model)
+	if got.paletteActive {
+		t.Fatal("paletteActive = true during search, want false")
+	}
+}
+
+func TestPaletteSelectMsgNavigatesToGroup(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	m.paletteActive = true
+
+	updated, _ := m.Update(tui.PaletteSelectMsg{
+		Entry: tui.PaletteEntry{ID: "library", Label: "Library"},
+	})
+	got := updated.(Model)
+	if got.paletteActive {
+		t.Fatal("paletteActive = true, want false")
+	}
+	if !got.inGroup {
+		t.Fatal("inGroup = false, want true")
+	}
+	if got.activeGroup != "library" {
+		t.Fatalf("activeGroup = %q, want library", got.activeGroup)
+	}
+}
+
+func TestPaletteSelectMsgNavigatesToItemGroup(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	m.paletteActive = true
+
+	updated, _ := m.Update(tui.PaletteSelectMsg{
+		Entry: tui.PaletteEntry{ID: "wikipedia-en-nopic", Label: "Wikipedia (text only)"},
+	})
+	got := updated.(Model)
+	if got.paletteActive {
+		t.Fatal("paletteActive = true, want false")
+	}
+	if !got.inGroup {
+		t.Fatal("inGroup = false, want true")
+	}
+	if got.activeGroup != "library" {
+		t.Fatalf("activeGroup = %q, want library", got.activeGroup)
+	}
+}
+
+func TestPaletteViewRendersWhenActive(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	entries := m.buildPaletteEntries()
+	m.paletteModel = tui.NewPaletteModel(entries, m.theme)
+	m.paletteActive = true
+
+	view := m.View()
+	if !strings.Contains(view, "Command Palette") {
+		t.Fatalf("View() missing palette header: %q", view)
+	}
+}
+
 func TestSearchViewHighlightsSelectedTitleText(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	fake := &fakeSearchSession{
@@ -383,7 +573,7 @@ func TestSearchViewHighlightsSelectedTitleText(t *testing.T) {
 	got := updated.(Model)
 
 	view := got.View()
-	selectedTitle := selectedRowStyle.Render("Linux")
+	selectedTitle := tui.DefaultTheme().SelectedRow.Render("Linux")
 	if !strings.Contains(view, selectedTitle) {
 		t.Fatalf("View() missing selected-row background on title text: %q", view)
 	}

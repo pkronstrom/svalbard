@@ -5,21 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-)
-
-var (
-	titleStyle          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("124"))
-	sectionStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("180"))
-	selectedStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230"))
-	descriptionStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
-	statusStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("179"))
-	errorStyle          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("131"))
-	helpStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	selectedRowStyle    = lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("255"))
-	selectedMutedStyle  = lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("252"))
-	selectedSpacerStyle = lipgloss.NewStyle().Background(lipgloss.Color("240"))
-	numberStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	selectedNumberStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230"))
+	"github.com/pkronstrom/svalbard/tui"
 )
 
 const (
@@ -30,6 +16,9 @@ const (
 )
 
 func renderView(m Model) string {
+	if m.paletteActive {
+		return m.paletteModel.View()
+	}
 	if m.searchActive {
 		return renderSearchView(m)
 	}
@@ -48,9 +37,9 @@ func renderView(m Model) string {
 	if m.status != "" {
 		b.WriteString("\n")
 		if m.lastErr != nil {
-			b.WriteString(errorStyle.Render(fmt.Sprintf("%s: %v", m.status, m.lastErr)))
+			b.WriteString(m.theme.Error.Render(fmt.Sprintf("%s: %v", m.status, m.lastErr)))
 		} else {
-			b.WriteString(statusStyle.Render(m.status))
+			b.WriteString(m.theme.Status.Render(m.status))
 		}
 		b.WriteString("\n")
 	}
@@ -63,13 +52,13 @@ func renderSearchView(m Model) string {
 
 	title := "⌕ Search"
 	modeLabel := fmt.Sprintf("[%s]", strings.ToUpper(string(m.searchMode[:1]))+string(m.searchMode[1:]))
-	b.WriteString(titleStyle.Render(title))
+	b.WriteString(m.theme.Title.Render(title))
 	b.WriteString(" ")
-	b.WriteString(sectionStyle.Render(modeLabel))
+	b.WriteString(m.theme.Section.Render(modeLabel))
 	b.WriteString("\n")
 
 	if m.searchInfo.SemanticEnabled {
-		b.WriteString(descriptionStyle.Render("semantic available"))
+		b.WriteString(m.theme.Muted.Render("semantic available"))
 		b.WriteString("\n")
 	}
 
@@ -81,9 +70,9 @@ func renderSearchView(m Model) string {
 		status = "Working... " + status
 	}
 	if m.searchErr != nil {
-		b.WriteString(errorStyle.Render(status + ": " + m.searchErr.Error()))
+		b.WriteString(m.theme.Error.Render(status + ": " + m.searchErr.Error()))
 	} else {
-		b.WriteString(descriptionStyle.Render(status))
+		b.WriteString(m.theme.Muted.Render(status))
 	}
 	b.WriteString("\n")
 
@@ -94,40 +83,43 @@ func renderSearchView(m Model) string {
 	b.WriteString(fmt.Sprintf("> %s%s\n\n", m.searchQuery, cursor))
 
 	shown := len(m.searchResults)
-	b.WriteString(sectionStyle.Render(fmt.Sprintf("Results (%d shown, max 20)", shown)))
+	b.WriteString(m.theme.Section.Render(fmt.Sprintf("Results (%d shown, max 20)", shown)))
 	b.WriteString("\n")
 	if shown == 0 {
-		b.WriteString(helpStyle.Render("No results yet. Type a query and press Enter."))
+		b.WriteString(m.theme.Help.Render("No results yet. Type a query and press Enter."))
 		b.WriteString("\n")
 		return b.String()
 	}
 
 	for idx, result := range m.searchResults {
-		line := renderSearchResultLine(idx+1, result.Filename, result.Title, idx == m.searchSelected)
+		line := renderSearchResultLine(m, idx+1, result.Filename, result.Title, idx == m.searchSelected)
 		b.WriteString(line)
 		b.WriteString("\n")
 		if result.Snippet != "" {
-			snippet := renderSearchResultSnippet(result.Snippet, idx == m.searchSelected)
+			snippet := renderSearchResultSnippet(m, result.Snippet, idx == m.searchSelected)
 			b.WriteString(snippet)
 			b.WriteString("\n")
 		}
 	}
 
+	if m.searchSelected >= len(m.searchResults) {
+		return b.String()
+	}
 	selected := m.searchResults[m.searchSelected]
 	b.WriteString("\n")
-	b.WriteString(sectionStyle.Render("Selected Result"))
+	b.WriteString(m.theme.Section.Render("Selected Result"))
 	b.WriteString("\n")
-	b.WriteString(descriptionStyle.Render("  Source: " + selected.Filename))
+	b.WriteString(m.theme.Muted.Render("  Source: " + selected.Filename))
 	b.WriteString("\n")
-	b.WriteString(descriptionStyle.Render("  Path:   " + selected.Path))
+	b.WriteString(m.theme.Muted.Render("  Path:   " + selected.Path))
 	b.WriteString("\n")
 	if selected.Snippet != "" {
-		b.WriteString(descriptionStyle.Render("  Snippet: " + selected.Snippet))
+		b.WriteString(m.theme.Muted.Render("  Snippet: " + selected.Snippet))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Enter search/open • Tab mode • j/k move • Esc clear/back"))
+	b.WriteString(m.theme.Help.Render("Enter search/open • Tab mode • j/k move • Esc clear/back"))
 	b.WriteString("\n")
 
 	return b.String()
@@ -147,67 +139,89 @@ func sourceColor(filename string) lipgloss.Color {
 	return palette[sum%len(palette)]
 }
 
-func renderResultNumber(index int, filename string, selected bool) string {
-	style := numberStyle.Foreground(sourceColor(filename))
+func renderResultNumber(m Model, index int, filename string, selected bool) string {
+	style := m.theme.Muted.Foreground(sourceColor(filename))
 	if selected {
-		style = selectedNumberStyle.Foreground(sourceColor(filename)).Background(lipgloss.Color("240"))
+		style = m.theme.Selected.Foreground(sourceColor(filename)).Background(m.theme.SelectedRow.GetBackground())
 	}
 	return style.Render(fmt.Sprintf("%02d", index))
 }
 
-func renderSearchResultLine(index int, filename, title string, selected bool) string {
-	number := renderResultNumber(index, filename, selected)
+func renderSearchResultLine(m Model, index int, filename, title string, selected bool) string {
+	number := renderResultNumber(m, index, filename, selected)
 	if !selected {
 		return fmt.Sprintf("%s  %s", number, title)
 	}
+	selectedSpacerStyle := lipgloss.NewStyle().Background(m.theme.SelectedRow.GetBackground())
 	return lipgloss.JoinHorizontal(
 		lipgloss.Left,
 		number,
 		selectedSpacerStyle.Render("  "),
-		selectedRowStyle.Render(title),
+		m.theme.SelectedRow.Render(title),
 	)
 }
 
-func renderSearchResultSnippet(snippet string, selected bool) string {
+func renderSearchResultSnippet(m Model, snippet string, selected bool) string {
 	value := "    " + snippet
 	if selected {
-		return selectedMutedStyle.Render(value)
+		return m.theme.SelectedMuted.Render(value)
 	}
-	return descriptionStyle.Render(value)
+	return m.theme.Muted.Render(value)
 }
 
 func renderTopLevelView(b *strings.Builder, m Model) {
-	b.WriteString(titleStyle.Render("Svalbard"))
-	b.WriteString("\n")
-	b.WriteString("\n")
-
 	visible := m.VisibleGroups()
+	keys := tui.DefaultKeyMap()
+	footer := tui.FooterHints(keys.MoveUp, keys.Enter, keys.Back, keys.Quit)
+
 	if len(visible) == 0 {
-		b.WriteString(helpStyle.Render("No groups match the current filter."))
-		b.WriteString("\n")
+		shell := tui.ShellLayout{
+			Theme:    m.theme,
+			AppName:  "Svalbard",
+			Identity: m.cfg.Preset,
+			Left:     m.theme.Help.Render("No groups match the current filter."),
+			Right:    "",
+			Footer:   footer,
+			Width:    m.width,
+			Height:   m.height,
+		}
+		b.WriteString(shell.Render())
 		return
 	}
 
-	for idx, group := range visible {
-		label := menuRow(displayGroupLabel(group.ID, group.Label), false)
-		if idx == m.groupSelected {
-			label = selectedStyle.Render(menuRow(displayGroupLabel(group.ID, group.Label), true))
+	// Build NavList from visible groups
+	items := make([]tui.NavItem, len(visible))
+	for i, group := range visible {
+		items[i] = tui.NavItem{
+			ID:    group.ID,
+			Label: displayGroupLabel(group.ID, group.Label),
 		}
-		b.WriteString(label)
-		b.WriteString("\n")
+	}
+	nav := tui.NavList{
+		Items:    items,
+		Selected: m.groupSelected,
+		Theme:    m.theme,
 	}
 
+	// Build DetailPane for the selected group
+	var detail tui.DetailPane
 	if group, ok := m.SelectedGroup(); ok {
-		b.WriteString("\n")
-		b.WriteString(sectionStyle.Render("Selected"))
-		b.WriteString("\n")
-		b.WriteString(descriptionStyle.Render(group.Description))
-		b.WriteString("\n")
+		detail = contextForGroup(group, m.theme)
+	} else {
+		detail = tui.DetailPane{Theme: m.theme}
 	}
 
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k or arrows: move • Enter: open • Esc/q: quit"))
-	b.WriteString("\n")
+	shell := tui.ShellLayout{
+		Theme:    m.theme,
+		AppName:  "Svalbard",
+		Identity: m.cfg.Preset,
+		Left:     nav.Render(),
+		Right:    detail.Render(),
+		Footer:   footer,
+		Width:    m.width,
+		Height:   m.height,
+	}
+	b.WriteString(shell.Render())
 }
 
 func renderGroupView(b *strings.Builder, m Model) {
@@ -217,15 +231,15 @@ func renderGroupView(b *strings.Builder, m Model) {
 		return
 	}
 
-	b.WriteString(titleStyle.Render("Svalbard / " + group.Label))
+	b.WriteString(m.theme.Title.Render("Svalbard / " + group.Label))
 	b.WriteString("\n")
-	b.WriteString(descriptionStyle.Render(group.Description))
+	b.WriteString(m.theme.Muted.Render(group.Description))
 	b.WriteString("\n")
 	b.WriteString("\n")
 
 	visible := m.VisibleItems()
 	if len(visible) == 0 {
-		b.WriteString(helpStyle.Render("No items match the current filter."))
+		b.WriteString(m.theme.Help.Render("No items match the current filter."))
 		b.WriteString("\n")
 		return
 	}
@@ -234,7 +248,7 @@ func renderGroupView(b *strings.Builder, m Model) {
 	for idx, item := range visible {
 		if item.Subheader != "" && item.Subheader != currentSubheader {
 			currentSubheader = item.Subheader
-			b.WriteString(sectionStyle.Render(currentSubheader))
+			b.WriteString(m.theme.Section.Render(currentSubheader))
 			b.WriteString("\n")
 		}
 
@@ -244,9 +258,9 @@ func renderGroupView(b *strings.Builder, m Model) {
 		}
 		if idx == m.itemSelected {
 			if item.Subheader != "" {
-				label = selectedStyle.Render(menuIndentedRow(item.Label, true))
+				label = m.theme.Selected.Render(menuIndentedRow(item.Label, true))
 			} else {
-				label = selectedStyle.Render(menuRow(item.Label, true))
+				label = m.theme.Selected.Render(menuRow(item.Label, true))
 			}
 		}
 		b.WriteString(label)
@@ -255,23 +269,24 @@ func renderGroupView(b *strings.Builder, m Model) {
 
 	if item, ok := m.SelectedItem(); ok {
 		b.WriteString("\n")
-		b.WriteString(sectionStyle.Render("Selected"))
+		b.WriteString(m.theme.Section.Render("Selected"))
 		b.WriteString("\n")
-		b.WriteString(descriptionStyle.Render(item.Description))
+		b.WriteString(m.theme.Muted.Render(item.Description))
 		b.WriteString("\n")
 	}
 
+	keys := tui.DefaultKeyMap()
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k or arrows: move • Enter: launch • Esc/q: back"))
+	b.WriteString(m.theme.Help.Render(tui.FooterHints(keys.MoveUp, keys.Enter, keys.Back, keys.Quit)))
 	b.WriteString("\n")
 }
 
 func renderOutputView(m Model) string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Svalbard"))
+	b.WriteString(m.theme.Title.Render("Svalbard"))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Enter or Esc: back • q: quit"))
+	b.WriteString(m.theme.Help.Render("Enter or Esc: back • q: quit"))
 	b.WriteString("\n\n")
 	b.WriteString(m.output)
 	if !strings.HasSuffix(m.output, "\n") {
@@ -279,7 +294,7 @@ func renderOutputView(m Model) string {
 	}
 	if m.lastErr != nil {
 		b.WriteString("\n")
-		b.WriteString(errorStyle.Render(fmt.Sprintf("Action failed: %v", m.lastErr)))
+		b.WriteString(m.theme.Error.Render(fmt.Sprintf("Action failed: %v", m.lastErr)))
 		b.WriteString("\n")
 	}
 	return b.String()

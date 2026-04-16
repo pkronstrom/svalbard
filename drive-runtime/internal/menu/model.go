@@ -10,6 +10,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/actions"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
+	"github.com/pkronstrom/svalbard/tui"
 )
 
 type actionFinishedMsg struct {
@@ -44,6 +45,7 @@ type Model struct {
 	cfg           config.RuntimeConfig
 	driveRoot     string
 	runner        actions.Runner
+	theme         tui.Theme
 	searchFactory func(string) (searchSession, error)
 
 	groupSelected int
@@ -57,6 +59,9 @@ type Model struct {
 	lastErr       error
 	showingOutput bool
 	output        string
+
+	paletteActive bool
+	paletteModel  tui.PaletteModel
 
 	searchActive       bool
 	searchToken        int
@@ -81,6 +86,7 @@ func NewModel(cfg config.RuntimeConfig, driveRoot string, workDir ...string) Mod
 		cfg:       cfg,
 		driveRoot: driveRoot,
 		runner:    runner,
+		theme:     tui.DefaultTheme(),
 		searchFactory: func(root string) (searchSession, error) {
 			return search.NewSession(root, nil)
 		},
@@ -96,6 +102,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
+	case tui.PaletteCloseMsg:
+		m.paletteActive = false
+		return m, nil
+	case tui.PaletteSelectMsg:
+		m.paletteActive = false
+		for i, group := range m.cfg.Groups {
+			if group.ID == msg.Entry.ID {
+				m.groupSelected = i
+				m.inGroup = true
+				m.activeGroup = group.ID
+				m.itemSelected = 0
+				return m, nil
+			}
+			for _, item := range group.Items {
+				if item.ID == msg.Entry.ID {
+					m.groupSelected = i
+					m.inGroup = true
+					m.activeGroup = group.ID
+					m.itemSelected = 0
+					return m, nil
+				}
+			}
+		}
 		return m, nil
 	case actionFinishedMsg:
 		m.lastErr = msg.err
@@ -150,6 +180,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.searchStatus = "Opened in browser"
 		return m, nil
 	case tea.KeyMsg:
+		if m.paletteActive {
+			updated, cmd := m.paletteModel.Update(msg)
+			m.paletteModel = updated.(tui.PaletteModel)
+			return m, cmd
+		}
 		if m.searchActive {
 			return m.updateSearch(msg)
 		}
@@ -168,6 +203,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
+		case "ctrl+k":
+			entries := m.buildPaletteEntries()
+			m.paletteModel = tui.NewPaletteModel(entries, m.theme)
+			m.paletteActive = true
+			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
 		case "q":
@@ -403,6 +443,24 @@ func limitSearchResults(results []search.Result) []search.Result {
 	return append([]search.Result(nil), results[:maxResults]...)
 }
 
+func (m Model) buildPaletteEntries() []tui.PaletteEntry {
+	var entries []tui.PaletteEntry
+	for _, group := range m.cfg.Groups {
+		entries = append(entries, tui.PaletteEntry{
+			ID:    group.ID,
+			Label: group.Label,
+		})
+		for _, item := range group.Items {
+			entries = append(entries, tui.PaletteEntry{
+				ID:      item.ID,
+				Label:   item.Label,
+				Aliases: item.Aliases,
+			})
+		}
+	}
+	return entries
+}
+
 func (m Model) View() string {
 	return renderView(m)
 }
@@ -502,8 +560,33 @@ func (m Model) CurrentGroup() (config.MenuGroup, bool) {
 	return config.MenuGroup{}, false
 }
 
+// coreSections are always visible in the menu, even when they have no items.
+var coreSections = map[string]bool{
+	"search":  true,
+	"browse":  true,
+	"verify":  true,
+	"library": true,
+}
+
+// capabilitySections are hidden entirely when they have no items.
+var capabilitySections = map[string]bool{
+	"maps":     true,
+	"chat":     true,
+	"apps":     true,
+	"share":    true,
+	"embedded": true,
+	"tools":    true,
+}
+
 func (m Model) VisibleGroups() []config.MenuGroup {
-	return append([]config.MenuGroup(nil), m.cfg.Groups...)
+	result := make([]config.MenuGroup, 0, len(m.cfg.Groups))
+	for _, g := range m.cfg.Groups {
+		if capabilitySections[g.ID] && len(g.Items) == 0 {
+			continue
+		}
+		result = append(result, g)
+	}
+	return result
 }
 
 func (m Model) VisibleItems() []config.MenuItem {
