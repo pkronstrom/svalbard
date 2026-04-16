@@ -19,6 +19,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/embedded"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/maps"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/menu"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/serveall"
@@ -35,6 +36,23 @@ func main() {
 }
 
 func run() error {
+	// MCP subcommand: intercept before config.Load() so it works without actions.json.
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		drive := ""
+		for i, arg := range os.Args {
+			if arg == "--drive" && i+1 < len(os.Args) {
+				drive = os.Args[i+1]
+			}
+		}
+		if drive == "" {
+			drive = os.Getenv("DRIVE_ROOT")
+		}
+		if drive == "" {
+			return fmt.Errorf("--drive path required")
+		}
+		return runMCP(drive)
+	}
+
 	driveRoot, err := resolveDriveRoot()
 	if err != nil {
 		return err
@@ -158,6 +176,12 @@ func runResolvedAction(resolved actions.ResolvedAction) error {
 	default:
 		return fmt.Errorf("unknown action mode: %d", resolved.Mode)
 	}
+}
+
+func runMCP(driveRoot string) error {
+	srv := mcp.NewServer()
+	defer srv.Close()
+	return srv.ServeStdio()
 }
 
 func resolveDriveRoot() (string, error) {
