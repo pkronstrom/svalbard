@@ -706,7 +706,12 @@ def _download_file(
     client: httpx.Client, url: str, dest: Path, *,
     timeout: float = 120, headers: dict | None = None, cookies: dict | None = None,
 ) -> bool:
-    """Download a file to dest. Returns True on success."""
+    """Download a file to dest. Returns True on success.
+
+    Auto-corrects extension if the server returns WebP content with a .jpg/.png name.
+    When the extension is corrected, the file is saved at the new path and `dest` is
+    updated in-place (caller should use the returned path via dest).
+    """
     if dest.exists() and dest.stat().st_size > 0:
         return True
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -719,6 +724,12 @@ def _download_file(
             with open(dest, "wb") as f:
                 for chunk in r.iter_bytes(65536):
                     f.write(chunk)
+        # Fix extension if content is WebP but filename says .jpg/.png
+        if dest.suffix.lower() in (".jpg", ".jpeg", ".png") and dest.stat().st_size > 16:
+            header = dest.read_bytes()[:16]
+            if b"RIFF" in header and b"WEBP" in header:
+                new_dest = dest.with_suffix(".webp")
+                dest.rename(new_dest)
         return True
     except Exception as e:
         log.warning("    Failed to download %s: %s", url[:80], e)
@@ -1494,7 +1505,11 @@ def _thingiverse_post_parse(
                         continue
                     fname = f"img_{i:02d}.jpg"
                     if _download_file(client, img_url, images_dir / fname, headers=cdn_headers, cookies=cdn_cookies or None):
-                        meta.images.append(f"images/{fname}")
+                        # _download_file may rename .jpg -> .webp if content is WebP
+                        actual = images_dir / fname
+                        if not actual.exists():
+                            actual = actual.with_suffix(".webp")
+                        meta.images.append(f"images/{actual.name}")
                     time.sleep(0.3)
             time.sleep(CRAWL_DELAY_PER_DOMAIN)
         except Exception as e:
