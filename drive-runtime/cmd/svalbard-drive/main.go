@@ -179,7 +179,10 @@ func runResolvedAction(resolved actions.ResolvedAction) error {
 }
 
 func runMCP(driveRoot string) error {
-	srv := mcp.NewServer()
+	meta, _ := mcp.LoadMetadata(driveRoot)
+	srv := mcp.NewServer(
+		mcp.NewVaultCapability(driveRoot, meta),
+	)
 	defer srv.Close()
 	return srv.ServeStdio()
 }
