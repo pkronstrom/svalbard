@@ -181,6 +181,7 @@ func runResolvedAction(resolved actions.ResolvedAction) error {
 func runMCP(driveRoot string) error {
 	meta, _ := mcp.LoadMetadata(driveRoot)
 	srv := mcp.NewServer(
+		mcp.NewSearchCapability(driveRoot, meta),
 		mcp.NewVaultCapability(driveRoot, meta),
 	)
 	defer srv.Close()
