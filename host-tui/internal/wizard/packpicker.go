@@ -396,7 +396,10 @@ func (m packPickerModel) View() string {
 
 	// Footer: total / free with fits/over indicator.
 	totalGB := m.totalCheckedGB()
-	if totalGB <= m.freeGB {
+	if m.freeGB <= 0 {
+		// Free space unknown (e.g. custom path) — show total only
+		b.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f GB", totalGB)))
+	} else if totalGB <= m.freeGB {
 		b.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f / %.0f GB  ", totalGB, m.freeGB)))
 		b.WriteString(m.theme.Success.Render("fits"))
 	} else {
@@ -405,8 +408,9 @@ func (m packPickerModel) View() string {
 	}
 	b.WriteString("\n")
 
-	// Help line.
-	b.WriteString(m.theme.Help.Render("  j/k navigate  SPACE toggle  ENTER expand/collapse  a apply  q cancel"))
+	// Help line — derived from key bindings.
+	b.WriteString(m.theme.Help.Render(fmt.Sprintf("  %s/%s navigate  %s toggle  %s expand/collapse  a apply  q cancel",
+		m.keys.MoveUp.Key, m.keys.MoveDown.Key, m.keys.Toggle.Key, m.keys.Enter.Key)))
 	b.WriteString("\n")
 
 	return b.String()

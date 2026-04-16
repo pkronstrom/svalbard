@@ -110,7 +110,11 @@ func (m presetPickerModel) View() string {
 	var b strings.Builder
 
 	// Free space header
-	b.WriteString(fmt.Sprintf("  %s free\n\n", formatSizeGB(m.freeGB)))
+	if m.freeGB > 0 {
+		b.WriteString(fmt.Sprintf("  %s free\n\n", formatSizeGB(m.freeGB)))
+	} else {
+		b.WriteString("  Free space unknown\n\n")
+	}
 
 	for i, p := range m.presets {
 		cursor := "  "
@@ -120,9 +124,9 @@ func (m presetPickerModel) View() string {
 
 		size := formatSizeGB(p.ContentGB)
 
-		// Check if preset exceeds free space
+		// Check if preset exceeds free space (skip when unknown)
 		extra := ""
-		if p.ContentGB > m.freeGB {
+		if m.freeGB > 0 && p.ContentGB > m.freeGB {
 			needed := p.ContentGB - m.freeGB
 			extra = fmt.Sprintf(" (needs %s more)", formatSizeGB(needed))
 		}
