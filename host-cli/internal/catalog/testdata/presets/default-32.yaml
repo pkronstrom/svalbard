@@ -1,0 +1,7 @@
+name: default-32
+description: Core reference
+target_size_gb: 32
+region: default
+sources:
+  - wikipedia-en-nopic
+  - ifixit

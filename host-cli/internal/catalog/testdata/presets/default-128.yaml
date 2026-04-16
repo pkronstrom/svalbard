@@ -1,0 +1,7 @@
+name: default-128
+description: Broad reference
+target_size_gb: 128
+region: default
+sources:
+  - wikipedia-en-nopic
+  - ifixit

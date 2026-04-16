@@ -1,0 +1,6 @@
+id: wikipedia-en-nopic
+type: zim
+description: English Wikipedia without images
+size_gb: 4.5
+strategy: download
+url: https://example.invalid/wikipedia.zim

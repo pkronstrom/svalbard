@@ -1,0 +1,6 @@
+id: ifixit
+type: zim
+description: Repair guides
+size_gb: 1.2
+strategy: download
+url: https://example.invalid/ifixit.zim
