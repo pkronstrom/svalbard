@@ -1672,6 +1672,21 @@ def _github_post_parse(
         except Exception:
             continue
 
+    # Enrich description from README if API tagline is too short
+    readme_path = site_dir / "README.md"
+    if len(meta.description.strip()) < 100 and readme_path.exists():
+        readme_text = readme_path.read_text()
+        # Extract first substantial paragraph (skip badges, headers, blank lines)
+        for line in readme_text.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("[") or line.startswith("!") or line.startswith("<") or line.startswith("|") or line.startswith("```"):
+                continue
+            if line.startswith("[![") or line.startswith("!["):
+                continue
+            if len(line) > 60:
+                meta.description = line[:2000]
+                break
+
     # Download OG image
     images_dir = site_dir / "images"
     images_dir.mkdir(exist_ok=True)
