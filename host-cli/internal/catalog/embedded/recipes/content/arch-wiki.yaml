@@ -1,0 +1,12 @@
+id: arch-wiki
+type: zim
+display_group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.03
+url_pattern: https://download.kiwix.org/zim/other/archlinux_en_all_maxi_{date}.zim
+description: Arch Linux Wiki — comprehensive Linux system administration reference
+license:
+  id: GFDL-1.3-or-later
+  attribution: Arch Linux contributors

@@ -1,0 +1,14 @@
+id: gemma-4-e2b-it
+type: gguf
+display_group: models
+tags:
+- computing
+- general-reference
+- tool-calling
+depth: overview
+size_gb: 3.04
+url: https://huggingface.co/gguf-org/gemma-4-e2b-it-gguf/resolve/main/gemma-4-e2b-it-edited-q4_0.gguf
+description: Gemma 4 E2B IT (Q4_0) — conservative general/tool-call model for 8 GB RAM hosts
+license:
+  id: Apache-2.0
+  attribution: Google DeepMind / gguf-org

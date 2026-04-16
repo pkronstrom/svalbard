@@ -1,0 +1,12 @@
+id: devdocs-go
+type: zim
+display_group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.002
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_go_{date}.zim
+description: DevDocs Go language reference
+license:
+  id: BSD-3-Clause
+  attribution: Google Inc. via DevDocs

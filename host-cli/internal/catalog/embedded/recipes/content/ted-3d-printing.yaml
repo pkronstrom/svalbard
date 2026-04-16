@@ -1,0 +1,14 @@
+id: ted-3d-printing
+type: zim
+display_group: video
+tags:
+- manufacturing
+- repair
+- fabrication
+depth: overview
+size_gb: 0.137
+url_pattern: https://download.kiwix.org/zim/ted/ted_mul_3d-printing_{date}.zim
+description: TED Talks on 3D printing and digital fabrication
+license:
+  id: TED
+  attribution: TED contributors

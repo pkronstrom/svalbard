@@ -1,0 +1,13 @@
+id: wikem
+type: zim
+display_group: practical
+tags:
+- emergency-medicine
+- medicine
+depth: comprehensive
+size_gb: 0.042
+url_pattern: https://download.kiwix.org/zim/other/wikem_en_all_maxi_{date}.zim
+description: WikEM — concise emergency medicine wiki for clinical decision-making
+license:
+  id: CC-BY-SA-4.0
+  attribution: WikEM contributors

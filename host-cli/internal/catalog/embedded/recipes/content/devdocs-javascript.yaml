@@ -1,0 +1,12 @@
+id: devdocs-javascript
+type: zim
+display_group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.003
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_javascript_{date}.zim
+description: DevDocs JavaScript language reference
+license:
+  id: CC-BY-SA-2.5
+  attribution: Mozilla Contributors via DevDocs

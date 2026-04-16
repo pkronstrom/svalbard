@@ -1,0 +1,22 @@
+id: wikipedia-en-medicine-compact
+type: zim
+display_group: practical
+tags:
+- medicine
+- health
+- emergency-medicine
+depth: comprehensive
+size_gb: 1.2
+strategy: build
+description: Wikipedia medical articles — diseases, drugs, anatomy, procedures with
+  resized compressed images for space-constrained packs (built from medicine_maxi
+  via zim-compact)
+build:
+  family: zim-compact
+  source_url: https://download.kiwix.org/zim/wikipedia/wikipedia_en_medicine_maxi_{date}.zim
+  output: wikipedia-en-medicine-compact.zim
+  width: 200
+  quality: 40
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

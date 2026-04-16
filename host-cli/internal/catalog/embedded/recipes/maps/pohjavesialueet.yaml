@@ -1,0 +1,32 @@
+id: pohjavesialueet
+type: pmtiles
+display_group: maps
+tags: [water, groundwater]
+depth: comprehensive
+size_gb: 0.05
+description: Finnish groundwater areas (SYKE)
+strategy: build
+
+build:
+  family: vector-static
+  source_url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/pohjavesialueet.zip
+  source_format: shapefile
+  source_srs: "EPSG:3067"
+  layer_name: pohjavesialueet
+  max_zoom: 14
+
+viewer:
+  name: Groundwater Areas
+  name_fi: Pohjavesialueet
+  category: water
+  style:
+    polygons:
+      fill-color: "#3498db"
+      fill-opacity: 0.2
+      line-color: "#2980b9"
+      line-width: 1
+
+license:
+  id: CC-BY-4.0
+  attribution: Finnish Environment Institute (SYKE)
+  url: https://www.syke.fi

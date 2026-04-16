@@ -10,44 +10,41 @@ import (
 	"testing"
 )
 
+//go:embed embedded/recipes embedded/presets
+var embeddedData embed.FS
+
 //go:embed testdata/recipes/*.yaml testdata/presets/*.yaml
 var testData embed.FS
+
+func loadCatalogFromSubFS(data fs.FS, recipesDir, presetsDir string) (*Catalog, error) {
+	recipesFS, err := fs.Sub(data, recipesDir)
+	if err != nil {
+		return nil, fmt.Errorf("sub-fs for %s: %w", recipesDir, err)
+	}
+	presetsFS, err := fs.Sub(data, presetsDir)
+	if err != nil {
+		return nil, fmt.Errorf("sub-fs for %s: %w", presetsDir, err)
+	}
+	return LoadFromFS(recipesFS, presetsFS)
+}
 
 // NewTestCatalog creates a Catalog loaded from the embedded test fixtures.
 // It calls t.Fatal on any error.
 func NewTestCatalog(t *testing.T) *Catalog {
 	t.Helper()
 
-	recipesFS, err := fs.Sub(testData, "testdata/recipes")
-	if err != nil {
-		t.Fatalf("sub-fs for recipes: %v", err)
-	}
-	presetsFS, err := fs.Sub(testData, "testdata/presets")
-	if err != nil {
-		t.Fatalf("sub-fs for presets: %v", err)
-	}
-
-	cat, err := LoadFromFS(recipesFS, presetsFS)
+	cat, err := loadCatalogFromSubFS(testData, "testdata/recipes", "testdata/presets")
 	if err != nil {
 		t.Fatalf("loading test catalog: %v", err)
 	}
 	return cat
 }
 
-// NewEmbeddedCatalog creates a Catalog from the embedded test fixtures without
-// requiring a *testing.T. The embedded data contains only test fixtures and
-// should be used as a fallback when the real recipes/presets directories are
-// not available on disk (e.g. in compiled binaries without a catalog flag).
+// NewEmbeddedCatalog creates a Catalog from the embedded real catalog without
+// requiring a *testing.T. This is the binary-friendly entry point and should
+// be preferred by LoadCatalog.
 func NewEmbeddedCatalog() (*Catalog, error) {
-	recipesFS, err := fs.Sub(testData, "testdata/recipes")
-	if err != nil {
-		return nil, fmt.Errorf("sub-fs for recipes: %w", err)
-	}
-	presetsFS, err := fs.Sub(testData, "testdata/presets")
-	if err != nil {
-		return nil, fmt.Errorf("sub-fs for presets: %w", err)
-	}
-	return LoadFromFS(recipesFS, presetsFS)
+	return loadCatalogFromSubFS(embeddedData, "embedded/recipes", "embedded/presets")
 }
 
 // NewDefaultCatalog loads recipes and presets from the repository root.
@@ -80,13 +77,16 @@ func NewCatalogFromPaths(recipesDir, presetsDir string) (*Catalog, error) {
 	return LoadFromFS(recipesFS, presetsFS)
 }
 
-// LoadCatalog tries NewDefaultCatalog first (repo-root recipes/presets); if
-// that fails it falls back to the embedded test fixtures. This is the
-// recommended entry point for CLI commands.
+// LoadCatalog prefers the embedded real catalog and falls back to the repo
+// root during development if the embedded assets are unavailable.
 func LoadCatalog() (*Catalog, error) {
-	cat, err := NewDefaultCatalog()
+	cat, err := NewEmbeddedCatalog()
 	if err == nil {
 		return cat, nil
 	}
-	return NewEmbeddedCatalog()
+	cat, fallbackErr := NewDefaultCatalog()
+	if fallbackErr == nil {
+		return cat, nil
+	}
+	return nil, fmt.Errorf("embedded catalog: %w; default catalog: %v", err, fallbackErr)
 }

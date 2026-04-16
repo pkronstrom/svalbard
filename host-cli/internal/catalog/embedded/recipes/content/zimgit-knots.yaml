@@ -1,0 +1,13 @@
+id: zimgit-knots
+type: zim
+display_group: practical
+tags:
+- navigation
+- fire-shelter
+depth: overview
+size_gb: 0.027
+url_pattern: https://download.kiwix.org/zim/other/zimgit-knots_en_{date}.zim
+description: Knot-tying reference — essential for shelter, rescue, and outdoor survival
+license:
+  id: CC-BY-SA-4.0
+  attribution: zimgit contributors

@@ -1,0 +1,12 @@
+id: devdocs-rust
+type: zim
+display_group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.006
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_rust_{date}.zim
+description: DevDocs Rust language reference
+license:
+  id: MIT
+  attribution: Rust contributors via DevDocs

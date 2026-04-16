@@ -1,0 +1,13 @@
+id: lrn-self-reliance
+type: zim
+display_group: video
+tags:
+- fire-shelter
+- civil-construction
+depth: overview
+size_gb: 3.7
+url_pattern: https://download.kiwix.org/zim/videos/lrnselfreliance_en_all_{date}.zim
+description: My Self Reliance — log cabin building, bushcraft, and off-grid living videos
+license:
+  id: YouTube
+  attribution: My Self Reliance / Shawn James (YouTube)

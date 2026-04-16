@@ -1,0 +1,13 @@
+id: wikipedia-en-100-mini
+type: zim
+display_group: reference
+tags:
+- general-reference
+- encyclopedia
+depth: overview
+size_gb: 0.0045
+url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_100_mini_{date}.zim
+description: English Wikipedia Top 100 Mini — compact Kiwix snapshot with roughly 5,000 core articles
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

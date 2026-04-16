@@ -1,0 +1,14 @@
+id: stackexchange-sustainability
+type: zim
+display_group: practical
+tags:
+- energy-power
+- agriculture
+- water
+depth: overview
+size_gb: 0.026
+url_pattern: https://download.kiwix.org/zim/stack_exchange/sustainability.stackexchange.com_en_all_{date}.zim
+description: Sustainability Stack Exchange Q&A
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange contributors

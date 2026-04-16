@@ -1,0 +1,16 @@
+id: toolchain-esp32ulp
+type: toolchain
+display_group: tools
+tags:
+- embedded
+- esp32
+depth: reference-only
+size_gb: 0.016
+platforms:
+  linux-x86_64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-esp32ulp/1.23800.240113/toolchain-esp32ulp-linux_x86_64-1.23800.240113.tar.gz
+  linux-arm64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-esp32ulp/1.23800.240113/toolchain-esp32ulp-linux_aarch64-1.23800.240113.tar.gz
+  macos-arm64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-esp32ulp/1.23800.240113/toolchain-esp32ulp-darwin_arm64-1.23800.240113.tar.gz
+description: ESP32 Ultra-Low-Power (ULP) coprocessor toolchain
+license:
+  id: GPL-3.0-or-later
+  attribution: Espressif Systems

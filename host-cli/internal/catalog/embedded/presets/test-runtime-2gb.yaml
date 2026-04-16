@@ -1,0 +1,18 @@
+name: test-runtime-2gb
+description: Minimal full-action smoke-test bundle with tiny archives, maps, local AI, search prerequisites, SQLite tooling, and ESP32 dev shell
+target_size_gb: 2
+region: finland
+extends:
+  - ai/harnesses
+  - embedded/esp32-dev
+sources:
+  - wikipedia-en-100-mini
+  - alpinelinux-wiki
+  - kiwix-serve
+  - osm-uusimaa
+  - maplibre-vendor
+  - qwen-0.8b
+  - sqlite3
+  - nomic-embed-text-v1.5
+  - sqliteviz
+  - fimea

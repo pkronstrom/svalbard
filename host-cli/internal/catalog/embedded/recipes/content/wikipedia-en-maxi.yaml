@@ -1,0 +1,20 @@
+id: wikipedia-en-maxi
+type: zim
+display_group: reference
+tags:
+- general-reference
+- medicine
+- agriculture
+- electronics
+- mechanical
+- chemistry
+- physics
+- biology
+- history
+depth: comprehensive
+size_gb: 115.0
+url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_maxi_{date}.zim
+description: English Wikipedia with pictures
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

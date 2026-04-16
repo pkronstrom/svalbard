@@ -1,0 +1,12 @@
+id: cyberchef
+type: app
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.015
+url: https://github.com/gchq/CyberChef/releases/latest/download/CyberChef.zip
+description: CyberChef web-based data analysis tool
+license:
+  id: Apache-2.0
+  attribution: GCHQ

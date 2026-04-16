@@ -14,7 +14,10 @@ type Layer struct {
 }
 
 type templateData struct {
-	Layers []Layer
+	Layers          []Layer
+	MapLibreJSPath  string
+	MapLibreCSSPath string
+	PMTilesJSPath   string
 }
 
 const htmlTemplate = `<!DOCTYPE html>
@@ -22,9 +25,9 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
     <meta charset="utf-8">
     <title>Svalbard Maps</title>
-    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
-    <script src="https://unpkg.com/pmtiles@4.2.0/dist/pmtiles.js"></script>
+    <script src="{{.MapLibreJSPath}}"></script>
+    <link href="{{.MapLibreCSSPath}}" rel="stylesheet">
+    <script src="{{.PMTilesJSPath}}"></script>
     <style>
         body { margin: 0; }
         #map { width: 100%; height: 100vh; }
@@ -69,11 +72,34 @@ const htmlTemplate = `<!DOCTYPE html>
 </html>
 `
 
+const (
+	mapLibreJSPath  = "../../vendor/maplibre-gl.js"
+	mapLibreCSSPath = "../../vendor/maplibre-gl.css"
+	pmTilesJSPath   = "../../vendor/pmtiles.js"
+)
+
+func ensureVendorAssets(root string) error {
+	required := []string{
+		filepath.Join("vendor", "maplibre-gl.js"),
+		filepath.Join("vendor", "maplibre-gl.css"),
+		filepath.Join("vendor", "pmtiles.js"),
+	}
+	for _, rel := range required {
+		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Generate creates a standalone HTML map viewer at root/apps/map/index.html
 // that renders the given PMTiles layers using MapLibre GL JS.
 func Generate(root string, layers []Layer) error {
 	dir := filepath.Join(root, "apps", "map")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := ensureVendorAssets(root); err != nil {
 		return err
 	}
 
@@ -89,6 +115,11 @@ func Generate(root string, layers []Layer) error {
 	}
 	defer f.Close()
 
-	data := templateData{Layers: layers}
+	data := templateData{
+		Layers:          layers,
+		MapLibreJSPath:  mapLibreJSPath,
+		MapLibreCSSPath: mapLibreCSSPath,
+		PMTilesJSPath:   pmTilesJSPath,
+	}
 	return tmpl.Execute(f, data)
 }

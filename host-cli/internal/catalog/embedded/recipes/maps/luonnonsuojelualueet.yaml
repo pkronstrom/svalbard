@@ -1,0 +1,32 @@
+id: luonnonsuojelualueet
+type: pmtiles
+display_group: maps
+tags: [environment, conservation]
+depth: comprehensive
+size_gb: 0.08
+description: Finnish nature conservation and wilderness areas (SYKE)
+strategy: build
+
+build:
+  family: vector-static
+  source_url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/luonnonsuojelualueet.zip
+  source_format: shapefile
+  source_srs: "EPSG:3067"
+  layer_name: luonnonsuojelualueet
+  max_zoom: 14
+
+viewer:
+  name: Protected & Wilderness Areas
+  name_fi: Luonnonsuojelu- ja eramaa-alueet
+  category: context
+  style:
+    polygons:
+      fill-color: "#2ecc71"
+      fill-opacity: 0.15
+      line-color: "#27ae60"
+      line-width: 1
+
+license:
+  id: CC-BY-4.0
+  attribution: Finnish Environment Institute (SYKE)
+  url: https://www.syke.fi

@@ -1,0 +1,16 @@
+id: fzf
+type: binary
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.003
+platforms:
+  linux-x86_64: https://github.com/junegunn/fzf/releases/download/v0.70.0/fzf-0.70.0-linux_amd64.tar.gz
+  linux-arm64: https://github.com/junegunn/fzf/releases/download/v0.70.0/fzf-0.70.0-linux_arm64.tar.gz
+  macos-arm64: https://github.com/junegunn/fzf/releases/download/v0.70.0/fzf-0.70.0-darwin_arm64.tar.gz
+  macos-x86_64: https://github.com/junegunn/fzf/releases/download/v0.70.0/fzf-0.70.0-darwin_amd64.tar.gz
+description: fzf — fuzzy finder for interactive menu selection
+license:
+  id: MIT
+  attribution: Junegunn Choi

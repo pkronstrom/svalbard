@@ -1,0 +1,20 @@
+id: gutenberg
+type: zim
+display_group: reference
+tags:
+- general-reference
+- agriculture
+- mechanical
+- medicine
+- history
+depth: overview
+size_gb: 10.0
+url_pattern: https://download.kiwix.org/zim/gutenberg/gutenberg_en_all_{date}.zim
+description: Project Gutenberg book collection
+license:
+  id: PG-License
+  attribution: Project Gutenberg
+  url: https://www.gutenberg.org/policy/license.html
+  note: >
+    Individual texts are in the public domain in the United States.
+    The Project Gutenberg trademark and compilation carry separate terms.

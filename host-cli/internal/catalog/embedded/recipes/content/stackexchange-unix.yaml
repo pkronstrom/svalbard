@@ -1,0 +1,12 @@
+id: stackexchange-unix
+type: zim
+display_group: practical
+tags:
+- computing
+depth: comprehensive
+size_gb: 1.2
+url_pattern: https://download.kiwix.org/zim/stack_exchange/unix.stackexchange.com_en_all_{date}.zim
+description: Unix & Linux Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

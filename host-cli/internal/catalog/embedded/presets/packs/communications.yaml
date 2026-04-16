@@ -1,0 +1,38 @@
+# Capability pack: offline communications, ham radio, networking, and RF reference.
+# Include: radio operation, RF/electronics support, networking, and comms theory.
+# Exclude: broad software reference and general maker content unless comms-relevant.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: communications
+kind: pack
+display_group: Communications
+description: Networking, ham radio, and emergency communications references
+target_size_gb: 4
+sources:
+# ── Networking ──
+- stackexchange-networkengineering
+# ── Ham radio ──
+- stackexchange-amateur-radio
+# ── RF & supporting theory ──
+- stackexchange-electronics
+- libretexts-engineering
+
+# ── TODO: Mesh networking (zimit scrapes) ──
+# meshtastic-docs       # ~50-100 MB, LoRa mesh networking
+# aredn-docs            # ~30-50 MB, ham radio mesh networking
+# reticulum-docs        # ~10-20 MB, off-grid messaging stack
+#
+# ── TODO: SDR & signal references ──
+# rtl-sdr-guides        # ~100-200 MB, zimit, SDR tutorials
+# gnu-radio-wiki        # ~50-100 MB, zimit, SDR framework docs
+# signal-id-wiki        # ~200-500 MB, zimit, identify signals by waterfall
+#
+# ── TODO: Exam & regulation (PDFs) ──
+# kb6nu-study-guides    # ~5 MB, ham radio exam prep
+# iaru-band-plan        # ~2-5 MB, frequency allocation
+# fcc-part-97           # ~1 MB, US amateur radio regs
+# fema-comms-guides     # ~5-10 MB, emergency comms (public domain)
+#
+# ── TODO: Software docs ──
+# chirp-docs            # ~10 MB, radio programming software
+# js8call-docs          # ~5 MB, keyboard-to-keyboard HF
+# winlink-guides        # ~5-10 MB, email over radio

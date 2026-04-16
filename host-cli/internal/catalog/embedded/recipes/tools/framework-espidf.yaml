@@ -1,0 +1,14 @@
+id: framework-espidf
+type: toolchain
+display_group: tools
+tags:
+- embedded
+- esp32
+depth: reference-only
+size_gb: 0.08
+url: https://dl.registry.platformio.org/download/platformio/tool/framework-espidf/3.50503.0/framework-espidf-3.50503.0.tar.gz
+sha256: 8353f6fd5030dd7e662500891428fad15d46efd7e4b718cab2fe6bfb9e7f13fc
+description: Espressif IoT Development Framework (ESP-IDF v5.x)
+license:
+  id: Apache-2.0
+  attribution: Espressif Systems

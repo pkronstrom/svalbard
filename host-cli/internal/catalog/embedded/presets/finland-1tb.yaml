@@ -1,0 +1,18 @@
+name: finland-1tb
+description: Full Finnish-first coverage with large references and advanced tooling
+target_size_gb: 1024
+region: finland
+extends:
+  - default-1tb
+  - fi-maps
+sources:
+# ── Finnish language ──
+- wikipedia-fi-nopic
+- wiktionary-fi
+# ── Nordic + neighbouring languages ──
+- wikipedia-sv-nopic
+- wikipedia-no-nopic
+- wikipedia-da-nopic
+- wikipedia-de-nopic
+# ── Finnish-specific ──
+- fimea

@@ -1,0 +1,49 @@
+# Capability pack: offline programming, sysadmin, Linux, and security reference.
+# Include: software docs, Linux references, troubleshooting, and security Q&A.
+# Exclude: hardware-making, regional geodata, and non-computing practical skills.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: computing
+kind: pack
+display_group: Computing & Dev
+description: Programming references, sysadmin docs, and security resources
+target_size_gb: 8
+sources:
+# ── Language references ──
+- devdocs-python
+- devdocs-rust
+- devdocs-go
+- devdocs-javascript
+# ── System administration ──
+- arch-wiki
+- man-pages
+- stackexchange-unix
+# ── Security ──
+- stackexchange-security
+
+# ── TODO: DevDocs ecosystem bundles (per-language, all tiny) ──
+# devdocs-ops:          docker, nginx, terraform, ansible, k8s, cmake, gcc (~45 MB)
+# devdocs-data:         postgresql, sqlite, duckdb, redis, http (~12 MB)
+# devdocs-web:          html, css, svg, dom, react, vue, angular (~15 MB)
+# devdocs-extended:     kotlin, java, elixir, erlang, haskell, scala, perl, php, ruby, node (~60 MB)
+# devdocs-general:      bash, git, jq, lua, zig, make, fish, nushell, latex (~5 MB)
+#
+# ── Stack Exchange sites ──
+- stackexchange-askubuntu
+- stackexchange-dba
+- stackexchange-softwareengineering
+- stackexchange-codereview
+- stackexchange-cryptography
+- stackexchange-reverseengineering
+- stackexchange-devops
+# ── Linux wikis ──
+- alpinelinux-wiki
+- gentoo-wiki
+- termux-wiki
+#
+# ── TODO: Security (custom packaging) ──
+# owasp-top-ten         # ~1 MB, Markdown → static HTML
+# owasp-wstg            # ~5-10 MB, zimit scrape
+# owasp-cheat-sheets    # ~3-5 MB, GitHub Markdown → static
+#
+# ── TODO: Big ──
+# stack-overflow        # 75 GB, ZIM — 512 GB+ tier only

@@ -1,0 +1,16 @@
+id: who-basic-emergency-care
+type: pdf
+display_group: practical
+tags:
+- medicine
+- emergency-medicine
+- first-aid
+depth: comprehensive
+size_gb: 0.004
+url: https://hlh.who.int/docs/librariesprovider4/hlh-documents/who-icrc-basic-emergency-care.pdf?sfvrsn=4460e22e_5
+filename: WHO_Basic_Emergency_Care.pdf
+description: WHO Basic Emergency Care — open-access triage and emergency care for first-contact providers with limited resources
+license:
+  id: CC-BY-NC-SA-3.0-IGO
+  attribution: World Health Organization
+  url: https://www.who.int/publications/i/item/basic-emergency-care-approach-to-the-acutely-ill-and-injured

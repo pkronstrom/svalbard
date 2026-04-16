@@ -1,0 +1,15 @@
+id: 100-rabbits
+type: zim
+display_group: practical
+tags:
+- computing
+- energy-power
+- navigation
+depth: overview
+size_gb: 0.16
+url_pattern: https://download.kiwix.org/zim/zimit/100r.co_en_all_{date}.zim
+description: 100 Rabbits — off-grid computing, sailing, and resilient technology guides
+license:
+  id: CC-BY-NC-SA-4.0
+  attribution: Hundred Rabbits
+  url: https://100r.co

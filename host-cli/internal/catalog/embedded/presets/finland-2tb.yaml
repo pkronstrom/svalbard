@@ -1,0 +1,21 @@
+name: finland-2tb
+description: Maximum Finnish-first archive with full encyclopedias and broad language
+  coverage
+target_size_gb: 2048
+region: finland
+extends:
+  - default-2tb
+  - fi-maps
+sources:
+# ── Finnish language (full) ──
+- wikipedia-fi-all
+- wiktionary-fi
+# ── Nordic + neighbouring languages (full where available) ──
+- wikipedia-sv-all
+- wikipedia-no-all
+- wikipedia-da-all
+- wikipedia-de-all
+- wikipedia-ru-nopic
+- wikipedia-et-nopic
+# ── Finnish-specific ──
+- fimea

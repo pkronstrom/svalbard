@@ -1,0 +1,27 @@
+id: mml-maastokartta
+type: pmtiles
+display_group: maps
+tags: [basemap, topo, raster]
+depth: comprehensive
+size_gb: 1.0
+description: MML maastokartta raster topo tiles (kartat.kapsi.fi) — Uusimaa default
+strategy: build
+
+build:
+  family: raster-tms
+  tms_url: "https://tiles.kartat.kapsi.fi/maastokartta"
+  bbox: "23.8,59.8,26.8,61.7"
+  min_zoom: 0
+  max_zoom: 13
+  tile_format: jpg
+
+viewer:
+  name: MML Maastokartta (raster)
+  name_fi: MML Maastokartta (rasteri)
+  category: basemap
+  tile_type: raster
+
+license:
+  id: CC-BY-4.0
+  attribution: "National Land Survey of Finland (Maanmittauslaitos), maastokartta"
+  url: https://www.maanmittauslaitos.fi

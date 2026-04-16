@@ -1,0 +1,25 @@
+id: duckdb-wasm
+type: app
+display_group: tools
+tags: [data, database, analytics]
+depth: reference-only
+size_gb: 0.02
+description: DuckDB WASM shell — browser-based analytical SQL engine
+strategy: build
+
+build:
+  family: app-bundle
+  assets:
+    - url: https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell/dist/shell.js
+      dest: shell.js
+    - url: https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell/dist/shell.css
+      dest: shell.css
+    - url: https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm
+      dest: duckdb-mvp.wasm
+    - url: https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js
+      dest: duckdb-browser-mvp.worker.js
+
+license:
+  id: MIT
+  attribution: DuckDB contributors
+  url: https://github.com/duckdb/duckdb-wasm

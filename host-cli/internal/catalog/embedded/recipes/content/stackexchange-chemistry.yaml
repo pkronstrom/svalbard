@@ -1,0 +1,12 @@
+id: stackexchange-chemistry
+type: zim
+display_group: practical
+tags:
+- chemistry
+depth: comprehensive
+size_gb: 1.0
+url_pattern: https://download.kiwix.org/zim/stack_exchange/chemistry.stackexchange.com_en_all_{date}.zim
+description: Chemistry Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

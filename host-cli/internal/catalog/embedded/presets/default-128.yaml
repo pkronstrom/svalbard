@@ -1,0 +1,22 @@
+name: default-128
+description: Region-neutral broad reference, education, and practical guides for a
+  128GB drive
+target_size_gb: 128
+region: default
+extends:
+  - default-64
+sources:
+# ── Practical ──
+- lowtech-magazine
+- cd3wd
+- appropedia
+- quick-guides-medicine
+# ── Q&A ──
+- stackexchange-gardening
+- stackexchange-cooking
+# ── Education ──
+- khan-academy
+- gutenberg
+- libretexts-engineering
+- libretexts-medicine
+- libretexts-geosciences

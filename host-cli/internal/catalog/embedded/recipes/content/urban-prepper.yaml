@@ -1,0 +1,14 @@
+id: urban-prepper
+type: zim
+display_group: video
+tags:
+- fire-shelter
+- water
+- food-foraging
+depth: overview
+size_gb: 2.1
+url_pattern: https://download.kiwix.org/zim/videos/urban-prepper_en_all_{date}.zim
+description: Urban Prepper — urban survival and preparedness videos
+license:
+  id: YouTube
+  attribution: The Urban Prepper (YouTube)

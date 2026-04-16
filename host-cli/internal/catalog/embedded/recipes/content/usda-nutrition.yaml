@@ -1,0 +1,13 @@
+id: usda-nutrition
+type: zim
+display_group: practical
+tags:
+- food-foraging
+- medicine
+depth: reference-only
+size_gb: 0.019
+url_pattern: https://download.kiwix.org/zim/other/usda-2015_en_{date}.zim
+description: USDA National Nutrient Database — food composition and nutrition data
+license:
+  id: public-domain
+  attribution: United States Department of Agriculture

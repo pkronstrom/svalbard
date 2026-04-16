@@ -1,0 +1,23 @@
+id: osm-uusimaa
+type: pmtiles
+display_group: maps
+tags: [navigation, basemap, regional]
+depth: overview
+size_gb: 0.08
+description: OpenStreetMap basemap extract for the Uusimaa region (Protomaps daily build)
+strategy: build
+
+build:
+  family: osm-extract
+  bbox: "23.8,59.8,26.8,61.7"
+  maxzoom: 14
+
+viewer:
+  name: OpenStreetMap Uusimaa
+  name_fi: OpenStreetMap Uusimaa
+  category: basemap
+
+license:
+  id: ODbL-1.0
+  attribution: OpenStreetMap contributors
+  url: https://www.openstreetmap.org/copyright

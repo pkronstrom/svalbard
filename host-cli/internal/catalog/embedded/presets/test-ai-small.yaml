@@ -1,0 +1,9 @@
+name: test-ai-small
+description: Small local AI smoke-test bundle with one lightweight model and the core terminal clients
+target_size_gb: 4
+region: default
+extends:
+  - ai/harnesses
+sources:
+- -crush
+- gemma-4-e2b-it

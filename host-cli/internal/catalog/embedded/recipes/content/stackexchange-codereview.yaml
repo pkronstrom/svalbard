@@ -1,0 +1,12 @@
+id: stackexchange-codereview
+type: zim
+display_group: practical
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.525
+url_pattern: https://download.kiwix.org/zim/stack_exchange/codereview.stackexchange.com_en_all_{date}.zim
+description: Code Review Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

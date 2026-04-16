@@ -1,0 +1,14 @@
+id: stackexchange-gardening
+type: zim
+display_group: practical
+tags:
+- gardening
+- agriculture
+- food-preservation
+depth: comprehensive
+size_gb: 1.0
+url_pattern: https://download.kiwix.org/zim/stack_exchange/gardening.stackexchange.com_en_all_{date}.zim
+description: Gardening Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

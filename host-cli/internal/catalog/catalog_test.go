@@ -4,6 +4,58 @@ import (
 	"testing"
 )
 
+func assertRealCatalog(t *testing.T, cat *Catalog) {
+	t.Helper()
+
+	names := cat.PresetNames()
+	if len(names) < 10 {
+		t.Fatalf("expected real catalog with many presets, got %d", len(names))
+	}
+
+	for _, want := range []string{"default-32", "default-64", "finland-32"} {
+		found := false
+		for _, name := range names {
+			if name == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected preset %q to exist; presets: %v", want, names)
+		}
+	}
+
+	item, ok := cat.RecipeByID("wikipedia-en-nopic")
+	if !ok {
+		t.Fatal("expected to find recipe wikipedia-en-nopic")
+	}
+
+	if item.Type != "zim" {
+		t.Errorf("Type: expected %q, got %q", "zim", item.Type)
+	}
+	if item.SizeGB != 48.0 {
+		t.Errorf("SizeGB: expected %f, got %f", 48.0, item.SizeGB)
+	}
+	if item.URLPattern != "https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_nopic_{date}.zim" {
+		t.Errorf("URLPattern: unexpected value %q", item.URLPattern)
+	}
+	if item.Description != "English Wikipedia without pictures" {
+		t.Errorf("Description: expected %q, got %q", "English Wikipedia without pictures", item.Description)
+	}
+	if item.License == nil {
+		t.Fatal("License: expected non-nil for wikipedia-en-nopic")
+	}
+	if item.License.ID != "CC-BY-SA-3.0" {
+		t.Errorf("License.ID: expected %q, got %q", "CC-BY-SA-3.0", item.License.ID)
+	}
+	if len(item.Tags) < 5 {
+		t.Errorf("Tags: expected several tags, got %d", len(item.Tags))
+	}
+	if item.Menu == nil {
+		t.Error("Menu: expected non-nil for wikipedia-en-nopic")
+	}
+}
+
 func TestResolvePresetExpandsRecipeIDs(t *testing.T) {
 	cat := NewTestCatalog(t)
 
@@ -78,22 +130,7 @@ func TestDefaultCatalogLoadsRealRecipes(t *testing.T) {
 		t.Fatalf("NewDefaultCatalog: %v", err)
 	}
 
-	names := cat.PresetNames()
-	if len(names) == 0 {
-		t.Fatal("expected at least one preset, got 0")
-	}
-
-	// Verify the well-known "default-32" preset exists.
-	found := false
-	for _, name := range names {
-		if name == "default-32" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected preset %q to exist; presets: %v", "default-32", names)
-	}
+	assertRealCatalog(t, cat)
 }
 
 func TestDefaultCatalogRecipeHasRealFields(t *testing.T) {
@@ -131,6 +168,24 @@ func TestDefaultCatalogRecipeHasRealFields(t *testing.T) {
 	if item.Menu == nil {
 		t.Error("Menu: expected non-nil for wikipedia-en-nopic")
 	}
+}
+
+func TestEmbeddedCatalogLoadsRealRecipes(t *testing.T) {
+	cat, err := NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatalf("NewEmbeddedCatalog: %v", err)
+	}
+
+	assertRealCatalog(t, cat)
+}
+
+func TestLoadCatalogLoadsRealRecipes(t *testing.T) {
+	cat, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog: %v", err)
+	}
+
+	assertRealCatalog(t, cat)
 }
 
 func TestAllRecipesReturnsAll(t *testing.T) {

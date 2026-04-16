@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
+	"github.com/pkronstrom/svalbard/host-cli/internal/zimext"
 )
 
 // ScanZIMFiles returns a sorted list of .zim filenames (not full paths)
@@ -36,9 +37,8 @@ func ScanZIMFiles(root string) ([]string, error) {
 
 // IndexVault scans ZIM files in the vault and builds a SQLite FTS5 search index.
 //
-// For each ZIM file not yet indexed, it creates a source entry and inserts a
-// stub article (real ZIM extraction will be added when CGO/libzim bindings are
-// available). Progress is written to w.
+// For each ZIM file not yet indexed, it extracts searchable articles from the
+// archive and stores them in the search database. Progress is written to w.
 func IndexVault(root string, w io.Writer) error {
 	zimFiles, err := ScanZIMFiles(root)
 	if err != nil {
@@ -81,27 +81,24 @@ func IndexVault(root string, w io.Writer) error {
 
 		fmt.Fprintf(w, "  indexing %s ...\n", zf)
 
-		// Create a source entry for this ZIM file.
-		// Use the filename (without extension) as the human-readable title.
-		title := strings.TrimSuffix(zf, filepath.Ext(zf))
+		articles, title, err := zimext.ExtractArticles(filepath.Join(root, "zim", zf))
+		if err != nil {
+			return fmt.Errorf("extracting articles from %s: %w", zf, err)
+		}
+		if title == "" {
+			title = strings.TrimSuffix(zf, filepath.Ext(zf))
+		}
+
 		sourceID, err := db.UpsertSource(zf, title)
 		if err != nil {
 			return fmt.Errorf("upserting source %s: %w", zf, err)
 		}
 
-		// Insert stub article (placeholder until real ZIM extraction is available).
-		articles := []searchdb.Article{
-			{
-				Path:  "/",
-				Title: zf,
-				Body:  "ZIM archive content",
-			},
-		}
 		if err := db.InsertArticles(sourceID, articles); err != nil {
 			return fmt.Errorf("inserting articles for %s: %w", zf, err)
 		}
 
-		fmt.Fprintf(w, "  indexed %s (1 stub article)\n", zf)
+		fmt.Fprintf(w, "  indexed %s (%d article)\n", zf, len(articles))
 	}
 
 	// Store metadata timestamp.

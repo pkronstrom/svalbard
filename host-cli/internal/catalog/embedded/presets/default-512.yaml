@@ -1,0 +1,18 @@
+name: default-512
+description: Region-neutral large reference archive with a conservative local AI pair
+target_size_gb: 512
+region: default
+extends:
+  - default-256
+  - ai/harnesses
+  - ai/models-8gb-ram
+sources:
+# ── Q&A ──
+- stackexchange-math
+# ── Preparedness media ──
+- canadian-prepper-bugout-concepts
+- canadian-prepper-bugout-roll
+- canadian-prepper-prepping-food
+- canadian-prepper-winter-prepping
+- urban-prepper
+- s2-underground

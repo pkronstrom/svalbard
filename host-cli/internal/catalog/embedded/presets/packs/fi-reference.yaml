@@ -1,0 +1,21 @@
+# Capability pack: Finnish-language and Finland-oriented general reference.
+# Include: local-language encyclopedias, dictionaries, and broad study/reference material.
+# Exclude: map layers, operational survival content, and non-local specialist packs.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: fi-reference
+kind: pack
+display_group: Reference
+description: Finnish + English reference — encyclopedias, dictionaries, textbooks
+region: finland
+target_size_gb: 30
+sources:
+- wikipedia-en-nopic
+- wikipedia-fi-nopic
+- wiktionary-en
+- wiktionary-fi
+- wikibooks-en
+- khan-academy
+- gutenberg
+- libretexts-engineering
+- libretexts-medicine
+- libretexts-geosciences

@@ -1,0 +1,14 @@
+id: nhs-medicines
+type: zim
+display_group: practical
+tags:
+- medicine
+- pharmacy
+depth: comprehensive
+size_gb: 0.016
+url_pattern: https://download.kiwix.org/zim/zimit/nhs.uk_en_medicines_{date}.zim
+description: NHS medicines A-Z — drug monographs, dosages, side effects, and interactions
+license:
+  id: OGL-3.0
+  attribution: NHS / Crown Copyright
+  url: https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/

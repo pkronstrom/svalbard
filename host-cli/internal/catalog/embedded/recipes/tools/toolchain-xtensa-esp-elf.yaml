@@ -1,0 +1,16 @@
+id: toolchain-xtensa-esp-elf
+type: toolchain
+display_group: tools
+tags:
+- embedded
+- esp32
+depth: reference-only
+size_gb: 0.32
+platforms:
+  linux-x86_64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-xtensa-esp-elf/14.2.0+20251107/toolchain-xtensa-esp-elf-linux_x86_64-14.2.0+20251107.tar.gz
+  linux-arm64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-xtensa-esp-elf/14.2.0+20251107/toolchain-xtensa-esp-elf-linux_aarch64-14.2.0+20251107.tar.gz
+  macos-arm64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-xtensa-esp-elf/14.2.0+20251107/toolchain-xtensa-esp-elf-darwin_arm64-14.2.0+20251107.tar.gz
+description: Xtensa GCC cross-compiler for ESP32, ESP32-S2, ESP32-S3
+license:
+  id: GPL-3.0-or-later
+  attribution: Espressif Systems

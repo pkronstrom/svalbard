@@ -1,0 +1,13 @@
+id: wikipedia-sv-nopic
+type: zim
+display_group: reference
+tags:
+- general-reference
+- language
+depth: overview
+size_gb: 4.0
+url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_sv_all_nopic_{date}.zim
+description: Swedish Wikipedia without pictures
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

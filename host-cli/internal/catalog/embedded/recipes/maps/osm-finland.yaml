@@ -1,0 +1,23 @@
+id: osm-finland
+type: pmtiles
+display_group: maps
+tags: [navigation, basemap]
+depth: comprehensive
+size_gb: 3.0
+description: OpenStreetMap basemap extract for Finland (Protomaps daily build)
+strategy: build
+
+build:
+  family: osm-extract
+  bbox: "19.5,59.0,32.0,70.1"
+  maxzoom: 15
+
+viewer:
+  name: OpenStreetMap Finland
+  name_fi: OpenStreetMap Suomi
+  category: basemap
+
+license:
+  id: ODbL-1.0
+  attribution: OpenStreetMap contributors
+  url: https://www.openstreetmap.org/copyright

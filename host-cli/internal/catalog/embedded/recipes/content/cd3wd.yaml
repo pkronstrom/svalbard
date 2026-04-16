@@ -1,0 +1,16 @@
+id: cd3wd
+type: zim
+display_group: practical
+tags:
+- agriculture
+- water
+- energy-power
+- civil-construction
+- food-foraging
+depth: comprehensive
+size_gb: 0.55
+url_pattern: https://download.kiwix.org/zim/zimit/cd3wdproject.org_en_all_{date}.zim
+description: CD3WD — appropriate technology library (agriculture, food processing, water, construction, energy)
+license:
+  id: public-domain
+  attribution: CD3WD Project

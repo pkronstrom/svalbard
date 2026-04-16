@@ -1,0 +1,13 @@
+id: librepathology
+type: zim
+display_group: reference
+tags:
+- medicine
+- pathology
+depth: comprehensive
+size_gb: 0.076
+url_pattern: https://download.kiwix.org/zim/other/librepathology_en_all_maxi_{date}.zim
+description: Libre Pathology — open pathology reference with tissue morphology and diagnostic criteria
+license:
+  id: CC-BY-SA-3.0
+  attribution: Libre Pathology contributors

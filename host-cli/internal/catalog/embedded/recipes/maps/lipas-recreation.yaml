@@ -1,0 +1,46 @@
+id: lipas-recreation
+type: pmtiles
+display_group: maps
+tags: [shelter, recreation, hiking]
+depth: comprehensive
+size_gb: 0.1
+description: Finnish outdoor recreation infrastructure from LIPAS (Jyvaskyla)
+strategy: build
+
+build:
+  family: vector-service
+  service_type: wfs
+  service_url: https://lipas.fi/geoserver/lipas/ows
+  layers:
+    - name: lipas:lipas_kaikki_pisteet
+      label: Recreation points
+      filter: "tyyppikoodi IN (301,302,206,204,202,203,205)"
+    - name: lipas:lipas_kaikki_reitit
+      label: Recreation routes
+      filter: "tyyppikoodi IN (4405,4404,4403,4451,4452)"
+    - name: lipas:lipas_kaikki_alueet
+      label: Recreation areas
+  output_format: application/json
+  srs: "EPSG:4326"
+  layer_name: lipas_recreation
+  max_zoom: 14
+
+viewer:
+  name: Outdoor Recreation (LIPAS)
+  name_fi: Ulkoilukohteet (LIPAS)
+  category: shelter
+  style:
+    points:
+      circle-color: "#e67e22"
+      circle-radius: 6
+    lines:
+      line-color: "#c0392b"
+      line-width: 2
+    polygons:
+      fill-color: "#27ae60"
+      fill-opacity: 0.15
+
+license:
+  id: CC-BY-4.0
+  attribution: "Jyvaskylan yliopisto, Lipas Liikuntapaikat.fi"
+  url: https://lipas.fi

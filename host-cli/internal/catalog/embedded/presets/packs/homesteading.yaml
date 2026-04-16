@@ -1,0 +1,41 @@
+# Capability pack: agriculture, low-tech systems, construction, and self-sufficient living.
+# Include: farming, food preservation, appropriate technology, practical trades.
+# Exclude: pure software/sysadmin reference and specialized medical material.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: homesteading
+kind: pack
+display_group: Homesteading
+description: Agriculture, trades, construction, and self-sufficient living
+target_size_gb: 4
+sources:
+# ── Trades ──
+- stackexchange-woodworking
+# ── Sustainable tech ──
+- permacomputing
+- lowtech-magazine
+- appropedia
+- practical-action
+- cd3wd
+# ── Agriculture & food ──
+- stackexchange-gardening
+- zimgit-food-preparation
+
+# ── TODO: Agriculture (PDF/zimit) ──
+# fao-agricultural-manuals  # ~500 MB-2 GB, UN FAO guides
+# attra-ncat-guides         # ~200-500 MB, zimit, sustainable farming
+# seed-saving-guides        # ~10-20 MB, PDF
+# beekeeping-guides         # ~50-100 MB, PDF/zimit
+#
+# ── TODO: Construction & off-grid ──
+# solar-pv-design           # ~50-100 MB, PDF
+# rainwater-harvesting      # ~10-30 MB, PDF
+# water-well-drilling       # ~20-50 MB, PDF
+# natural-building          # ~100-300 MB, zimit/PDF
+# humanure-handbook         # ~20 MB, PDF, composting toilet
+#
+# ── TODO: Textile & metalwork ──
+# blacksmithing-refs        # ~200-500 MB, zimit (IForgeIron archive)
+# hand-tool-woodworking     # ~100-200 MB, zimit/PDF
+#
+# ── TODO: Extension publications ──
+# extension-org-pubs        # ~500 MB-2 GB, PDF/zimit, US cooperative extension

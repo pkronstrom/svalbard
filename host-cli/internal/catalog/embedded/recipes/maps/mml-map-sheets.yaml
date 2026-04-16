@@ -1,0 +1,33 @@
+id: mml-map-sheets
+type: app
+display_group: maps
+tags: [basemap, topo, printable]
+depth: overview
+size_gb: 0.02
+description: MML overview and regional map sheets as PNG images — viewable on any phone
+strategy: build
+
+build:
+  family: app-bundle
+  assets:
+  # Finland overview maps (3 scales)
+  - url: "https://kartat.kapsi.fi/files/yleiskarttarasteri_4500k_jhs180/kaikki/etrs89/png/Yleiskarttarasteri_45milj.png"
+    dest: overview/finland-4500k.png
+  - url: "https://kartat.kapsi.fi/files/yleiskarttarasteri_2000k_jhs180/kaikki/etrs89/png/Yleiskarttarasteri_2milj.png"
+    dest: overview/finland-2000k.png
+  - url: "https://kartat.kapsi.fi/files/yleiskarttarasteri_1000k_jhs180/kaikki/etrs89/png/Yleiskarttarasteri_1milj.png"
+    dest: overview/finland-1000k.png
+  # Uusimaa region 1:250k sheets
+  - url: "https://kartat.kapsi.fi/files/maastokarttarasteri_250k_jhs180/kaikki/etrs89/png/L3/L3L/L3L.png"
+    dest: uusimaa-250k/L3L.png
+  - url: "https://kartat.kapsi.fi/files/maastokarttarasteri_250k_jhs180/kaikki/etrs89/png/L3/L3R/L3R.png"
+    dest: uusimaa-250k/L3R.png
+  - url: "https://kartat.kapsi.fi/files/maastokarttarasteri_250k_jhs180/kaikki/etrs89/png/L4/L4L/L4L.png"
+    dest: uusimaa-250k/L4L.png
+  - url: "https://kartat.kapsi.fi/files/maastokarttarasteri_250k_jhs180/kaikki/etrs89/png/L4/L4R/L4R.png"
+    dest: uusimaa-250k/L4R.png
+
+license:
+  id: CC-BY-4.0
+  attribution: "National Land Survey of Finland (Maanmittauslaitos)"
+  url: https://www.maanmittauslaitos.fi

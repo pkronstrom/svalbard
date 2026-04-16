@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
@@ -43,7 +45,54 @@ type testBuiltinConfig struct {
 	Args map[string]string `json:"args,omitempty"`
 }
 
+var (
+	testRuntimeBinaryOnce sync.Once
+	testRuntimeBinaryMap  map[string]string
+	testRuntimeBinaryErr  error
+)
+
+func stubRuntimeBinarySources(t *testing.T) {
+	t.Helper()
+
+	testRuntimeBinaryOnce.Do(func() {
+		root, err := os.MkdirTemp("", "toolkit-runtime-binaries-")
+		if err != nil {
+			testRuntimeBinaryErr = err
+			return
+		}
+
+		binaries := make(map[string]string, len(supportedPlatforms))
+		for _, platform := range supportedPlatforms {
+			source := filepath.Join(root, platform, runtimeBinaryName)
+			if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+				testRuntimeBinaryErr = err
+				return
+			}
+			if err := os.WriteFile(source, []byte("#!/usr/bin/env sh\nexit 0\n"), 0o755); err != nil {
+				testRuntimeBinaryErr = err
+				return
+			}
+			binaries[platform] = source
+		}
+		testRuntimeBinaryMap = binaries
+	})
+
+	if testRuntimeBinaryErr != nil {
+		t.Fatal(testRuntimeBinaryErr)
+	}
+
+	original := runtimeBinarySources
+	runtimeBinarySources = func() (map[string]string, error) {
+		return testRuntimeBinaryMap, nil
+	}
+	t.Cleanup(func() {
+		runtimeBinarySources = original
+	})
+}
+
 func TestGenerateCreatesActionsJSON(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
 	root := t.TempDir()
 	entries := []manifest.RealizedEntry{
 		{ID: "wikipedia-en-nopic", Type: "zim", Filename: "wikipedia-en-nopic.zim", RelativePath: "zim/wikipedia-en-nopic.zim"},
@@ -115,7 +164,71 @@ func TestGenerateCreatesActionsJSON(t *testing.T) {
 	}
 }
 
+func TestGenerateBundlesRuntimeAndScripts(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	root := t.TempDir()
+	if err := Generate(root, nil, "default-32"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, platform := range supportedPlatforms {
+		dest := filepath.Join(root, ".svalbard", "runtime", platform, runtimeBinaryName)
+		info, err := os.Stat(dest)
+		if err != nil {
+			t.Fatalf("stat runtime binary for %s: %v", platform, err)
+		}
+		if info.Mode().Perm() != 0o755 {
+			t.Fatalf("runtime binary mode for %s = %o, want 755", platform, info.Mode().Perm())
+		}
+	}
+
+	runPath := filepath.Join(root, "run")
+	runData, err := os.ReadFile(runPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runText := string(runData)
+	if !strings.Contains(runText, ".svalbard/runtime/") {
+		t.Fatalf("run script missing runtime path: %q", runText)
+	}
+	if !strings.Contains(runText, "uname -s") {
+		t.Fatalf("run script missing uname detection: %q", runText)
+	}
+	if !strings.Contains(runText, `exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive" "$@"`) {
+		t.Fatalf("run script missing exec line: %q", runText)
+	}
+	if info, err := os.Stat(runPath); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm() != 0o755 {
+		t.Fatalf("run mode = %o, want 755", info.Mode().Perm())
+	}
+
+	activatePath := filepath.Join(root, "activate")
+	activateData, err := os.ReadFile(activatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activateText := string(activateData)
+	if !strings.Contains(activateText, `exec "$DRIVE_ROOT/run" activate "$@"`) {
+		t.Fatalf("activate script missing exec line: %q", activateText)
+	}
+	if !strings.Contains(activateText, "sb()") {
+		t.Fatalf("activate script missing sb helper: %q", activateText)
+	}
+	if !strings.Contains(activateText, "deactivate()") {
+		t.Fatalf("activate script missing deactivate helper: %q", activateText)
+	}
+	if info, err := os.Stat(activatePath); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm() != 0o755 {
+		t.Fatalf("activate mode = %o, want 755", info.Mode().Perm())
+	}
+}
+
 func TestGenerateWithPMTilesCreatesMapGroup(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
 	root := t.TempDir()
 	entries := []manifest.RealizedEntry{
 		{ID: "osm-finland", Type: "pmtiles", Filename: "osm-finland.pmtiles", RelativePath: "maps/osm-finland.pmtiles"},
@@ -140,6 +253,8 @@ func TestGenerateWithPMTilesCreatesMapGroup(t *testing.T) {
 }
 
 func TestGenerateToolsAlwaysPresent(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
 	root := t.TempDir()
 	// No entries at all — tools group should still be present.
 	if err := Generate(root, nil, "empty"); err != nil {
@@ -162,6 +277,8 @@ func TestGenerateToolsAlwaysPresent(t *testing.T) {
 }
 
 func TestGenerateGroupsOrderedCorrectly(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
 	root := t.TempDir()
 	entries := []manifest.RealizedEntry{
 		{ID: "wikipedia-en", Type: "zim", Filename: "wikipedia-en.zim", RelativePath: "zim/wikipedia-en.zim"},
@@ -191,6 +308,8 @@ func TestGenerateGroupsOrderedCorrectly(t *testing.T) {
 }
 
 func TestGenerateHumanizesLabels(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
 	root := t.TempDir()
 	entries := []manifest.RealizedEntry{
 		{ID: "wikipedia-en-nopic", Type: "zim", Filename: "wikipedia-en-nopic.zim", RelativePath: "zim/wikipedia-en-nopic.zim"},

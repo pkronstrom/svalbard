@@ -1,0 +1,12 @@
+id: wiktionary-fi
+type: zim
+display_group: reference
+tags:
+- language
+depth: comprehensive
+size_gb: 2.0
+url_pattern: https://download.kiwix.org/zim/wiktionary/wiktionary_fi_all_nopic_{date}.zim
+description: Finnish Wiktionary
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

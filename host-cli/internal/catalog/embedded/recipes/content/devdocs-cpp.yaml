@@ -1,0 +1,12 @@
+id: devdocs-cpp
+type: zim
+display_group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.007
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_cpp_{date}.zim
+description: DevDocs C++ language reference
+license:
+  id: CC-BY-SA-3.0
+  attribution: cppreference.com contributors via DevDocs

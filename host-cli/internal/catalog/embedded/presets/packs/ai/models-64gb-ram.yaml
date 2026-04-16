@@ -1,0 +1,8 @@
+name: ai/models-64gb-ram
+kind: pack
+display_group: AI
+description: Highest-capability portable general and coding models for 64 GB RAM class hosts
+target_size_gb: 42
+sources:
+- gemma-4-31b-it
+- qwen-35b-a3b

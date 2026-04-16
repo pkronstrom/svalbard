@@ -1,0 +1,18 @@
+id: khan-academy
+type: zim
+display_group: education
+tags:
+- education-pedagogy
+- mathematics
+- physics
+- chemistry
+- biology
+depth: comprehensive
+size_gb: 10.0
+url_pattern: https://download.kiwix.org/zim/other/khan_academy_en_all_{date}.zim
+description: Khan Academy educational content
+license:
+  id: CC-BY-NC-SA-3.0
+  attribution: Khan Academy
+  url: https://www.khanacademy.org/about/tos
+  noncommercial: true

@@ -1,0 +1,13 @@
+id: stackexchange-arduino
+type: zim
+display_group: practical
+tags:
+- electronics
+- computing
+depth: comprehensive
+size_gb: 0.25
+url_pattern: https://download.kiwix.org/zim/stack_exchange/arduino.stackexchange.com_en_all_{date}.zim
+description: Arduino Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

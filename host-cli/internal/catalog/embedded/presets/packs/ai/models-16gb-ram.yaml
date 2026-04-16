@@ -1,0 +1,9 @@
+name: ai/models-16gb-ram
+kind: pack
+display_group: AI
+description: General and coding models sized for 16 GB RAM class hosts
+target_size_gb: 12
+sources:
+- gemma-4-e4b-it
+- qwen-9b
+

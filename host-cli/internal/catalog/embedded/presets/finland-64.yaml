@@ -1,0 +1,15 @@
+name: finland-64
+description: Broader coverage with Finnish + English reference and practical guides
+target_size_gb: 64
+region: finland
+extends:
+  - default-64
+  - fi-maps
+sources:
+# ── Finnish language ──
+- wikipedia-fi-nopic
+- wiktionary-fi
+# ── Finnish-specific ──
+- fimea
+# ── Early introduction (default gets these at 128) ──
+- stackexchange-gardening

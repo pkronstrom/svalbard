@@ -1,0 +1,13 @@
+id: zimgit-food-preparation
+type: zim
+display_group: practical
+tags:
+- food-foraging
+- agriculture
+depth: overview
+size_gb: 0.09
+url_pattern: https://download.kiwix.org/zim/other/zimgit-food-preparation_en_{date}.zim
+description: Food preparation and preservation techniques
+license:
+  id: CC-BY-SA-4.0
+  attribution: zimgit contributors

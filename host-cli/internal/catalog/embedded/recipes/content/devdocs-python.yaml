@@ -1,0 +1,12 @@
+id: devdocs-python
+type: zim
+display_group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.004
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_python_{date}.zim
+description: DevDocs Python language reference
+license:
+  id: PSF-2.0
+  attribution: Python Software Foundation via DevDocs

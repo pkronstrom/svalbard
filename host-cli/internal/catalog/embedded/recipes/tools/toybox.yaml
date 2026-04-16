@@ -1,0 +1,14 @@
+id: toybox
+type: binary
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.003
+platforms:
+  linux-x86_64: https://landley.net/toybox/bin/toybox-x86_64
+  linux-arm64: https://landley.net/toybox/bin/toybox-aarch64
+description: Toybox — 200+ POSIX utilities in a single binary (httpd, sha256sum, grep, sed, find, wget, tar, nc)
+license:
+  id: 0BSD
+  attribution: Rob Landley

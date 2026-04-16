@@ -1,0 +1,15 @@
+id: gemma-4-31b-it
+type: gguf
+display_group: models
+tags:
+- computing
+- general-reference
+- tool-calling
+depth: comprehensive
+size_gb: 18.7
+url: https://huggingface.co/ggml-org/gemma-4-31B-it-GGUF/resolve/main/gemma-4-31B-it-Q4_K_M.gguf
+description: Gemma 4 31B IT (Q4_K_M) — highest-capability dense general/tool-call model for premium hosts
+license:
+  id: Apache-2.0
+  attribution: Google DeepMind / ggml-org
+

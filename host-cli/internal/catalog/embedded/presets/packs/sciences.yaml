@@ -1,0 +1,50 @@
+# Capability pack: science learning and reference across the major disciplines.
+# Include: core science textbooks, science Q&A, and broad educational references.
+# Exclude: clinical medicine, regional field guides, and unrelated practical how-to.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: sciences
+kind: pack
+display_group: Science & Education
+description: Biology, chemistry, physics, math, and earth sciences references
+target_size_gb: 16
+sources:
+# ── Stack Exchange Q&A (already in default-256+ but included for standalone use) ──
+- stackexchange-physics
+- stackexchange-math
+- stackexchange-chemistry
+- stackexchange-biology
+
+# ── Open textbook library (Kiwix LibreTexts) ──
+- libretexts-biology
+- libretexts-chemistry
+- libretexts-geosciences
+- libretexts-math
+- libretexts-physics
+- libretexts-statistics
+
+# ── TODO: OpenStax textbooks (PDF/EPUB, CC BY 4.0) ──
+# openstax-biology      # ~200 MB
+# openstax-chemistry    # ~150 MB
+# openstax-physics      # ~150 MB (also in engineering)
+# openstax-astronomy    # ~200 MB
+# openstax-geology      # ~150 MB
+# openstax-statistics   # ~100 MB
+#
+# ── TODO: Chemistry/materials ──
+# pubchem-subset        # ~1-5 GB, SQLite, chemical compound data
+# nist-chemistry-webbook # ~200-500 MB, zimit
+# periodic-table-app    # ~5-10 MB, interactive static HTML/JS
+#
+# ── TODO: Astronomy ──
+# stellarium-web        # ~50-100 MB, static app, planetarium
+# hyg-star-database     # ~5 MB, CSV/SQLite, 120K stars
+# messier-ngc-catalog   # ~1 MB, CSV/SQLite, deep sky objects
+#
+# ── TODO: Biology/ecology ──
+# plants-for-future     # ~300-500 MB, zimit, 8000+ plant species (CC BY 4.0)
+# mushroom-observer     # ~500 MB-2 GB, custom, fungi identification
+# finbif-laji           # ~200-500 MB, Finnish biodiversity (regional)
+#
+# ── TODO: Math ──
+# oeis                  # ~1-2 GB, SQLite, integer sequences
+# project-euler         # ~10 MB, static HTML, math/programming problems

@@ -1,0 +1,13 @@
+id: canadian-prepper-prepping-food
+type: zim
+display_group: video
+tags:
+- food-foraging
+- agriculture
+depth: overview
+size_gb: 2.0
+url_pattern: https://download.kiwix.org/zim/videos/canadian_prepper_preppingfood_en_{date}.zim
+description: Canadian Prepper — food prepping, storage, and long-term food supply videos
+license:
+  id: YouTube
+  attribution: Canadian Prepper (YouTube)

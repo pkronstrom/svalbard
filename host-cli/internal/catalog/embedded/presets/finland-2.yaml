@@ -1,0 +1,10 @@
+name: finland-2
+description: Emergency field kit for Finland
+target_size_gb: 2
+region: finland
+extends:
+  - default-2
+sources:
+# ── Finland-specific ──
+- fimea
+- mml-map-sheets

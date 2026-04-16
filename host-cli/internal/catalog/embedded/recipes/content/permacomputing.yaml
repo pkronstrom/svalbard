@@ -1,0 +1,13 @@
+id: permacomputing
+type: zim
+display_group: reference
+tags:
+- computing
+- energy-power
+depth: overview
+size_gb: 0.001
+url_pattern: https://download.kiwix.org/zim/zimit/permacomputing.net_en_all_{date}.zim
+description: Permacomputing wiki — sustainable and resilient computing practices
+license:
+  id: CC0-1.0
+  attribution: permacomputing.net contributors

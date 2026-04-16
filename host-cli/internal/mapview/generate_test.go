@@ -7,8 +7,27 @@ import (
 	"testing"
 )
 
+func writeVendorBundle(t *testing.T, root string) {
+	t.Helper()
+
+	for _, rel := range []string{
+		filepath.Join("vendor", "maplibre-gl.js"),
+		filepath.Join("vendor", "maplibre-gl.css"),
+		filepath.Join("vendor", "pmtiles.js"),
+	} {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+		}
+		if err := os.WriteFile(path, []byte("test asset"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+}
+
 func TestGenerateCreatesHTMLFile(t *testing.T) {
 	root := t.TempDir()
+	writeVendorBundle(t, root)
 	layers := []Layer{
 		{Name: "OSM Finland", Filename: "osm-finland.pmtiles", Category: "basemap"},
 	}
@@ -23,11 +42,17 @@ func TestGenerateCreatesHTMLFile(t *testing.T) {
 	}
 	html := string(raw)
 
-	if !strings.Contains(html, "maplibregl") || !strings.Contains(html, "maplibre-gl") {
-		t.Error("missing MapLibre GL JS reference")
+	if strings.Contains(html, "unpkg.com") {
+		t.Error("generated HTML should not reference CDN assets")
 	}
-	if !strings.Contains(html, "pmtiles") {
-		t.Error("missing PMTiles JS reference")
+	if !strings.Contains(html, "../../vendor/maplibre-gl.js") {
+		t.Error("missing local MapLibre GL JS reference")
+	}
+	if !strings.Contains(html, "../../vendor/maplibre-gl.css") {
+		t.Error("missing local MapLibre GL CSS reference")
+	}
+	if !strings.Contains(html, "../../vendor/pmtiles.js") {
+		t.Error("missing local PMTiles JS reference")
 	}
 	if !strings.Contains(html, "osm-finland.pmtiles") {
 		t.Error("missing layer filename")
@@ -39,6 +64,7 @@ func TestGenerateCreatesHTMLFile(t *testing.T) {
 
 func TestGenerateWithMultipleLayers(t *testing.T) {
 	root := t.TempDir()
+	writeVendorBundle(t, root)
 	layers := []Layer{
 		{Name: "OSM", Filename: "osm.pmtiles", Category: "basemap"},
 		{Name: "Water Points", Filename: "water.pmtiles", Category: "overlay"},
@@ -60,9 +86,19 @@ func TestGenerateWithMultipleLayers(t *testing.T) {
 
 func TestGenerateEmptyLayers(t *testing.T) {
 	root := t.TempDir()
+	writeVendorBundle(t, root)
 	err := Generate(root, nil)
 	// Should succeed but maybe skip file creation or create minimal page
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGenerateRequiresVendorBundle(t *testing.T) {
+	root := t.TempDir()
+
+	err := Generate(root, []Layer{{Name: "OSM", Filename: "osm.pmtiles"}})
+	if err == nil {
+		t.Fatal("expected error when vendor bundle is missing")
 	}
 }

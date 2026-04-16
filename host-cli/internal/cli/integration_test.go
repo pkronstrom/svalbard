@@ -3,12 +3,28 @@ package cli
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
+
+func testSmallZIMPath(t *testing.T) string {
+	t.Helper()
+
+	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	if err != nil {
+		t.Fatalf("go env GOMODCACHE: %v", err)
+	}
+
+	path := filepath.Join(strings.TrimSpace(string(out)), "github.com", "stazelabs", "gozim@v0.1.0", "testdata", "small.zim")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("stat test zim %s: %v", path, err)
+	}
+	return path
+}
 
 func TestFullCLIContractEndToEnd(t *testing.T) {
 	// This test exercises the entire v2 CLI contract in order:
@@ -124,13 +140,17 @@ func TestFullCLIContractEndToEnd(t *testing.T) {
 		t.Fatalf("import failed: %v", err)
 	}
 
-	// 9. INDEX (after creating a fake zim dir)
+	// 9. INDEX (after copying a real test ZIM fixture)
 	zimDir := filepath.Join(root, "zim")
 	if err := os.MkdirAll(zimDir, 0755); err != nil {
 		t.Fatalf("creating zim dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(zimDir, "test.zim"), []byte("fake"), 0644); err != nil {
-		t.Fatalf("creating test zim file: %v", err)
+	smallZIM, err := os.ReadFile(testSmallZIMPath(t))
+	if err != nil {
+		t.Fatalf("reading test zim fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(zimDir, "test.zim"), smallZIM, 0644); err != nil {
+		t.Fatalf("copying test zim file: %v", err)
 	}
 	cmd = NewRootCommand()
 	cmd.SetArgs([]string{"index", "--vault", root})

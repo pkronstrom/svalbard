@@ -1,0 +1,13 @@
+id: stackexchange-raspberrypi
+type: zim
+display_group: practical
+tags:
+- electronics
+- computing
+depth: comprehensive
+size_gb: 0.285
+url_pattern: https://download.kiwix.org/zim/stack_exchange/raspberrypi.stackexchange.com_en_all_{date}.zim
+description: Raspberry Pi Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

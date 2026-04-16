@@ -12,6 +12,7 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
+	"github.com/pkronstrom/svalbard/host-cli/internal/mapview"
 	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
 	"github.com/pkronstrom/svalbard/host-cli/internal/resolver"
 	"github.com/pkronstrom/svalbard/host-cli/internal/toolkit"
@@ -82,8 +83,6 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	m.Realized.Entries = filtered
 
 	// Update applied timestamp.
-	m.Realized.AppliedAt = time.Now().UTC().Format(time.RFC3339)
-
 	// Regenerate runtime assets.
 	presetName := ""
 	if len(m.Desired.Presets) > 0 {
@@ -92,8 +91,41 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	if err := toolkit.Generate(root, m.Realized.Entries, presetName); err != nil {
 		return fmt.Errorf("generating toolkit: %w", err)
 	}
+	if err := syncMapViewer(root, m.Realized.Entries); err != nil {
+		return fmt.Errorf("generating map viewer: %w", err)
+	}
+
+	// Update applied timestamp only after all runtime assets have been regenerated.
+	m.Realized.AppliedAt = time.Now().UTC().Format(time.RFC3339)
 
 	return nil
+}
+
+func syncMapViewer(root string, entries []manifest.RealizedEntry) error {
+	viewerPath := filepath.Join(root, "apps", "map", "index.html")
+	layers := pmtilesLayers(entries)
+	if len(layers) == 0 {
+		if err := os.Remove(viewerPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return mapview.Generate(root, layers)
+}
+
+func pmtilesLayers(entries []manifest.RealizedEntry) []mapview.Layer {
+	layers := make([]mapview.Layer, 0)
+	for _, e := range entries {
+		if e.Type != "pmtiles" {
+			continue
+		}
+		layers = append(layers, mapview.Layer{
+			Name:     e.ID,
+			Filename: e.Filename,
+			Category: "basemap",
+		})
+	}
+	return layers
 }
 
 // filenameFromURL extracts the last path segment from a URL, stripping any

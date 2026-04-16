@@ -1,0 +1,12 @@
+id: man-pages
+type: zim
+display_group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 0.18
+url_pattern: https://download.kiwix.org/zim/zimit/www.mankier.com_en_all_{date}.zim
+description: ManKier — Linux/Unix man pages reference
+license:
+  id: various
+  attribution: ManKier and respective man page authors

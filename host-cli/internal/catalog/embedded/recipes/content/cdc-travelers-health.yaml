@@ -1,0 +1,13 @@
+id: cdc-travelers-health
+type: zim
+display_group: practical
+tags:
+- medicine
+- infectious-disease
+depth: comprehensive
+size_gb: 0.17
+url_pattern: https://download.kiwix.org/zim/zimit/wwwnc.cdc.gov_en_all_{date}.zim
+description: CDC Travelers' Health — disease references, vaccination schedules, and destination health info
+license:
+  id: US-PD
+  attribution: Centers for Disease Control and Prevention

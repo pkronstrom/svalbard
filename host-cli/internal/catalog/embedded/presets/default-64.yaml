@@ -1,0 +1,25 @@
+name: default-64
+description: Region-neutral reference and practical guides for a 64GB USB stick
+target_size_gb: 64
+region: default
+extends:
+  - default-32
+sources:
+# ── Wikipedia upgrade ──
+- -wikipedia-en-top-nopic
+- wikipedia-en-top-maxi
+# ── Expanded reference ──
+- wiktionary-en
+# ── Expanded medical ──
+- fas-military-medicine
+# ── Expanded practical ──
+- ifixit
+- zimgit-post-disaster
+- 100-rabbits
+# ── Q&A ──
+- stackexchange-diy
+- stackexchange-sustainability
+# ── Education ──
+- wikibooks-en
+# ── Maps ──
+- natural-earth

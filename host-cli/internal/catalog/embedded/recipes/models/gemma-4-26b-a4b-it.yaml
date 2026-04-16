@@ -1,0 +1,15 @@
+id: gemma-4-26b-a4b-it
+type: gguf
+display_group: models
+tags:
+- computing
+- general-reference
+- tool-calling
+depth: comprehensive
+size_gb: 16.8
+url: https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_K_M.gguf
+description: Gemma 4 26B A4B IT (Q4_K_M) — faster MoE general/tool-call model for higher-RAM hosts
+license:
+  id: Apache-2.0
+  attribution: Google DeepMind / ggml-org
+

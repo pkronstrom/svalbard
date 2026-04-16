@@ -1,0 +1,15 @@
+# Capability pack: ESP32 offline development with toolchain, framework, and flashing tools.
+# Include: board-specific toolchains, frameworks, and support binaries for ESP32 work.
+# Exclude: general reference content and unrelated hardware platforms.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: esp32-dev
+kind: pack
+display_group: Computing & Dev
+description: ESP32 offline development — Xtensa toolchain + ESP-IDF framework
+target_size_gb: 2
+sources:
+- toolchain-xtensa-esp-elf
+- framework-espidf
+- tool-esptoolpy
+- toolchain-esp32ulp
+- tool-openocd-esp32

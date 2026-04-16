@@ -1,0 +1,30 @@
+id: virtavesien-lohikalakannat
+type: pmtiles
+display_group: maps
+tags: [food, fishing]
+depth: comprehensive
+size_gb: 0.02
+description: Salmonid populations in Finnish rivers and streams (Luke / SYKE)
+strategy: build
+
+build:
+  family: vector-static
+  source_url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/lohikalakannat.zip
+  source_format: shapefile
+  source_srs: "EPSG:3067"
+  layer_name: lohikalakannat
+  max_zoom: 14
+
+viewer:
+  name: Salmonid Rivers
+  name_fi: Virtavesien lohikalakannat
+  category: food
+  style:
+    lines:
+      line-color: "#e74c3c"
+      line-width: 2
+
+license:
+  id: CC-BY-4.0
+  attribution: Natural Resources Institute Finland (Luke) / SYKE
+  url: https://www.luke.fi

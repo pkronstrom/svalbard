@@ -1,0 +1,16 @@
+name: finland-256
+description: Rich coverage with Finnish focus, Nordic languages, and expanded references
+target_size_gb: 256
+region: finland
+extends:
+  - default-256
+  - fi-maps
+sources:
+# ── Finnish language ──
+- wikipedia-fi-nopic
+- wiktionary-fi
+# ── Nordic languages ──
+- wikipedia-sv-nopic
+- wikipedia-no-nopic
+# ── Finnish-specific ──
+- fimea

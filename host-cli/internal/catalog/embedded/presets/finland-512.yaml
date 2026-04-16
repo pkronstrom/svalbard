@@ -1,0 +1,17 @@
+name: finland-512
+description: Expanded Finnish-first coverage with media and larger reference sets
+target_size_gb: 512
+region: finland
+extends:
+  - default-512
+  - fi-maps
+sources:
+# ── Finnish language ──
+- wikipedia-fi-nopic
+- wiktionary-fi
+# ── Nordic languages ──
+- wikipedia-sv-nopic
+- wikipedia-no-nopic
+- wikipedia-da-nopic
+# ── Finnish-specific ──
+- fimea

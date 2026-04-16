@@ -1,0 +1,13 @@
+id: stackexchange-amateur-radio
+type: zim
+display_group: practical
+tags:
+- radio-comms
+- electronics
+depth: comprehensive
+size_gb: 0.5
+url_pattern: https://download.kiwix.org/zim/stack_exchange/ham.stackexchange.com_en_all_{date}.zim
+description: Amateur Radio Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

@@ -1,0 +1,14 @@
+id: wikipedia-en-100-maxi
+type: zim
+display_group: reference
+tags:
+- general-reference
+- encyclopedia
+depth: overview
+size_gb: 0.046
+url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_100_maxi_{date}.zim
+description: English Wikipedia Top 100 — the 100 most vital articles with full images
+  (Vital Articles Level 2)
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

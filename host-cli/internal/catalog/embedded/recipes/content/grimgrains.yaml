@@ -1,0 +1,12 @@
+id: grimgrains
+type: zim
+display_group: practical
+tags:
+- food-foraging
+depth: overview
+size_gb: 0.024
+url_pattern: https://download.kiwix.org/zim/zimit/grimgrains_en_all_{date}.zim
+description: Grimgrains — 100 Rabbits plant-based recipes for cooking with minimal provisions
+license:
+  id: MIT
+  attribution: Hundred Rabbits (Devine Lu Linvega & Rekka Bellum)

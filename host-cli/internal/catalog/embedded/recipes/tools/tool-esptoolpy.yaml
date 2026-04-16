@@ -1,0 +1,14 @@
+id: tool-esptoolpy
+type: toolchain
+display_group: tools
+tags:
+- embedded
+- esp32
+depth: reference-only
+size_gb: 0.001
+url: https://dl.registry.platformio.org/download/platformio/tool/tool-esptoolpy/2.41100.0/tool-esptoolpy-2.41100.0.tar.gz
+sha256: ec80a347efa02e64706075575fbe07b32d3140f4c4aaa7002350ea7d9f71b826
+description: ESP32 firmware flashing and serial tool
+license:
+  id: GPL-2.0-or-later
+  attribution: Espressif Systems

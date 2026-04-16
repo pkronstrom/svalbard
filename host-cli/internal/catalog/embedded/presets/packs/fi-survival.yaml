@@ -1,0 +1,38 @@
+# Capability pack: Finland-specific survival and practical reference.
+# Include: Finnish emergency support content plus universal survival material useful in Finland.
+# Exclude: non-Finnish regional data and broad reference content better handled elsewhere.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: fi-survival
+kind: pack
+display_group: Survival & Medical
+description: Finnish survival essentials — medical, food, water, shelter, practical skills
+region: finland
+target_size_gb: 8
+sources:
+# ── Medical ──
+- wikimed
+- wikem
+- who-basic-emergency-care
+- fas-military-medicine
+- zimgit-medicine
+- quick-guides-medicine
+- fimea
+
+# ── Food & water ──
+- zimgit-water
+- zimgit-food-preparation
+- based-cooking
+- usda-nutrition
+
+# ── Practical skills ──
+- ifixit
+- practical-action
+- zimgit-knots
+- zimgit-post-disaster
+- lowtech-magazine
+- cd3wd
+- appropedia
+
+# ── Q&A ──
+- stackexchange-survival
+- stackexchange-diy

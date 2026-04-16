@@ -1,0 +1,28 @@
+id: fimea
+type: sqlite
+display_group: regional
+tags: [medical, pharmaceutical]
+depth: comprehensive
+size_gb: 0.01
+description: Finnish pharmaceutical registry — medicine names, ingredients, dosages (Fimea)
+strategy: build
+
+build:
+  family: reference-static
+  source_url: https://www.fimea.fi
+  source_format: xml
+  tables:
+    - name: medicines
+      fts: true
+      fts_columns: [name, active_ingredient, atc_code]
+
+viewer:
+  name: Pharmaceutical Registry
+  name_fi: Laakerekisteri (Fimea)
+  category: medical
+  search: true
+
+license:
+  id: CC-BY-4.0
+  attribution: Finnish Medicines Agency (Fimea)
+  url: https://fimea.fi/en/about_us/open-data

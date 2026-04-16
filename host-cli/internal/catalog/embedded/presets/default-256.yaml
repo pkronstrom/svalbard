@@ -1,0 +1,25 @@
+name: default-256
+description: Region-neutral expanded reference and practical archive for a 256GB drive
+target_size_gb: 256
+region: default
+extends:
+  - default-128
+sources:
+# ── Wikipedia upgrade ──
+- -wikipedia-en-top-maxi
+- wikipedia-en-nopic
+# ── Expanded medical ──
+- medlineplus
+# ── Preparedness ──
+- ready-gov
+- energypedia
+# ── Q&A ──
+- stackexchange-amateur-radio
+- stackexchange-electronics
+- stackexchange-physics
+# ── Education ──
+- libretexts-chemistry
+- libretexts-biology
+- libretexts-physics
+- libretexts-math
+- libretexts-statistics

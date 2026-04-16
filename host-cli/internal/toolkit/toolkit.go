@@ -2,8 +2,12 @@ package toolkit
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode"
@@ -13,6 +17,26 @@ import (
 
 const svalbardDir = ".svalbard"
 const actionsFile = "actions.json"
+const runtimeBinaryName = "svalbard-drive"
+
+var supportedPlatforms = []string{
+	"macos-arm64",
+	"macos-x86_64",
+	"linux-arm64",
+	"linux-x86_64",
+}
+
+var runtimeBuildTargets = map[string]struct {
+	goos   string
+	goarch string
+}{
+	"macos-arm64":  {goos: "darwin", goarch: "arm64"},
+	"macos-x86_64": {goos: "darwin", goarch: "amd64"},
+	"linux-arm64":  {goos: "linux", goarch: "arm64"},
+	"linux-x86_64": {goos: "linux", goarch: "amd64"},
+}
+
+var runtimeBinarySources = buildDriveRuntimeBinaries
 
 // TypeDirs maps content types to their destination subdirectories.
 var TypeDirs = map[string]string{
@@ -88,11 +112,22 @@ func humanize(id string) string {
 // entries is the list of realized manifest entries; presetName is recorded in
 // the config for the drive-runtime to identify which preset was applied.
 func Generate(root string, entries []manifest.RealizedEntry, presetName string) error {
-	dir := filepath.Join(root, svalbardDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, svalbardDir), 0o755); err != nil {
 		return err
 	}
+	if err := writeActionsConfig(root, entries, presetName); err != nil {
+		return err
+	}
+	if err := installRuntimeBinaries(root); err != nil {
+		return err
+	}
+	if err := writeRootScripts(root); err != nil {
+		return err
+	}
+	return nil
+}
 
+func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string) error {
 	var libraryItems []menuItem
 	var mapsItems []menuItem
 
@@ -180,5 +215,147 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string) 
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(dir, actionsFile), data, 0o644)
+	return os.WriteFile(filepath.Join(root, svalbardDir, actionsFile), data, 0o644)
+}
+
+func installRuntimeBinaries(root string) error {
+	sources, err := runtimeBinarySources()
+	if err != nil {
+		return err
+	}
+	for _, platform := range supportedPlatforms {
+		source, ok := sources[platform]
+		if !ok {
+			return fmt.Errorf("missing runtime binary for %s", platform)
+		}
+		dest := filepath.Join(root, svalbardDir, "runtime", platform, runtimeBinaryName)
+		if err := copyFile(source, dest, 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeRootScripts(root string) error {
+	if err := os.WriteFile(filepath.Join(root, "run"), []byte(runScriptContents()), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(root, "activate"), []byte(activateScriptContents()), 0o755); err != nil {
+		return err
+	}
+	return nil
+}
+
+func copyFile(sourcePath, destPath string, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return err
+	}
+
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	dest, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	defer dest.Close()
+
+	if _, err := io.Copy(dest, source); err != nil {
+		return err
+	}
+	return dest.Chmod(mode)
+}
+
+func runScriptContents() string {
+	return `#!/usr/bin/env bash
+set -euo pipefail
+
+DRIVE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case "$(uname -s)" in
+    Darwin*) os="macos" ;;
+    Linux*)  os="linux" ;;
+    *)       echo "Unsupported OS: $(uname -s)" >&2; exit 1 ;;
+esac
+
+case "$(uname -m)" in
+    x86_64)        arch="x86_64" ;;
+    arm64|aarch64) arch="arm64" ;;
+    *)             echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+platform="${os}-${arch}"
+export DRIVE_ROOT
+exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive" "$@"
+`
+}
+
+func activateScriptContents() string {
+	return `#!/usr/bin/env bash
+set -euo pipefail
+
+DRIVE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    exec "$DRIVE_ROOT/run" activate "$@"
+fi
+
+sb() {
+    "$DRIVE_ROOT/run" "$@"
+}
+
+deactivate() {
+    unset -f sb deactivate
+}
+
+export DRIVE_ROOT
+echo "Activated sb shell for $DRIVE_ROOT"
+echo "Use 'sb' to run drive commands. Run 'deactivate' to leave."
+`
+}
+
+func buildDriveRuntimeBinaries() (map[string]string, error) {
+	driveRuntimeDir, err := resolveDriveRuntimeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	outputRoot, err := os.MkdirTemp("", "svalbard-drive-runtime-")
+	if err != nil {
+		return nil, err
+	}
+
+	binaries := make(map[string]string, len(supportedPlatforms))
+	for _, platform := range supportedPlatforms {
+		target := runtimeBuildTargets[platform]
+		outputPath := filepath.Join(outputRoot, platform, runtimeBinaryName)
+		if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+			return nil, err
+		}
+
+		cmd := exec.Command("go", "build", "-o", outputPath, "./cmd/svalbard-drive")
+		cmd.Dir = driveRuntimeDir
+		cmd.Env = append(os.Environ(),
+			"GOOS="+target.goos,
+			"GOARCH="+target.goarch,
+			"CGO_ENABLED=0",
+		)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("build runtime binary for %s: %w: %s", platform, err, strings.TrimSpace(string(output)))
+		}
+		binaries[platform] = outputPath
+	}
+
+	return binaries, nil
+}
+
+func resolveDriveRuntimeDir() (string, error) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("resolve drive-runtime dir: runtime.Caller failed")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "drive-runtime"), nil
 }

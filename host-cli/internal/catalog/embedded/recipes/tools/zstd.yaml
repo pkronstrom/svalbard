@@ -1,0 +1,14 @@
+id: zstd
+type: binary
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.002
+# Deferred: zstd does not ship prebuilt static binaries for Linux/macOS.
+# Needs a build handler to compile from source tarball, or use system package.
+# url: https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
+description: Zstandard — fast real-time compression (deferred — needs build from source)
+license:
+  id: BSD-3-Clause
+  attribution: Meta / Yann Collet

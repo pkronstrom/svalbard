@@ -1,0 +1,15 @@
+id: natural-earth
+type: gpkg
+display_group: maps
+tags:
+- navigation
+- general-reference
+depth: overview
+size_gb: 0.3
+url: https://naciscdn.org/naturalearth/packages/natural_earth_vector.gpkg.zip
+filename: natural_earth_vector.gpkg.zip
+description: Natural Earth — public domain global basemap vectors (boundaries, coastlines, roads, populated places)
+license:
+  id: public-domain
+  attribution: Natural Earth (naturalearthdata.com)
+  url: https://www.naturalearthdata.com/about/terms-of-use/

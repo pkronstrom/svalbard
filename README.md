@@ -36,6 +36,20 @@ A svalbard drive is not a bootable image or a compressed archive — it's a plai
 
 **On a phone or tablet** — carry a USB-C stick, plug it into your phone, and open the files directly with apps like Kiwix (encyclopedias), OsmAnd (maps), or any PDF/EPUB reader. Or just copy the directory (or a zip of it) to your phone's filesystem — the files are standard formats that any compatible app can open. See `provisioning/` for recommended apps on iOS and Android.
 
+## Current Architecture
+
+The current core is Go:
+
+- `host-cli/` contains the host-side CLI for vault init, desired-state changes, apply, status, import, presets, and indexing.
+- `drive-runtime/` contains the on-drive launcher and native runtime actions.
+- `recipes/` and `presets/` remain the catalog inputs consumed by the Go host binary.
+
+Python still exists, but only as build-worker implementation detail:
+
+- `recipes/builders/*.py` contains specialized builder scripts.
+- Those scripts are intended to run inside the `svalbard-tools` container.
+- The old Python host CLI and provisioner are not the active control plane on this branch.
+
 ## Presets
 
 Presets scale from pocket-sized emergency kits to full archives:
@@ -57,81 +71,63 @@ Finnish presets (`finland-*`) add Finnish-language Wikipedia, Wiktionary, Finnis
 <img src="docs/demo.gif" alt="svalbard wizard demo" width="100%">
 
 ```bash
-# 1. Install svalbard (pick one)
-uv tool install git+https://github.com/pkronstrom/svalbard    # recommended
-pipx install git+https://github.com/pkronstrom/svalbard        # alternative
-pip install git+https://github.com/pkronstrom/svalbard          # classic
+# 1. Run the Go host CLI from host-cli/
+cd host-cli
 
-# 2. Run the wizard — walks you through region, preset, target drive, download, and indexing
-svalbard wizard
+# 2. Create a vault from a preset
+go run ./cmd/svalbard init /Volumes/MyStick --preset default-32
 
-# 3. Done — unplug and go
-cd /Volumes/MyStick && ./run        # search, library, maps, local AI, tools
+# 3. Review and materialize the plan
+go run ./cmd/svalbard plan --vault /Volumes/MyStick
+go run ./cmd/svalbard apply --vault /Volumes/MyStick
+
+# 4. Build the search index
+go run ./cmd/svalbard index --vault /Volumes/MyStick
+
+# 5. Done — unplug and go
+cd /Volumes/MyStick && ./run
 ```
 
 ### Add your own content
 
-`svalbard import` downloads content, transforms it as needed, and packages it into a browsable ZIM archive in `library/`. From there you can add it to any drive.
+The current Go CLI imports local files into the vault library. You can optionally add the imported item to the desired state in the same step.
 
 ```bash
-# Import a local file — registers it as a source
-svalbard import manual.pdf
+# Import a local file into the vault library and desired state
+go run ./cmd/svalbard import ../manual.pdf --vault /Volumes/MyStick --add --name field-manual
 
-# Import a website — crawls it and packages into a ZIM
-svalbard import https://example.com
-
-# Import video — downloads, transcodes, and packages into a ZIM
-svalbard import https://youtube.com/watch?v=...
-
-# Bundle multiple documents into one browsable ZIM
-svalbard import --bundle my-library docs/*.pdf
-
-# Add to a specific drive (one-off)
-svalbard add my-library /Volumes/MyStick
-svalbard sync /Volumes/MyStick
+# Or add an existing item id, then apply again
+go run ./cmd/svalbard add local:field-manual --vault /Volumes/MyStick
+go run ./cmd/svalbard apply --vault /Volumes/MyStick
 ```
 
-To include a source in all future drives of a preset, add it to the preset YAML instead:
-
-```yaml
-# presets/my-pack.yaml
-sources:
-  - ...
-  - local:my-library
-```
-
-### Customize a preset
-
-```bash
-svalbard preset copy default-128 my-pack
-$EDITOR ~/.local/share/svalbard/presets/my-pack.yaml
-svalbard wizard --preset my-pack
-```
+`preset copy` is available for exporting built-in preset YAML as a starting point, but local custom preset loading is not yet wired into the Go CLI on this branch.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `svalbard wizard` | Interactive setup — region, preset, target, download, index |
-| `svalbard sync <path>` | Download and update content |
-| `svalbard refresh <source-id> <path>` | Re-download one built-in source |
-| `svalbard status <path>` | Show drive contents |
-| `svalbard audit <path>` | Coverage gap report |
-| `svalbard import <input>` | Import files, URLs, or bundles into `library/` |
-| `svalbard add <source-id> <path>` | Add a built-in or local source to a drive |
-| `svalbard remove <source-id> <path>` | Remove a built-in or local source from a drive |
-| `svalbard index <path>` | Build cross-content search index |
-| `svalbard preset list / copy` | List or customize presets |
+| `svalbard init [path] --preset <name>` | Initialize a new vault from a preset |
+| `svalbard add <item...> --vault <path>` | Add catalog or local item ids to desired state |
+| `svalbard remove <item...> --vault <path>` | Remove item ids from desired state |
+| `svalbard plan --vault <path>` | Show the reconciliation plan |
+| `svalbard apply --vault <path>` | Download, materialize, and update the realized state |
+| `svalbard status --vault <path>` | Show desired, realized, and pending items |
+| `svalbard import <file> --vault <path> [--add]` | Import a local file into the vault library |
+| `svalbard preset list` | List built-in presets from the embedded catalog |
+| `svalbard preset copy <source> <target>` | Export a built-in preset YAML file |
+| `svalbard index --vault <path>` | Build the full-text search index from vault ZIM files |
 
 ## Roadmap
 
-- [x] Interactive wizard — region, preset, target drive, download, indexing
+- [x] Go host CLI for vault init, desired-state edits, apply, status, import, preset listing, and indexing
 - [x] Parallel downloads with resume and checksum verification
 - [x] Composable presets with inheritance and regional packs
 - [x] Full-text and semantic search across all ZIM content
-- [x] Content import — local files, websites, video, multi-doc bundles
-- [x] Drive toolkit — Go launcher, Kiwix server, bundled tools
-- [x] Coverage audit reports
+- [x] Drive toolkit — Go launcher, embedded runtime binaries, local map viewer, bundled tools
+- [ ] Interactive picker / wizard replacement on top of the Go CLI
+- [ ] Local custom preset loading from exported YAML
+- [ ] Expanded Go-side import flows beyond local-file ingestion
 - [ ] Fully curated and verified presets — every source checked, sized, and tested across tiers
 - [ ] Custom Wikipedia ZIM builds — compact/resized images for space-constrained tiers
 - [ ] Regional geodata packs — Finnish survival layers (shelters, water, foraging) as a first regional pack
@@ -141,12 +137,12 @@ svalbard wizard --preset my-pack
 - [x] Offline coding assistant bootstrap — bundled llama.cpp runtime, portable models, and terminal AI clients
 - [ ] Mobile workflow — guides and tooling for viewing drive content on phones via USB-C
 - [ ] Hardware and programming toolkit — offline compilers, embedded toolchains, EDA tools, and documentation
-- [ ] Go-based drive toolkit — port the remaining shell-backed drive actions to portable static binaries
+- [ ] Port the remaining shell-backed drive actions to portable static binaries
 - [ ] Limited Windows support
 
 ## Documentation
 
-- [Usage guide](docs/usage.md) — detailed CLI reference, presets, workspace model
+- [Usage guide](docs/usage.md) — current Go CLI flow, vault model, and builder boundary
 
 ## License
 

@@ -1,0 +1,27 @@
+id: foraging-habitats-fi
+type: pmtiles
+display_group: maps
+tags: [food, foraging, survival]
+depth: comprehensive
+size_gb: 0.04
+description: >
+  Foraging habitat map — edible berries, mushrooms, and herbs by Finnish
+  forest type. Derived from LUKE MS-NFI 2023 forest inventory rasters.
+strategy: download
+path: generated/foraging-habitats-fi.pmtiles
+# url: <remote-url-tbd>
+builder: foraging-habitats-fi-pmtiles.py
+layer_name: foraging
+
+viewer:
+  name: Foraging Habitats
+  name_fi: Keräilykartta
+  category: food
+
+license:
+  id: CC-BY-4.0
+  attribution: >
+    Derived from LUKE Multi-source National Forest Inventory 2023 (CC BY 4.0).
+    Species associations are indicative — identify before consuming.
+    Lajiyhdistelmät ovat suuntaa-antavia — tunnista ennen käyttöä.
+  url: https://www.luke.fi/en/statistics/multi-source-national-forest-inventory
