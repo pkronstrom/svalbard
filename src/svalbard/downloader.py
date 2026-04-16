@@ -17,6 +17,7 @@ from rich.progress import (
 )
 
 console = Console()
+DOWNLOAD_TIMEOUT = httpx.Timeout(connect=30.0, read=300.0, write=300.0, pool=30.0)
 
 
 @dataclass
@@ -65,7 +66,7 @@ def download_file_httpx(url: str, dest_path: Path, progress: Progress, task_id) 
     if existing_size > 0:
         headers["Range"] = f"bytes={existing_size}-"
 
-    with httpx.stream("GET", url, follow_redirects=True, timeout=60, headers=headers) as r:
+    with httpx.stream("GET", url, follow_redirects=True, timeout=DOWNLOAD_TIMEOUT, headers=headers) as r:
         if r.status_code == 416:
             # Range not satisfiable — file is already complete
             return dest_path
@@ -132,8 +133,6 @@ def download_file(url: str, dest_dir: Path, expected_sha256: str = "",
             else:
                 # Corrupted — re-download
                 dest_path.unlink()
-        else:
-            return dest_path, ""
 
     if use_cli:
         download_file_cli(url, dest_dir, use_cli)
@@ -146,7 +145,7 @@ def download_file(url: str, dest_dir: Path, expected_sha256: str = "",
             download_file_cli(url, dest_dir, cli_tool)
         else:
             # Last resort: plain httpx without progress
-            with httpx.stream("GET", url, follow_redirects=True, timeout=60) as r:
+            with httpx.stream("GET", url, follow_redirects=True, timeout=DOWNLOAD_TIMEOUT) as r:
                 r.raise_for_status()
                 with open(dest_path, "wb") as f:
                     for chunk in r.iter_bytes(chunk_size=65536):
@@ -209,11 +208,6 @@ def download_sources(
                             source_id=source_id, success=True,
                             filepath=dest_path, sha256=actual,
                         )
-                else:
-                    return DownloadResult(
-                        source_id=source_id, success=True,
-                        filepath=dest_path, sha256="",
-                    )
 
             display_name = filename if len(filename) <= max_filename else filename[:max_filename - 1] + "…"
             task_id = progress.add_task("dl", filename=display_name, total=None)
