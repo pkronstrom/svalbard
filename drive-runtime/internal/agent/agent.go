@@ -80,6 +80,10 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 				return LaunchConfig{}, err
 			}
 		}
+		mcpBinary, err := os.Executable()
+		if err != nil {
+			return LaunchConfig{}, fmt.Errorf("resolve mcp binary: %w", err)
+		}
 		configPath := filepath.Join(configRoot, "opencode.json")
 		content := fmt.Sprintf(`{
   "$schema": "https://opencode.ai/config.json",
@@ -100,9 +104,15 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
         }
       }
     }
+  },
+  "mcpServers": {
+    "svalbard": {
+      "command": "%[3]s",
+      "args": ["mcp", "--drive", "%[4]s"]
+    }
   }
 }
-`, modelName, baseURL)
+`, modelName, baseURL, mcpBinary, driveRoot)
 		if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
@@ -120,15 +130,25 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 				return LaunchConfig{}, err
 			}
 		}
+		mcpBinary, err := os.Executable()
+		if err != nil {
+			return LaunchConfig{}, fmt.Errorf("resolve mcp binary: %w", err)
+		}
+		mcpConfig := fmt.Sprintf(`{"svalbard":{"command":"%s","args":["mcp","--drive","%s"]}}`, mcpBinary, driveRoot)
+		mcpConfigPath := filepath.Join(configRoot, "mcp-servers.json")
+		if err := os.WriteFile(mcpConfigPath, []byte(mcpConfig), 0o644); err != nil {
+			return LaunchConfig{}, fmt.Errorf("write mcp config: %w", err)
+		}
 		cfg.Env = map[string]string{
-			"HOME":            homeRoot,
-			"XDG_CONFIG_HOME": configRoot,
-			"XDG_CACHE_HOME":  cacheRoot,
-			"XDG_DATA_HOME":   dataRoot,
-			"GOOSE_PROVIDER":  "openai",
-			"GOOSE_MODEL":     modelName,
-			"OPENAI_API_KEY":  "local",
-			"OPENAI_HOST":     hostRoot,
+			"HOME":               homeRoot,
+			"XDG_CONFIG_HOME":    configRoot,
+			"XDG_CACHE_HOME":     cacheRoot,
+			"XDG_DATA_HOME":      dataRoot,
+			"GOOSE_PROVIDER":     "openai",
+			"GOOSE_MODEL":        modelName,
+			"OPENAI_API_KEY":     "local",
+			"OPENAI_HOST":        hostRoot,
+			"GOOSE_MCP_SERVERS":  mcpConfigPath,
 		}
 	default:
 		cfg.Env = map[string]string{}
