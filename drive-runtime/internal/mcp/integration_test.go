@@ -271,9 +271,9 @@ func TestIntegrationSearchFailsGracefully(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from search without search.db, got nil")
 	}
-	// Should mention the missing index or sqlite3.
+	// Should mention the missing or inaccessible search.db.
 	errMsg := err.Error()
-	if !strings.Contains(errMsg, "search index not found") && !strings.Contains(errMsg, "sqlite3 not found") {
+	if !strings.Contains(errMsg, "search.db") && !strings.Contains(errMsg, "search index") {
 		t.Errorf("unexpected error message: %q", errMsg)
 	}
 }

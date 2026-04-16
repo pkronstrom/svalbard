@@ -5,19 +5,34 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 )
 
 // SearchCapability exposes search and read functionality via the MCP "search" tool.
+// Uses modernc.org/sqlite directly for FTS5 queries (no sqlite3 binary needed).
+// Uses kiwix-serve only for browse/read with full HTML content.
 type SearchCapability struct {
-	driveRoot   string
-	meta        DriveMetadata
-	sessionOnce sync.Once
-	session     *search.Session
-	sessionErr  error
+	driveRoot string
+	meta      DriveMetadata
+
+	dbOnce sync.Once
+	db     *searchDB
+	dbErr  error
+
+	kiwixOnce sync.Once
+	kiwixCmd  *exec.Cmd
+	kiwixPort int
+	kiwixErr  error
 }
 
 // NewSearchCapability creates a search capability for the given drive.
@@ -25,7 +40,7 @@ func NewSearchCapability(driveRoot string, meta DriveMetadata) *SearchCapability
 	return &SearchCapability{driveRoot: driveRoot, meta: meta}
 }
 
-func (c *SearchCapability) Tool() string        { return "search" }
+func (c *SearchCapability) Tool() string { return "search" }
 func (c *SearchCapability) Description() string {
 	return "Search and read offline ZIM archives on this drive. IMPORTANT: First call vault_sources to see what archives are available — searches only work against indexed content. Use specific terms matching the archive topics, not generic web-style queries."
 }
@@ -65,8 +80,12 @@ func (c *SearchCapability) Handle(ctx context.Context, action string, params map
 }
 
 func (c *SearchCapability) Close() error {
-	if c.session != nil {
-		return c.session.Close()
+	if c.db != nil {
+		c.db.Close()
+	}
+	if c.kiwixCmd != nil && c.kiwixCmd.Process != nil {
+		_ = c.kiwixCmd.Process.Kill()
+		_, _ = c.kiwixCmd.Process.Wait()
 	}
 	return nil
 }
@@ -82,14 +101,14 @@ type searchResultItem struct {
 	Links    []search.PageLink `json:"links,omitempty"`
 }
 
-func (c *SearchCapability) getSession() (*search.Session, error) {
-	c.sessionOnce.Do(func() {
-		c.session, c.sessionErr = search.NewSession(c.driveRoot, nil)
+func (c *SearchCapability) getDB() (*searchDB, error) {
+	c.dbOnce.Do(func() {
+		c.db, c.dbErr = openSearchDB(c.driveRoot)
 	})
-	return c.session, c.sessionErr
+	return c.db, c.dbErr
 }
 
-func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]any) (ActionResult, error) {
+func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any) (ActionResult, error) {
 	query, _ := params["query"].(string)
 	if query == "" {
 		return ActionResult{}, fmt.Errorf("missing required parameter: query")
@@ -107,8 +126,6 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	} else if l, ok := params["limit"].(int); ok {
 		limit = l
 	}
-
-	// Clamp limit.
 	if limit < 1 {
 		limit = 1
 	}
@@ -119,58 +136,70 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		limit = 5
 	}
 
-	session, err := c.getSession()
+	db, err := c.getDB()
 	if err != nil {
 		return ActionResult{}, err
 	}
 
-	mode := search.ModeKeyword
-	if info := session.Info(); info.SemanticEnabled {
-		mode = info.BestMode
-	}
-
+	// Fetch more results when filtering by source, then trim.
 	fetchLimit := limit
 	if sourceFilter != "" && fetchLimit < 50 {
 		fetchLimit = 50
 	}
 
-	resp, err := session.Search(ctx, mode, query, fetchLimit)
+	results, err := db.keywordSearch(query, fetchLimit)
 	if err != nil {
 		return ActionResult{}, fmt.Errorf("search failed: %w", err)
 	}
 
 	if sourceFilter != "" {
-		filtered := make([]search.Result, 0, len(resp.Results))
-		for _, r := range resp.Results {
+		filtered := make([]search.Result, 0, len(results))
+		for _, r := range results {
 			if normalizeSourceName(r.Filename) == sourceFilter {
 				filtered = append(filtered, r)
 			}
 		}
-		resp.Results = filtered
+		results = filtered
 	}
-	if len(resp.Results) > limit {
-		resp.Results = resp.Results[:limit]
+	if len(results) > limit {
+		results = results[:limit]
 	}
 
-	items := make([]searchResultItem, 0, len(resp.Results))
-	for _, r := range resp.Results {
-		source := normalizeSourceName(r.Filename)
-		item := newSearchResultItem(r)
+	items := make([]searchResultItem, 0, len(results))
+	for _, r := range results {
+		item := searchResultItem{
+			Source:   normalizeSourceName(r.Filename),
+			Path:     r.Path,
+			Title:    r.Title,
+			ReadHint: "Use search_read with this exact source and path",
+		}
 
 		switch detail {
 		case "snippet":
 			item.Snippet = r.Snippet
+			// If FTS snippet is empty, try article body from DB
+			if item.Snippet == "" {
+				if body, err := db.readArticle(r.Filename, r.Path); err == nil && body != "" {
+					if len(body) > 200 {
+						body = body[:200] + "..."
+					}
+					item.Snippet = body
+				}
+			}
 		case "full":
-			page, fetchErr := c.fetchPage(ctx, session, source, r.Path)
-			if fetchErr != nil {
-				// Fallback to snippet on error.
-				item.Snippet = r.Snippet
+			// Try reading from search.db first (fast, no kiwix needed)
+			if body, err := db.readArticle(r.Filename, r.Path); err == nil && body != "" {
+				item.Body = body
 			} else {
-				item.Body = page.Body
-				item.Links = page.Links
+				// Fallback to kiwix for full HTML content
+				if page, fetchErr := c.fetchPage(normalizeSourceName(r.Filename), r.Path); fetchErr == nil {
+					item.Body = page.Body
+					item.Links = page.Links
+				} else {
+					item.Snippet = r.Snippet // last resort
+				}
 			}
 		}
-		// "link" detail level: source + path + title only (nothing extra).
 
 		items = append(items, item)
 	}
@@ -178,32 +207,41 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	return ActionResult{Data: items}, nil
 }
 
-func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any) (ActionResult, error) {
+func (c *SearchCapability) handleRead(_ context.Context, params map[string]any) (ActionResult, error) {
 	source, _ := params["source"].(string)
 	if source == "" {
 		return ActionResult{}, fmt.Errorf("missing required parameter: source")
 	}
 	path, _ := params["path"].(string)
-	// path is optional — omit to browse the main page
 
-	session, err := c.getSession()
+	// Try search.db first (has article body text, fast)
+	if path != "" {
+		db, err := c.getDB()
+		if err == nil {
+			if body, err := db.readArticle(source, path); err == nil && body != "" {
+				return ActionResult{Data: searchResultItem{
+					Source: source,
+					Path:   path,
+					Title:  path, // best we have from DB
+					Body:   body,
+				}}, nil
+			}
+		}
+	}
+
+	// Fallback to kiwix for full HTML with links (needed for browse/main page)
+	page, err := c.fetchPage(source, path)
 	if err != nil {
 		return ActionResult{}, err
 	}
 
-	page, err := c.fetchPage(ctx, session, source, path)
-	if err != nil {
-		return ActionResult{}, err
-	}
-
-	item := searchResultItem{
+	return ActionResult{Data: searchResultItem{
 		Source: source,
 		Path:   path,
 		Title:  page.Title,
 		Body:   page.Body,
 		Links:  page.Links,
-	}
-	return ActionResult{Data: item}, nil
+	}}, nil
 }
 
 func getString(params map[string]any, key string) string {
@@ -211,29 +249,100 @@ func getString(params map[string]any, key string) string {
 	return value
 }
 
-func newSearchResultItem(result search.Result) searchResultItem {
-	return searchResultItem{
-		Source:   normalizeSourceName(result.Filename),
-		Path:     result.Path,
-		Title:    result.Title,
-		ReadHint: "Use search_read with this exact source and path",
-	}
-}
-
 func normalizeSourceName(source string) string {
 	return strings.TrimSuffix(source, ".zim")
 }
 
-func (c *SearchCapability) fetchPage(ctx context.Context, session *search.Session, source, path string) (search.Page, error) {
-	if err := session.EnsureKiwix(ctx); err != nil {
+// ensureKiwix starts kiwix-serve lazily. Handles the case where the binary
+// is inside a subdirectory (e.g. bin/macos-arm64/kiwix-serve/kiwix-serve).
+func (c *SearchCapability) ensureKiwix() error {
+	c.kiwixOnce.Do(func() {
+		kiwixBin, err := resolveKiwixBinary(c.driveRoot)
+		if err != nil {
+			c.kiwixErr = fmt.Errorf("kiwix-serve not found: %w", err)
+			return
+		}
+
+		zims, _ := filepath.Glob(filepath.Join(c.driveRoot, "zim", "*.zim"))
+		if len(zims) == 0 {
+			c.kiwixErr = fmt.Errorf("no ZIM files found")
+			return
+		}
+
+		port, err := netutil.FindAvailablePort("127.0.0.1", 8080)
+		if err != nil {
+			c.kiwixErr = err
+			return
+		}
+
+		args := []string{"--port", fmt.Sprintf("%d", port), "--address", "127.0.0.1"}
+		args = append(args, zims...)
+
+		cmd := exec.Command(kiwixBin, args...)
+		if err := cmd.Start(); err != nil {
+			c.kiwixErr = fmt.Errorf("starting kiwix-serve: %w", err)
+			return
+		}
+
+		// Health check
+		healthURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			resp, err := http.Get(healthURL)
+			if err == nil {
+				resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					c.kiwixCmd = cmd
+					c.kiwixPort = port
+					return
+				}
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		// Timeout — kill orphan
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		c.kiwixErr = fmt.Errorf("kiwix-serve did not become healthy on port %d", port)
+	})
+	return c.kiwixErr
+}
+
+// resolveKiwixBinary handles the case where bin/platform/kiwix-serve is a
+// directory containing the actual binary (common after archive extraction).
+func resolveKiwixBinary(driveRoot string) (string, error) {
+	path, err := binary.Resolve("kiwix-serve", driveRoot, platform.Detect)
+	if err != nil {
+		return "", err
+	}
+	// Check if resolved path is a directory (extracted archive)
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		// Look for the binary inside the directory
+		inner := filepath.Join(path, "kiwix-serve")
+		if fi, err := os.Stat(inner); err == nil && !fi.IsDir() {
+			return inner, nil
+		}
+		// Try to find any executable named kiwix-serve inside subdirs
+		matches, _ := filepath.Glob(filepath.Join(path, "*", "kiwix-serve"))
+		if len(matches) > 0 {
+			return matches[0], nil
+		}
+		return "", fmt.Errorf("kiwix-serve directory found but no binary inside: %s", path)
+	}
+	return path, nil
+}
+
+func (c *SearchCapability) fetchPage(source, path string) (search.Page, error) {
+	if err := c.ensureKiwix(); err != nil {
 		return search.Page{}, fmt.Errorf("kiwix-serve unavailable: %w", err)
 	}
-	port := session.KiwixPort()
 
-	// Source and path are used as-is — they come from search.db or the AI
-	// passing back values from vault_sources/search results. Kiwix expects
-	// the raw path (e.g. "A/Article_Name"), not URL-encoded.
-	pageURL := fmt.Sprintf("http://127.0.0.1:%d/content/%s/%s", port, source, path)
+	pageURL := fmt.Sprintf("http://127.0.0.1:%d/content/%s/%s", c.kiwixPort, source, path)
 
 	resp, err := http.Get(pageURL)
 	if err != nil {
