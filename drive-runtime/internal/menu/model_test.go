@@ -201,7 +201,7 @@ func (f *fakeSearchSession) Info() search.SessionInfo {
 	return f.info
 }
 
-func (f *fakeSearchSession) Search(_ context.Context, mode search.Mode, query string) (search.SearchResponse, error) {
+func (f *fakeSearchSession) Search(_ context.Context, mode search.Mode, query string, _ int) (search.SearchResponse, error) {
 	f.searches = append(f.searches, string(mode)+":"+query)
 	return f.response, f.searchErr
 }

@@ -24,7 +24,7 @@ type actionOutputMsg struct {
 
 type searchSession interface {
 	Info() search.SessionInfo
-	Search(ctx context.Context, mode search.Mode, query string) (search.SearchResponse, error)
+	Search(ctx context.Context, mode search.Mode, query string, limit int) (search.SearchResponse, error)
 	OpenResult(result search.Result) error
 	Close() error
 }
@@ -353,7 +353,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchStatus = "Searching..."
 		}
 		return m, func() tea.Msg {
-			response, err := session.Search(context.Background(), mode, query)
+			response, err := session.Search(context.Background(), mode, query, 20)
 			return searchResultMsg{token: token, query: query, response: response, err: err}
 		}
 	case "esc":

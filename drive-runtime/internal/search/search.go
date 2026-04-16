@@ -170,14 +170,14 @@ func Run(ctx context.Context, stdin io.Reader, stdout io.Writer, driveRoot, init
 				}
 			}
 			if effectiveMode == ModeSemantic {
-				results, err = semanticSearch(sqliteBin, dbPath, query, articleCount, embedPort)
+				results, err = semanticSearch(sqliteBin, dbPath, query, articleCount, embedPort, 20)
 				if err != nil || len(results) == 0 {
 					effectiveMode = ModeKeyword
 				}
 			}
 		}
 		if effectiveMode == ModeKeyword {
-			results, err = keywordSearch(sqliteBin, dbPath, query)
+			results, err = keywordSearch(sqliteBin, dbPath, query, 20)
 			if err != nil {
 				return err
 			}
@@ -275,13 +275,13 @@ func scalarInt(sqliteBin, dbPath, sql string) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(string(out)))
 }
 
-func keywordSearch(sqliteBin, dbPath, query string) ([]Result, error) {
+func keywordSearch(sqliteBin, dbPath, query string, limit int) ([]Result, error) {
 	ftsQuery := BuildFTSQuery(query)
 	sql := fmt.Sprintf(
 		"SELECT a.id, s.filename, a.path, a.title, snippet(articles_fts, 1, '»', '«', '...', 12) "+
 			"FROM articles_fts JOIN articles a ON a.id = articles_fts.rowid "+
-			"JOIN sources s ON s.id = a.source_id WHERE articles_fts MATCH '%s' ORDER BY rank LIMIT 20;",
-		ftsQuery,
+			"JOIN sources s ON s.id = a.source_id WHERE articles_fts MATCH '%s' ORDER BY rank LIMIT %d;",
+		ftsQuery, limit,
 	)
 	results, err := queryResults(sqliteBin, dbPath, sql)
 	if err == nil {
@@ -293,7 +293,7 @@ func keywordSearch(sqliteBin, dbPath, query string) ([]Result, error) {
 	return nil, err
 }
 
-func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort int) ([]Result, error) {
+func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort, limit int) ([]Result, error) {
 	var candidateIDs []int
 	if articleCount >= 500000 {
 		ftsQuery := BuildFTSQuery(query)
@@ -360,8 +360,8 @@ func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort int
 		scores = append(scores, scored{id: id, score: dotProduct(queryVector, vec)})
 	}
 	sort.Slice(scores, func(i, j int) bool { return scores[i].score > scores[j].score })
-	if len(scores) > 20 {
-		scores = scores[:20]
+	if len(scores) > limit {
+		scores = scores[:limit]
 	}
 	if len(scores) == 0 {
 		return nil, nil
@@ -482,8 +482,19 @@ func startKiwix(ctx context.Context, driveRoot string, port int) (*exec.Cmd, err
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	time.Sleep(2 * time.Second)
-	return cmd, nil
+	healthURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(healthURL)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return cmd, nil
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("kiwix-serve did not become healthy")
 }
 
 func runSQLite(sqliteBin, dbPath string, args ...string) ([]byte, error) {

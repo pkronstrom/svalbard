@@ -85,7 +85,7 @@ func (s *Session) Info() SessionInfo {
 	return s.info
 }
 
-func (s *Session) Search(ctx context.Context, mode Mode, query string) (SearchResponse, error) {
+func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int) (SearchResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -103,7 +103,7 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string) (SearchRe
 			effectiveMode = ModeKeyword
 			status = "Semantic unavailable, fell back to keyword"
 		} else {
-			results, err = semanticSearch(s.sqliteBin, s.dbPath, query, s.info.ArticleCount, s.embedPort)
+			results, err = semanticSearch(s.sqliteBin, s.dbPath, query, s.info.ArticleCount, s.embedPort, limit)
 			if err != nil || len(results) == 0 {
 				effectiveMode = ModeKeyword
 				if err != nil {
@@ -114,7 +114,7 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string) (SearchRe
 	}
 
 	if effectiveMode == ModeKeyword {
-		results, err = keywordSearch(s.sqliteBin, s.dbPath, query)
+		results, err = keywordSearch(s.sqliteBin, s.dbPath, query, limit)
 		if err != nil {
 			return SearchResponse{}, err
 		}
@@ -154,6 +154,30 @@ func (s *Session) Close() error {
 		s.kiwixServer = nil
 	}
 	return nil
+}
+
+// EnsureKiwix starts the kiwix-serve process if it is not already running.
+func (s *Session) EnsureKiwix(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.kiwixServer != nil {
+		return nil
+	}
+	port, _ := netutil.FindAvailablePort("127.0.0.1", 8080)
+	cmd, err := startKiwix(ctx, s.driveRoot, port)
+	if err != nil {
+		return err
+	}
+	s.kiwixServer = cmd
+	s.kiwixPort = port
+	return nil
+}
+
+// KiwixPort returns the port the kiwix-serve process is listening on.
+func (s *Session) KiwixPort() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.kiwixPort
 }
 
 func (s *Session) ensureEmbedServer(ctx context.Context) error {
