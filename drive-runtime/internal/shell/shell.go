@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
@@ -30,7 +31,10 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
 	fmt.Fprintf(stdout, "Activated sb shell for %s\n", driveRoot)
 	fmt.Fprintln(stdout, "Use `sb`, `sb search`, `sb chat`, `sb opencode`, or `sb goose`. Exit the shell to leave.")
 
-	cmd := exec.CommandContext(ctx, shellPath, "-i")
+	cmd, extraEnv, err := newInteractiveShellCommand(ctx, shellPath, tempDir)
+	if err != nil {
+		return err
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -38,5 +42,38 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
 		"DRIVE_ROOT="+driveRoot,
 		"PATH="+tempDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	return cmd.Run()
+}
+
+func newInteractiveShellCommand(ctx context.Context, shellPath, tempDir string) (*exec.Cmd, []string, error) {
+	shellName := filepath.Base(shellPath)
+	switch shellName {
+	case "zsh":
+		rcPath := filepath.Join(tempDir, ".zshrc")
+		content := `
+if [ -f "$HOME/.zshrc" ]; then
+  source "$HOME/.zshrc"
+fi
+PROMPT="(sb) ${PROMPT}"
+`
+		if err := os.WriteFile(rcPath, []byte(strings.TrimLeft(content, "\n")), 0o644); err != nil {
+			return nil, nil, err
+		}
+		return exec.CommandContext(ctx, shellPath, "-i"), []string{"ZDOTDIR=" + tempDir}, nil
+	case "bash":
+		rcPath := filepath.Join(tempDir, ".bashrc")
+		content := `
+if [ -f "$HOME/.bashrc" ]; then
+  source "$HOME/.bashrc"
+fi
+PS1="(sb) ${PS1:-\s-\v\$ }"
+`
+		if err := os.WriteFile(rcPath, []byte(strings.TrimLeft(content, "\n")), 0o644); err != nil {
+			return nil, nil, err
+		}
+		return exec.CommandContext(ctx, shellPath, "--rcfile", rcPath, "-i"), nil, nil
+	default:
+		return exec.CommandContext(ctx, shellPath, "-i"), []string{"PS1=(sb) ${PS1:-$ }"}, nil
+	}
 }
