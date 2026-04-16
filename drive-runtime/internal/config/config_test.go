@@ -27,6 +27,7 @@ func TestLoadGroupedActionsConfig(t *testing.T) {
           "id": "search-all-content",
           "label": "Search all content",
           "description": "Query the on-drive search index across packaged sources.",
+          "aliases": ["search"],
           "action": {
             "type": "builtin",
             "config": {
@@ -81,11 +82,39 @@ func TestLoadGroupedActionsConfig(t *testing.T) {
 	if got, want := cfg.Groups[1].Items[0].Subheader, "Archives"; got != want {
 		t.Fatalf("Groups[1].Items[0].Subheader = %q, want %q", got, want)
 	}
+	if got, want := cfg.Groups[0].Items[0].Aliases[0], "search"; got != want {
+		t.Fatalf("Groups[0].Items[0].Aliases[0] = %q, want %q", got, want)
+	}
 	builtin, err := cfg.Groups[1].Items[0].Action.DecodeBuiltin()
 	if err != nil {
 		t.Fatalf("DecodeBuiltin() error = %v", err)
 	}
 	if got, want := builtin.Args["zim"], "wikipedia-en-nopic.zim"; got != want {
 		t.Fatalf("builtin.Args[zim] = %q, want %q", got, want)
+	}
+}
+
+func TestFindItemByAlias(t *testing.T) {
+	cfg := config.RuntimeConfig{
+		Groups: []config.MenuGroup{
+			{
+				ID: "search",
+				Items: []config.MenuItem{
+					{
+						ID:      "search-all-content",
+						Aliases: []string{"search"},
+						Action:  config.BuiltinAction("search", nil),
+					},
+				},
+			},
+		},
+	}
+
+	item, ok := cfg.FindItemByAlias("search")
+	if !ok {
+		t.Fatal("FindItemByAlias() = false, want true")
+	}
+	if item.ID != "search-all-content" {
+		t.Fatalf("item.ID = %q, want %q", item.ID, "search-all-content")
 	}
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"strings"
 )
 
 type RuntimeConfig struct {
@@ -24,6 +25,7 @@ type MenuItem struct {
 	Label       string     `json:"label"`
 	Description string     `json:"description"`
 	Subheader   string     `json:"subheader,omitempty"`
+	Aliases     []string   `json:"aliases,omitempty"`
 	Order       int        `json:"order"`
 	Action      ActionSpec `json:"action"`
 }
@@ -120,6 +122,28 @@ func Load(path string) (RuntimeConfig, error) {
 		if cfg.Groups[i].Items == nil {
 			cfg.Groups[i].Items = []MenuItem{}
 		}
+		for j := range cfg.Groups[i].Items {
+			if cfg.Groups[i].Items[j].Aliases == nil {
+				cfg.Groups[i].Items[j].Aliases = []string{}
+			}
+		}
 	}
 	return cfg, nil
+}
+
+func (cfg RuntimeConfig) FindItemByAlias(alias string) (MenuItem, bool) {
+	normalized := strings.TrimSpace(strings.ToLower(alias))
+	if normalized == "" {
+		return MenuItem{}, false
+	}
+	for _, group := range cfg.Groups {
+		for _, item := range group.Items {
+			for _, candidate := range item.Aliases {
+				if strings.ToLower(candidate) == normalized {
+					return item, true
+				}
+			}
+		}
+	}
+	return MenuItem{}, false
 }

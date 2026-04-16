@@ -55,6 +55,18 @@ func TestCommandUsesDriveRootAndExportsDriveRootEnv(t *testing.T) {
 	}
 }
 
+func TestCommandCanUseExplicitWorkDir(t *testing.T) {
+	runner := actions.NewRunnerWithWorkDir("/tmp/drive", "/tmp/workspace")
+
+	resolved, err := runner.Resolve(config.BuiltinAction("agent", map[string]string{"client": "opencode"}))
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := resolved.Cmd.Dir, "/tmp/workspace"; got != want {
+		t.Fatalf("cmd.Dir = %q, want %q", got, want)
+	}
+}
+
 func TestInspectUsesCapturedOutputMode(t *testing.T) {
 	runner := actions.NewRunner("/tmp/drive")
 
@@ -167,6 +179,17 @@ func TestNativeActionsResolveToLauncherSubcommands(t *testing.T) {
 	}
 	if len(embeddedAction.Cmd.Args) < 2 || !strings.Contains(embeddedAction.Cmd.Args[1], "native-embedded-shell") {
 		t.Fatalf("embedded-shell args = %v, want native embedded-shell subcommand", embeddedAction.Cmd.Args)
+	}
+
+	activateAction, err := runner.Resolve(config.BuiltinAction("activate-shell", nil))
+	if err != nil {
+		t.Fatalf("Resolve(activate-shell) error = %v", err)
+	}
+	if got, want := activateAction.Mode, actions.ModeExecProcess; got != want {
+		t.Fatalf("activate-shell Mode = %v, want %v", got, want)
+	}
+	if len(activateAction.Cmd.Args) < 2 || !strings.Contains(activateAction.Cmd.Args[1], "native-activate-shell") {
+		t.Fatalf("activate-shell args = %v, want native activate-shell subcommand", activateAction.Cmd.Args)
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/serveall"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/share"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/shell"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/verify"
 )
 
@@ -35,6 +36,15 @@ func main() {
 
 func run() error {
 	driveRoot, err := resolveDriveRoot()
+	if err != nil {
+		return err
+	}
+	workDir, err := os.Getwd()
+	if err != nil {
+		workDir = driveRoot
+	}
+
+	cfg, err := config.Load(filepath.Join(driveRoot, ".svalbard", "actions.json"))
 	if err != nil {
 		return err
 	}
@@ -107,17 +117,47 @@ func run() error {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return embedded.Run(ctx, os.Stdout, driveRoot)
+		case actions.NativeActivateSubcommand:
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return shell.Run(ctx, os.Stdout, driveRoot)
 		}
+		if item, ok := cfg.FindItemByAlias(os.Args[1]); ok {
+			runner := actions.NewRunnerWithWorkDir(driveRoot, workDir)
+			resolved, err := runner.Resolve(item.Action)
+			if err != nil {
+				return err
+			}
+			return runResolvedAction(resolved)
+		}
+		return fmt.Errorf("unknown command: %s", os.Args[1])
 	}
 
-	cfg, err := config.Load(filepath.Join(driveRoot, ".svalbard", "actions.json"))
-	if err != nil {
-		return err
-	}
-
-	p := tea.NewProgram(menu.NewModel(cfg, driveRoot), tea.WithAltScreen())
+	p := tea.NewProgram(menu.NewModel(cfg, driveRoot, workDir), tea.WithAltScreen())
 	_, err = p.Run()
 	return err
+}
+
+func runResolvedAction(resolved actions.ResolvedAction) error {
+	switch resolved.Mode {
+	case actions.ModeCaptureOutput:
+		err := resolved.Cmd.Run()
+		if resolved.Cmd.Stdout != nil {
+			if buf, ok := resolved.Cmd.Stdout.(interface{ String() string }); ok {
+				fmt.Fprint(os.Stdout, buf.String())
+			}
+		}
+		if resolved.Cmd.Stderr != nil {
+			if buf, ok := resolved.Cmd.Stderr.(interface{ String() string }); ok {
+				fmt.Fprint(os.Stderr, buf.String())
+			}
+		}
+		return err
+	case actions.ModeExecProcess:
+		return resolved.Cmd.Run()
+	default:
+		return fmt.Errorf("unknown action mode: %d", resolved.Mode)
+	}
 }
 
 func resolveDriveRoot() (string, error) {

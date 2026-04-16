@@ -192,6 +192,9 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	clientCmd.Env = append(os.Environ(), envMapToList(ClientEnvironment(baseURL, modelName))...)
 	clientCmd.Env = append(clientCmd.Env, envMapToList(launchCfg.Env)...)
 	clientCmd.Dir = driveRoot
+	if workDir, err := os.Getwd(); err == nil && workDir != "" {
+		clientCmd.Dir = workDir
+	}
 	return clientCmd.Run()
 }
 

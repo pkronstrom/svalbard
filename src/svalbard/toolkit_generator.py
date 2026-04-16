@@ -216,6 +216,7 @@ def _add_group_item(
     description: str,
     action: dict,
     *,
+    aliases: list[str] | None = None,
     subheader: str | None = None,
     order: int = 100,
     group_label: str | None = None,
@@ -235,6 +236,7 @@ def _add_group_item(
         "label": label,
         "description": description,
         "action": action,
+        "aliases": aliases or [],
         "order": order,
         "_index": len(group["items"]),
     }
@@ -301,6 +303,7 @@ def _build_actions_config(drive_path: Path, manifest: Manifest, preset_name: str
             label="Search all content",
             description="Query the on-drive search index across packaged sources.",
             action=_builtin_action("search"),
+            aliases=["search"],
             order=100,
         )
 
@@ -320,6 +323,20 @@ def _build_actions_config(drive_path: Path, manifest: Manifest, preset_name: str
     # ── AI ──────────────────────────────────────────────────────────────
     chat_entries = _visible_chat_entries(manifest)
     if chat_entries:
+        default_entry = chat_entries[0]
+        default_source = source_by_id.get(default_entry.id)
+        default_name = default_source.description if default_source else _titleize_identifier(default_entry.id)
+        _add_group_item(
+            groups,
+            "local-ai",
+            item_id="chat-default",
+            label="Chat",
+            description=f"Start chat with the default local model ({default_name}).",
+            action=_builtin_action("chat"),
+            aliases=["chat"],
+            subheader="Chat Models",
+            order=50,
+        )
         for entry in chat_entries:
             source = source_by_id.get(entry.id)
             model_name = source.description if source else _titleize_identifier(entry.id)
@@ -348,6 +365,7 @@ def _build_actions_config(drive_path: Path, manifest: Manifest, preset_name: str
                         f"Launch {client_labels[client_id]} against the local model runtime.",
                     ),
                     action=_source_action(source, "agent", {"client": client_id}),
+                    aliases=[client_id],
                     subheader=_source_subheader(source, "AI Clients"),
                     order=_source_order(source, 200 + index),
                 )
@@ -415,6 +433,17 @@ def _build_actions_config(drive_path: Path, manifest: Manifest, preset_name: str
             subheader="Development",
             order=700,
         )
+    _add_group_item(
+        groups,
+        "tools",
+        item_id="activate-shell",
+        label="Activate sb shell",
+        description="Open a temporary sb shell so you can run stick commands from anywhere.",
+        action=_builtin_action("activate-shell"),
+        aliases=["activate"],
+        subheader="Development",
+        order=690,
+    )
 
     # ── Serve ───────────────────────────────────────────────────────────
     zim_count = _count_files(drive_path / TYPE_DIRS["zim"], "*.zim")
@@ -545,7 +574,39 @@ case "$(uname -s):$(uname -m)" in
         ;;
 esac
 
-exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive"
+exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive" "$@"
+'''
+
+
+ACTIVATE_SH = r'''#!/usr/bin/env bash
+set -euo pipefail
+DRIVE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+export DRIVE_ROOT
+
+_svalbard_is_sourced() {
+    if [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
+        case "$ZSH_EVAL_CONTEXT" in
+            *:file) return 0 ;;
+        esac
+    fi
+    (return 0 2>/dev/null)
+}
+
+if _svalbard_is_sourced; then
+    sb() {
+        DRIVE_ROOT="$DRIVE_ROOT" "$DRIVE_ROOT/run" "$@"
+    }
+
+    deactivate() {
+        unset DRIVE_ROOT
+        unset -f sb
+        unset -f deactivate
+    }
+
+    echo "sb shell activated for $DRIVE_ROOT"
+else
+    exec "$DRIVE_ROOT/run" activate "$@"
+fi
 '''
 
 
@@ -590,6 +651,7 @@ def generate_toolkit(drive_path: Path, preset_name: str, platform_filter: str | 
     runtime_dest = svalbard_dir / "runtime"
     actions_path = svalbard_dir / "actions.json"
     entries_path = svalbard_dir / "entries.tab"
+    activate_path = drive_path / "activate"
 
     # Refresh toolkit-managed files but preserve config snapshots.
     for managed_dir in (actions_dest, lib_dest, runtime_dest):
@@ -630,6 +692,10 @@ def generate_toolkit(drive_path: Path, preset_name: str, platform_filter: str | 
     run_file = drive_path / "run"
     run_file.write_text(RUN_SH)
     _make_executable(run_file)
+
+    # Write activate
+    activate_path.write_text(ACTIVATE_SH)
+    _make_executable(activate_path)
 
     legacy_run_sh = drive_path / "run.sh"
     if legacy_run_sh.exists():

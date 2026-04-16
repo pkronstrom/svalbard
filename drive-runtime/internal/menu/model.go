@@ -72,11 +72,15 @@ type Model struct {
 	searchErr          error
 }
 
-func NewModel(cfg config.RuntimeConfig, driveRoot string) Model {
+func NewModel(cfg config.RuntimeConfig, driveRoot string, workDir ...string) Model {
+	runner := actions.NewRunner(driveRoot)
+	if len(workDir) > 0 && workDir[0] != "" {
+		runner = actions.NewRunnerWithWorkDir(driveRoot, workDir[0])
+	}
 	return Model{
 		cfg:       cfg,
 		driveRoot: driveRoot,
-		runner:    actions.NewRunner(driveRoot),
+		runner:    runner,
 		searchFactory: func(root string) (searchSession, error) {
 			return search.NewSession(root, nil)
 		},

@@ -32,6 +32,7 @@ const (
 	NativeServeAllSubcommand = "__native-serve-all"
 	NativeSearchSubcommand   = "__native-search"
 	NativeEmbeddedSubcommand = "__native-embedded-shell"
+	NativeActivateSubcommand = "__native-activate-shell"
 )
 
 type ResolvedAction struct {
@@ -41,10 +42,18 @@ type ResolvedAction struct {
 
 type Runner struct {
 	driveRoot string
+	workDir   string
 }
 
 func NewRunner(driveRoot string) Runner {
-	return Runner{driveRoot: driveRoot}
+	return Runner{driveRoot: driveRoot, workDir: driveRoot}
+}
+
+func NewRunnerWithWorkDir(driveRoot, workDir string) Runner {
+	if workDir == "" {
+		workDir = driveRoot
+	}
+	return Runner{driveRoot: driveRoot, workDir: workDir}
 }
 
 func (r Runner) Resolve(action config.ActionSpec) (ResolvedAction, error) {
@@ -90,6 +99,8 @@ func nativeSubcommandForAction(actionID string) (string, bool) {
 		return NativeSearchSubcommand, true
 	case "embedded-shell":
 		return NativeEmbeddedSubcommand, true
+	case "activate-shell":
+		return NativeActivateSubcommand, true
 	default:
 		return "", false
 	}
@@ -146,7 +157,7 @@ func (r Runner) resolveNativeAction(subcommand, actionID string, args map[string
 	}
 
 	cmd := exec.Command(bin, argv...)
-	cmd.Dir = r.driveRoot
+	cmd.Dir = r.workDir
 	cmd.Env = append(os.Environ(), "DRIVE_ROOT="+r.driveRoot)
 	if shouldCaptureNativeAction(actionID) {
 		var stdout bytes.Buffer
@@ -188,7 +199,7 @@ func (r Runner) resolveExecAction(cfg config.ExecActionConfig) (ResolvedAction, 
 
 	cmd := exec.Command(cmdPath, argv[1:]...)
 	cmd.Args = argv
-	cmd.Dir = r.driveRoot
+	cmd.Dir = r.workDir
 	if cfg.Cwd != "" {
 		cmd.Dir = expandPlaceholders(cfg.Cwd, r.driveRoot, platformName)
 	}

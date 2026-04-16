@@ -40,6 +40,7 @@ def test_generate_toolkit_creates_run(tmp_path):
     generate_toolkit(tmp_path, "default-32")
 
     assert (tmp_path / "run").exists()
+    assert (tmp_path / "activate").exists()
     assert (tmp_path / ".svalbard" / "actions.json").exists()
     assert not (tmp_path / ".svalbard" / "actions").exists()
     assert not (tmp_path / ".svalbard" / "lib").exists()
@@ -58,6 +59,7 @@ def test_run_is_executable(tmp_path):
 
     import os
     assert os.access(tmp_path / "run", os.X_OK)
+    assert os.access(tmp_path / "activate", os.X_OK)
 
 
 def test_generate_toolkit_copies_platform_runtime_launchers(tmp_path):
@@ -87,7 +89,23 @@ def test_run_execs_platform_runtime_binary(tmp_path):
     text = (tmp_path / "run").read_text()
     assert ".svalbard/runtime/" in text
     assert 'uname -s' in text
-    assert 'exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive"' in text
+    assert 'exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive" "$@"' in text
+
+
+def test_activate_script_supports_source_or_direct_exec(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-32",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [],
+    })
+
+    generate_toolkit(tmp_path, "default-32")
+
+    text = (tmp_path / "activate").read_text()
+    assert 'exec "$DRIVE_ROOT/run" activate "$@"' in text
+    assert "sb()" in text
+    assert "deactivate()" in text
 
 
 def test_runtime_config_omits_sections_without_content(tmp_path):
@@ -149,6 +167,46 @@ def test_runtime_config_groups_top_level_menu(tmp_path):
 
     runtime = _read_actions_config(tmp_path)
     assert [group["id"] for group in runtime["groups"]] == ["search", "library", "maps", "local-ai", "tools"]
+
+
+def test_runtime_config_includes_direct_action_aliases(tmp_path):
+    _write_manifest(tmp_path, {
+        "preset": "default-512",
+        "region": "default",
+        "target_path": str(tmp_path),
+        "entries": [
+            {"id": "gemma-4-e2b-it", "type": "gguf",
+             "filename": "gemma-4-e2b-it-Q4_0.gguf",
+             "size_bytes": 3_040_000_000, "tags": ["tool-calling"], "depth": "overview"},
+            {"id": "llama-server", "type": "binary",
+             "filename": "llama-b8586-bin-macos-arm64.tar.gz",
+             "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
+            {"id": "opencode", "type": "binary",
+             "filename": "opencode-darwin-arm64.zip",
+             "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
+        ],
+    })
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "gemma-4-e2b-it-Q4_0.gguf").touch()
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "search.db").touch()
+
+    generate_toolkit(tmp_path, "default-512")
+
+    runtime = _read_actions_config(tmp_path)
+    local_ai = _group_items(runtime, "local-ai")
+    tools = _group_items(runtime, "tools")
+    search_group = _group_items(runtime, "search")
+
+    chat_item = next(item for item in local_ai if item["id"] == "chat-default")
+    opencode_item = next(item for item in local_ai if item["id"] == "opencode")
+    activate_item = next(item for item in tools if item["id"] == "activate-shell")
+    search_item = next(item for item in search_group if item["id"] == "search-all-content")
+
+    assert chat_item["aliases"] == ["chat"]
+    assert opencode_item["aliases"] == ["opencode"]
+    assert activate_item["aliases"] == ["activate"]
+    assert search_item["aliases"] == ["search"]
 
 
 def test_library_group_contains_format_subheaders(tmp_path):
