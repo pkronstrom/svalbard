@@ -56,7 +56,12 @@ func runWelcome() error {
 }
 
 func runWizard(prefillPath string) error {
-	p := tea.NewProgram(wizard.New(prefillPath), tea.WithAltScreen())
+	// Standalone TUI binary — no catalog available, so wizard gets empty config.
+	// For full wizard experience, use the host-cli `svalbard` binary instead.
+	config := wizard.WizardConfig{
+		PrefillPath: prefillPath,
+	}
+	p := tea.NewProgram(wizard.New(config), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }

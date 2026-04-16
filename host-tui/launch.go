@@ -14,7 +14,8 @@ import (
 
 // RunInteractive launches the appropriate TUI screen based on vault resolution:
 // vault found → dashboard, no vault → welcome screen (which can transition to wizard).
-func RunInteractive() error {
+// The wizardConfig is used when the user triggers the init wizard from the welcome screen.
+func RunInteractive(wizardConfig *WizardConfig) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -22,14 +23,14 @@ func RunInteractive() error {
 
 	vaultPath, err := vault.Resolve(cwd)
 	if err != nil {
-		return runApp(newAppModel(nil))
+		return runApp(newAppModel(nil, wizardConfig))
 	}
-	return runApp(newAppModel(&vaultPath))
+	return runApp(newAppModel(&vaultPath, wizardConfig))
 }
 
-// RunInitWizard launches the init wizard TUI with an optional prefilled path.
-func RunInitWizard(prefillPath string) error {
-	return runApp(&appModel{screen: screenWizard, wizard: wizard.New(prefillPath)})
+// RunInitWizard launches the init wizard TUI with the given config.
+func RunInitWizard(config WizardConfig) error {
+	return runApp(&appModel{screen: screenWizard, wizard: wizard.New(config), wizardConfig: &config})
 }
 
 func runApp(m *appModel) error {
@@ -49,22 +50,25 @@ const (
 
 // appModel is a top-level Bubble Tea model that manages screen transitions.
 type appModel struct {
-	screen    screen
-	welcome   welcome.Model
-	dashboard dashboard.Model
-	wizard    wizard.Model
+	screen       screen
+	welcome      welcome.Model
+	dashboard    dashboard.Model
+	wizard       wizard.Model
+	wizardConfig *WizardConfig // stored for welcome→wizard transition
 }
 
-func newAppModel(vaultPath *string) *appModel {
+func newAppModel(vaultPath *string, wizardConfig *WizardConfig) *appModel {
 	if vaultPath != nil {
 		return &appModel{
-			screen:    screenDashboard,
-			dashboard: dashboard.New(*vaultPath),
+			screen:       screenDashboard,
+			dashboard:    dashboard.New(*vaultPath),
+			wizardConfig: wizardConfig,
 		}
 	}
 	return &appModel{
-		screen:  screenWelcome,
-		welcome: welcome.New(),
+		screen:       screenWelcome,
+		welcome:      welcome.New(),
+		wizardConfig: wizardConfig,
 	}
 }
 
@@ -83,25 +87,27 @@ func (m *appModel) Init() tea.Cmd {
 func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case welcome.SelectMsg:
+		config := m.defaultWizardConfig()
 		switch msg.ID {
 		case "init":
 			m.screen = screenWizard
-			m.wizard = wizard.New("")
+			m.wizard = wizard.New(config)
 			return m, nil
 		case "preset":
-			// Start wizard at the preset step (step 1), skipping vault path
+			config.StartAtStep = 1
 			m.screen = screenWizard
-			w := wizard.New("")
-			w.SetStep(1)
-			m.wizard = w
+			m.wizard = wizard.New(config)
 			return m, nil
 		}
 
 	case wizard.BackMsg:
-		// Wizard navigated back from first step — return to welcome
 		m.screen = screenWelcome
 		m.welcome = welcome.New()
 		return m, nil
+
+	case wizard.DoneMsg:
+		// Wizard completed — exit TUI. Caller handles init + apply.
+		return m, tea.Quit
 	}
 
 	switch m.screen {
@@ -131,4 +137,11 @@ func (m *appModel) View() string {
 		return m.wizard.View()
 	}
 	return ""
+}
+
+func (m *appModel) defaultWizardConfig() WizardConfig {
+	if m.wizardConfig != nil {
+		return *m.wizardConfig
+	}
+	return WizardConfig{}
 }

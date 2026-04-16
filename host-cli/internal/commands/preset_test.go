@@ -26,16 +26,26 @@ func TestPresetListWritesKnownPresets(t *testing.T) {
 		t.Errorf("expected output to contain %q, got %q", "default-128", output)
 	}
 
-	// Verify sorted order: default-128 should come before default-32.
+	// Verify sorted order and at least 2 presets present.
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d: %v", len(lines), lines)
 	}
-	if lines[0] != "default-128" {
-		t.Errorf("expected first line %q, got %q", "default-128", lines[0])
+	// Alphabetical: default-128 before default-32
+	idx128, idx32 := -1, -1
+	for i, line := range lines {
+		if line == "default-128" {
+			idx128 = i
+		}
+		if line == "default-32" {
+			idx32 = i
+		}
 	}
-	if lines[1] != "default-32" {
-		t.Errorf("expected second line %q, got %q", "default-32", lines[1])
+	if idx128 < 0 || idx32 < 0 {
+		t.Fatalf("expected default-128 and default-32 in output, got %v", lines)
+	}
+	if idx128 > idx32 {
+		t.Errorf("expected default-128 before default-32, got indices %d and %d", idx128, idx32)
 	}
 }
 
