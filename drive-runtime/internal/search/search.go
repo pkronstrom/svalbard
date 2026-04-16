@@ -494,6 +494,10 @@ func startKiwix(ctx context.Context, driveRoot string, port int) (*exec.Cmd, err
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+	// Kill the process to prevent orphan on timeout.
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
 	return nil, fmt.Errorf("kiwix-serve did not become healthy")
 }
 

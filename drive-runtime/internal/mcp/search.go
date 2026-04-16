@@ -32,26 +32,18 @@ func (c *SearchCapability) Description() string { return "Search and read offlin
 func (c *SearchCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
-			Name: "keyword",
-			Desc: "Search packaged ZIM archives by keyword. Use for article lookup in offline docs and encyclopedias. Required: query. Do not use for SQLite data; use query_sql instead.",
+			Name: "search",
+			Desc: "Search packaged ZIM archives. Uses semantic search automatically when available, otherwise keyword search. Required: query. Do not use for SQLite data; use query_sql instead.",
 			Params: []ParamDef{
 				{Name: "query", Type: "string", Required: true, Desc: "Keyword query to search for, for example: nmap, grep, package manager"},
-				{Name: "detail", Type: "string", Desc: "How much result content to return: link, snippet, or full article text", Default: "snippet", Enum: []string{"link", "snippet", "full"}},
-				{Name: "limit", Type: "integer", Desc: "Maximum number of results to return, from 1 to 50", Default: 10},
-			},
-		},
-		{
-			Name: "semantic",
-			Desc: "Semantic search across packaged ZIM archives using embeddings when available. Use for concept-level lookup when exact keywords are not enough. Required: query.",
-			Params: []ParamDef{
-				{Name: "query", Type: "string", Required: true, Desc: "Natural-language query describing what you want to find"},
+				{Name: "source", Type: "string", Desc: "Optional ZIM source name to restrict results to one archive, for example: wikipedia_en_100_mini_2026-04"},
 				{Name: "detail", Type: "string", Desc: "How much result content to return: link, snippet, or full article text", Default: "snippet", Enum: []string{"link", "snippet", "full"}},
 				{Name: "limit", Type: "integer", Desc: "Maximum number of results to return, from 1 to 50", Default: 10},
 			},
 		},
 		{
 			Name: "read",
-			Desc: "Read a specific article from a packaged ZIM archive when you already know the source and article path. Use search_keyword or search_semantic first if you need to discover the article.",
+			Desc: "Read a specific article from a packaged ZIM archive when you already know the source and article path. Use search first if you need to discover the article.",
 			Params: []ParamDef{
 				{Name: "source", Type: "string", Required: true, Desc: "ZIM source name without the .zim extension, for example: wikipedia_en_100_mini_2026-04"},
 				{Name: "path", Type: "string", Required: true, Desc: "Article path inside the ZIM archive, as returned by search results"},
@@ -62,10 +54,8 @@ func (c *SearchCapability) Actions() []ActionDef {
 
 func (c *SearchCapability) Handle(ctx context.Context, action string, params map[string]any) (ActionResult, error) {
 	switch action {
-	case "keyword":
-		return c.handleSearch(ctx, search.ModeKeyword, params)
-	case "semantic":
-		return c.handleSearch(ctx, search.ModeSemantic, params)
+	case "search":
+		return c.handleSearch(ctx, params)
 	case "read":
 		return c.handleRead(ctx, params)
 	default:
@@ -97,11 +87,12 @@ func (c *SearchCapability) getSession() (*search.Session, error) {
 	return c.session, c.sessionErr
 }
 
-func (c *SearchCapability) handleSearch(ctx context.Context, mode search.Mode, params map[string]any) (ActionResult, error) {
+func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]any) (ActionResult, error) {
 	query, _ := params["query"].(string)
 	if query == "" {
 		return ActionResult{}, fmt.Errorf("missing required parameter: query")
 	}
+	sourceFilter := normalizeSourceName(getString(params, "source"))
 
 	detail := "snippet"
 	if d, ok := params["detail"].(string); ok && d != "" {
@@ -131,14 +122,37 @@ func (c *SearchCapability) handleSearch(ctx context.Context, mode search.Mode, p
 		return ActionResult{}, err
 	}
 
-	resp, err := session.Search(ctx, mode, query, limit)
+	mode := search.ModeKeyword
+	if info := session.Info(); info.SemanticEnabled {
+		mode = info.BestMode
+	}
+
+	fetchLimit := limit
+	if sourceFilter != "" && fetchLimit < 50 {
+		fetchLimit = 50
+	}
+
+	resp, err := session.Search(ctx, mode, query, fetchLimit)
 	if err != nil {
 		return ActionResult{}, fmt.Errorf("search failed: %w", err)
 	}
 
+	if sourceFilter != "" {
+		filtered := make([]search.Result, 0, len(resp.Results))
+		for _, r := range resp.Results {
+			if normalizeSourceName(r.Filename) == sourceFilter {
+				filtered = append(filtered, r)
+			}
+		}
+		resp.Results = filtered
+	}
+	if len(resp.Results) > limit {
+		resp.Results = resp.Results[:limit]
+	}
+
 	items := make([]searchResultItem, 0, len(resp.Results))
 	for _, r := range resp.Results {
-		source := strings.TrimSuffix(r.Filename, ".zim")
+		source := normalizeSourceName(r.Filename)
 		item := searchResultItem{
 			Source: source,
 			Path:   r.Path,
@@ -194,6 +208,15 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 		Links:  page.Links,
 	}
 	return ActionResult{Data: item}, nil
+}
+
+func getString(params map[string]any, key string) string {
+	value, _ := params[key].(string)
+	return value
+}
+
+func normalizeSourceName(source string) string {
+	return strings.TrimSuffix(source, ".zim")
 }
 
 func (c *SearchCapability) fetchPage(ctx context.Context, session *search.Session, source, path string) (search.Page, error) {

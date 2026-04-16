@@ -20,14 +20,14 @@ func TestSearchCapabilityToolName(t *testing.T) {
 func TestSearchCapabilityActions(t *testing.T) {
 	cap := mcp.NewSearchCapability(t.TempDir(), mcp.DriveMetadata{})
 	actions := cap.Actions()
-	if len(actions) != 3 {
-		t.Fatalf("expected 3 actions, got %d", len(actions))
+	if len(actions) != 2 {
+		t.Fatalf("expected 2 actions, got %d", len(actions))
 	}
 	names := map[string]bool{}
 	for _, a := range actions {
 		names[a.Name] = true
 	}
-	for _, want := range []string{"keyword", "semantic", "read"} {
+	for _, want := range []string{"search", "read"} {
 		if !names[want] {
 			t.Errorf("missing action %q", want)
 		}
@@ -45,7 +45,7 @@ func TestSearchCapabilityUnknownAction(t *testing.T) {
 func TestSearchCapabilityKeywordFailsWithoutSearchDB(t *testing.T) {
 	// Empty temp dir has no search.db, so session creation should fail.
 	cap := mcp.NewSearchCapability(t.TempDir(), mcp.DriveMetadata{})
-	_, err := cap.Handle(context.Background(), "keyword", map[string]any{
+	_, err := cap.Handle(context.Background(), "search", map[string]any{
 		"query": "test",
 	})
 	if err == nil {
@@ -57,7 +57,7 @@ func TestSearchCapabilityKeywordRequiresQuery(t *testing.T) {
 	cap := mcp.NewSearchCapability(t.TempDir(), mcp.DriveMetadata{})
 	// Even if session creation fails, query validation should happen first...
 	// Actually, getSession is called first. Let's just check the error path.
-	_, err := cap.Handle(context.Background(), "keyword", map[string]any{})
+	_, err := cap.Handle(context.Background(), "search", map[string]any{})
 	if err == nil {
 		t.Fatal("expected error when query is missing")
 	}

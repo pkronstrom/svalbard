@@ -125,7 +125,7 @@ func resolvePath(driveRoot, database string) (string, error) {
 	return filepath.Join(driveRoot, "data", database), nil
 }
 
-// openReadOnly opens a SQLite database in read-only mode.
+// openReadOnly opens a SQLite database in read-only mode with ATTACH disabled.
 func openReadOnly(dbPath string) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?mode=ro&_query_only=true", dbPath)
 	db, err := sql.Open("sqlite", dsn)
@@ -136,6 +136,11 @@ func openReadOnly(dbPath string) (*sql.DB, error) {
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("connecting to database: %w", err)
+	}
+	// Limit to 0 attached databases to prevent ATTACH escape.
+	if _, err := db.Exec("PRAGMA max_attached=0"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("setting max_attached: %w", err)
 	}
 	return db, nil
 }

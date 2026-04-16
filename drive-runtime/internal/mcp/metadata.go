@@ -1,11 +1,12 @@
 package mcp
 
 import (
-	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
 )
 
 // RecipeMeta holds parsed metadata for a single recipe entry.
@@ -32,10 +33,8 @@ func LoadMetadata(driveRoot string) (DriveMetadata, error) {
 		Recipes:  map[string]RecipeMeta{},
 	}
 
-	manifest, err := readManifest(filepath.Join(driveRoot, "manifest.yaml"))
-	if err != nil && !os.IsNotExist(err) {
-		return dm, err
-	}
+	// Reuse inspect's manifest parser (DRY — same logic used by TUI).
+	manifest, _ := inspect.ReadManifestMetadata(filepath.Join(driveRoot, "manifest.yaml"))
 	dm.Manifest = manifest
 
 	recipes, err := readRecipes(filepath.Join(driveRoot, ".svalbard", "recipes.json"))
@@ -47,47 +46,26 @@ func LoadMetadata(driveRoot string) (DriveMetadata, error) {
 	return dm, nil
 }
 
-// readManifest does simple key:value parsing of manifest.yaml.
-// This is intentionally inline (not reusing inspect) — will be DRYed up in Task 5.
-func readManifest(path string) (map[string]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return map[string]string{}, err
-	}
-	defer file.Close()
-
-	meta := map[string]string{}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		idx := strings.Index(line, ":")
-		if idx < 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
-		if key != "" {
-			meta[key] = val
-		}
-	}
-	return meta, scanner.Err()
-}
-
 // readRecipes parses .svalbard/recipes.json into a map keyed by recipe ID.
+// Accepts both object format {"id": {...}} and array format [{...}, ...].
 func readRecipes(path string) (map[string]RecipeMeta, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return map[string]RecipeMeta{}, err
 	}
 
-	var list []RecipeMeta
-	if err := json.Unmarshal(data, &list); err != nil {
-		return map[string]RecipeMeta{}, err
+	// Try object format first ({"recipe-id": {...}, ...}) — this is what
+	// toolkit_generator.py produces.
+	var obj map[string]RecipeMeta
+	if err := json.Unmarshal(data, &obj); err == nil && len(obj) > 0 {
+		return obj, nil
 	}
 
+	// Fall back to array format ([{...}, ...]).
+	var list []RecipeMeta
+	if err := json.Unmarshal(data, &list); err != nil {
+		return map[string]RecipeMeta{}, fmt.Errorf("invalid recipes.json: %w", err)
+	}
 	out := make(map[string]RecipeMeta, len(list))
 	for _, r := range list {
 		out[r.ID] = r

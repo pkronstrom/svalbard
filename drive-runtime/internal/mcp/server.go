@@ -79,7 +79,9 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 
 		result, err := cap.Handle(ctx, actionName, params)
 		if err != nil {
-			return nil, err
+			// Return tool-level error (isError=true) so the AI sees the
+			// message and can self-correct, rather than a protocol error.
+			return gomcp.NewToolResultError(err.Error()), nil
 		}
 
 		if result.Data != nil {
@@ -115,6 +117,9 @@ func (s *Server) Tools() []ToolInfo {
 }
 
 func toolName(prefix, action string) string {
+	if prefix == action {
+		return action
+	}
 	return prefix + "_" + action
 }
 

@@ -265,7 +265,7 @@ func TestIntegrationSearchFailsGracefully(t *testing.T) {
 	searchCap := mcpserver.NewSearchCapability(dir, meta)
 	t.Cleanup(func() { _ = searchCap.Close() })
 
-	_, err = searchCap.Handle(context.Background(), "keyword", map[string]any{
+	_, err = searchCap.Handle(context.Background(), "search", map[string]any{
 		"query": "test",
 	})
 	if err == nil {
@@ -293,13 +293,17 @@ func TestIntegrationServerToolsList(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Close() })
 
 	tools := srv.Tools()
-	if len(tools) != 9 {
-		t.Fatalf("len(tools) = %d, want 9", len(tools))
+	if len(tools) != 8 {
+		t.Fatalf("len(tools) = %d, want 8", len(tools))
 	}
 
 	names := map[string]bool{}
+	var searchTool *mcpserver.ToolInfo
 	for _, tool := range tools {
 		names[tool.Name] = true
+		if tool.Name == "search" {
+			searchTool = &tool
+		}
 	}
 	for _, expected := range []string{
 		"vault_sources",
@@ -308,12 +312,25 @@ func TestIntegrationServerToolsList(t *testing.T) {
 		"vault_stats",
 		"query_describe",
 		"query_sql",
-		"search_keyword",
-		"search_semantic",
+		"search",
 		"search_read",
 	} {
 		if !names[expected] {
 			t.Errorf("missing tool %q in %v", expected, names)
 		}
+	}
+	// search_semantic should not exist — keyword/semantic are merged into
+	// a single "search_search" action that auto-selects the mode.
+	if names["search_semantic"] || names["search_keyword"] {
+		t.Errorf("separate keyword/semantic tools should not exist: %v", names)
+	}
+	if searchTool == nil {
+		t.Fatal("search tool not found")
+	}
+	if got := searchTool.InputSchema.Required; len(got) != 1 || got[0] != "query" {
+		t.Fatalf("search required fields = %v, want [query]", got)
+	}
+	if _, ok := searchTool.InputSchema.Properties["source"]; !ok {
+		t.Fatalf("search tool missing optional source filter in schema: %#v", searchTool.InputSchema.Properties)
 	}
 }

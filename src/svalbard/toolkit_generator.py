@@ -688,14 +688,29 @@ def generate_toolkit(drive_path: Path, preset_name: str, platform_filter: str | 
         preset_name,
         workspace=manifest.workspace_root or None,
     )
+    # Load raw recipe YAMLs for fields not in Source dataclass (e.g. viewer)
+    raw_recipes = {}
+    snapshot_dir = svalbard_dir / "config" / "recipes"
+    if snapshot_dir.is_dir():
+        import yaml as _yaml
+
+        for yf in snapshot_dir.glob("*.yaml"):
+            try:
+                raw = _yaml.safe_load(yf.read_text()) or {}
+                if "id" in raw:
+                    raw_recipes[raw["id"]] = raw
+            except Exception:
+                pass
     recipes_index = {}
     for source in preset.sources:
+        raw = raw_recipes.get(source.id, {})
         recipes_index[source.id] = {
             "id": source.id,
             "type": source.type,
             "description": source.description,
             "tags": source.tags or [],
             "build": source.build or {},
+            "viewer": raw.get("viewer") or {},
         }
     recipes_path = svalbard_dir / "recipes.json"
     recipes_path.write_text(json.dumps(recipes_index, indent=2) + "\n")
