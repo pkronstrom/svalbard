@@ -40,9 +40,13 @@ func run() error {
 	// MCP subcommand: intercept before config.Load() so it works without actions.json.
 	if len(os.Args) > 1 && os.Args[1] == "mcp" {
 		drive := ""
+		sse := false
 		for i, arg := range os.Args {
 			if arg == "--drive" && i+1 < len(os.Args) {
 				drive = os.Args[i+1]
+			}
+			if arg == "--sse" {
+				sse = true
 			}
 		}
 		if drive == "" {
@@ -50,6 +54,9 @@ func run() error {
 		}
 		if drive == "" {
 			return fmt.Errorf("--drive path required")
+		}
+		if sse {
+			return runMCPServe(drive)
 		}
 		return runMCP(drive)
 	}
