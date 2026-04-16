@@ -1708,6 +1708,7 @@ def _instructables_post_parse(
 
     author_tag = (
         soup.find(class_=_has_author_name_class)
+        or soup.find(attrs={"data-testid": "author-name"})
         or soup.find("a", class_="member-header-display-name")
         or soup.find("a", attrs={"rel": "author"})
     )
