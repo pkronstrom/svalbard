@@ -225,7 +225,6 @@ def test_test_runtime_2gb_covers_maximum_drive_runtime_surface():
     assert "qwen-0.8b" in ids
     assert "llama-server" in ids
     assert "opencode" in ids
-    assert "crush" in ids
     assert "goose" in ids
     assert "sqlite3" in ids
     assert "nomic-embed-text-v1.5" in ids

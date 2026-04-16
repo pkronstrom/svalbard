@@ -384,9 +384,6 @@ def test_runtime_config_includes_ai_clients_when_models_and_binaries_exist(tmp_p
             {"id": "opencode", "type": "binary",
              "filename": "opencode-darwin-arm64.zip",
              "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
-            {"id": "crush", "type": "binary",
-             "filename": "crush-darwin-arm64.tar.gz",
-             "size_bytes": 30_000_000, "tags": [], "depth": "reference-only"},
             {"id": "goose", "type": "binary",
              "filename": "goose-aarch64-apple-darwin.tar.bz2",
              "size_bytes": 40_000_000, "tags": [], "depth": "reference-only"},
@@ -400,14 +397,13 @@ def test_runtime_config_includes_ai_clients_when_models_and_binaries_exist(tmp_p
     assert any("Chat with Gemma 4 E2B IT" in label for label in labels)
     assert any("Chat with Qwen3.5 9B Instruct" in label for label in labels)
     assert "OpenCode with local model" in labels
-    assert "Crush with local model" in labels
     assert "Goose with local model" in labels
     agent_clients = {
         action["action"]["config"]["args"]["client"]
         for action in actions
         if action["action"]["config"]["name"] == "agent"
     }
-    assert agent_clients == {"opencode", "crush", "goose"}
+    assert agent_clients == {"opencode", "goose"}
 
 
 def test_runtime_config_omits_ai_clients_without_llama_server(tmp_path):

@@ -103,7 +103,7 @@ def _visible_chat_entries(manifest: Manifest) -> list:
 
 
 def _available_ai_clients(manifest: Manifest) -> list[str]:
-    client_ids = {"opencode": "OpenCode", "crush": "Crush", "goose": "Goose"}
+    client_ids = {"opencode": "OpenCode", "goose": "Goose"}
     available_ids = {entry.id for entry in manifest.entries if entry.type == "binary"}
     return [client_id for client_id in client_ids if client_id in available_ids]
 
@@ -335,7 +335,7 @@ def _build_actions_config(drive_path: Path, manifest: Manifest, preset_name: str
                 order=_source_order(source, 100),
             )
         if "llama-server" in {entry.id for entry in manifest.entries if entry.type == "binary"}:
-            client_labels = {"opencode": "OpenCode", "crush": "Crush", "goose": "Goose"}
+            client_labels = {"opencode": "OpenCode", "goose": "Goose"}
             for index, client_id in enumerate(_available_ai_clients(manifest), start=1):
                 source = source_by_id.get(client_id)
                 _add_group_item(

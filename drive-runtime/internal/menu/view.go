@@ -8,16 +8,25 @@ import (
 )
 
 var (
-	titleStyle          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	sectionStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
-	selectedStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	descriptionStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	statusStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
-	errorStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	helpStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	selectedRowStyle    = lipgloss.NewStyle().Background(lipgloss.Color("236"))
-	numberStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	selectedNumberStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	titleStyle          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("124"))
+	sectionStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("180"))
+	selectedStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230"))
+	descriptionStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	statusStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("179"))
+	errorStyle          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("131"))
+	helpStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	selectedRowStyle    = lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("255"))
+	selectedMutedStyle  = lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("252"))
+	selectedSpacerStyle = lipgloss.NewStyle().Background(lipgloss.Color("240"))
+	numberStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	selectedNumberStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230"))
+)
+
+const (
+	menuGutter     = ""
+	menuCaretSpace = "  "
+	menuCaret      = "> "
+	menuSubIndent  = "  "
 )
 
 func renderView(m Model) string {
@@ -52,17 +61,17 @@ func renderView(m Model) string {
 func renderSearchView(m Model) string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Svalbard / Search"))
+	title := "⌕ Search"
+	modeLabel := fmt.Sprintf("[%s]", strings.ToUpper(string(m.searchMode[:1]))+string(m.searchMode[1:]))
+	b.WriteString(titleStyle.Render(title))
+	b.WriteString(" ")
+	b.WriteString(sectionStyle.Render(modeLabel))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Enter: search/open • Tab: toggle mode • j/k: move • Esc: clear/back"))
-	b.WriteString("\n\n")
 
-	modeLine := fmt.Sprintf("Mode: %s", m.searchMode)
 	if m.searchInfo.SemanticEnabled {
-		modeLine += " • semantic available"
+		b.WriteString(descriptionStyle.Render("semantic available"))
+		b.WriteString("\n")
 	}
-	b.WriteString(sectionStyle.Render(modeLine))
-	b.WriteString("\n")
 
 	status := m.searchStatus
 	if status == "" {
@@ -76,13 +85,13 @@ func renderSearchView(m Model) string {
 	} else {
 		b.WriteString(descriptionStyle.Render(status))
 	}
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
 	cursor := ""
 	if !m.searchResultsFocus {
 		cursor = "█"
 	}
-	b.WriteString(fmt.Sprintf("Query: %s%s\n\n", m.searchQuery, cursor))
+	b.WriteString(fmt.Sprintf("> %s%s\n\n", m.searchQuery, cursor))
 
 	shown := len(m.searchResults)
 	b.WriteString(sectionStyle.Render(fmt.Sprintf("Results (%d shown, max 20)", shown)))
@@ -94,21 +103,11 @@ func renderSearchView(m Model) string {
 	}
 
 	for idx, result := range m.searchResults {
-		number := numberStyle.Render(fmt.Sprintf("%02d", idx+1))
-		if idx == m.searchSelected {
-			number = selectedNumberStyle.Render(fmt.Sprintf("%02d", idx+1))
-		}
-		line := fmt.Sprintf("%s  %s %s", number, sourceDot(result.Filename), result.Title)
-		if idx == m.searchSelected {
-			line = selectedRowStyle.Render(" " + line + " ")
-		}
+		line := renderSearchResultLine(idx+1, result.Filename, result.Title, idx == m.searchSelected)
 		b.WriteString(line)
 		b.WriteString("\n")
 		if result.Snippet != "" {
-			snippet := descriptionStyle.Render("      " + result.Snippet)
-			if idx == m.searchSelected {
-				snippet = selectedRowStyle.Render(" " + snippet + " ")
-			}
+			snippet := renderSearchResultSnippet(result.Snippet, idx == m.searchSelected)
 			b.WriteString(snippet)
 			b.WriteString("\n")
 		}
@@ -122,46 +121,65 @@ func renderSearchView(m Model) string {
 	b.WriteString("\n")
 	b.WriteString(descriptionStyle.Render("  Path:   " + selected.Path))
 	b.WriteString("\n")
-	b.WriteString(descriptionStyle.Render("  Mode:   " + string(m.searchMode)))
-	b.WriteString("\n")
 	if selected.Snippet != "" {
 		b.WriteString(descriptionStyle.Render("  Snippet: " + selected.Snippet))
 		b.WriteString("\n")
 	}
 
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("Enter search/open • Tab mode • j/k move • Esc clear/back"))
+	b.WriteString("\n")
+
 	return b.String()
 }
 
-func sourceDot(filename string) string {
+func sourceColor(filename string) lipgloss.Color {
 	palette := []lipgloss.Color{
-		lipgloss.Color("2"),
-		lipgloss.Color("4"),
-		lipgloss.Color("5"),
-		lipgloss.Color("6"),
-		lipgloss.Color("11"),
-		lipgloss.Color("12"),
-		lipgloss.Color("13"),
-		lipgloss.Color("14"),
+		lipgloss.Color("124"),
+		lipgloss.Color("173"),
+		lipgloss.Color("143"),
+		lipgloss.Color("109"),
 	}
 	var sum int
 	for _, b := range []byte(strings.ToLower(filename)) {
 		sum += int(b)
 	}
-	color := palette[sum%len(palette)]
-	return lipgloss.NewStyle().Foreground(color).Render("●")
+	return palette[sum%len(palette)]
+}
+
+func renderResultNumber(index int, filename string, selected bool) string {
+	style := numberStyle.Foreground(sourceColor(filename))
+	if selected {
+		style = selectedNumberStyle.Foreground(sourceColor(filename)).Background(lipgloss.Color("240"))
+	}
+	return style.Render(fmt.Sprintf("%02d", index))
+}
+
+func renderSearchResultLine(index int, filename, title string, selected bool) string {
+	number := renderResultNumber(index, filename, selected)
+	if !selected {
+		return fmt.Sprintf("%s  %s", number, title)
+	}
+	return lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		number,
+		selectedSpacerStyle.Render("  "),
+		selectedRowStyle.Render(title),
+	)
+}
+
+func renderSearchResultSnippet(snippet string, selected bool) string {
+	value := "    " + snippet
+	if selected {
+		return selectedMutedStyle.Render(value)
+	}
+	return descriptionStyle.Render(value)
 }
 
 func renderTopLevelView(b *strings.Builder, m Model) {
 	b.WriteString(titleStyle.Render("Svalbard"))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k or arrows: move • /: filter • Enter: open • q: quit"))
-	b.WriteString("\n\n")
-
-	filter := m.filter
-	if filter == "" {
-		filter = "all groups"
-	}
-	b.WriteString(fmt.Sprintf("Filter: %s\n\n", filter))
+	b.WriteString("\n")
 
 	visible := m.VisibleGroups()
 	if len(visible) == 0 {
@@ -171,15 +189,25 @@ func renderTopLevelView(b *strings.Builder, m Model) {
 	}
 
 	for idx, group := range visible {
-		label := "  " + group.Label
+		label := menuRow(displayGroupLabel(group.ID, group.Label), false)
 		if idx == m.groupSelected {
-			label = selectedStyle.Render("> " + group.Label)
+			label = selectedStyle.Render(menuRow(displayGroupLabel(group.ID, group.Label), true))
 		}
 		b.WriteString(label)
 		b.WriteString("\n")
-		b.WriteString(descriptionStyle.Render("    " + group.Description))
+	}
+
+	if group, ok := m.SelectedGroup(); ok {
+		b.WriteString("\n")
+		b.WriteString(sectionStyle.Render("Selected"))
+		b.WriteString("\n")
+		b.WriteString(descriptionStyle.Render(group.Description))
 		b.WriteString("\n")
 	}
+
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("j/k or arrows: move • Enter: open • Esc/q: quit"))
+	b.WriteString("\n")
 }
 
 func renderGroupView(b *strings.Builder, m Model) {
@@ -191,16 +219,9 @@ func renderGroupView(b *strings.Builder, m Model) {
 
 	b.WriteString(titleStyle.Render("Svalbard / " + group.Label))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k or arrows: move • /: filter • Enter: launch • Esc/q: back"))
-	b.WriteString("\n\n")
 	b.WriteString(descriptionStyle.Render(group.Description))
-	b.WriteString("\n\n")
-
-	filter := m.filter
-	if filter == "" {
-		filter = "all items"
-	}
-	b.WriteString(fmt.Sprintf("Filter: %s\n\n", filter))
+	b.WriteString("\n")
+	b.WriteString("\n")
 
 	visible := m.VisibleItems()
 	if len(visible) == 0 {
@@ -217,15 +238,32 @@ func renderGroupView(b *strings.Builder, m Model) {
 			b.WriteString("\n")
 		}
 
-		label := "  " + item.Label
+		label := menuRow(item.Label, false)
+		if item.Subheader != "" {
+			label = menuIndentedRow(item.Label, false)
+		}
 		if idx == m.itemSelected {
-			label = selectedStyle.Render("> " + item.Label)
+			if item.Subheader != "" {
+				label = selectedStyle.Render(menuIndentedRow(item.Label, true))
+			} else {
+				label = selectedStyle.Render(menuRow(item.Label, true))
+			}
 		}
 		b.WriteString(label)
 		b.WriteString("\n")
-		b.WriteString(descriptionStyle.Render("    " + item.Description))
+	}
+
+	if item, ok := m.SelectedItem(); ok {
+		b.WriteString("\n")
+		b.WriteString(sectionStyle.Render("Selected"))
+		b.WriteString("\n")
+		b.WriteString(descriptionStyle.Render(item.Description))
 		b.WriteString("\n")
 	}
+
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("j/k or arrows: move • Enter: launch • Esc/q: back"))
+	b.WriteString("\n")
 }
 
 func renderOutputView(m Model) string {
@@ -245,4 +283,23 @@ func renderOutputView(m Model) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func displayGroupLabel(id, label string) string {
+	if id == "search" {
+		return "⌕ " + label
+	}
+	return label
+}
+
+func menuRow(label string, selected bool) string {
+	prefix := menuCaretSpace
+	if selected {
+		prefix = menuCaret
+	}
+	return prefix + label
+}
+
+func menuIndentedRow(label string, selected bool) string {
+	return menuSubIndent + menuRow(label, selected)
 }

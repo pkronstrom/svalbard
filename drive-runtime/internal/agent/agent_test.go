@@ -1,0 +1,100 @@
+package agent_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/agent"
+)
+
+func TestResolveModelSkipsEmbeddingModelsByDefault(t *testing.T) {
+	driveRoot := t.TempDir()
+	mustWriteModel(t, driveRoot, "bge-small.gguf")
+	mustWriteModel(t, driveRoot, "qwen.gguf")
+
+	got, err := agent.ResolveModel(driveRoot, "")
+	if err != nil {
+		t.Fatalf("ResolveModel() error = %v", err)
+	}
+	if want := filepath.Join(driveRoot, "models", "qwen.gguf"); got != want {
+		t.Fatalf("ResolveModel() = %q, want %q", got, want)
+	}
+}
+
+func TestClientEnvironmentUsesLocalOpenAICompatibilityVars(t *testing.T) {
+	env := agent.ClientEnvironment("http://127.0.0.1:8082/v1", "gemma")
+	for key, want := range map[string]string{
+		"OPENAI_API_KEY":       "local",
+		"OPENAI_BASE_URL":      "http://127.0.0.1:8082/v1",
+		"OPENAI_API_BASE":      "http://127.0.0.1:8082/v1",
+		"OPENAI_MODEL":         "gemma",
+		"OPENAI_DEFAULT_MODEL": "gemma",
+	} {
+		if got := env[key]; got != want {
+			t.Fatalf("env[%q] = %q, want %q", key, got, want)
+		}
+	}
+}
+
+func TestPrepareClientLaunchConfigForOpenCode(t *testing.T) {
+	driveRoot := t.TempDir()
+
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "opencode", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen")
+	if err != nil {
+		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+	}
+	if len(cfg.Args) != 2 || cfg.Args[0] != "-m" || cfg.Args[1] != "llama.cpp/qwen" {
+		t.Fatalf("Args = %v, want opencode model args", cfg.Args)
+	}
+	if got := cfg.Env["OPENCODE_CONFIG"]; got == "" {
+		t.Fatal("OPENCODE_CONFIG missing")
+	}
+	if got := cfg.Env["HOME"]; got == "" || got != filepath.Join(driveRoot, ".svalbard", "runtime", "opencode", "home") {
+		t.Fatalf("HOME = %q", got)
+	}
+	data, err := os.ReadFile(cfg.Env["OPENCODE_CONFIG"])
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if want := `"model": "llama.cpp/qwen"`; !strings.Contains(string(data), want) {
+		t.Fatalf("config missing %s: %s", want, string(data))
+	}
+	if want := `"baseURL": "http://127.0.0.1:8082/v1"`; !strings.Contains(string(data), want) {
+		t.Fatalf("config missing %s: %s", want, string(data))
+	}
+}
+
+func TestPrepareClientLaunchConfigForGoose(t *testing.T) {
+	driveRoot := t.TempDir()
+
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "goose", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen")
+	if err != nil {
+		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+	}
+	if len(cfg.Args) != 0 {
+		t.Fatalf("Args = %v, want none", cfg.Args)
+	}
+	for key, want := range map[string]string{
+		"GOOSE_PROVIDER": "openai",
+		"GOOSE_MODEL":    "qwen",
+		"OPENAI_API_KEY": "local",
+		"OPENAI_HOST":    "http://127.0.0.1:8082",
+	} {
+		if got := cfg.Env[key]; got != want {
+			t.Fatalf("Env[%q] = %q, want %q", key, got, want)
+		}
+	}
+}
+
+func mustWriteModel(t *testing.T, driveRoot, name string) {
+	t.Helper()
+	path := filepath.Join(driveRoot, "models", name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("model"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+}

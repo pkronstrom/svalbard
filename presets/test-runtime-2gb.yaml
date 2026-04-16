@@ -12,7 +12,6 @@ sources:
   - osm-uusimaa
   - maplibre-vendor
   - qwen-0.8b
-  - crush
   - sqlite3
   - nomic-embed-text-v1.5
   - sqliteviz

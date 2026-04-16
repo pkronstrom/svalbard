@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimesearch"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 )
 
 func sampleGroupedConfig() config.RuntimeConfig {
@@ -45,19 +45,6 @@ func sampleGroupedConfig() config.RuntimeConfig {
 	}
 }
 
-func TestFilterMatchesGroupLabelAndDescription(t *testing.T) {
-	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
-	m.SetFilter("packaged")
-
-	items := m.VisibleGroups()
-	if len(items) != 1 {
-		t.Fatalf("len(VisibleGroups()) = %d, want 1", len(items))
-	}
-	if got, want := items[0].ID, "library"; got != want {
-		t.Fatalf("VisibleGroups()[0].ID = %q, want %q", got, want)
-	}
-}
-
 func TestEnterOpensGroupScreen(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	m.SetSelected(1)
@@ -75,7 +62,7 @@ func TestEnterOpensGroupScreen(t *testing.T) {
 		t.Fatalf("View() did not render group items: %q", view)
 	}
 	if !strings.Contains(view, "Archives") || !strings.Contains(view, "Browse the image-free English Wikipedia archive.") {
-		t.Fatalf("View() did not render subheaders and descriptions: %q", view)
+		t.Fatalf("View() did not render subheaders and selected footer description: %q", view)
 	}
 }
 
@@ -109,18 +96,58 @@ func TestQReturnsFromGroupScreen(t *testing.T) {
 	}
 }
 
-func TestFilterMatchesGroupItemsInsideGroup(t *testing.T) {
+func TestEscAtRootQuits(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("cmd = nil, want quit command")
+	}
+	if msg := cmd(); msg != tea.Quit() {
+		t.Fatalf("cmd() = %#v, want tea.QuitMsg", msg)
+	}
+}
+
+func TestRootViewShowsSelectedDescriptionInFooter(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+
+	view := m.View()
+	if !strings.Contains(view, "Selected") || !strings.Contains(view, "Search across indexed archives and documents.") {
+		t.Fatalf("View() missing selected group footer: %q", view)
+	}
+}
+
+func TestSubmenuViewShowsSelectedDescriptionOnlyInFooter(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	m.inGroup = true
 	m.activeGroup = "library"
-	m.SetFilter("wiktionary")
 
-	items := m.VisibleItems()
-	if len(items) != 1 {
-		t.Fatalf("len(VisibleItems()) = %d, want 1", len(items))
+	view := m.View()
+	if !strings.Contains(view, "Selected") || !strings.Contains(view, "Browse the image-free English Wikipedia archive.") {
+		t.Fatalf("View() missing selected item footer: %q", view)
 	}
-	if got, want := items[0].ID, "wiktionary-en"; got != want {
-		t.Fatalf("VisibleItems()[0].ID = %q, want %q", got, want)
+	if strings.Count(view, "Browse the image-free English Wikipedia archive.") != 1 {
+		t.Fatalf("View() still renders per-row descriptions: %q", view)
+	}
+}
+
+func TestRootViewShowsFooterLegend(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+
+	view := m.View()
+	if !strings.Contains(view, "j/k or arrows: move • Enter: open • Esc/q: quit") {
+		t.Fatalf("View() missing footer legend: %q", view)
+	}
+}
+
+func TestSubmenuItemsUnderSubheaderAreIndented(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	m.inGroup = true
+	m.activeGroup = "library"
+
+	view := m.View()
+	if !strings.Contains(view, "\nArchives\n  > Wikipedia (text only)") {
+		t.Fatalf("View() missing expected indented selected item under subheader: %q", view)
 	}
 }
 
@@ -157,25 +184,25 @@ func TestEnterDismissesCapturedOutput(t *testing.T) {
 }
 
 type fakeSearchSession struct {
-	info      runtimesearch.SessionInfo
-	response  runtimesearch.SearchResponse
+	info      search.SessionInfo
+	response  search.SearchResponse
 	searchErr error
 	openErr   error
 	searches  []string
-	opened    []runtimesearch.Result
+	opened    []search.Result
 	closed    bool
 }
 
-func (f *fakeSearchSession) Info() runtimesearch.SessionInfo {
+func (f *fakeSearchSession) Info() search.SessionInfo {
 	return f.info
 }
 
-func (f *fakeSearchSession) Search(_ context.Context, mode runtimesearch.Mode, query string) (runtimesearch.SearchResponse, error) {
+func (f *fakeSearchSession) Search(_ context.Context, mode search.Mode, query string) (search.SearchResponse, error) {
 	f.searches = append(f.searches, string(mode)+":"+query)
 	return f.response, f.searchErr
 }
 
-func (f *fakeSearchSession) OpenResult(result runtimesearch.Result) error {
+func (f *fakeSearchSession) OpenResult(result search.Result) error {
 	f.opened = append(f.opened, result)
 	return f.openErr
 }
@@ -188,10 +215,10 @@ func (f *fakeSearchSession) Close() error {
 func TestEnterOnSearchItemOpensSearchSession(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	fake := &fakeSearchSession{
-		info: runtimesearch.SessionInfo{
+		info: search.SessionInfo{
 			SourceCount:  2,
 			ArticleCount: 10,
-			BestMode:     runtimesearch.ModeKeyword,
+			BestMode:     search.ModeKeyword,
 		},
 	}
 	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
@@ -206,14 +233,14 @@ func TestEnterOnSearchItemOpensSearchSession(t *testing.T) {
 	if got.inGroup {
 		t.Fatal("inGroup = true, want false")
 	}
-	if got.searchMode != runtimesearch.ModeKeyword {
+	if got.searchMode != search.ModeKeyword {
 		t.Fatalf("searchMode = %q", got.searchMode)
 	}
 }
 
 func TestSearchEscClearsQueryThenLeavesSession(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
-	fake := &fakeSearchSession{info: runtimesearch.SessionInfo{BestMode: runtimesearch.ModeKeyword}}
+	fake := &fakeSearchSession{info: search.SessionInfo{BestMode: search.ModeKeyword}}
 	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
 	if err := m.openSearchSession(); err != nil {
 		t.Fatalf("openSearchSession() error = %v", err)
@@ -242,10 +269,10 @@ func TestSearchEscClearsQueryThenLeavesSession(t *testing.T) {
 func TestSearchEnterRunsQueryAndShowsResults(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	fake := &fakeSearchSession{
-		info: runtimesearch.SessionInfo{BestMode: runtimesearch.ModeKeyword},
-		response: runtimesearch.SearchResponse{
-			EffectiveMode: runtimesearch.ModeKeyword,
-			Results: []runtimesearch.Result{
+		info: search.SessionInfo{BestMode: search.ModeKeyword},
+		response: search.SearchResponse{
+			EffectiveMode: search.ModeKeyword,
+			Results: []search.Result{
 				{Filename: "wiki.zim", Path: "A/Linux", Title: "Linux", Snippet: "kernel"},
 			},
 		},
@@ -277,7 +304,7 @@ func TestSearchEnterRunsQueryAndShowsResults(t *testing.T) {
 
 func TestSearchQTypesIntoQueryInput(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
-	fake := &fakeSearchSession{info: runtimesearch.SessionInfo{BestMode: runtimesearch.ModeKeyword}}
+	fake := &fakeSearchSession{info: search.SessionInfo{BestMode: search.ModeKeyword}}
 	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
 	if err := m.openSearchSession(); err != nil {
 		t.Fatalf("openSearchSession() error = %v", err)
@@ -296,10 +323,10 @@ func TestSearchQTypesIntoQueryInput(t *testing.T) {
 func TestSearchViewShowsTitleFirstAndSourceOnlyInMetadata(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	fake := &fakeSearchSession{
-		info: runtimesearch.SessionInfo{BestMode: runtimesearch.ModeKeyword},
-		response: runtimesearch.SearchResponse{
-			EffectiveMode: runtimesearch.ModeKeyword,
-			Results: []runtimesearch.Result{
+		info: search.SessionInfo{BestMode: search.ModeKeyword},
+		response: search.SearchResponse{
+			EffectiveMode: search.ModeKeyword,
+			Results: []search.Result{
 				{Filename: "wiki.zim", Path: "A/Linux", Title: "Linux", Snippet: "kernel and userspace"},
 			},
 		},
@@ -322,7 +349,42 @@ func TestSearchViewShowsTitleFirstAndSourceOnlyInMetadata(t *testing.T) {
 	if strings.Contains(view, "[wiki]") {
 		t.Fatalf("View() still shows source name in row prefix: %q", view)
 	}
+	if strings.Contains(view, "●") {
+		t.Fatalf("View() still shows source dot in result rows: %q", view)
+	}
 	if !strings.Contains(view, "Source: wiki.zim") {
 		t.Fatalf("View() missing selected result metadata: %q", view)
+	}
+	if strings.Contains(view, "Mode:   keyword") {
+		t.Fatalf("View() still shows redundant mode metadata: %q", view)
+	}
+}
+
+func TestSearchViewHighlightsSelectedTitleText(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	fake := &fakeSearchSession{
+		info: search.SessionInfo{BestMode: search.ModeKeyword},
+		response: search.SearchResponse{
+			EffectiveMode: search.ModeKeyword,
+			Results: []search.Result{
+				{Filename: "wiki.zim", Path: "A/Linux", Title: "Linux", Snippet: "kernel and userspace"},
+			},
+		},
+	}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	if err := m.openSearchSession(); err != nil {
+		t.Fatalf("openSearchSession() error = %v", err)
+	}
+	m.searchQuery = "linux"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	msg := cmd()
+	updated, _ = updated.(Model).Update(msg)
+	got := updated.(Model)
+
+	view := got.View()
+	selectedTitle := selectedRowStyle.Render("Linux")
+	if !strings.Contains(view, selectedTitle) {
+		t.Fatalf("View() missing selected-row background on title text: %q", view)
 	}
 }

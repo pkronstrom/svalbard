@@ -11,19 +11,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/actions"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/agent"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/apps"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/browse"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/chat"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/embedded"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/maps"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/menu"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimeagent"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimeapps"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimebrowse"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimechat"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimeembedded"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimeinspect"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimemaps"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimesearch"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimeserveall"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimeshare"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimeverify"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/serveall"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/share"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/verify"
 )
 
 func main() {
@@ -42,13 +42,13 @@ func run() error {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case actions.NativeInspectSubcommand:
-			return runtimeinspect.Run(os.Stdout, driveRoot)
+			return inspect.Run(os.Stdout, driveRoot)
 		case actions.NativeVerifySubcommand:
-			return runtimeverify.Run(os.Stdout, driveRoot)
+			return verify.Run(os.Stdout, driveRoot)
 		case actions.NativeShareSubcommand:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runtimeshare.Run(ctx, os.Stdout, driveRoot)
+			return share.Run(ctx, os.Stdout, driveRoot)
 		case actions.NativeBrowseSubcommand:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -56,18 +56,18 @@ func run() error {
 			if len(os.Args) > 2 {
 				selected = os.Args[2]
 			}
-			return runtimebrowse.Run(ctx, os.Stdout, driveRoot, selected, nil)
+			return browse.Run(ctx, os.Stdout, driveRoot, selected, nil)
 		case actions.NativeAppsSubcommand:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			if len(os.Args) < 3 {
 				return fmt.Errorf("app name required")
 			}
-			return runtimeapps.Run(ctx, os.Stdout, driveRoot, os.Args[2], nil)
+			return apps.Run(ctx, os.Stdout, driveRoot, os.Args[2], nil)
 		case actions.NativeMapsSubcommand:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runtimemaps.Run(ctx, os.Stdout, driveRoot, nil)
+			return maps.Run(ctx, os.Stdout, driveRoot, nil)
 		case actions.NativeChatSubcommand:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -75,7 +75,7 @@ func run() error {
 			if len(os.Args) > 2 {
 				selected = os.Args[2]
 			}
-			return runtimechat.Run(ctx, os.Stdout, driveRoot, selected, nil)
+			return chat.Run(ctx, os.Stdout, driveRoot, selected, nil)
 		case actions.NativeAgentSubcommand:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -86,7 +86,7 @@ func run() error {
 			if len(os.Args) > 3 {
 				selectedModel = os.Args[3]
 			}
-			return runtimeagent.Run(ctx, os.Stdout, driveRoot, os.Args[2], selectedModel)
+			return agent.Run(ctx, os.Stdout, driveRoot, os.Args[2], selectedModel)
 		case actions.NativeServeAllSubcommand:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -94,7 +94,7 @@ func run() error {
 			if len(os.Args) > 2 {
 				bind = os.Args[2]
 			}
-			return runtimeserveall.Run(ctx, os.Stdout, driveRoot, bind)
+			return serveall.Run(ctx, os.Stdout, driveRoot, bind)
 		case actions.NativeSearchSubcommand:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -102,11 +102,11 @@ func run() error {
 			if len(os.Args) > 2 {
 				query = os.Args[2]
 			}
-			return runtimesearch.Run(ctx, os.Stdin, os.Stdout, driveRoot, query, nil)
+			return search.Run(ctx, os.Stdin, os.Stdout, driveRoot, query, nil)
 		case actions.NativeEmbeddedSubcommand:
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runtimeembedded.Run(ctx, os.Stdout, driveRoot)
+			return embedded.Run(ctx, os.Stdout, driveRoot)
 		}
 	}
 

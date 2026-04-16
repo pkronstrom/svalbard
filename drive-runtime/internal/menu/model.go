@@ -9,7 +9,7 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/actions"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimesearch"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 )
 
 type actionFinishedMsg struct {
@@ -22,16 +22,16 @@ type actionOutputMsg struct {
 }
 
 type searchSession interface {
-	Info() runtimesearch.SessionInfo
-	Search(ctx context.Context, mode runtimesearch.Mode, query string) (runtimesearch.SearchResponse, error)
-	OpenResult(result runtimesearch.Result) error
+	Info() search.SessionInfo
+	Search(ctx context.Context, mode search.Mode, query string) (search.SearchResponse, error)
+	OpenResult(result search.Result) error
 	Close() error
 }
 
 type searchResultMsg struct {
 	token    int
 	query    string
-	response runtimesearch.SearchResponse
+	response search.SearchResponse
 	err      error
 }
 
@@ -51,8 +51,6 @@ type Model struct {
 	activeGroup   string
 	inGroup       bool
 
-	filter        string
-	filtering     bool
 	width         int
 	height        int
 	status        string
@@ -63,10 +61,10 @@ type Model struct {
 	searchActive       bool
 	searchToken        int
 	searchSession      searchSession
-	searchInfo         runtimesearch.SessionInfo
-	searchMode         runtimesearch.Mode
+	searchInfo         search.SessionInfo
+	searchMode         search.Mode
 	searchQuery        string
-	searchResults      []runtimesearch.Result
+	searchResults      []search.Result
 	searchSelected     int
 	searchResultsFocus bool
 	searchLoading      bool
@@ -80,7 +78,7 @@ func NewModel(cfg config.RuntimeConfig, driveRoot string) Model {
 		driveRoot: driveRoot,
 		runner:    actions.NewRunner(driveRoot),
 		searchFactory: func(root string) (searchSession, error) {
-			return runtimesearch.NewSession(root, nil)
+			return search.NewSession(root, nil)
 		},
 	}
 }
@@ -165,28 +163,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if m.filtering {
-			switch msg.String() {
-			case "esc":
-				m.filter = ""
-				m.filtering = false
-				m.clampSelection()
-			case "enter":
-				m.filtering = false
-			case "backspace":
-				if len(m.filter) > 0 {
-					m.filter = m.filter[:len(m.filter)-1]
-					m.clampSelection()
-				}
-			default:
-				if msg.Type == tea.KeyRunes {
-					m.filter += msg.String()
-					m.clampSelection()
-				}
-			}
-			return m, nil
-		}
-
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
@@ -195,8 +171,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inGroup = false
 				m.activeGroup = ""
 				m.itemSelected = 0
-				m.filter = ""
-				m.filtering = false
 				return m, nil
 			}
 			return m, tea.Quit
@@ -206,21 +180,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			m.MoveDown()
 			return m, nil
-		case "/":
-			m.filtering = true
-			return m, nil
 		case "esc":
 			if m.inGroup {
 				m.inGroup = false
 				m.activeGroup = ""
 				m.itemSelected = 0
-				m.filter = ""
-				m.filtering = false
 				return m, nil
 			}
-			m.filter = ""
-			m.groupSelected = 0
-			return m, nil
+			return m, tea.Quit
 		case "enter":
 			if !m.inGroup {
 				group, ok := m.SelectedGroup()
@@ -230,8 +197,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inGroup = true
 				m.activeGroup = group.ID
 				m.itemSelected = 0
-				m.filter = ""
-				m.filtering = false
 				return m, nil
 			}
 
@@ -284,10 +249,10 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "tab":
 		if m.searchInfo.SemanticEnabled {
-			if m.searchMode == runtimesearch.ModeSemantic {
-				m.searchMode = runtimesearch.ModeKeyword
+			if m.searchMode == search.ModeSemantic {
+				m.searchMode = search.ModeKeyword
 			} else {
-				m.searchMode = runtimesearch.ModeSemantic
+				m.searchMode = search.ModeSemantic
 			}
 			m.searchStatus = fmt.Sprintf("Mode: %s", m.searchMode)
 			m.searchErr = nil
@@ -338,7 +303,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		session := m.searchSession
 		m.searchLoading = true
 		m.searchErr = nil
-		if mode == runtimesearch.ModeSemantic {
+		if mode == search.ModeSemantic {
 			m.searchStatus = "Starting semantic backend..."
 		} else {
 			m.searchStatus = "Searching..."
@@ -391,7 +356,7 @@ func (m *Model) openSearchSession() error {
 	m.searchInfo = session.Info()
 	m.searchMode = m.searchInfo.BestMode
 	if m.searchMode == "" {
-		m.searchMode = runtimesearch.ModeKeyword
+		m.searchMode = search.ModeKeyword
 	}
 	m.searchQuery = ""
 	m.searchResults = nil
@@ -405,8 +370,6 @@ func (m *Model) openSearchSession() error {
 	m.inGroup = false
 	m.activeGroup = ""
 	m.itemSelected = 0
-	m.filter = ""
-	m.filtering = false
 	return nil
 }
 
@@ -426,16 +389,14 @@ func (m *Model) closeSearchSession() {
 	m.searchErr = nil
 	m.inGroup = false
 	m.activeGroup = ""
-	m.filter = ""
-	m.filtering = false
 }
 
-func limitSearchResults(results []runtimesearch.Result) []runtimesearch.Result {
+func limitSearchResults(results []search.Result) []search.Result {
 	const maxResults = 20
 	if len(results) <= maxResults {
-		return append([]runtimesearch.Result(nil), results...)
+		return append([]search.Result(nil), results...)
 	}
-	return append([]runtimesearch.Result(nil), results[:maxResults]...)
+	return append([]search.Result(nil), results[:maxResults]...)
 }
 
 func (m Model) View() string {
@@ -443,8 +404,7 @@ func (m Model) View() string {
 }
 
 func (m *Model) SetFilter(value string) {
-	m.filter = value
-	m.clampSelection()
+	_ = value
 }
 
 func (m *Model) SetSelected(index int) {
@@ -539,20 +499,7 @@ func (m Model) CurrentGroup() (config.MenuGroup, bool) {
 }
 
 func (m Model) VisibleGroups() []config.MenuGroup {
-	if strings.TrimSpace(m.filter) == "" {
-		return append([]config.MenuGroup(nil), m.cfg.Groups...)
-	}
-
-	needle := strings.ToLower(strings.TrimSpace(m.filter))
-	visible := make([]config.MenuGroup, 0, len(m.cfg.Groups))
-	for _, group := range m.cfg.Groups {
-		if strings.Contains(strings.ToLower(group.Label), needle) ||
-			strings.Contains(strings.ToLower(group.Description), needle) ||
-			strings.Contains(strings.ToLower(group.ID), needle) {
-			visible = append(visible, group)
-		}
-	}
-	return visible
+	return append([]config.MenuGroup(nil), m.cfg.Groups...)
 }
 
 func (m Model) VisibleItems() []config.MenuItem {
@@ -560,21 +507,7 @@ func (m Model) VisibleItems() []config.MenuItem {
 	if !ok {
 		return []config.MenuItem{}
 	}
-	if strings.TrimSpace(m.filter) == "" {
-		return append([]config.MenuItem(nil), group.Items...)
-	}
-
-	needle := strings.ToLower(strings.TrimSpace(m.filter))
-	visible := make([]config.MenuItem, 0, len(group.Items))
-	for _, item := range group.Items {
-		if strings.Contains(strings.ToLower(item.Label), needle) ||
-			strings.Contains(strings.ToLower(item.Description), needle) ||
-			strings.Contains(strings.ToLower(item.Subheader), needle) ||
-			strings.Contains(strings.ToLower(item.ID), needle) {
-			visible = append(visible, item)
-		}
-	}
-	return visible
+	return append([]config.MenuItem(nil), group.Items...)
 }
 
 func (m Model) visibleEntries() []string {

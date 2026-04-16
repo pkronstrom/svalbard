@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/runtimebinary"
 )
 
 type Mode int
@@ -225,11 +225,11 @@ func resolveExecutable(executable, resolveFrom, driveRoot, platformName string) 
 	case "", "path":
 		return resolveFromPath(executable)
 	case "drive-bin":
-		return runtimebinary.Resolve(executable, driveRoot, func() (string, error) {
+		return binary.Resolve(executable, driveRoot, func() (string, error) {
 			return platformName, nil
 		})
 	case "drive-bin-or-path":
-		if path, err := runtimebinary.Resolve(executable, driveRoot, func() (string, error) {
+		if path, err := binary.Resolve(executable, driveRoot, func() (string, error) {
 			return platformName, nil
 		}); err == nil {
 			return path, nil
