@@ -19,6 +19,11 @@ var welcomeDestinations = []welcomeDestination{
 	{"preset", "Choose Preset"},
 }
 
+// SelectMsg is sent when the user activates a welcome destination.
+type SelectMsg struct {
+	ID string // "init" or "preset"
+}
+
 // Model is the Bubble Tea model for the welcome / no-vault-found screen.
 type Model struct {
 	selected int
@@ -68,8 +73,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case m.keys.Enter.Matches(msg):
-			// Placeholder — no-op until wired in Task 3.5
-			return m, nil
+			dest := welcomeDestinations[m.selected]
+			return m, func() tea.Msg { return SelectMsg{ID: dest.id} }
 		}
 	}
 

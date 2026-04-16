@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	hosttui "github.com/pkronstrom/svalbard/host-tui"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
@@ -17,6 +18,10 @@ func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "svalbard",
 		Short: "Provision and reconcile offline knowledge vaults",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// No subcommand → launch interactive TUI dashboard
+			return hosttui.RunInteractive()
+		},
 	}
 
 	root.PersistentFlags().String("vault", "", "path to vault root (default: auto-detect from cwd)")
