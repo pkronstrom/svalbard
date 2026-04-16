@@ -2471,6 +2471,8 @@ def _localize_raw_images(projects: list[dict], state: "PipelineState") -> None:
             external_imgs = []
             for img in soup.find_all("img"):
                 src = img.get("src") or img.get("data-src") or ""
+                if src.startswith("//"):
+                    src = "https:" + src
                 if src.startswith("http"):
                     external_imgs.append(src)
 
@@ -2480,7 +2482,7 @@ def _localize_raw_images(projects: list[dict], state: "PipelineState") -> None:
             raw_imgs_dir = proj_dir / "raw_images"
             raw_imgs_dir.mkdir(exist_ok=True)
 
-            for src in external_imgs[:20]:  # cap per project
+            for src in external_imgs[:40]:  # cap per project
                 url_hash = hashlib.md5(src.encode()).hexdigest()[:12]
                 dest = raw_imgs_dir / f"{url_hash}.jpg"
                 if dest.exists():
@@ -2638,17 +2640,25 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
                 )):
                     tag.decompose()
                 # Rewrite images to local paths (downloaded by _localize_raw_images)
-                for img in main.find_all("img"):
+                for img in list(main.find_all("img")):
                     src = img.get("src") or img.get("data-src") or ""
+                    if src.startswith("//"):
+                        src = "https:" + src
                     if src.startswith("http"):
-                        # Check if a localized version exists
                         local = _raw_img_local_path(site_dir, src)
                         if local and local.exists():
                             img["src"] = str(local.relative_to(site_dir))
                         else:
                             img.decompose()
                             continue
-                    if src:
+                    elif src.startswith("data:"):
+                        img.decompose()
+                        continue
+                    elif src and not (site_dir / src).exists():
+                        # Relative path but file doesn't exist locally
+                        img.decompose()
+                        continue
+                    if img.parent and src:
                         img["loading"] = "lazy"
                         img["style"] = "max-width:100%;height:auto;"
                 content_text = main.get_text(strip=True)
