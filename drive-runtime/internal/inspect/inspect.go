@@ -12,7 +12,7 @@ import (
 )
 
 func Run(w io.Writer, driveRoot string) error {
-	manifestMeta, _ := readManifestMetadata(filepath.Join(driveRoot, "manifest.yaml"))
+	manifestMeta, _ := ReadManifestMetadata(filepath.Join(driveRoot, "manifest.yaml"))
 
 	fmt.Fprintln(w, "Drive contents")
 	fmt.Fprintln(w, "==============")
@@ -29,11 +29,11 @@ func Run(w io.Writer, driveRoot string) error {
 
 	for _, dir := range []string{"zim", "maps", "models", "data", "apps", "books", "bin"} {
 		full := filepath.Join(driveRoot, dir)
-		count, size, err := summarizeDirectory(full)
+		count, size, err := SummarizeDirectory(full)
 		if err != nil || count == 0 {
 			continue
 		}
-		fmt.Fprintf(w, "  %-10s %4d files  %8s\n", dir+"/", count, humanSize(size))
+		fmt.Fprintf(w, "  %-10s %4d files  %8s\n", dir+"/", count, HumanSize(size))
 	}
 	fmt.Fprintln(w)
 
@@ -52,7 +52,7 @@ func Run(w io.Writer, driveRoot string) error {
 	return nil
 }
 
-func readManifestMetadata(path string) (map[string]string, error) {
+func ReadManifestMetadata(path string) (map[string]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return map[string]string{}, err
@@ -73,7 +73,7 @@ func readManifestMetadata(path string) (map[string]string, error) {
 	return meta, scanner.Err()
 }
 
-func summarizeDirectory(root string) (int, int64, error) {
+func SummarizeDirectory(root string) (int, int64, error) {
 	info, err := os.Stat(root)
 	if err != nil || !info.IsDir() {
 		return 0, 0, err
@@ -103,7 +103,7 @@ func summarizeDirectory(root string) (int, int64, error) {
 }
 
 func printFilesSection(w io.Writer, driveRoot, title, dirName, ext string) error {
-	files, err := listFilesWithExtension(filepath.Join(driveRoot, dirName), ext)
+	files, err := ListFilesWithExtension(filepath.Join(driveRoot, dirName), ext)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -125,13 +125,13 @@ func printFilesSection(w io.Writer, driveRoot, title, dirName, ext string) error
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "  %-8s %s\n", humanSize(info.Size()), filepath.ToSlash(rel))
+		fmt.Fprintf(w, "  %-8s %s\n", HumanSize(info.Size()), filepath.ToSlash(rel))
 	}
 	fmt.Fprintln(w)
 	return nil
 }
 
-func listFilesWithExtension(root, ext string) ([]string, error) {
+func ListFilesWithExtension(root, ext string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -151,7 +151,7 @@ func listFilesWithExtension(root, ext string) ([]string, error) {
 	return files, err
 }
 
-func humanSize(size int64) string {
+func HumanSize(size int64) string {
 	const (
 		kb = 1000
 		mb = 1000 * kb
