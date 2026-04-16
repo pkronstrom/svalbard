@@ -73,6 +73,32 @@ PS1="(sb) ${PS1:-\s-\v\$ }"
 			return nil, nil, err
 		}
 		return exec.CommandContext(ctx, shellPath, "--rcfile", rcPath, "-i"), nil, nil
+	case "fish":
+		configDir := filepath.Join(tempDir, "fish")
+		if err := os.MkdirAll(configDir, 0o755); err != nil {
+			return nil, nil, err
+		}
+		configPath := filepath.Join(configDir, "config.fish")
+		content := `
+if test -f "$HOME/.config/fish/config.fish"
+    source "$HOME/.config/fish/config.fish"
+end
+if functions -q fish_prompt
+    functions -c fish_prompt __sb_original_fish_prompt
+end
+function fish_prompt
+    printf "(sb) "
+    if functions -q __sb_original_fish_prompt
+        __sb_original_fish_prompt
+    else
+        printf "%s> " (prompt_pwd)
+    end
+end
+`
+		if err := os.WriteFile(configPath, []byte(strings.TrimLeft(content, "\n")), 0o644); err != nil {
+			return nil, nil, err
+		}
+		return exec.CommandContext(ctx, shellPath, "-i"), []string{"XDG_CONFIG_HOME=" + tempDir}, nil
 	default:
 		return exec.CommandContext(ctx, shellPath, "-i"), []string{"PS1=(sb) ${PS1:-$ }"}, nil
 	}
