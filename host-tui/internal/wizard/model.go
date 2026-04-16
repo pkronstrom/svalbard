@@ -5,6 +5,8 @@
 package wizard
 
 import (
+	"sort"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkronstrom/svalbard/tui"
 )
@@ -173,6 +175,7 @@ func (m Model) buildReviewItems() []ReviewItem {
 					seen[src.ID] = true
 					items = append(items, ReviewItem{
 						ID:          src.ID,
+						Type:        src.Type,
 						SizeGB:      src.SizeGB,
 						Description: src.Description,
 					})
@@ -188,5 +191,6 @@ func (m Model) selectedIDList() []string {
 	for id := range m.checkedIDs {
 		ids = append(ids, id)
 	}
+	sort.Strings(ids)
 	return ids
 }

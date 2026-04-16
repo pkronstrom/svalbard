@@ -35,6 +35,7 @@ type Pack struct {
 // PackSource is a single recipe inside a pack.
 type PackSource struct {
 	ID          string
+	Type        string // e.g. "zim", "binary", "pmtiles"
 	Description string
 	SizeGB      float64
 }

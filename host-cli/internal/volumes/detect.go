@@ -1,3 +1,5 @@
+//go:build darwin || linux
+
 // Package volumes detects mounted volumes suitable for Svalbard vaults.
 //
 // On macOS it scans /Volumes/, on Linux it scans /media/$USER/ and /mnt/.

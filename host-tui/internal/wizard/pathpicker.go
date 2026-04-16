@@ -163,8 +163,8 @@ func (m pathPickerModel) updateCustomInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		return m, nil
 
 	case msg.Type == tea.KeyBackspace:
-		if len(m.inputBuffer) > 0 {
-			m.inputBuffer = m.inputBuffer[:len(m.inputBuffer)-1]
+		if runes := []rune(m.inputBuffer); len(runes) > 0 {
+			m.inputBuffer = string(runes[:len(runes)-1])
 		}
 		return m, nil
 

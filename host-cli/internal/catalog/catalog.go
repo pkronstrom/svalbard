@@ -168,6 +168,7 @@ func (c *Catalog) ResolvePreset(name string) (Preset, error) {
 		items = append(items, item)
 	}
 
+	preset.Sources = sources
 	preset.Items = items
 	return preset, nil
 }

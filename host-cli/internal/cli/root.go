@@ -341,6 +341,7 @@ func buildWizardConfig(prefillPath string) (hosttui.WizardConfig, error) {
 		for _, item := range resolved.Items {
 			pack.Sources = append(pack.Sources, hosttui.PackSource{
 				ID:          item.ID,
+				Type:        item.Type,
 				Description: item.Description,
 				SizeGB:      item.SizeGB,
 			})
