@@ -19,7 +19,8 @@ interaction grammar, screen vocabulary, and visual system.
 
 The recommended UX model is:
 
-- plain `svalbard` opens a dashboard-first TUI for the current vault
+- plain `svalbard` opens a dashboard-first TUI for the current vault, or a
+  TUI welcome state when no vault can be resolved
 - `svalbard init [PATH]` opens a guided setup flow using the same shell
 - plain `svalbard-drive` opens a dashboard-first TUI for using the provisioned
   vault
@@ -73,8 +74,10 @@ primary nouns and different “what should I do next?” questions.
 The default entrypoints should be:
 
 - `svalbard`
-  - open the current vault dashboard
   - resolve the vault from `cwd` or nearest parent containing `manifest.yaml`
+  - if a vault is resolved, open the current vault dashboard
+  - if no vault is resolved, open a host-side welcome screen in the same shell
+    language rather than falling back to a plain CLI error
 - `svalbard init [PATH]`
   - open the guided setup flow
 - `svalbard-drive`
@@ -106,7 +109,11 @@ This is preferable to:
 
 The host-side `svalbard` home should emphasize vault control.
 
-Recommended left-pane sections:
+The left pane should contain primary destinations, not direct destructive
+actions. Every row on the home screen is a navigable destination that opens a
+dedicated screen or focused flow when activated with `Enter`.
+
+The host home destinations are:
 
 - `Overview`
 - `Add Content`
@@ -115,6 +122,24 @@ Recommended left-pane sections:
 - `Plan`
 - `Apply`
 - `Presets`
+
+Activation semantics:
+
+- `Overview`
+  - opens a fuller vault summary view or keeps focus in the home shell
+- `Add Content`
+  - opens the picker/editor flow for adding desired items
+- `Remove Content`
+  - opens the picker/editor flow scoped to current desired items
+- `Import`
+  - opens the import flow
+- `Plan`
+  - opens the plan/review screen
+- `Apply`
+  - opens the plan/review screen in execution mode; it does not execute
+    immediately from the home dashboard
+- `Presets`
+  - opens a preset-focused picker/editor flow
 
 Recommended right-pane behavior:
 
@@ -149,7 +174,9 @@ This home should answer three questions immediately:
 
 The drive-side `svalbard-drive` home should emphasize using the vault.
 
-Recommended left-pane sections:
+The drive home also uses left-pane destinations rather than a flat launch list.
+
+The drive home destinations are:
 
 - `Browse`
 - `Search`
@@ -159,6 +186,13 @@ Recommended left-pane sections:
 - `Share`
 - `Verify`
 - `Embedded`
+
+Activation semantics:
+
+- `Browse`, `Search`, `Maps`, `Chat`, `Apps`, and `Embedded`
+  - open focused subviews or pickers inside the TUI first
+- `Share` and `Verify`
+  - open readiness/review-oriented screens before long-running work starts
 
 Recommended right-pane behavior:
 
@@ -185,6 +219,48 @@ Recommended right-pane behavior:
   - last verification status
 
 This home should feel like a launch-and-use surface, not a configuration UI.
+
+#### Drive section visibility rules
+
+Drive sections fall into two categories:
+
+- core sections that are always present
+- capability sections that are present only when the drive meaningfully ships
+  that capability
+
+Always-present core sections:
+
+- `Browse`
+- `Search`
+- `Verify`
+
+Capability sections:
+
+- `Maps`
+- `Chat`
+- `Apps`
+- `Share`
+- `Embedded`
+
+Visibility policy:
+
+- a section is `visible but disabled` when it represents a core capability the
+  user should understand exists, but the current drive is missing the required
+  data or preparation
+- a section is `hidden entirely` when the capability is not part of the drive's
+  intended product surface and showing it would add noise
+
+Examples:
+
+- `Search` remains visible but disabled when no search index exists yet
+- `Browse` remains visible but disabled when no browseable archives are present
+- `Maps` is hidden entirely when the drive ships no map data or map-opening
+  capability
+- `Chat` is hidden entirely when the drive ships no local AI capability
+- `Apps` is hidden entirely when there are no bundled runtime apps
+- `Share` is hidden entirely when the drive does not ship file-sharing support
+- `Embedded` is hidden entirely when the drive does not ship embedded/toolchain
+  capability
 
 ### 6. Shared Screen Vocabulary
 
@@ -260,6 +336,17 @@ Recommended step sequence:
 - `Adjust Contents`
 - `Review Plan`
 - `Apply`
+
+`PATH` handling must be explicit:
+
+- when `svalbard init` is run without a path argument, the `Vault Path` step is
+  active and editable
+- when `svalbard init /some/path` is run with a path argument, the `Vault Path`
+  step is prefilled with that path and remains editable by default
+- the step is not skipped in milestone 1 because the user still needs to review
+  path consequences such as existing files, odd targets, or removable media
+  choices
+- if the prefilled path is already valid, the user can advance immediately
 
 Recommended layout:
 
@@ -351,12 +438,26 @@ product language of the in-app TUI.
 The command palette should be global and always available, but it should not
 be the home screen.
 
+Milestone 1 palette scope is intentionally limited. It should index:
+
+- host top-level destinations and actions
+- drive top-level destinations and actions
+- host presets
+- host desired items and imported local items
+- drive browseable sources, runtime apps, and available local AI clients/models
+
+Milestone 1 should not attempt freeform natural-language parsing. Matching
+should be label-and-alias based, with optional lightweight verb prefixes such
+as `add`, `remove`, `apply`, `browse`, or `open`.
+
 Recommended use:
 
 - jump to actions
 - jump to content or sources
-- trigger direct flows
-- later support forgiving command-like phrases
+- trigger direct flows that still route through the same review or picker
+  screens as ordinary navigation when review is required
+- later support more forgiving command-like phrases after the index and routing
+  model are stable
 
 Examples:
 
@@ -377,7 +478,9 @@ The shared language should include deliberate empty states.
 Host-side examples:
 
 - no vault found
-  - show a simple welcome state with `Init Vault` and `Choose Preset`
+  - show a simple host-side welcome screen in the normal shell
+  - include `Init Vault` and `Choose Preset` as primary destinations
+  - do not fall back to a plain CLI error for interactive `svalbard`
 - empty vault
   - emphasize `Add Content`, `Import`, and starter presets
 - clean vault with no pending changes
@@ -400,8 +503,17 @@ Rules:
 - host `add` and `remove` are state edits, not execution
 - host `plan` previews reconciliation
 - host `apply` is the only broad execution verb
-- drive runtime actions may launch services or browsers, but they should show
-  clear readiness and status before launch when the context matters
+- drive in-TUI navigation transitions are immediate
+- drive actions that start background services, bind ports, perform verification,
+  or consume meaningful resources must go through a readiness/review screen
+- opening an external browser or app is not, by itself, confirmation-worthy if
+  it is the explicit expected final step of a focused flow such as selecting a
+  source in `Browse`
+- when a drive action will start a service and then open a browser, the review
+  boundary belongs before the service start rather than before the browser open
+- drive runtime actions may launch services or browsers, but the screen before
+  launch must make the consequence legible whenever execution leaves the TUI or
+  creates background state
 
 The UI should prefer explicit review, visible status, and stable summaries over
 “magic” background behavior.
