@@ -214,7 +214,18 @@ func (c *SearchCapability) handleRead(_ context.Context, params map[string]any) 
 	}
 	path, _ := params["path"].(string)
 
-	// Try search.db first (has article body text, fast)
+	// Try Kiwix first — gives full HTML with links (best experience)
+	if page, err := c.fetchPage(source, path); err == nil {
+		return ActionResult{Data: searchResultItem{
+			Source: source,
+			Path:   path,
+			Title:  page.Title,
+			Body:   page.Body,
+			Links:  page.Links,
+		}}, nil
+	}
+
+	// Fallback to search.db (partial body, no links, but no Kiwix needed)
 	if path != "" {
 		db, err := c.getDB()
 		if err == nil {
@@ -222,26 +233,14 @@ func (c *SearchCapability) handleRead(_ context.Context, params map[string]any) 
 				return ActionResult{Data: searchResultItem{
 					Source: source,
 					Path:   path,
-					Title:  path, // best we have from DB
+					Title:  path,
 					Body:   body,
 				}}, nil
 			}
 		}
 	}
 
-	// Fallback to kiwix for full HTML with links (needed for browse/main page)
-	page, err := c.fetchPage(source, path)
-	if err != nil {
-		return ActionResult{}, err
-	}
-
-	return ActionResult{Data: searchResultItem{
-		Source: source,
-		Path:   path,
-		Title:  page.Title,
-		Body:   page.Body,
-		Links:  page.Links,
-	}}, nil
+	return ActionResult{}, fmt.Errorf("article not found: %s/%s", source, path)
 }
 
 func getString(params map[string]any, key string) string {
