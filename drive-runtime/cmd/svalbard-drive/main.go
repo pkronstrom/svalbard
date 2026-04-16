@@ -183,6 +183,7 @@ func runMCP(driveRoot string) error {
 	srv := mcp.NewServer(
 		mcp.NewSearchCapability(driveRoot, meta),
 		mcp.NewVaultCapability(driveRoot, meta),
+		mcp.NewQueryCapability(driveRoot, meta),
 	)
 	defer srv.Close()
 	return srv.ServeStdio()
