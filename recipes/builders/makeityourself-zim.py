@@ -44,7 +44,10 @@ from html import escape, unescape
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
 
-import fitz  # pymupdf
+try:
+    import fitz  # pymupdf — only needed for PDF extraction stage
+except ImportError:
+    fitz = None
 import httpx
 from bs4 import BeautifulSoup
 from libzim.writer import Creator, Item, StringProvider, FileProvider, Hint
