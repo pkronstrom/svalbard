@@ -2,7 +2,6 @@ package wizard
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 
@@ -213,13 +212,4 @@ func sortedKeys(m map[string][]ReviewItem) []string {
 	return keys
 }
 
-// formatSizeGB formats a size in GB for human display.
-// Values under 1 GB are shown in MB; values >= 1 GB are shown rounded.
-func formatSizeGB(gb float64) string {
-	if gb < 1 {
-		mb := gb * 1024
-		return fmt.Sprintf("~%d MB", int(math.Round(mb)))
-	}
-	rounded := int(math.Round(gb))
-	return fmt.Sprintf("~%d GB", rounded)
-}
+// formatSizeGB is defined in presetpicker.go
