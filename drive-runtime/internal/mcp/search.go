@@ -33,7 +33,7 @@ func (c *SearchCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "search",
-			Desc: "Search packaged ZIM archives. Uses semantic search automatically when available, otherwise keyword search. Required: query. Do not use for SQLite data; use query_sql instead.",
+			Desc: "Search packaged ZIM archives. Uses semantic search automatically when available, otherwise keyword search. Required: query. Results include exact source and path values. Pass the returned source and path to search_read unchanged; do not derive a path from the title. Do not use for SQLite data; use query_sql instead.",
 			Params: []ParamDef{
 				{Name: "query", Type: "string", Required: true, Desc: "Keyword query to search for, for example: nmap, grep, package manager"},
 				{Name: "source", Type: "string", Desc: "Optional ZIM source name to restrict results to one archive, for example: wikipedia_en_100_mini_2026-04"},
@@ -46,7 +46,7 @@ func (c *SearchCapability) Actions() []ActionDef {
 			Desc: "Read a specific article from a packaged ZIM archive when you already know the source and article path. Use search first if you need to discover the article.",
 			Params: []ParamDef{
 				{Name: "source", Type: "string", Required: true, Desc: "ZIM source name without the .zim extension, for example: wikipedia_en_100_mini_2026-04"},
-				{Name: "path", Type: "string", Required: true, Desc: "Article path inside the ZIM archive, as returned by search results"},
+				{Name: "path", Type: "string", Required: true, Desc: "Article path inside the ZIM archive. Use the exact path returned by search; do not reconstruct it from the title."},
 			},
 		},
 	}
@@ -72,12 +72,13 @@ func (c *SearchCapability) Close() error {
 
 // searchResultItem is the JSON shape returned for search results.
 type searchResultItem struct {
-	Source  string            `json:"source"`
-	Path   string            `json:"path"`
-	Title  string            `json:"title"`
-	Snippet string           `json:"snippet,omitempty"`
-	Body   string            `json:"body,omitempty"`
-	Links  []search.PageLink `json:"links,omitempty"`
+	Source   string            `json:"source"`
+	Path     string            `json:"path"`
+	Title    string            `json:"title"`
+	ReadHint string            `json:"read_hint,omitempty"`
+	Snippet  string            `json:"snippet,omitempty"`
+	Body     string            `json:"body,omitempty"`
+	Links    []search.PageLink `json:"links,omitempty"`
 }
 
 func (c *SearchCapability) getSession() (*search.Session, error) {
@@ -153,11 +154,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	items := make([]searchResultItem, 0, len(resp.Results))
 	for _, r := range resp.Results {
 		source := normalizeSourceName(r.Filename)
-		item := searchResultItem{
-			Source: source,
-			Path:   r.Path,
-			Title:  r.Title,
-		}
+		item := newSearchResultItem(r)
 
 		switch detail {
 		case "snippet":
@@ -213,6 +210,15 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 func getString(params map[string]any, key string) string {
 	value, _ := params[key].(string)
 	return value
+}
+
+func newSearchResultItem(result search.Result) searchResultItem {
+	return searchResultItem{
+		Source:   normalizeSourceName(result.Filename),
+		Path:     result.Path,
+		Title:    result.Title,
+		ReadHint: "Use search_read with this exact source and path",
+	}
 }
 
 func normalizeSourceName(source string) string {

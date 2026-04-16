@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
@@ -24,13 +25,41 @@ func TestSearchCapabilityActions(t *testing.T) {
 		t.Fatalf("expected 2 actions, got %d", len(actions))
 	}
 	names := map[string]bool{}
+	var searchAction, readAction *mcp.ActionDef
 	for _, a := range actions {
 		names[a.Name] = true
+		action := a
+		switch a.Name {
+		case "search":
+			searchAction = &action
+		case "read":
+			readAction = &action
+		}
 	}
 	for _, want := range []string{"search", "read"} {
 		if !names[want] {
 			t.Errorf("missing action %q", want)
 		}
+	}
+	if searchAction == nil || readAction == nil {
+		t.Fatalf("expected both search and read actions, got %#v", actions)
+	}
+	if want := "Pass the returned source and path to search_read unchanged"; !strings.Contains(searchAction.Desc, want) {
+		t.Fatalf("search description %q does not contain %q", searchAction.Desc, want)
+	}
+	var pathParam *mcp.ParamDef
+	for _, param := range readAction.Params {
+		param := param
+		if param.Name == "path" {
+			pathParam = &param
+			break
+		}
+	}
+	if pathParam == nil {
+		t.Fatal("read action missing path param")
+	}
+	if want := "Use the exact path returned by search"; !strings.Contains(pathParam.Desc, want) {
+		t.Fatalf("path param description %q does not contain %q", pathParam.Desc, want)
 	}
 }
 
