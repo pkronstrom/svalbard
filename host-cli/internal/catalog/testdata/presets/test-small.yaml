@@ -1,0 +1,6 @@
+name: test-small
+description: A test preset
+target_size_gb: 1
+region: default
+sources:
+  - ifixit

@@ -1,0 +1,7 @@
+name: test-pack
+kind: pack
+display_group: Tools
+description: Test pack with a small recipe
+target_size_gb: 1
+sources:
+  - ifixit

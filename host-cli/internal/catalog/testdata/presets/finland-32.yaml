@@ -1,0 +1,7 @@
+name: finland-32
+description: Finnish essentials
+target_size_gb: 32
+region: finland
+extends:
+  - default-32
+sources: []
