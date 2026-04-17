@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	hosttui "github.com/pkronstrom/svalbard/host-tui"
+	"github.com/pkronstrom/svalbard/host-cli/internal/apply"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
@@ -502,53 +503,11 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return err
 		}
-
-		// Load manifest to determine items for progress reporting
-		mPath := filepath.Join(root, "manifest.yaml")
-		m, err := manifest.Load(mPath)
-		if err != nil {
-			return err
-		}
-		p := planner.Build(m)
-
-		// Report all items as queued
-		for _, id := range p.ToRemove {
-			onProgress(hosttui.ApplyEvent{ID: id, Status: "queued"})
-		}
-		for _, id := range p.ToDownload {
-			onProgress(hosttui.ApplyEvent{ID: id, Status: "queued"})
-		}
-
-		// Run apply — reports start/done at a coarse level
-		// TODO: refactor apply.Run for per-item callbacks
-		for _, id := range p.ToRemove {
-			onProgress(hosttui.ApplyEvent{ID: id, Status: "active"})
-		}
-		for _, id := range p.ToDownload {
-			onProgress(hosttui.ApplyEvent{ID: id, Status: "active"})
-		}
-
-		applyErr := commands.ApplyVault(root, cat)
-
-		if applyErr != nil {
-			// Mark all as failed
-			for _, id := range p.ToRemove {
-				onProgress(hosttui.ApplyEvent{ID: id, Status: "failed", Error: applyErr.Error()})
-			}
-			for _, id := range p.ToDownload {
-				onProgress(hosttui.ApplyEvent{ID: id, Status: "failed", Error: applyErr.Error()})
-			}
-			return applyErr
-		}
-
-		// Mark all as done
-		for _, id := range p.ToRemove {
-			onProgress(hosttui.ApplyEvent{ID: id, Status: "done"})
-		}
-		for _, id := range p.ToDownload {
-			onProgress(hosttui.ApplyEvent{ID: id, Status: "done"})
-		}
-		return nil
+		// Bridge apply.ProgressFunc to hosttui.ApplyEvent
+		progress := apply.ProgressFunc(func(id, status string) {
+			onProgress(hosttui.ApplyEvent{ID: id, Status: status})
+		})
+		return commands.ApplyVault(root, cat, progress)
 	}
 
 	deps.RunImport = func(_ context.Context, source string) (hosttui.ImportResult, error) {

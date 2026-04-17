@@ -40,3 +40,28 @@ func InitVault(path, presetName string, c *catalog.Catalog) error {
 
 	return nil
 }
+
+// InitVaultWithOptions creates a vault with explicit items and platform options.
+// Used by the TUI wizard which provides custom selections instead of a preset name.
+func InitVaultWithOptions(path string, items []string, presetName string, region string, hostPlatforms []string) error {
+	m := manifest.New(filepath.Base(path))
+	if presetName != "" {
+		m.Desired.Presets = []string{presetName}
+	}
+	m.Desired.Items = items
+	m.Desired.Options.HostPlatforms = hostPlatforms
+	if region != "" {
+		m.Desired.Options.Region = region
+	}
+
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return fmt.Errorf("creating vault directory: %w", err)
+	}
+
+	manifestPath := filepath.Join(path, "manifest.yaml")
+	if err := manifest.Save(manifestPath, m); err != nil {
+		return fmt.Errorf("writing manifest: %w", err)
+	}
+
+	return nil
+}

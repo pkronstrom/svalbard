@@ -20,59 +20,26 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/toolkit"
 )
 
+// ProgressFunc reports per-item progress during apply. May be nil.
+type ProgressFunc func(id, status string)
+
 // Run executes a reconciliation plan against the vault at root, mutating the
 // manifest's realized state to reflect what was applied.
-func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Catalog) error {
-	// Process downloads: resolve URLs, download files, add realized entries.
-	for _, id := range plan.ToDownload {
-		recipe, ok := cat.RecipeByID(id)
-		if !ok {
-			return fmt.Errorf("recipe %q not found in catalog", id)
-		}
-
-		// Route by acquisition strategy.
-		switch {
-		case recipe.URL != "" || recipe.URLPattern != "":
-			// Direct download or dated-pattern resolution.
-			entry, err := downloadItem(root, id, recipe)
-			if err != nil {
-				return err
-			}
-			m.Realized.Entries = append(m.Realized.Entries, entry)
-
-		case len(recipe.Platforms) > 0:
-			// Platform-specific binary download.
-			entry, err := downloadPlatformItem(root, id, recipe)
-			if err != nil {
-				// Platform not available is a warning, not fatal.
-				// Vaults often target a different platform than the build host.
-				fmt.Fprintf(os.Stderr, "skip %s: %v\n", id, err)
-				continue
-			}
-			m.Realized.Entries = append(m.Realized.Entries, entry)
-
-		case recipe.Strategy == "build" && recipe.Build != nil:
-			// Build via Docker (svalbard-tools container).
-			entry, err := buildItem(root, id, recipe)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "skip %s: build failed: %v\n", id, err)
-				continue
-			}
-			m.Realized.Entries = append(m.Realized.Entries, entry)
-
-		default:
-			fmt.Fprintf(os.Stderr, "skip %s: no download URL, platforms, or build config\n", id)
-		}
+// The optional onProgress callback reports per-item status ("active", "done", "failed").
+func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Catalog, onProgress ...ProgressFunc) error {
+	progress := func(id, status string) {}
+	if len(onProgress) > 0 && onProgress[0] != nil {
+		progress = onProgress[0]
 	}
 
-	// Process removals: remove realized entries and delete artifact files.
+	// Process removals first (free up space).
 	removeSet := make(map[string]struct{}, len(plan.ToRemove))
 	for _, id := range plan.ToRemove {
 		removeSet[id] = struct{}{}
+		progress(id, "active")
 	}
 	for _, e := range m.Realized.Entries {
 		if _, ok := removeSet[e.ID]; ok {
-			// Best-effort file deletion.
 			os.Remove(filepath.Join(root, e.RelativePath))
 		}
 	}
@@ -83,8 +50,55 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 		}
 	}
 	m.Realized.Entries = filtered
+	for _, id := range plan.ToRemove {
+		progress(id, "done")
+	}
 
-	// Update applied timestamp.
+	// Process downloads: resolve URLs, download files, add realized entries.
+	for _, id := range plan.ToDownload {
+		progress(id, "active")
+		recipe, ok := cat.RecipeByID(id)
+		if !ok {
+			return fmt.Errorf("recipe %q not found in catalog", id)
+		}
+
+		// Route by acquisition strategy.
+		switch {
+		case recipe.URL != "" || recipe.URLPattern != "":
+			entry, err := downloadItem(root, id, recipe)
+			if err != nil {
+				progress(id, "failed")
+				return err
+			}
+			m.Realized.Entries = append(m.Realized.Entries, entry)
+			progress(id, "done")
+
+		case len(recipe.Platforms) > 0:
+			entries, err := downloadPlatformItems(root, id, recipe, m.Desired.Options.HostPlatforms)
+			if err != nil {
+				progress(id, "failed")
+				fmt.Fprintf(os.Stderr, "skip %s: %v\n", id, err)
+				continue
+			}
+			m.Realized.Entries = append(m.Realized.Entries, entries...)
+			progress(id, "done")
+
+		case recipe.Strategy == "build" && recipe.Build != nil:
+			entry, err := buildItem(root, id, recipe)
+			if err != nil {
+				progress(id, "failed")
+				fmt.Fprintf(os.Stderr, "skip %s: build failed: %v\n", id, err)
+				continue
+			}
+			m.Realized.Entries = append(m.Realized.Entries, entry)
+			progress(id, "done")
+
+		default:
+			progress(id, "failed")
+			fmt.Fprintf(os.Stderr, "skip %s: no download URL, platforms, or build config\n", id)
+		}
+	}
+
 	// Regenerate runtime assets.
 	presetName := ""
 	if len(m.Desired.Presets) > 0 {
@@ -154,17 +168,66 @@ func downloadItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry,
 	return fetchAndRecord(root, id, recipe, resolvedURL)
 }
 
-// downloadPlatformItem handles platform-specific binary downloads.
-// Tries multiple platform key conventions since recipes may use either
-// "darwin-arm64" (Go convention) or "macos-arm64" (Svalbard convention).
-func downloadPlatformItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry, error) {
-	candidates := hostPlatformCandidates()
-	for _, platform := range candidates {
-		if platformURL, ok := recipe.Platforms[platform]; ok {
-			return fetchAndRecord(root, id, recipe, platformURL)
+// downloadPlatformItems downloads platform-specific binaries for all target platforms.
+// If targetPlatforms is empty, falls back to the current host platform only.
+func downloadPlatformItems(root, id string, recipe catalog.Item, targetPlatforms []string) ([]manifest.RealizedEntry, error) {
+	targets := targetPlatforms
+	if len(targets) == 0 {
+		targets = hostPlatformCandidates()
+	}
+
+	var entries []manifest.RealizedEntry
+	for _, platform := range targets {
+		// Try the platform key directly, then alias conventions
+		candidates := platformCandidates(platform)
+		var downloaded bool
+		for _, candidate := range candidates {
+			if platformURL, ok := recipe.Platforms[candidate]; ok {
+				entry, err := fetchAndRecord(root, id, recipe, platformURL)
+				if err != nil {
+					return nil, err
+				}
+				entries = append(entries, entry)
+				downloaded = true
+				break
+			}
+		}
+		if !downloaded {
+			fmt.Fprintf(os.Stderr, "skip %s for %s: no download URL (available: %v)\n", id, platform, platformKeys(recipe.Platforms))
 		}
 	}
-	return manifest.RealizedEntry{}, fmt.Errorf("no download URL for %s on platform %v (available: %v)", id, candidates, platformKeys(recipe.Platforms))
+
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no download URL for %s on any target platform %v (available: %v)", id, targets, platformKeys(recipe.Platforms))
+	}
+	return entries, nil
+}
+
+// platformCandidates returns platform keys to try for a given target platform,
+// handling naming convention aliases (macos↔darwin, arm64↔aarch64).
+func platformCandidates(platform string) []string {
+	candidates := []string{platform}
+	parts := strings.SplitN(platform, "-", 2)
+	if len(parts) != 2 {
+		return candidates
+	}
+	osName, archName := parts[0], parts[1]
+
+	// OS aliases
+	switch osName {
+	case "macos":
+		candidates = append(candidates, "darwin-"+archName)
+	case "darwin":
+		candidates = append(candidates, "macos-"+archName)
+	}
+	// Arch aliases
+	if archName == "arm64" {
+		candidates = append(candidates, osName+"-aarch64")
+	}
+	if archName == "x86_64" {
+		candidates = append(candidates, osName+"-amd64")
+	}
+	return candidates
 }
 
 // hostPlatformCandidates returns platform keys to try, in preference order.

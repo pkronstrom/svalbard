@@ -303,22 +303,26 @@ func (m *appModel) newDashboard(vaultPath string) dashboard.Model {
 // newBrowse creates a browse.Model from the current deps and vault state.
 func (m *appModel) newBrowse(readOnly bool) browse.Model {
 	cfg := browse.Config{}
+	// Prefer deps for catalog data, fall back to wizardConfig
 	if m.deps != nil {
 		cfg.PackGroups = m.deps.PackGroups
 		cfg.Presets = m.deps.Presets
-		if !readOnly {
-			if m.deps.LoadStatus != nil {
-				if status, err := m.deps.LoadStatus(); err == nil {
-					cfg.FreeGB = status.DiskFreeGB
-				}
+	} else if m.wizardConfig != nil {
+		cfg.PackGroups = m.wizardConfig.PackGroups
+		cfg.Presets = m.wizardConfig.Presets
+	}
+	if !readOnly && m.deps != nil {
+		if m.deps.LoadStatus != nil {
+			if status, err := m.deps.LoadStatus(); err == nil {
+				cfg.FreeGB = status.DiskFreeGB
 			}
-			if m.deps.LoadDesiredItems != nil {
-				if items, err := m.deps.LoadDesiredItems(); err == nil {
-					cfg.DesiredItems = items
-				}
-			}
-			cfg.SaveDesired = m.deps.SaveDesiredItems
 		}
+		if m.deps.LoadDesiredItems != nil {
+			if items, err := m.deps.LoadDesiredItems(); err == nil {
+				cfg.DesiredItems = items
+			}
+		}
+		cfg.SaveDesired = m.deps.SaveDesiredItems
 	}
 	return browse.New(cfg)
 }

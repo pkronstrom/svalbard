@@ -11,7 +11,7 @@ import (
 
 // ApplyVault loads the manifest, builds a reconciliation plan, executes it,
 // and saves the updated manifest back to disk.
-func ApplyVault(root string, cat *catalog.Catalog) error {
+func ApplyVault(root string, cat *catalog.Catalog, onProgress ...apply.ProgressFunc) error {
 	mPath := filepath.Join(root, "manifest.yaml")
 
 	m, err := manifest.Load(mPath)
@@ -21,7 +21,7 @@ func ApplyVault(root string, cat *catalog.Catalog) error {
 
 	plan := planner.Build(m)
 
-	if err := apply.Run(root, &m, plan, cat); err != nil {
+	if err := apply.Run(root, &m, plan, cat, onProgress...); err != nil {
 		return err
 	}
 
