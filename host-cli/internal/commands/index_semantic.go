@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/embedder"
@@ -86,6 +87,18 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 		return err
 	}
 
+	// Derive stable model ID from filename.
+	modelID := strings.TrimSuffix(filepath.Base(modelPath), filepath.Ext(modelPath))
+
+	// Detect model change — force re-embedding if model switched.
+	previousModel, _ := db.GetMeta("embedding_model")
+	if previousModel != "" && previousModel != modelID && !force {
+		notify(SemanticProgress{Status: "starting", Detail: fmt.Sprintf("Model changed (%s → %s), re-embedding...", previousModel, modelID)})
+		if err := db.DeleteAllEmbeddings(); err != nil {
+			return fmt.Errorf("clearing old embeddings: %w", err)
+		}
+	}
+
 	notify(SemanticProgress{Status: "starting", Detail: "Starting embedding server..."})
 
 	server, err := embedder.StartServer(ctx, modelPath, root)
@@ -103,6 +116,12 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 
 	if err := db.SetMeta("semantic_indexed_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
 		return fmt.Errorf("setting semantic_indexed_at: %w", err)
+	}
+	if err := db.SetMeta("embedding_model", modelID); err != nil {
+		return fmt.Errorf("setting embedding_model: %w", err)
+	}
+	if dimCount, err := db.EmbeddingDims(); err == nil && dimCount > 0 {
+		db.SetMeta("embedding_dims", fmt.Sprintf("%d", dimCount))
 	}
 
 	return nil

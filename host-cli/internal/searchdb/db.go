@@ -304,6 +304,16 @@ func (d *DB) DeleteAllEmbeddings() error {
 	return err
 }
 
+// EmbeddingDims returns the dimension count from the first stored vector (4 bytes per float32).
+func (d *DB) EmbeddingDims() (int, error) {
+	var blobLen int
+	err := d.db.QueryRow("SELECT length(vector) FROM embeddings LIMIT 1").Scan(&blobLen)
+	if err != nil {
+		return 0, err
+	}
+	return blobLen / 4, nil
+}
+
 // EmbeddingCount returns the number of articles with embeddings.
 func (d *DB) EmbeddingCount() (int64, error) {
 	var count int64

@@ -219,6 +219,29 @@ func TestUpsertSourceUpdatesTitle(t *testing.T) {
 	}
 }
 
+func TestEmbeddingDims(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	sid, _ := db.UpsertSource("test.zim", "Test")
+	db.InsertArticles(sid, []Article{{Path: "/A/One", Title: "One", Body: "body"}})
+
+	// 384-dim embedding = 384 * 4 bytes = 1536 bytes.
+	vec := make([]byte, 384*4)
+	db.InsertEmbeddings([]EmbeddingPair{{ArticleID: 1, Vector: vec}})
+
+	dims, err := db.EmbeddingDims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dims != 384 {
+		t.Errorf("dims = %d, want 384", dims)
+	}
+}
+
 func TestEmbeddings(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
