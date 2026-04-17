@@ -38,35 +38,77 @@ type SelectMsg struct {
 	ID string
 }
 
+// StatusData holds live vault status for the right-pane preview.
+type StatusData struct {
+	PresetName    string
+	DesiredCount  int
+	RealizedCount int
+	PendingCount  int
+	DiskUsedGB    float64
+	DiskFreeGB    float64
+	LastApplied   string
+}
+
 // Model is the host-side vault dashboard — the main screen shown when
 // svalbard resolves a vault. It uses the shared tui/ components for a
 // two-pane layout.
 type Model struct {
-	vaultPath string
-	selected  int
-	width     int
-	height    int
-	theme     tui.Theme
-	keys      tui.KeyMap
+	vaultPath  string
+	selected   int
+	width      int
+	height     int
+	theme      tui.Theme
+	keys       tui.KeyMap
+	status     *StatusData         // live vault status (nil until loaded)
+	loadStatus func() (StatusData, error) // callback to load status
+}
+
+// Config holds optional configuration for the dashboard.
+type Config struct {
+	LoadStatus func() (StatusData, error)
 }
 
 // New creates a new dashboard Model for the given vault path.
-func New(vaultPath string) Model {
-	return Model{
+func New(vaultPath string, opts ...Config) Model {
+	m := Model{
 		vaultPath: vaultPath,
 		theme:     tui.DefaultTheme(),
 		keys:      tui.DefaultKeyMap(),
 	}
+	if len(opts) > 0 && opts[0].LoadStatus != nil {
+		m.loadStatus = opts[0].LoadStatus
+	}
+	return m
 }
 
-// Init satisfies tea.Model. No initial command is needed.
+type statusLoadedMsg struct{ data StatusData }
+type statusErrMsg struct{ err error }
+
+// Init loads vault status if a loader is configured.
 func (m Model) Init() tea.Cmd {
-	return nil
+	if m.loadStatus == nil {
+		return nil
+	}
+	loader := m.loadStatus
+	return func() tea.Msg {
+		data, err := loader()
+		if err != nil {
+			return statusErrMsg{err: err}
+		}
+		return statusLoadedMsg{data: data}
+	}
 }
 
 // Update handles incoming messages and returns the updated model and any command.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case statusLoadedMsg:
+		m.status = &msg.data
+		return m, nil
+
+	case statusErrMsg:
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height

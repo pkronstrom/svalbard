@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	hosttui "github.com/pkronstrom/svalbard/host-tui"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
+	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 	"github.com/pkronstrom/svalbard/host-cli/internal/volumes"
 	"github.com/spf13/cobra"
 )
@@ -381,6 +383,10 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		deps.Presets = wizConfig.Presets
 	}
 
+	deps.RebuildForVault = func(vaultPath string) *hosttui.DashboardDeps {
+		return buildDashboardDeps(vaultPath, wizConfig)
+	}
+
 	deps.LoadStatus = func() (hosttui.VaultStatus, error) {
 		root, err := ResolveVaultRoot(vaultFlag)
 		if err != nil {
@@ -417,6 +423,19 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			PendingCount:  len(m.Desired.Items) - realized,
 			LastApplied:   m.Realized.AppliedAt,
 		}, nil
+	}
+
+	deps.LoadDesiredItems = func() ([]string, error) {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return nil, err
+		}
+		mPath := filepath.Join(root, "manifest.yaml")
+		m, err := manifest.Load(mPath)
+		if err != nil {
+			return nil, err
+		}
+		return m.Desired.Items, nil
 	}
 
 	deps.LoadPlan = func() (hosttui.PlanSummary, error) {
@@ -483,7 +502,53 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return err
 		}
-		return commands.ApplyVault(root, cat)
+
+		// Load manifest to determine items for progress reporting
+		mPath := filepath.Join(root, "manifest.yaml")
+		m, err := manifest.Load(mPath)
+		if err != nil {
+			return err
+		}
+		p := planner.Build(m)
+
+		// Report all items as queued
+		for _, id := range p.ToRemove {
+			onProgress(hosttui.ApplyEvent{ID: id, Status: "queued"})
+		}
+		for _, id := range p.ToDownload {
+			onProgress(hosttui.ApplyEvent{ID: id, Status: "queued"})
+		}
+
+		// Run apply — reports start/done at a coarse level
+		// TODO: refactor apply.Run for per-item callbacks
+		for _, id := range p.ToRemove {
+			onProgress(hosttui.ApplyEvent{ID: id, Status: "active"})
+		}
+		for _, id := range p.ToDownload {
+			onProgress(hosttui.ApplyEvent{ID: id, Status: "active"})
+		}
+
+		applyErr := commands.ApplyVault(root, cat)
+
+		if applyErr != nil {
+			// Mark all as failed
+			for _, id := range p.ToRemove {
+				onProgress(hosttui.ApplyEvent{ID: id, Status: "failed", Error: applyErr.Error()})
+			}
+			for _, id := range p.ToDownload {
+				onProgress(hosttui.ApplyEvent{ID: id, Status: "failed", Error: applyErr.Error()})
+			}
+			return applyErr
+		}
+
+		// Mark all as done
+		for _, id := range p.ToRemove {
+			onProgress(hosttui.ApplyEvent{ID: id, Status: "done"})
+		}
+		for _, id := range p.ToDownload {
+			onProgress(hosttui.ApplyEvent{ID: id, Status: "done"})
+		}
+		return nil
 	}
 
 	deps.RunImport = func(_ context.Context, source string) (hosttui.ImportResult, error) {
@@ -502,13 +567,72 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		return hosttui.ImportResult{ID: id}, nil
 	}
 
+	deps.LoadIndexStatus = func() (hosttui.IndexStatus, error) {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return hosttui.IndexStatus{}, err
+		}
+		dbPath := filepath.Join(root, "data", "search.db")
+		status := hosttui.IndexStatus{}
+		if _, statErr := os.Stat(dbPath); statErr == nil {
+			status.KeywordEnabled = true
+			// Try to get stats from the DB
+			db, dbErr := searchdb.Open(dbPath)
+			if dbErr == nil {
+				defer db.Close()
+				sc, ac, _ := db.Stats()
+				status.KeywordSources = sc
+				status.KeywordArticles = ac
+				if ts, err := db.GetMeta("indexed_at"); err == nil {
+					status.KeywordLastBuilt = ts
+				}
+			}
+		}
+		// Check for embedding model presence
+		modelDir := filepath.Join(root, "models")
+		if entries, err := os.ReadDir(modelDir); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() && len(e.Name()) > 0 {
+					// Check for nomic embed model
+					if strings.Contains(e.Name(), "nomic") && strings.Contains(e.Name(), "embed") {
+						status.SemanticEnabled = true
+						break
+					}
+				}
+			}
+		}
+		if !status.SemanticEnabled {
+			status.SemanticStatus = "model not installed"
+		}
+		return status, nil
+	}
+
 	deps.RunIndex = func(_ context.Context, indexType string, onProgress func(hosttui.IndexEvent)) error {
 		root, err := ResolveVaultRoot(vaultFlag)
 		if err != nil {
 			return err
 		}
-		return commands.IndexVault(root, os.Stderr)
+		if indexType == "semantic" {
+			return fmt.Errorf("semantic indexing not yet implemented")
+		}
+		// Scan ZIM files for progress reporting
+		zimFiles, _ := commands.ScanZIMFiles(root)
+		for _, zf := range zimFiles {
+			onProgress(hosttui.IndexEvent{File: zf, Status: "indexing"})
+		}
+		err = commands.IndexVault(root, os.Stderr)
+		if err != nil {
+			for _, zf := range zimFiles {
+				onProgress(hosttui.IndexEvent{File: zf, Status: "failed"})
+			}
+			return err
+		}
+		for _, zf := range zimFiles {
+			onProgress(hosttui.IndexEvent{File: zf, Status: "done"})
+		}
+		return nil
 	}
 
 	return deps
 }
+

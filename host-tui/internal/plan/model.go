@@ -228,9 +228,11 @@ func startApply(runApply func(ctx context.Context, onProgress func(ApplyEvent)) 
 		ch := make(chan ApplyEvent, 16)
 		go func() {
 			defer close(ch)
-			_ = runApply(context.Background(), func(ev ApplyEvent) {
+			if err := runApply(context.Background(), func(ev ApplyEvent) {
 				ch <- ev
-			})
+			}); err != nil {
+				ch <- ApplyEvent{Status: "failed", Error: err.Error()}
+			}
 		}()
 		return applyStartedMsg{ch: ch}
 	}

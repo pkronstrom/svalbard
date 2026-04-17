@@ -7,9 +7,10 @@ import "context"
 // This bridges the module boundary (host-tui cannot import host-cli).
 type DashboardDeps struct {
 	// Read-only queries
-	LoadStatus      func() (VaultStatus, error)
-	LoadPlan        func() (PlanSummary, error)
-	LoadIndexStatus func() (IndexStatus, error)
+	LoadStatus       func() (VaultStatus, error)
+	LoadDesiredItems func() ([]string, error)
+	LoadPlan         func() (PlanSummary, error)
+	LoadIndexStatus  func() (IndexStatus, error)
 
 	// State mutation
 	SaveDesiredItems func(ids []string) error
@@ -22,6 +23,10 @@ type DashboardDeps struct {
 	// Static catalog data (for Browse)
 	PackGroups []PackGroup
 	Presets    []PresetOption
+
+	// RebuildForVault returns a new DashboardDeps targeting a different vault path.
+	// Used when the user opens a different vault via the Open Vault screen.
+	RebuildForVault func(vaultPath string) *DashboardDeps
 }
 
 // VaultStatus summarizes the current vault state for the Status right-pane preview.

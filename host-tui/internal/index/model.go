@@ -211,9 +211,11 @@ func startRebuild(runIndex func(ctx context.Context, indexType string, onProgres
 		ch := make(chan IndexEvent, 16)
 		go func() {
 			defer close(ch)
-			_ = runIndex(context.Background(), indexType, func(ev IndexEvent) {
+			if err := runIndex(context.Background(), indexType, func(ev IndexEvent) {
 				ch <- ev
-			})
+			}); err != nil {
+				ch <- IndexEvent{Status: "failed", File: err.Error()}
+			}
 		}()
 		return rebuildStartedMsg{ch: ch}
 	}

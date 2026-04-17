@@ -84,7 +84,7 @@ func newAppModel(vaultPath *string, wizardConfig *WizardConfig, deps *DashboardD
 	if vaultPath != nil {
 		m.screen = screenDashboard
 		m.vaultPath = *vaultPath
-		m.dashboard = dashboard.New(*vaultPath)
+		m.dashboard = m.newDashboard(*vaultPath)
 	} else {
 		m.screen = screenWelcome
 		m.welcome = welcome.New()
@@ -196,9 +196,12 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// --- Open Vault messages ---
 	case openvault.DoneMsg:
 		m.vaultPath = msg.Path
+		if m.deps != nil && m.deps.RebuildForVault != nil {
+			m.deps = m.deps.RebuildForVault(msg.Path)
+		}
 		m.screen = screenDashboard
-		m.dashboard = dashboard.New(msg.Path)
-		return m, nil
+		m.dashboard = m.newDashboard(msg.Path)
+		return m, m.dashboard.Init()
 
 	case openvault.BackMsg:
 		m.screen = screenWelcome
@@ -273,26 +276,47 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 	return WizardConfig{}
 }
 
+// newDashboard creates a dashboard.Model with status loading wired up.
+func (m *appModel) newDashboard(vaultPath string) dashboard.Model {
+	var cfg dashboard.Config
+	if m.deps != nil && m.deps.LoadStatus != nil {
+		loadStatus := m.deps.LoadStatus
+		cfg.LoadStatus = func() (dashboard.StatusData, error) {
+			vs, err := loadStatus()
+			if err != nil {
+				return dashboard.StatusData{}, err
+			}
+			return dashboard.StatusData{
+				PresetName:    vs.PresetName,
+				DesiredCount:  vs.DesiredCount,
+				RealizedCount: vs.RealizedCount,
+				PendingCount:  vs.PendingCount,
+				DiskUsedGB:    vs.DiskUsedGB,
+				DiskFreeGB:    vs.DiskFreeGB,
+				LastApplied:   vs.LastApplied,
+			}, nil
+		}
+	}
+	return dashboard.New(vaultPath, cfg)
+}
+
 // newBrowse creates a browse.Model from the current deps and vault state.
 func (m *appModel) newBrowse(readOnly bool) browse.Model {
 	cfg := browse.Config{}
 	if m.deps != nil {
 		cfg.PackGroups = m.deps.PackGroups
 		cfg.Presets = m.deps.Presets
-		if !readOnly && m.deps.LoadStatus != nil {
-			if status, err := m.deps.LoadStatus(); err == nil {
-				cfg.FreeGB = status.DiskFreeGB
-			}
-		}
-		if !readOnly && m.deps.LoadStatus != nil {
-			if status, err := m.deps.LoadStatus(); err == nil {
-				cfg.DesiredItems = make([]string, 0, status.DesiredCount)
-			}
-		}
-		// Load actual desired item IDs from the save callback's inverse
-		// The actual desired items need to come from LoadStatus or a separate call.
-		// For now, use what we have.
 		if !readOnly {
+			if m.deps.LoadStatus != nil {
+				if status, err := m.deps.LoadStatus(); err == nil {
+					cfg.FreeGB = status.DiskFreeGB
+				}
+			}
+			if m.deps.LoadDesiredItems != nil {
+				if items, err := m.deps.LoadDesiredItems(); err == nil {
+					cfg.DesiredItems = items
+				}
+			}
 			cfg.SaveDesired = m.deps.SaveDesiredItems
 		}
 	}

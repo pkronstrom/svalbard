@@ -138,6 +138,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // startImport fires the async import command.
 func (m Model) startImport() (tea.Model, tea.Cmd) {
+	if m.runImport == nil {
+		m.errMsg = "import not available"
+		return m, nil
+	}
 	source := strings.TrimSpace(m.input)
 	m.importing = true
 	m.input = ""

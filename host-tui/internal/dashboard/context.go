@@ -1,6 +1,10 @@
 package dashboard
 
-import "github.com/pkronstrom/svalbard/tui"
+import (
+	"fmt"
+
+	"github.com/pkronstrom/svalbard/tui"
+)
 
 // contextForDestination returns the right-pane content for the given
 // navigation destination. Each destination shows a live preview of its
@@ -14,7 +18,29 @@ func contextForDestination(id string, m Model) tui.DetailPane {
 		base.Fields = []tui.DetailField{
 			{Label: "Vault", Value: m.vaultPath},
 		}
-		base.Body = "Vault summary and sync state."
+		if m.status != nil {
+			s := m.status
+			if s.PresetName != "" {
+				base.Fields = append(base.Fields, tui.DetailField{Label: "Preset", Value: s.PresetName})
+			}
+			base.Fields = append(base.Fields,
+				tui.DetailField{Label: "Desired", Value: fmt.Sprintf("%d items", s.DesiredCount)},
+				tui.DetailField{Label: "Realized", Value: fmt.Sprintf("%d items", s.RealizedCount)},
+				tui.DetailField{Label: "Pending", Value: fmt.Sprintf("%d items", s.PendingCount)},
+			)
+			if s.DiskFreeGB > 0 {
+				base.Fields = append(base.Fields,
+					tui.DetailField{Label: "Disk free", Value: fmt.Sprintf("%.1f GB", s.DiskFreeGB)},
+				)
+			}
+			if s.LastApplied != "" {
+				base.Fields = append(base.Fields,
+					tui.DetailField{Label: "Last apply", Value: s.LastApplied},
+				)
+			}
+		} else {
+			base.Body = "Loading vault status..."
+		}
 
 	case destBrowse:
 		base.Title = "Browse"

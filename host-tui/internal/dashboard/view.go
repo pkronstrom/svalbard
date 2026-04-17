@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/pkronstrom/svalbard/tui"
@@ -43,7 +44,7 @@ func (m Model) View() string {
 		Theme:        m.theme,
 		AppName:      "Svalbard",
 		Identity:     filepath.Base(m.vaultPath),
-		Status:       "vault loaded",
+		Status:       m.ambientStatus(),
 		Left:         nav.Render(),
 		Right:        detail.Render(),
 		CompactRight: detail.Title,
@@ -53,4 +54,12 @@ func (m Model) View() string {
 	}
 
 	return shell.Render()
+}
+
+func (m Model) ambientStatus() string {
+	if m.status == nil {
+		return ""
+	}
+	s := m.status
+	return fmt.Sprintf("%d/%d synced", s.RealizedCount, s.DesiredCount)
 }
