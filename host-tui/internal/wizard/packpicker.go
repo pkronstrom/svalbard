@@ -202,13 +202,12 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.expandCollapseAtCursor()
 			return m, nil
 
-		case msg.Type == tea.KeyRight || msg.Type == tea.KeyLeft:
-			if m.cursor >= 0 && m.cursor < len(m.rows) {
-				row := m.rows[m.cursor]
-				if row.kind == rowGroup || row.kind == rowPack {
-					m.expandCollapseAtCursor()
-				}
-			}
+		case msg.Type == tea.KeyRight:
+			m.expandAtCursor()
+			return m, nil
+
+		case msg.Type == tea.KeyLeft:
+			m.collapseAtCursor()
 			return m, nil
 
 		// Apply
@@ -291,6 +290,83 @@ func (m *packPickerModel) toggleAtCursor() {
 }
 
 // expandCollapseAtCursor toggles expand/collapse at the current cursor position.
+// expandAtCursor expands the group or pack at the cursor.
+func (m *packPickerModel) expandAtCursor() {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return
+	}
+	row := m.rows[m.cursor]
+	switch row.kind {
+	case rowGroup:
+		if m.collapsedGroups[row.groupName] {
+			m.collapsedGroups[row.groupName] = false
+			m.rebuildRows()
+		}
+	case rowPack:
+		if m.collapsedPacks[row.pack.Name] {
+			m.collapsedPacks[row.pack.Name] = false
+			m.rebuildRows()
+		}
+	}
+}
+
+// collapseAtCursor collapses the current level or moves to the parent.
+// On an expanded group/pack: collapse it.
+// On a collapsed group/pack or an item: move cursor to the parent.
+func (m *packPickerModel) collapseAtCursor() {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return
+	}
+	row := m.rows[m.cursor]
+	switch row.kind {
+	case rowGroup:
+		if !m.collapsedGroups[row.groupName] {
+			m.collapsedGroups[row.groupName] = true
+			m.rebuildRows()
+			if m.cursor >= len(m.rows) {
+				m.cursor = len(m.rows) - 1
+			}
+		}
+	case rowPack:
+		if !m.collapsedPacks[row.pack.Name] {
+			// Collapse this pack
+			m.collapsedPacks[row.pack.Name] = true
+			m.rebuildRows()
+			if m.cursor >= len(m.rows) {
+				m.cursor = len(m.rows) - 1
+			}
+		} else {
+			// Already collapsed — move to parent group
+			m.moveCursorToParentGroup()
+		}
+	case rowItem:
+		// Move to parent pack
+		m.moveCursorToParentPack()
+	}
+}
+
+// moveCursorToParentGroup moves the cursor to the group header above.
+func (m *packPickerModel) moveCursorToParentGroup() {
+	for i := m.cursor - 1; i >= 0; i-- {
+		if m.rows[i].kind == rowGroup {
+			m.cursor = i
+			m.ensureVisible()
+			return
+		}
+	}
+}
+
+// moveCursorToParentPack moves the cursor to the pack header above.
+func (m *packPickerModel) moveCursorToParentPack() {
+	for i := m.cursor - 1; i >= 0; i-- {
+		if m.rows[i].kind == rowPack {
+			m.cursor = i
+			m.ensureVisible()
+			return
+		}
+	}
+}
+
 func (m *packPickerModel) expandCollapseAtCursor() {
 	if m.cursor < 0 || m.cursor >= len(m.rows) {
 		return
