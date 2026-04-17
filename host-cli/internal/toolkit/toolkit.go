@@ -36,7 +36,16 @@ var runtimeBuildTargets = map[string]struct {
 	"linux-x86_64": {goos: "linux", goarch: "amd64"},
 }
 
-var runtimeBinarySources = buildDriveRuntimeBinaries
+var runtimeBinarySources = loadRuntimeBinaries
+
+func loadRuntimeBinaries() (map[string]string, error) {
+	// Try embedded binaries first (release mode).
+	if bins, err := extractEmbeddedBinaries(); err == nil {
+		return bins, nil
+	}
+	// Fall back to compiling from source (dev mode).
+	return buildDriveRuntimeBinaries()
+}
 
 // TypeDirs maps content types to their destination subdirectories.
 var TypeDirs = map[string]string{

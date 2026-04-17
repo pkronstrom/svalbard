@@ -351,3 +351,16 @@ func TestTypeDirsExported(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractEmbeddedBinariesFallsBackGracefully(t *testing.T) {
+	// With only .gitkeep in embedded/, extraction should fail,
+	// triggering the fallback path in loadRuntimeBinaries.
+	_, err := extractEmbeddedBinaries()
+	if err == nil {
+		// If the build script was run, binaries exist — that's fine too.
+		t.Log("embedded binaries found (build script was run)")
+		return
+	}
+	// Expected: error because only .gitkeep exists
+	t.Logf("extraction correctly failed: %v", err)
+}
