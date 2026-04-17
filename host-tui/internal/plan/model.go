@@ -130,7 +130,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applyDone = true
 			return m, nil
 		}
-		m.updateApplyStep(msg.event)
+		// Global error (empty ID) — mark remaining queued items as failed.
+		if msg.event.ID == "" && msg.event.Status == "failed" {
+			m.applyErr = msg.event.Error
+			for i := range m.applyItems {
+				if m.applyItems[i].status == "" {
+					m.applyItems[i].status = "failed"
+				}
+			}
+		} else {
+			m.updateApplyStep(msg.event)
+		}
 		return m, waitForApplyEvent(m.applyCh)
 
 	case tea.KeyMsg:
@@ -320,7 +330,7 @@ func (m Model) viewPlan() string {
 		}
 
 		sym := actionSymbol(it.Action)
-		line := fmt.Sprintf("%s %s %s  %s", prefix, sym, it.ID, formatSize(it.SizeGB))
+		line := fmt.Sprintf("%s %s %s  %s", prefix, sym, it.ID, tui.FormatSize(it.SizeGB))
 
 		if i == m.cursor {
 			b.WriteString(m.theme.Selected.Render(line))
@@ -341,7 +351,7 @@ func (m Model) viewPlan() string {
 	b.WriteString("\n")
 	if m.cursor >= 0 && m.cursor < len(m.items) {
 		it := m.items[m.cursor]
-		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s · %s · %s · %s", it.ID, it.Type, formatSize(it.SizeGB), it.Action)))
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s · %s · %s · %s", it.ID, it.Type, tui.FormatSize(it.SizeGB), it.Action)))
 		if it.Description != "" {
 			b.WriteString("\n")
 			b.WriteString(m.theme.Muted.Render("  " + it.Description))
@@ -352,7 +362,7 @@ func (m Model) viewPlan() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.theme.Muted.Render(fmt.Sprintf(
 		"  Download: %s  |  Remove: %s",
-		formatSize(m.downloadGB), formatSize(m.removeGB),
+		tui.FormatSize(m.downloadGB), tui.FormatSize(m.removeGB),
 	)))
 
 	// Footer
@@ -379,15 +389,6 @@ func (m Model) viewPlan() string {
 	return shell.Render()
 }
 
-func formatSize(gb float64) string {
-	if gb < 0.01 {
-		return fmt.Sprintf("%.0f MB", gb*1024)
-	}
-	if gb < 1 {
-		return fmt.Sprintf("%.0f MB", gb*1024)
-	}
-	return fmt.Sprintf("%.1f GB", gb)
-}
 
 func (m Model) viewApply() string {
 	var b strings.Builder
@@ -447,6 +448,10 @@ func (m Model) viewApply() string {
 	)))
 	if failedCount > 0 {
 		b.WriteString("  " + m.theme.Danger.Render(fmt.Sprintf("%d failed", failedCount)))
+	}
+	if m.applyErr != "" {
+		b.WriteString("\n\n")
+		b.WriteString("  " + m.theme.Danger.Render(m.applyErr))
 	}
 
 	// Footer

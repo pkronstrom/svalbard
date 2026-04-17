@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -166,5 +167,113 @@ func TestPlanEnterStartsApply(t *testing.T) {
 	}
 	if len(m.applyItems) != len(items) {
 		t.Errorf("expected %d applyItems, got %d", len(items), len(m.applyItems))
+	}
+}
+
+func TestApplyGlobalErrorMarksItemsFailed(t *testing.T) {
+	items := sampleItems()
+	m := New(Config{
+		Items:      items,
+		DownloadGB: 2.0,
+		RemoveGB:   0.5,
+		RunApply: func(ctx context.Context, onProgress func(ApplyEvent)) error {
+			return fmt.Errorf("recipe %q not found in catalog", "wiki-physics")
+		},
+	})
+	m.width = 80
+	m.height = 24
+
+	// Press Enter to start apply
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	result, cmd := m.Update(enterMsg)
+	m = result.(Model)
+
+	if cmd == nil {
+		t.Fatal("expected non-nil command from Enter")
+	}
+
+	// Execute the command — this spawns the goroutine and returns applyStartedMsg
+	startMsg := cmd()
+	result, cmd = m.Update(startMsg)
+	m = result.(Model)
+
+	if cmd == nil {
+		t.Fatal("expected non-nil command from applyStartedMsg")
+	}
+
+	// First tick: should receive the error event (empty ID, status=failed)
+	tickMsg := cmd()
+	result, cmd = m.Update(tickMsg)
+	m = result.(Model)
+
+	if m.applyErr == "" {
+		t.Error("expected applyErr to be set after global error event")
+	}
+	if !strings.Contains(m.applyErr, "not found in catalog") {
+		t.Errorf("expected applyErr to contain error details, got %q", m.applyErr)
+	}
+
+	// All items should be marked failed
+	for _, step := range m.applyItems {
+		if step.status != "failed" {
+			t.Errorf("item %q should be failed, got %q", step.id, step.status)
+		}
+	}
+
+	// View should show the error (text may wrap at terminal width)
+	out := stripAnsi(m.View())
+	if !strings.Contains(out, "not found") {
+		t.Errorf("View() should display error, got:\n%s", out)
+	}
+}
+
+func TestApplyPerItemErrorThenGlobalError(t *testing.T) {
+	items := sampleItems()
+	m := New(Config{
+		Items:      items,
+		DownloadGB: 2.0,
+		RemoveGB:   0.5,
+		RunApply: func(ctx context.Context, onProgress func(ApplyEvent)) error {
+			onProgress(ApplyEvent{ID: "wiki-physics", Status: "active"})
+			onProgress(ApplyEvent{ID: "wiki-physics", Status: "failed"})
+			return fmt.Errorf("download failed for wiki-physics")
+		},
+	})
+	m.width = 80
+	m.height = 24
+
+	// Start apply
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = result.(Model)
+	startMsg := cmd()
+	result, cmd = m.Update(startMsg)
+	m = result.(Model)
+
+	// Drain all events until done
+	for cmd != nil {
+		tickMsg := cmd()
+		tick, ok := tickMsg.(applyTickMsg)
+		if ok && tick.done {
+			result, cmd = m.Update(tickMsg)
+			m = result.(Model)
+			break
+		}
+		result, cmd = m.Update(tickMsg)
+		m = result.(Model)
+	}
+
+	// First item should be failed
+	if m.applyItems[0].status != "failed" {
+		t.Errorf("first item should be failed, got %q", m.applyItems[0].status)
+	}
+	// Remaining items should also be failed (from global error)
+	for i := 1; i < len(m.applyItems); i++ {
+		if m.applyItems[i].status != "failed" {
+			t.Errorf("item %d (%s) should be failed, got %q", i, m.applyItems[i].id, m.applyItems[i].status)
+		}
+	}
+	// Error message should be visible
+	if m.applyErr == "" {
+		t.Error("expected applyErr to contain the global error message")
 	}
 }
