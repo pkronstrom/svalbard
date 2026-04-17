@@ -443,6 +443,9 @@ func (m packPickerModel) View() string {
 		switch row.kind {
 		case rowGroup:
 			label := row.groupName
+			if label == "" {
+				label = "Other"
+			}
 			if isCursor {
 				b.WriteString(m.theme.Selected.Render(prefix + label))
 			} else {

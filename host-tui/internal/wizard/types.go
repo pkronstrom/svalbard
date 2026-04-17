@@ -40,6 +40,12 @@ type PackSource struct {
 	SizeGB      float64
 }
 
+// ApplyFunc runs vault apply with progress reporting.
+type ApplyFunc func(vaultPath string, onProgress func(id, status string)) error
+
+// InitFunc initializes a new vault.
+type InitFunc func(path string, items []string, presetName, region string, platforms []string) error
+
 // WizardConfig is everything the wizard needs to run.
 // Prepared by host-cli, consumed by host-tui.
 type WizardConfig struct {
@@ -50,6 +56,8 @@ type WizardConfig struct {
 	PackGroups  []PackGroup    // all packs grouped
 	PrefillPath string
 	StartAtStep int
+	InitVault   InitFunc  // called after review confirm
+	RunApply    ApplyFunc // called to download content
 }
 
 // WizardResult is returned when the wizard completes.

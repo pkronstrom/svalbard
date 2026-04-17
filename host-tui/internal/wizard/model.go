@@ -17,6 +17,7 @@ var wizardSteps = []struct{ id, label string }{
 	{"preset", "Choose Preset"},
 	{"packs", "Pack Picker"},
 	{"review", "Review"},
+	{"apply", "Apply"},
 }
 
 // BackMsg is sent when the user navigates back from the first wizard step.
@@ -31,6 +32,7 @@ const (
 	stagePreset
 	stagePacks
 	stageReview
+	stageApply
 )
 
 // Model is the Bubble Tea model for the init wizard.
@@ -48,6 +50,7 @@ type Model struct {
 	presetPicker     presetPickerModel
 	packPicker       packPickerModel
 	review           reviewModel
+	applyModel       wizardApplyModel
 
 	// Accumulated state across stages
 	vaultPath     string
@@ -125,6 +128,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.sizeActiveModel()
 
 	case reviewConfirmMsg:
+		// Init the vault if callback is available
+		if m.config.InitVault != nil {
+			if err := m.config.InitVault(m.vaultPath, m.selectedIDList(), m.presetName, m.region, m.hostPlatforms); err != nil {
+				// TODO: show error
+				return m, tea.Quit
+			}
+		}
+		// Transition to apply stage
+		if m.config.RunApply != nil {
+			m.stage = stageApply
+			m.applyModel = newWizardApply(m.vaultPath, m.selectedIDList(), m.config.RunApply)
+			return m.sizeActiveModel()
+		}
+		// No apply callback — just exit with result
+		return m, func() tea.Msg {
+			return DoneMsg{Result: WizardResult{
+				VaultPath:     m.vaultPath,
+				SelectedIDs:   m.selectedIDList(),
+				PresetName:    m.presetName,
+				Region:        m.region,
+				HostPlatforms: m.hostPlatforms,
+			}}
+		}
+
+	case wizardApplyDoneMsg:
 		return m, func() tea.Msg {
 			return DoneMsg{Result: WizardResult{
 				VaultPath:     m.vaultPath,
@@ -190,6 +218,10 @@ func (m Model) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stageReview:
 		updated, cmd := m.review.Update(msg)
 		m.review = updated.(reviewModel)
+		return m, cmd
+	case stageApply:
+		updated, cmd := m.applyModel.Update(msg)
+		m.applyModel = updated.(wizardApplyModel)
 		return m, cmd
 	}
 	return m, nil

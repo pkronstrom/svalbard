@@ -38,12 +38,6 @@ func RunInitWizard(config WizardConfig) error {
 	return runApp(&appModel{screen: screenWizard, wizard: wizard.New(config), wizardConfig: &config})
 }
 
-// WizardCompleted returns the wizard result if the TUI exited after
-// a wizard completion, or nil if the user quit normally.
-func (m *appModel) WizardCompleted() *WizardResult {
-	return m.wizardResult
-}
-
 func runApp(m *appModel) error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
@@ -71,7 +65,6 @@ type appModel struct {
 	vaultPath    string
 	deps         *DashboardDeps
 	wizardConfig *WizardConfig
-	wizardResult *WizardResult // set when wizard completes
 	width, height int
 
 	welcome   welcome.Model
@@ -177,24 +170,15 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case wizard.DoneMsg:
 		r := msg.Result
-		// Init the vault
-		if m.deps != nil && m.deps.InitVault != nil {
-			if err := m.deps.InitVault(r.VaultPath, r.SelectedIDs, r.PresetName, r.Region, r.HostPlatforms); err != nil {
-				// TODO: show error in TUI
-				return m, tea.Quit
-			}
-			// Rebuild deps for the new vault
-			if m.deps.RebuildForVault != nil {
-				m.deps = m.deps.RebuildForVault(r.VaultPath)
-			}
-			// Transition to plan+apply for the new vault
-			m.vaultPath = r.VaultPath
-			m.screen = screenPlan
-			m.planScr = m.newPlan()
-			return m, m.sendSize()
+		m.vaultPath = r.VaultPath
+		// Rebuild deps for the new vault
+		if m.deps != nil && m.deps.RebuildForVault != nil {
+			m.deps = m.deps.RebuildForVault(r.VaultPath)
 		}
-		// No deps — just quit
-		return m, tea.Quit
+		// Transition to dashboard
+		m.screen = screenDashboard
+		m.dashboard = m.newDashboard(r.VaultPath)
+		return m, tea.Batch(m.dashboard.Init(), m.sendSize())
 
 	// --- Browse messages ---
 	case browse.BackMsg:
@@ -315,10 +299,27 @@ func (m *appModel) sendSize() tea.Cmd {
 }
 
 func (m *appModel) defaultWizardConfig() WizardConfig {
+	var cfg WizardConfig
 	if m.wizardConfig != nil {
-		return *m.wizardConfig
+		cfg = *m.wizardConfig
 	}
-	return WizardConfig{}
+	// Wire init and apply callbacks from deps
+	if m.deps != nil {
+		if m.deps.InitVault != nil {
+			cfg.InitVault = m.deps.InitVault
+		}
+		if m.deps.RunApply != nil && m.deps.RebuildForVault != nil {
+			rebuildForVault := m.deps.RebuildForVault
+			cfg.RunApply = func(vaultPath string, onProgress func(id, status string)) error {
+				// Rebuild deps targeting the new vault path, then run apply
+				newDeps := rebuildForVault(vaultPath)
+				return newDeps.RunApply(nil, func(ev ApplyEvent) {
+					onProgress(ev.ID, ev.Status)
+				})
+			}
+		}
+	}
+	return cfg
 }
 
 // newDashboard creates a dashboard.Model with status loading wired up.
