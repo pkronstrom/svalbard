@@ -14,7 +14,7 @@ func stripAnsi(s string) string {
 	return re.ReplaceAllString(s, "")
 }
 
-func TestIndexShowsBothTypes(t *testing.T) {
+func TestIndexShowsBothOptions(t *testing.T) {
 	m := New(Config{
 		Status: IndexStatus{
 			KeywordEnabled:  true,
@@ -26,11 +26,11 @@ func TestIndexShowsBothTypes(t *testing.T) {
 
 	out := stripAnsi(m.View())
 
-	if !strings.Contains(out, "Keyword") {
-		t.Errorf("View() should contain 'Keyword', got:\n%s", out)
+	if !strings.Contains(out, "Full index") {
+		t.Errorf("View() should contain 'Full index', got:\n%s", out)
 	}
-	if !strings.Contains(out, "Semantic") {
-		t.Errorf("View() should contain 'Semantic', got:\n%s", out)
+	if !strings.Contains(out, "Keyword only") {
+		t.Errorf("View() should contain 'Keyword only', got:\n%s", out)
 	}
 }
 
@@ -111,7 +111,10 @@ func TestIndexShowsStatus(t *testing.T) {
 
 	out := stripAnsi(m.View())
 
-	if !strings.Contains(out, "yes") {
-		t.Errorf("View() with KeywordEnabled=true should contain 'yes', got:\n%s", out)
+	if !strings.Contains(out, "1200") {
+		t.Errorf("View() should show article count 1200, got:\n%s", out)
+	}
+	if !strings.Contains(out, "5") {
+		t.Errorf("View() should show source count 5, got:\n%s", out)
 	}
 }

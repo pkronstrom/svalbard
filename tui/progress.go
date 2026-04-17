@@ -36,6 +36,8 @@ func StatusIcon(status string, theme Theme) string {
 		return theme.Danger.Render("✗")
 	case StatusIndexing:
 		return theme.Warning.Render("·")
+	case StatusQueued:
+		return theme.Muted.Render("○")
 	case StatusSkip:
 		return theme.Muted.Render("–")
 	default:

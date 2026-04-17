@@ -7,100 +7,89 @@ import (
 	"github.com/pkronstrom/svalbard/tui"
 )
 
-// TestProgressViewShowsPhases creates a view with Done, Active, and Pending
-// steps and verifies all labels appear in the rendered output.
 func TestProgressViewShowsPhases(t *testing.T) {
 	view := tui.ProgressView{
 		Theme: tui.DefaultTheme(),
-		Title: "Applying host config",
 		Steps: []tui.ProgressStep{
-			{Label: "Validate config", Status: tui.StepDone},
-			{Label: "Apply changes", Status: tui.StepActive},
-			{Label: "Restart services", Status: tui.StepPending},
+			{ID: "a", Label: "Validate config", Status: tui.StatusDone},
+			{ID: "b", Label: "Apply changes", Status: tui.StatusActive},
+			{ID: "c", Label: "Restart services", Status: tui.StatusQueued},
 		},
 	}
 
-	out := view.Render()
+	out := stripAnsi(view.Render())
 
-	// Title must appear
-	if !strings.Contains(out, "Applying host config") {
-		t.Errorf("expected title in output, got:\n%s", out)
-	}
-
-	// All step labels must appear
 	for _, label := range []string{"Validate config", "Apply changes", "Restart services"} {
 		if !strings.Contains(out, label) {
 			t.Errorf("expected label %q in output, got:\n%s", label, out)
 		}
 	}
-
-	// Status icons must appear
-	if !strings.Contains(out, "[done]") {
-		t.Errorf("expected [done] icon in output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "[....]") {
-		t.Errorf("expected [....] icon in output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "[    ]") {
-		t.Errorf("expected [    ] icon in output, got:\n%s", out)
-	}
 }
 
-// TestProgressViewShowsError creates a view with a Failed step that has an
-// error message and verifies the error text appears in the rendered output.
 func TestProgressViewShowsError(t *testing.T) {
 	view := tui.ProgressView{
 		Theme: tui.DefaultTheme(),
 		Steps: []tui.ProgressStep{
-			{Label: "Download artifact", Status: tui.StepDone},
-			{Label: "Verify checksum", Status: tui.StepFailed, Error: "sha256 mismatch: expected abc123"},
+			{ID: "a", Label: "Download artifact", Status: tui.StatusDone},
+			{ID: "b", Label: "Verify checksum", Status: tui.StatusFailed, Error: "sha256 mismatch"},
 		},
 	}
 
-	out := view.Render()
+	out := stripAnsi(view.Render())
 
-	// FAIL icon must appear
-	if !strings.Contains(out, "[FAIL]") {
-		t.Errorf("expected [FAIL] icon in output, got:\n%s", out)
-	}
-
-	// Error message must appear
-	if !strings.Contains(out, "sha256 mismatch: expected abc123") {
+	if !strings.Contains(out, "sha256 mismatch") {
 		t.Errorf("expected error message in output, got:\n%s", out)
 	}
 }
 
-// TestProgressViewShowsLog verifies that optional log content is rendered.
-func TestProgressViewShowsLog(t *testing.T) {
+func TestProgressViewSummary(t *testing.T) {
 	view := tui.ProgressView{
 		Theme: tui.DefaultTheme(),
 		Steps: []tui.ProgressStep{
-			{Label: "Indexing files", Status: tui.StepActive},
+			{ID: "a", Status: tui.StatusDone},
+			{ID: "b", Status: tui.StatusDone},
+			{ID: "c", Status: tui.StatusActive},
+			{ID: "d", Status: tui.StatusFailed},
 		},
-		Log: "Processed 142 of 500 files...",
 	}
 
-	out := view.Render()
+	out := stripAnsi(view.RenderSummary())
 
-	if !strings.Contains(out, "Processed 142 of 500 files...") {
-		t.Errorf("expected log content in output, got:\n%s", out)
+	if !strings.Contains(out, "2/4 done") {
+		t.Errorf("expected '2/4 done' in summary, got: %s", out)
+	}
+	if !strings.Contains(out, "1 active") {
+		t.Errorf("expected '1 active' in summary, got: %s", out)
+	}
+	if !strings.Contains(out, "1 failed") {
+		t.Errorf("expected '1 failed' in summary, got: %s", out)
 	}
 }
 
-// TestProgressViewEmptyTitle verifies no title line when Title is empty.
-func TestProgressViewEmptyTitle(t *testing.T) {
+func TestProgressViewScrollToTail(t *testing.T) {
+	steps := make([]tui.ProgressStep, 20)
+	for i := range steps {
+		steps[i] = tui.ProgressStep{ID: "s", Label: "step", Status: tui.StatusDone}
+	}
+	steps[19].Label = "last-step"
+
 	view := tui.ProgressView{
-		Theme: tui.DefaultTheme(),
-		Steps: []tui.ProgressStep{
-			{Label: "Do something", Status: tui.StepPending},
-		},
+		Theme:        tui.DefaultTheme(),
+		Steps:        steps,
+		MaxVisible:   5,
+		ScrollToTail: true,
 	}
 
-	out := view.Render()
+	out := stripAnsi(view.Render())
 
-	// First non-empty content should be the step, not a blank line at start
-	lines := strings.Split(out, "\n")
-	if len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
-		t.Errorf("expected no leading blank line when title is empty, got:\n%s", out)
+	if !strings.Contains(out, "last-step") {
+		t.Errorf("expected 'last-step' visible with ScrollToTail, got:\n%s", out)
+	}
+}
+
+func TestStatusIconQueued(t *testing.T) {
+	out := stripAnsi(tui.StatusIcon(tui.StatusQueued, tui.DefaultTheme()))
+	if out != "○" {
+		t.Errorf("expected ○ for StatusQueued, got %q", out)
 	}
 }

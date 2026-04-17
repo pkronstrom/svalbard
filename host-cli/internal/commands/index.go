@@ -86,9 +86,17 @@ func IndexVault(root string, force bool, w io.Writer, onProgress func(IndexProgr
 		}
 	}
 
+	// Report all files upfront so the progress view populates immediately.
 	for _, zf := range zimFiles {
 		if !force && indexedSet[zf] {
 			notify(IndexProgress{File: zf, Status: "skip", Detail: "already indexed"})
+		} else {
+			notify(IndexProgress{File: zf, Status: "queued"})
+		}
+	}
+
+	for _, zf := range zimFiles {
+		if !force && indexedSet[zf] {
 			continue
 		}
 		if force && indexedSet[zf] {

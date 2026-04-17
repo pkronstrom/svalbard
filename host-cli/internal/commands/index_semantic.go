@@ -61,23 +61,22 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 		}
 	}
 
-	// Check if any work is needed.
+	// Report all sources upfront so progress view populates immediately.
 	anyWork := false
 	for _, src := range sources {
 		embedded, _ := db.EmbeddingCountBySource(src.ID)
-		if embedded < src.ArticleCount {
-			anyWork = true
-			break
-		}
-	}
-	if !anyWork {
-		for _, src := range sources {
+		if embedded >= src.ArticleCount {
 			notify(SemanticProgress{
 				File: src.Filename, Status: "skip",
 				Detail:  "already embedded",
 				Current: src.ArticleCount, Total: src.ArticleCount,
 			})
+		} else {
+			anyWork = true
+			notify(SemanticProgress{File: src.Filename, Status: "queued"})
 		}
+	}
+	if !anyWork {
 		return nil
 	}
 

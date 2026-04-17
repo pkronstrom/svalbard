@@ -150,9 +150,9 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.runIndex == nil {
 			return m, nil
 		}
-		indexType := "keyword"
+		indexType := "full"
 		if m.selected == 1 {
-			indexType = "semantic"
+			indexType = "keyword"
 		}
 		m.rebuilding = true
 		m.rebuildType = indexType
@@ -247,8 +247,8 @@ func (m Model) View() string {
 func (m Model) viewNormal() string {
 	// Left pane: navigation list.
 	navItems := []tui.NavItem{
-		{ID: "keyword", Label: "Keyword search"},
-		{ID: "semantic", Label: "Semantic search"},
+		{ID: "full", Label: "Full index"},
+		{ID: "keyword", Label: "Keyword only"},
 	}
 	nav := tui.NavList{
 		Items:    navItems,
@@ -284,17 +284,42 @@ func (m Model) viewNormal() string {
 
 func (m Model) detailForSelected() tui.DetailPane {
 	if m.selected == 0 {
-		return m.keywordDetail()
+		return m.fullDetail()
 	}
-	return m.semanticDetail()
+	return m.keywordDetail()
+}
+
+func (m Model) fullDetail() tui.DetailPane {
+	lastBuilt := m.status.KeywordLastBuilt
+	if lastBuilt == "" {
+		lastBuilt = "never"
+	}
+
+	semanticNote := "ready"
+	if !m.status.SemanticEnabled {
+		semanticNote = m.status.SemanticStatus
+		if semanticNote == "" {
+			semanticNote = "unavailable"
+		}
+		semanticNote += " — will run keyword only"
+	}
+
+	return tui.DetailPane{
+		Theme: m.theme,
+		Title: "Full index",
+		Fields: []tui.DetailField{
+			{Label: "Includes", Value: "Keyword + Semantic search"},
+			{Label: "Speed", Value: "Slower — semantic embedding takes minutes"},
+			{Label: "Sources", Value: fmt.Sprintf("%d", m.status.KeywordSources)},
+			{Label: "Articles", Value: fmt.Sprintf("%d", m.status.KeywordArticles)},
+			{Label: "Semantic", Value: semanticNote},
+			{Label: "Last built", Value: lastBuilt},
+		},
+		Body: "Complete search indexing. Builds keyword FTS5 index for\nexact matches, then generates vector embeddings for\nsimilarity search.",
+	}
 }
 
 func (m Model) keywordDetail() tui.DetailPane {
-	enabledStr := "yes"
-	if !m.status.KeywordEnabled {
-		enabledStr = "no"
-	}
-
 	lastBuilt := m.status.KeywordLastBuilt
 	if lastBuilt == "" {
 		lastBuilt = "never"
@@ -302,38 +327,15 @@ func (m Model) keywordDetail() tui.DetailPane {
 
 	return tui.DetailPane{
 		Theme: m.theme,
-		Title: "Keyword search",
+		Title: "Keyword only",
 		Fields: []tui.DetailField{
 			{Label: "Engine", Value: "SQLite FTS5"},
-			{Label: "Enabled", Value: enabledStr},
+			{Label: "Speed", Value: "Fast — seconds"},
 			{Label: "Sources", Value: fmt.Sprintf("%d", m.status.KeywordSources)},
 			{Label: "Articles", Value: fmt.Sprintf("%d", m.status.KeywordArticles)},
 			{Label: "Last built", Value: lastBuilt},
 		},
-		Body: "Fast exact matching. Searches article titles and\nbody text using full-text indexing.",
-	}
-}
-
-func (m Model) semanticDetail() tui.DetailPane {
-	enabledStr := "yes"
-	if !m.status.SemanticEnabled {
-		enabledStr = "no"
-	}
-
-	statusStr := m.status.SemanticStatus
-	if statusStr == "" {
-		statusStr = "ready"
-	}
-
-	return tui.DetailPane{
-		Theme: m.theme,
-		Title: "Semantic search",
-		Fields: []tui.DetailField{
-			{Label: "Engine", Value: "GGUF embedding model"},
-			{Label: "Enabled", Value: enabledStr},
-			{Label: "Status", Value: statusStr},
-		},
-		Body: "Embedding-based similarity search. Finds conceptually\nrelated content even without exact keyword matches.",
+		Body: "Quick keyword search only. Searches article titles\nand body text using full-text indexing.",
 	}
 }
 
@@ -363,8 +365,8 @@ func (m Model) viewRebuilding() string {
 	}
 
 	title := "Rebuilding keyword index"
-	if m.rebuildType == "semantic" {
-		title = "Rebuilding semantic index"
+	if m.rebuildType == "full" {
+		title = "Building full index"
 	}
 
 	var b strings.Builder

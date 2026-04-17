@@ -632,6 +632,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			"done":       tui.StatusDone,
 			"failed":     tui.StatusFailed,
 			"starting":   tui.StatusIndexing,
+			"queued":     tui.StatusQueued,
 		}
 		mapStatus := func(s string) string {
 			if v, ok := statusMap[s]; ok {
@@ -640,27 +641,43 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			return tui.StatusIndexing
 		}
 
-		if indexType == "semantic" {
-			return commands.IndexSemantic(ctx, root, true, io.Discard, func(p commands.SemanticProgress) {
-				file := p.File
-				if file == "" {
-					file = p.Detail
-				}
-				onProgress(hosttui.IndexEvent{
-					File:   file,
-					Status: mapStatus(p.Status),
-					Detail: p.Detail,
-				})
-			})
-		}
-
-		return commands.IndexVault(root, true, io.Discard, func(p commands.IndexProgress) {
+		keywordCb := func(p commands.IndexProgress) {
 			onProgress(hosttui.IndexEvent{
 				File:   p.File,
 				Status: mapStatus(p.Status),
 				Detail: p.Detail,
 			})
-		})
+		}
+		semanticCb := func(p commands.SemanticProgress) {
+			file := p.File
+			if file == "" {
+				file = p.Detail
+			}
+			onProgress(hosttui.IndexEvent{
+				File:   file,
+				Status: mapStatus(p.Status),
+				Detail: p.Detail,
+			})
+		}
+
+		if indexType == "full" {
+			if err := commands.IndexVault(root, true, io.Discard, keywordCb); err != nil {
+				return err
+			}
+			// Semantic is best-effort — keyword index still succeeds if model is missing.
+			if err := commands.IndexSemantic(ctx, root, true, io.Discard, semanticCb); err != nil {
+				onProgress(hosttui.IndexEvent{
+					File: "semantic", Status: tui.StatusFailed, Detail: err.Error(),
+				})
+			}
+			return nil
+		}
+
+		if indexType == "semantic" {
+			return commands.IndexSemantic(ctx, root, true, io.Discard, semanticCb)
+		}
+
+		return commands.IndexVault(root, true, io.Discard, keywordCb)
 	}
 
 	return deps
