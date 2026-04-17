@@ -25,6 +25,8 @@ func (m Model) View() string {
 	switch m.stage {
 	case stagePath:
 		right = m.pathPicker.View()
+	case stagePlatforms:
+		right = m.platformPicker.View()
 	case stagePreset:
 		right = m.presetPicker.View()
 	case stagePacks:

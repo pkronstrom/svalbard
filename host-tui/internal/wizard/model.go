@@ -13,6 +13,7 @@ import (
 
 var wizardSteps = []struct{ id, label string }{
 	{"path", "Vault Path"},
+	{"platforms", "Platforms"},
 	{"preset", "Choose Preset"},
 	{"packs", "Pack Picker"},
 	{"review", "Review"},
@@ -26,6 +27,7 @@ type stage int
 
 const (
 	stagePath stage = iota
+	stagePlatforms
 	stagePreset
 	stagePacks
 	stageReview
@@ -41,17 +43,19 @@ type Model struct {
 	keys   tui.KeyMap
 
 	// Sub-models (created lazily per stage)
-	pathPicker   pathPickerModel
-	presetPicker presetPickerModel
-	packPicker   packPickerModel
-	review       reviewModel
+	pathPicker       pathPickerModel
+	platformPicker   platformPickerModel
+	presetPicker     presetPickerModel
+	packPicker       packPickerModel
+	review           reviewModel
 
 	// Accumulated state across stages
-	vaultPath  string
-	freeGB     float64
-	checkedIDs map[string]bool
-	presetName string
-	region     string
+	vaultPath     string
+	freeGB        float64
+	hostPlatforms []string
+	checkedIDs    map[string]bool
+	presetName    string
+	region        string
 }
 
 // New creates a new wizard Model with the given config.
@@ -88,6 +92,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pathDoneMsg:
 		m.vaultPath = msg.path
 		m.freeGB = msg.freeGB
+		m.stage = stagePlatforms
+		m.platformPicker = newPlatformPicker()
+		return m, nil
+
+	case platformDoneMsg:
+		m.hostPlatforms = msg.platforms
 		m.stage = stagePreset
 		m.presetPicker = newPresetPicker(m.config.Presets, m.config.Regions, m.freeGB)
 		return m, nil
@@ -117,10 +127,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reviewConfirmMsg:
 		return m, func() tea.Msg {
 			return DoneMsg{Result: WizardResult{
-				VaultPath:   m.vaultPath,
-				SelectedIDs: m.selectedIDList(),
-				PresetName:  m.presetName,
-				Region:      m.region,
+				VaultPath:     m.vaultPath,
+				SelectedIDs:   m.selectedIDList(),
+				PresetName:    m.presetName,
+				Region:        m.region,
+				HostPlatforms: m.hostPlatforms,
 			}}
 		}
 
@@ -137,6 +148,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.stage == stagePath && m.keys.Back.Matches(msg) && !m.pathPicker.customInput {
 			return m, func() tea.Msg { return BackMsg{} }
 		}
+		// Back from platform picker goes to path picker
+		if m.stage == stagePlatforms && (m.keys.Back.Matches(msg) || m.keys.Quit.Matches(msg)) {
+			m.stage = stagePath
+			m.pathPicker = newPathPicker(m.config.Volumes, m.config.HomeVolume, m.vaultPath)
+			return m, nil
+		}
 	}
 
 	// Forward all other messages to the active sub-model
@@ -148,6 +165,10 @@ func (m Model) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stagePath:
 		updated, cmd := m.pathPicker.Update(msg)
 		m.pathPicker = updated.(pathPickerModel)
+		return m, cmd
+	case stagePlatforms:
+		updated, cmd := m.platformPicker.Update(msg)
+		m.platformPicker = updated.(platformPickerModel)
 		return m, cmd
 	case stagePreset:
 		updated, cmd := m.presetPicker.Update(msg)

@@ -54,10 +54,11 @@ type WizardConfig struct {
 
 // WizardResult is returned when the wizard completes.
 type WizardResult struct {
-	VaultPath   string
-	SelectedIDs []string
-	PresetName  string // empty if custom
-	Region      string
+	VaultPath     string
+	SelectedIDs   []string
+	PresetName    string // empty if custom
+	Region        string
+	HostPlatforms []string // e.g. ["macos-arm64", "linux-arm64"]
 }
 
 // DoneMsg is emitted by the wizard when it completes.

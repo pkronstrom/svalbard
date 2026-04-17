@@ -28,11 +28,75 @@ func testConfig() WizardConfig {
 	}
 }
 
-func TestWizardShowsAllSteps(t *testing.T) {
-	m := New(testConfig())
-	m.width = 80
-	m.height = 24
+// advancePastPath selects the first volume and returns the model at stagePlatforms.
+func advancePastPath(t *testing.T, m Model) Model {
+	t.Helper()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected path done command")
+	}
+	updated, _ := m.Update(cmd())
+	m = updated.(Model)
+	if m.stage != stagePlatforms {
+		t.Fatalf("expected stagePlatforms after path, got %d", m.stage)
+	}
+	return m
+}
 
+// advancePastPlatforms accepts default platform selection and returns the model at stagePreset.
+func advancePastPlatforms(t *testing.T, m Model) Model {
+	t.Helper()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected platform done command")
+	}
+	updated, _ := m.Update(cmd())
+	m = updated.(Model)
+	if m.stage != stagePreset {
+		t.Fatalf("expected stagePreset after platforms, got %d", m.stage)
+	}
+	return m
+}
+
+// advancePastPreset selects the first preset and returns the model at stagePacks.
+func advancePastPreset(t *testing.T, m Model) Model {
+	t.Helper()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected preset done command")
+	}
+	updated, _ := m.Update(cmd())
+	m = updated.(Model)
+	if m.stage != stagePacks {
+		t.Fatalf("expected stagePacks after preset, got %d", m.stage)
+	}
+	return m
+}
+
+// advancePastPacks applies pack selection and returns the model at stageReview.
+func advancePastPacks(t *testing.T, m Model) Model {
+	t.Helper()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if cmd == nil {
+		t.Fatal("expected pack done command")
+	}
+	updated, _ := m.Update(cmd())
+	m = updated.(Model)
+	if m.stage != stageReview {
+		t.Fatalf("expected stageReview after packs, got %d", m.stage)
+	}
+	return m
+}
+
+func sizedModel(cfg WizardConfig) Model {
+	m := New(cfg)
+	m.width = 80
+	m.height = 40
+	return m
+}
+
+func TestWizardShowsAllSteps(t *testing.T) {
+	m := sizedModel(testConfig())
 	out := stripAnsi(m.View())
 	for _, step := range wizardSteps {
 		if !strings.Contains(out, step.label) {
@@ -48,90 +112,41 @@ func TestWizardStartsAtPathStep(t *testing.T) {
 	}
 }
 
-func TestWizardPathToPresetTransition(t *testing.T) {
-	m := New(testConfig())
-	m.width = 80
-	m.height = 24
-
-	// Select first volume (cursor starts at 0, Enter selects)
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(Model)
-
-	if cmd == nil {
-		t.Fatal("expected path done command")
-	}
-	msg := cmd()
-	updated, _ = m.Update(msg)
-	m = updated.(Model)
-
-	if m.stage != stagePreset {
-		t.Errorf("expected stagePreset after path selection, got %d", m.stage)
-	}
+func TestWizardPathToPlatformsTransition(t *testing.T) {
+	m := sizedModel(testConfig())
+	m = advancePastPath(t, m)
 	if m.vaultPath == "" {
 		t.Error("vault path should be set after path selection")
 	}
 }
 
-func TestWizardPresetToPacksTransition(t *testing.T) {
-	m := New(testConfig())
-	m.width = 80
-	m.height = 40
-
-	// Step 1: Select path
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	msg := cmd()
-	updated, _ := m.Update(msg)
-	m = updated.(Model)
-
-	// Step 2: Select preset
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	msg = cmd()
-	updated, _ = m.Update(msg)
-	m = updated.(Model)
-
-	if m.stage != stagePacks {
-		t.Errorf("expected stagePacks after preset selection, got %d", m.stage)
+func TestWizardPlatformsToPresetTransition(t *testing.T) {
+	m := sizedModel(testConfig())
+	m = advancePastPath(t, m)
+	m = advancePastPlatforms(t, m)
+	if len(m.hostPlatforms) == 0 {
+		t.Error("hostPlatforms should be set after platform selection")
 	}
 }
 
-func TestWizardFullFlow(t *testing.T) {
-	m := New(testConfig())
-	m.width = 80
-	m.height = 40
+func TestWizardPresetToPacksTransition(t *testing.T) {
+	m := sizedModel(testConfig())
+	m = advancePastPath(t, m)
+	m = advancePastPlatforms(t, m)
+	m = advancePastPreset(t, m)
+}
 
-	// Step 1: Select path
+func TestWizardFullFlow(t *testing.T) {
+	m := sizedModel(testConfig())
+	m = advancePastPath(t, m)
+	m = advancePastPlatforms(t, m)
+	m = advancePastPreset(t, m)
+	m = advancePastPacks(t, m)
+
+	// Confirm review
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	msg := cmd()
-	updated, _ := m.Update(msg)
-	m = updated.(Model)
-	if m.stage != stagePreset {
-		t.Fatalf("expected stagePreset, got %d", m.stage)
-	}
-
-	// Step 2: Select preset
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	msg = cmd()
-	updated, _ = m.Update(msg)
-	m = updated.(Model)
-	if m.stage != stagePacks {
-		t.Fatalf("expected stagePacks, got %d", m.stage)
-	}
-
-	// Step 3: Apply pack selection (press 'a')
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
-	msg = cmd()
-	updated, _ = m.Update(msg)
-	m = updated.(Model)
-	if m.stage != stageReview {
-		t.Fatalf("expected stageReview, got %d", m.stage)
-	}
-
-	// Step 4: Confirm review (Enter → reviewConfirmMsg → wizard converts to DoneMsg)
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	msg = cmd()
-	// reviewConfirmMsg goes back into wizard shell which produces DoneMsg
-	updated, cmd = m.Update(msg)
-	m = updated.(Model)
+	_, cmd = m.Update(msg)
 	if cmd == nil {
 		t.Fatal("expected DoneMsg command after review confirm")
 	}
@@ -143,13 +158,13 @@ func TestWizardFullFlow(t *testing.T) {
 	if done.Result.VaultPath == "" {
 		t.Error("DoneMsg should have vault path")
 	}
+	if len(done.Result.HostPlatforms) == 0 {
+		t.Error("DoneMsg should have host platforms")
+	}
 }
 
 func TestWizardEscAtPathGoesBack(t *testing.T) {
-	m := New(testConfig())
-	m.width = 80
-	m.height = 24
-
+	m := sizedModel(testConfig())
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	if cmd == nil {
 		t.Fatal("expected BackMsg command")
@@ -160,60 +175,45 @@ func TestWizardEscAtPathGoesBack(t *testing.T) {
 	}
 }
 
-func TestWizardPackCancelGoesBackToPreset(t *testing.T) {
-	m := New(testConfig())
-	m.width = 80
-	m.height = 40
+func TestWizardEscAtPlatformsGoesBackToPath(t *testing.T) {
+	m := sizedModel(testConfig())
+	m = advancePastPath(t, m)
 
-	// Get to packs stage
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	updated, _ := m.Update(cmd())
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m = updated.(Model)
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	updated, _ = m.Update(cmd())
-	m = updated.(Model)
-
-	if m.stage != stagePacks {
-		t.Fatalf("expected stagePacks, got %d", m.stage)
+	if m.stage != stagePath {
+		t.Errorf("expected stagePath after esc from platforms, got %d", m.stage)
 	}
+}
+
+func TestWizardPackCancelGoesBackToPreset(t *testing.T) {
+	m := sizedModel(testConfig())
+	m = advancePastPath(t, m)
+	m = advancePastPlatforms(t, m)
+	m = advancePastPreset(t, m)
 
 	// Cancel from packs (press 'q')
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	msg := cmd()
-	updated, _ = m.Update(msg)
+	updated, _ := m.Update(msg)
 	m = updated.(Model)
-
 	if m.stage != stagePreset {
 		t.Errorf("expected stagePreset after pack cancel, got %d", m.stage)
 	}
 }
 
 func TestWizardReviewBackGoesToPacks(t *testing.T) {
-	m := New(testConfig())
-	m.width = 80
-	m.height = 40
-
-	// Get to review stage
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	updated, _ := m.Update(cmd())
-	m = updated.(Model)
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	updated, _ = m.Update(cmd())
-	m = updated.(Model)
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
-	updated, _ = m.Update(cmd())
-	m = updated.(Model)
-
-	if m.stage != stageReview {
-		t.Fatalf("expected stageReview, got %d", m.stage)
-	}
+	m := sizedModel(testConfig())
+	m = advancePastPath(t, m)
+	m = advancePastPlatforms(t, m)
+	m = advancePastPreset(t, m)
+	m = advancePastPacks(t, m)
 
 	// Esc from review
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	msg := cmd()
-	updated, _ = m.Update(msg)
+	updated, _ := m.Update(msg)
 	m = updated.(Model)
-
 	if m.stage != stagePacks {
 		t.Errorf("expected stagePacks after review back, got %d", m.stage)
 	}
@@ -221,7 +221,7 @@ func TestWizardReviewBackGoesToPacks(t *testing.T) {
 
 func TestWizardAlwaysStartsAtPath(t *testing.T) {
 	config := testConfig()
-	config.StartAtStep = 1 // should be ignored — wizard always starts at path
+	config.StartAtStep = 1
 	m := New(config)
 	if m.stage != stagePath {
 		t.Errorf("expected stagePath regardless of StartAtStep, got %d", m.stage)
