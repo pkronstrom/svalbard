@@ -107,11 +107,7 @@ func (m Model) View() string {
 		ShowNumbers: true,
 	}
 
-	detail := tui.DetailPane{
-		Theme: m.theme,
-		Title: "Welcome",
-		Body:  "No vault found in the current directory.\nCreate a new vault or open an existing one to get started.",
-	}
+	detail := welcomeContext(welcomeDestinations[m.selected].id, m.theme)
 
 	footer := tui.FooterHints(
 		m.keys.MoveUp,
@@ -136,4 +132,23 @@ func (m Model) View() string {
 // Selected returns the current selection index (for testing).
 func (m Model) Selected() int {
 	return m.selected
+}
+
+func welcomeContext(id string, theme tui.Theme) tui.DetailPane {
+	d := tui.DetailPane{Theme: theme}
+	switch id {
+	case "new-vault":
+		d.Title = "New Vault"
+		d.Body = "Create a new offline knowledge vault.\nChoose a storage path, select target platforms,\npick a preset, and customize content."
+	case "open-vault":
+		d.Title = "Open Vault"
+		d.Body = "Point to an existing vault directory.\nThe vault must contain a manifest.yaml file."
+	case "browse":
+		d.Title = "Browse"
+		d.Body = "Explore the available content catalog.\nSee what encyclopedias, maps, tools, and\nreference material can be included in a vault."
+	default:
+		d.Title = "Welcome"
+		d.Body = "No vault found in the current directory.\nCreate a new vault or open an existing one."
+	}
+	return d
 }

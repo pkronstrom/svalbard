@@ -59,8 +59,9 @@ type Model struct {
 	height     int
 	theme      tui.Theme
 	keys       tui.KeyMap
-	status     *StatusData         // live vault status (nil until loaded)
-	loadStatus func() (StatusData, error) // callback to load status
+	status     *StatusData
+	loadStatus func() (StatusData, error)
+	showHelp   bool
 }
 
 // Config holds optional configuration for the dashboard.
@@ -115,7 +116,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Help overlay intercepts all keys
+		if m.showHelp {
+			if m.keys.Help.Matches(msg) || m.keys.Back.Matches(msg) || m.keys.Quit.Matches(msg) {
+				m.showHelp = false
+			}
+			return m, nil
+		}
+
 		switch {
+		case m.keys.Help.Matches(msg):
+			m.showHelp = true
+			return m, nil
 		case m.keys.ForceQuit.Matches(msg):
 			return m, tea.Quit
 		case m.keys.Quit.Matches(msg):

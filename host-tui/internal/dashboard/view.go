@@ -7,8 +7,26 @@ import (
 	"github.com/pkronstrom/svalbard/tui"
 )
 
+var dashboardHelp = []tui.HelpSection{
+	{Title: "Navigation", Bindings: []tui.HelpBinding{
+		{Key: "j/k", Desc: "Move up/down"},
+		{Key: "1-6", Desc: "Jump to item"},
+		{Key: "Enter", Desc: "Open selected screen"},
+	}},
+	{Title: "Actions", Bindings: []tui.HelpBinding{
+		{Key: "Esc", Desc: "Back / quit"},
+		{Key: "q", Desc: "Quit"},
+		{Key: "?", Desc: "Toggle this help"},
+		{Key: "Ctrl+C", Desc: "Force quit"},
+	}},
+}
+
 // View renders the two-pane dashboard layout.
 func (m Model) View() string {
+	if m.showHelp {
+		return tui.RenderHelp(m.theme, dashboardHelp)
+	}
+
 	// Build the navigation list from hostDestinations.
 	items := make([]tui.NavItem, len(hostDestinations))
 	for i, d := range hostDestinations {
@@ -30,13 +48,16 @@ func (m Model) View() string {
 	// Build the detail pane for the currently selected destination.
 	detail := contextForDestination(hostDestinations[m.selected].id, m)
 
-	// Footer key hints — override Enter label for host context.
+	// Footer key hints — override labels for host context.
 	enter := m.keys.Enter
 	enter.Label = "Enter: select"
+	help := m.keys.Help
+	help.Label = "?: help"
 	footer := tui.FooterHints(
 		m.keys.MoveUp,
 		enter,
 		m.keys.Back,
+		help,
 		m.keys.Quit,
 	)
 
@@ -61,5 +82,9 @@ func (m Model) ambientStatus() string {
 		return ""
 	}
 	s := m.status
-	return fmt.Sprintf("%d/%d synced", s.RealizedCount, s.DesiredCount)
+	status := fmt.Sprintf("%d/%d synced", s.RealizedCount, s.DesiredCount)
+	if s.DiskFreeGB > 0 {
+		status += fmt.Sprintf(" · %.0f GB free", s.DiskFreeGB)
+	}
+	return status
 }
