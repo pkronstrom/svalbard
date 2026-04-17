@@ -103,8 +103,8 @@ func TestDashboardRightPaneChangesWithSelection(t *testing.T) {
 	plain0 := stripAnsi(view0)
 	plain2 := stripAnsi(view2)
 
-	if !strings.Contains(plain0, "sync state") {
-		t.Errorf("selected=0 should show Status body, got:\n%s", plain0)
+	if !strings.Contains(plain0, "Status") {
+		t.Errorf("selected=0 should show Status title, got:\n%s", plain0)
 	}
 	if !strings.Contains(plain2, "reconcile") {
 		t.Errorf("selected=2 should show Plan body, got:\n%s", plain2)

@@ -16,9 +16,9 @@ type welcomeDestination struct {
 }
 
 var welcomeDestinations = []welcomeDestination{
-	{"new-vault", "New Vault", "full setup wizard"},
-	{"open-vault", "Open Vault", "point to existing vault"},
-	{"browse", "Browse", "explore available content & presets"},
+	{"new-vault", "New Vault", "setup wizard"},
+	{"open-vault", "Open Vault", "existing vault"},
+	{"browse", "Browse", "explore catalog"},
 }
 
 // SelectMsg is sent when the user activates a welcome destination.

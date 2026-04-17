@@ -67,7 +67,7 @@ func (s ShellLayout) renderWide(topBar, footer string) string {
 		rightStyle.Render(s.Right),
 	)
 
-	return lipgloss.JoinVertical(
+	out := lipgloss.JoinVertical(
 		lipgloss.Left,
 		topBar,
 		"",
@@ -75,6 +75,11 @@ func (s ShellLayout) renderWide(topBar, footer string) string {
 		"",
 		footer,
 	)
+
+	if s.Width > 0 && s.Height > 0 {
+		return lipgloss.Place(s.Width, s.Height, lipgloss.Left, lipgloss.Top, out)
+	}
+	return out
 }
 
 func (s ShellLayout) renderNarrow(topBar, footer string) string {
@@ -84,7 +89,7 @@ func (s ShellLayout) renderNarrow(topBar, footer string) string {
 	}
 	rightContent := s.Theme.Muted.Render(summary)
 
-	return lipgloss.JoinVertical(
+	out := lipgloss.JoinVertical(
 		lipgloss.Left,
 		topBar,
 		"",
@@ -94,6 +99,11 @@ func (s ShellLayout) renderNarrow(topBar, footer string) string {
 		"",
 		footer,
 	)
+
+	if s.Width > 0 && s.Height > 0 {
+		return lipgloss.Place(s.Width, s.Height, lipgloss.Left, lipgloss.Top, out)
+	}
+	return out
 }
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)

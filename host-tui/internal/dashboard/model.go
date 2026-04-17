@@ -19,12 +19,12 @@ const (
 type destination struct{ id, label, desc string }
 
 var hostDestinations = []destination{
-	{destStatus, "Status", "vault health & sync state"},
-	{destBrowse, "Browse", "explore & select content"},
-	{destPlan, "Plan", "preview pending changes"},
-	{destImport, "Import", "local files, URLs, YouTube"},
-	{destIndex, "Index", "keyword & semantic search"},
-	{destNewVault, "New Vault", "init wizard for another vault"},
+	{destStatus, "Status", "health & sync"},
+	{destBrowse, "Browse", "select content"},
+	{destPlan, "Plan", "pending changes"},
+	{destImport, "Import", "files & URLs"},
+	{destIndex, "Index", "search indexes"},
+	{destNewVault, "New Vault", "init wizard"},
 }
 
 // separatorBefore lists destination IDs that should have a separator above them.
