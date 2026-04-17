@@ -68,6 +68,8 @@ ENV MAGIC=/usr/share/misc/magic.mgc
 COPY --from=go-builder /usr/local/bin/zim-dither /usr/local/bin/
 COPY --from=go-builder /usr/local/bin/zim-compact /usr/local/bin/
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 RUN pip install --no-cache-dir \
     libzim \
     nautiluszim \

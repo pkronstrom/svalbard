@@ -19,10 +19,7 @@ import (
 //  3. Creates per-tool isolated venvs from the cache
 //  4. Generates wrapper scripts in bin/<platform>/
 func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
-	uv, err := findUV(root)
-	if err != nil {
-		return nil, err
-	}
+	uv := findUV(root)
 
 	// Collect python-package recipes that reference this venv AND are in the
 	// user's desired set. This prevents installing packages the user didn't select.
@@ -76,7 +73,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 		}
 		args = append(args, allPackages...)
 		fmt.Fprintf(os.Stderr, "  downloading wheels for %s...\n", platform)
-		if err := runUV(uv, args...); err != nil {
+		if err := uv.run(args...); err != nil {
 			return nil, fmt.Errorf("downloading wheels for %s: %w", platform, err)
 		}
 	}
@@ -89,7 +86,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 	}
 	args = append(args, allPackages...)
 	// Best-effort: some packages don't have pure-python wheels.
-	_ = runUV(uv, args...)
+	_ = uv.run(args...)
 
 	var entries []manifest.RealizedEntry
 
@@ -110,7 +107,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 		pythonBin := filepath.Join(platformDir, "bin", "python3")
 		if _, err := os.Stat(pythonBin); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "  installing python %s for %s...\n", pythonSpec, platform)
-			if err := runUV(uv, "python", "install", "--install-dir", pythonDir, pythonSpec); err != nil {
+			if err := uv.run("python", "install", "--install-dir", pythonDir, pythonSpec); err != nil {
 				return nil, fmt.Errorf("installing python for %s: %w", platform, err)
 			}
 
@@ -121,7 +118,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			}
 
 			// Create base venv.
-			if err := runUV(uv, "venv", platformDir, "--python", installedPython); err != nil {
+			if err := uv.run("venv", platformDir, "--python", installedPython); err != nil {
 				return nil, fmt.Errorf("creating venv for %s: %w", platform, err)
 			}
 		}
@@ -135,7 +132,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				fmt.Fprintf(os.Stderr, "  creating venv for %s (%s)...\n", pkg.ID, platform)
 
 				// Create tool venv using the platform's python.
-				if err := runUV(uv, "venv", toolDir, "--python", pythonBin); err != nil {
+				if err := uv.run("venv", toolDir, "--python", pythonBin); err != nil {
 					return nil, fmt.Errorf("creating venv for %s/%s: %w", pkg.ID, platform, err)
 				}
 
@@ -147,7 +144,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 					"--find-links", cacheDir,
 				}
 				installArgs = append(installArgs, pkg.Packages...)
-				if err := runUV(uv, installArgs...); err != nil {
+				if err := uv.run(installArgs...); err != nil {
 					return nil, fmt.Errorf("installing %s for %s: %w", pkg.ID, platform, err)
 				}
 			}
@@ -191,22 +188,41 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 	return entries, nil
 }
 
-// findUV locates the uv binary: first on the drive, then on PATH.
-func findUV(root string) (string, error) {
+// uvRunner abstracts uv execution — either local binary or Docker.
+type uvRunner struct {
+	local string // path to local uv binary, empty = use Docker
+	root  string // vault root (for Docker volume mount)
+}
+
+// findUV locates uv: drive → PATH → Docker fallback.
+func findUV(root string) uvRunner {
 	platform := hostPlatformStr()
 	drivePath := filepath.Join(root, "bin", platform, "uv")
 	if _, err := os.Stat(drivePath); err == nil {
-		return drivePath, nil
+		return uvRunner{local: drivePath, root: root}
 	}
 	if path, err := exec.LookPath("uv"); err == nil {
-		return path, nil
+		return uvRunner{local: path, root: root}
 	}
-	return "", fmt.Errorf("uv not found (install it or include the uv recipe in your preset)")
+	// Docker fallback — svalbard-tools container has uv installed.
+	return uvRunner{root: root}
 }
 
-// runUV executes a uv subcommand, forwarding stderr for progress output.
-func runUV(uvPath string, args ...string) error {
-	cmd := exec.Command(uvPath, args...)
+// run executes a uv subcommand via local binary or Docker.
+func (u uvRunner) run(args ...string) error {
+	var cmd *exec.Cmd
+	if u.local != "" {
+		cmd = exec.Command(u.local, args...)
+	} else {
+		dockerArgs := []string{
+			"run", "--rm",
+			"-v", u.root + ":/vault",
+			"svalbard-tools",
+			"uv",
+		}
+		dockerArgs = append(dockerArgs, args...)
+		cmd = exec.Command("docker", dockerArgs...)
+	}
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stderr
 	if err := cmd.Run(); err != nil {
