@@ -112,14 +112,14 @@ func TestPackPickerExpandCollapse(t *testing.T) {
 	m = sendKey(m, "enter")
 
 	out := stripAnsi(m.View())
-	if !strings.Contains(out, "Wikipedia Civilization") {
+	if !strings.Contains(out, "wikiciv") {
 		t.Errorf("After Enter on pack, individual sources should be visible; got:\n%s", out)
 	}
 
 	// Enter again collapses
 	m = sendKey(m, "enter")
 	out = stripAnsi(m.View())
-	if strings.Contains(out, "Wikipedia Civilization") {
+	if strings.Contains(out, "wikiciv") {
 		t.Errorf("After second Enter on pack, individual sources should be hidden; got:\n%s", out)
 	}
 }

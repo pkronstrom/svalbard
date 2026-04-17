@@ -390,11 +390,7 @@ func (m packPickerModel) View() string {
 			if m.checkedIDs[src.ID] {
 				mark = "☑"
 			}
-			label := src.Description
-			if label == "" {
-				label = src.ID
-			}
-			line := fmt.Sprintf("        %s%s %s  %s", prefix, mark, label, formatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("        %s%s %s  %s", prefix, mark, src.ID, formatSizeGB(src.SizeGB))
 			if isCursor {
 				b.WriteString(m.theme.Selected.Render(line))
 			} else if m.checkedIDs[src.ID] {
