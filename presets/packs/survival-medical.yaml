@@ -14,6 +14,8 @@ sources:
 - nhs-medicines
 - cdc-travelers-health
 - librepathology
+- medlineplus
+- wikipedia-en-medicine-compact
 #
 # ── TODO: Hesperian HealthWiki (scrape/PDF, highest priority) ──
 # where-there-is-no-doctor   # ~30 MB, CC BY-NC, foundational
