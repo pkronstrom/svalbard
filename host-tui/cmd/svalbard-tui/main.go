@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -20,6 +22,19 @@ func main() {
 }
 
 func run() error {
+	// Set up file-only logging (TUI owns stderr).
+	logPath := filepath.Join(os.TempDir(), "svalbard.log")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err == nil {
+		if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+			level := slog.LevelInfo
+			if os.Getenv("SVALBARD_DEBUG") != "" {
+				level = slog.LevelDebug
+			}
+			slog.SetDefault(slog.New(slog.NewJSONHandler(f, &slog.HandlerOptions{Level: level})))
+			defer f.Close()
+		}
+	}
+
 	// Check for init subcommand
 	if len(os.Args) > 1 && os.Args[1] == "init" {
 		prefillPath := ""
