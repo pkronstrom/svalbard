@@ -241,7 +241,7 @@ func detectCapabilities(driveRoot, dbPath, sqliteBin string) (Capabilities, int,
 		return caps, 0, 0, err
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) < 5 {
+	if len(lines) < 4 {
 		return caps, 0, 0, fmt.Errorf("unexpected sqlite output: %q", string(out))
 	}
 	sourceCount, _ := strconv.Atoi(strings.TrimSpace(lines[0]))
@@ -252,7 +252,10 @@ func detectCapabilities(driveRoot, dbPath, sqliteBin string) (Capabilities, int,
 		caps.HasEmbeddings = true
 		caps.HasEmbeddingData = embedCount > 0
 	}
-	caps.EmbeddingModelID = strings.TrimSpace(lines[4])
+	// Line 5 (embedding_model) may be empty and trimmed away.
+	if len(lines) > 4 {
+		caps.EmbeddingModelID = strings.TrimSpace(lines[4])
+	}
 
 	if _, err := drivebinary.Resolve("llama-server", driveRoot, platform.Detect); err == nil {
 		caps.HasLlamaServer = true

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
@@ -62,25 +64,33 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return err
 	}
 
-	args := []string{"--port", fmt.Sprintf("%d", port)}
-	args = buildKiwixArgs(port, targets)
+	args := buildKiwixArgs(port, targets)
+	var stderrBuf strings.Builder
 	cmd := exec.CommandContext(ctx, kiwixBin, args...)
 	cmd.Stdout = stdout
-	cmd.Stderr = stdout
+	cmd.Stderr = io.MultiWriter(stdout, &stderrBuf)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 
+	// Wait for kiwix-serve to be ready before opening the browser.
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- cmd.Wait() }()
+
 	url := fmt.Sprintf("http://localhost:%d", port)
+	if err := waitHealthy(ctx, url, waitCh); err != nil {
+		// Process already exited — include its output in the error.
+		detail := strings.TrimSpace(stderrBuf.String())
+		if detail != "" {
+			return fmt.Errorf("kiwix-serve failed: %s", detail)
+		}
+		return fmt.Errorf("kiwix-serve failed: %w", err)
+	}
+
 	if err := opener(url); err != nil {
 		fmt.Fprintf(stdout, "  Open: %s\n", url)
 	}
 	fmt.Fprintf(stdout, "Kiwix: %s\n", url)
-
-	waitCh := make(chan error, 1)
-	go func() {
-		waitCh <- cmd.Wait()
-	}()
 
 	select {
 	case <-ctx.Done():
@@ -90,6 +100,36 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return <-waitCh
 	case err := <-waitCh:
 		return err
+	}
+}
+
+// waitHealthy polls the kiwix-serve URL until it responds or the process exits.
+func waitHealthy(ctx context.Context, url string, exitCh <-chan error) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.After(15 * time.Second)
+	tick := time.NewTicker(300 * time.Millisecond)
+	defer tick.Stop()
+
+	for {
+		select {
+		case err := <-exitCh:
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("kiwix-serve exited immediately")
+		case <-deadline:
+			return fmt.Errorf("kiwix-serve not ready after 15s")
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tick.C:
+			resp, err := client.Get(url)
+			if err == nil {
+				resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					return nil
+				}
+			}
+		}
 	}
 }
 

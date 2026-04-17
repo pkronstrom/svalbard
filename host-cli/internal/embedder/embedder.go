@@ -27,9 +27,10 @@ const (
 
 // Server manages a llama-server subprocess running in embedding mode.
 type Server struct {
-	proc *exec.Cmd
-	host string
-	port int
+	proc   *exec.Cmd
+	host   string
+	port   int
+	stderr *bytes.Buffer
 }
 
 // StartServer launches llama-server with the given model in embedding mode.
@@ -47,7 +48,8 @@ func StartServer(ctx context.Context, modelPath, driveRoot string) (*Server, err
 		return nil, fmt.Errorf("embedder: find free port: %w", err)
 	}
 
-	s := &Server{host: defaultHost, port: port}
+	var stderrBuf bytes.Buffer
+	s := &Server{host: defaultHost, port: port, stderr: &stderrBuf}
 	s.proc = exec.CommandContext(ctx, bin,
 		"--model", modelPath,
 		"--port", fmt.Sprintf("%d", s.port),
@@ -57,7 +59,7 @@ func StartServer(ctx context.Context, modelPath, driveRoot string) (*Server, err
 		"--batch-size", "4096",
 	)
 	s.proc.Stdout = nil
-	s.proc.Stderr = nil
+	s.proc.Stderr = &stderrBuf
 
 	if err := s.proc.Start(); err != nil {
 		return nil, fmt.Errorf("embedder: start llama-server: %w", err)
@@ -74,6 +76,8 @@ func StartServer(ctx context.Context, modelPath, driveRoot string) (*Server, err
 func (s *Server) Stop() {
 	if s.proc != nil && s.proc.Process != nil {
 		_ = s.proc.Process.Kill()
+		// Wait may have already been called by waitHealthy's exit detector;
+		// calling it again is harmless (returns "wait: already waited").
 		_ = s.proc.Wait()
 	}
 }
@@ -160,7 +164,24 @@ func (s *Server) waitHealthy() error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(healthTimeout)
 
+	// Channel to detect early process exit.
+	exited := make(chan error, 1)
+	go func() { exited <- s.proc.Wait() }()
+
 	for time.Now().Before(deadline) {
+		select {
+		case err := <-exited:
+			detail := strings.TrimSpace(s.stderr.String())
+			if len(detail) > 300 {
+				detail = detail[len(detail)-300:]
+			}
+			if detail != "" {
+				return fmt.Errorf("embedder: llama-server exited (%v): %s", err, detail)
+			}
+			return fmt.Errorf("embedder: llama-server exited: %v", err)
+		default:
+		}
+
 		resp, err := client.Get(url)
 		if err == nil {
 			resp.Body.Close()
@@ -169,6 +190,14 @@ func (s *Server) waitHealthy() error {
 			}
 		}
 		time.Sleep(500 * time.Millisecond)
+	}
+
+	detail := strings.TrimSpace(s.stderr.String())
+	if len(detail) > 300 {
+		detail = detail[len(detail)-300:]
+	}
+	if detail != "" {
+		return fmt.Errorf("embedder: llama-server not healthy after %s: %s", healthTimeout, detail)
 	}
 	return fmt.Errorf("embedder: llama-server not healthy after %s", healthTimeout)
 }
