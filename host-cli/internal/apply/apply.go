@@ -21,15 +21,6 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/toolkit"
 )
 
-// buildNative dispatches to a Go-native builder by family name.
-func buildNative(root, family string, recipe catalog.Item, cat *catalog.Catalog, platforms []string) ([]manifest.RealizedEntry, error) {
-	fn, ok := builder.Dispatch(family)
-	if !ok {
-		return nil, fmt.Errorf("no native builder for family %q", family)
-	}
-	return fn(root, recipe, cat, platforms)
-}
-
 // ProgressFunc reports per-item progress during apply. May be nil.
 type ProgressFunc func(id, status string)
 
@@ -101,7 +92,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 
 		case recipe.Strategy == "build" && recipe.Build != nil:
 			// Try Go-native builder first, fall through to Docker.
-			if nativeFn, ok := builder.Dispatch(recipe.Build.Family); ok {
+			if nativeFn, ok := builder.Dispatch(recipe); ok {
 				entries, err := nativeFn(root, recipe, cat, m.Desired.Options.HostPlatforms)
 				if err != nil {
 					progress(id, "failed")

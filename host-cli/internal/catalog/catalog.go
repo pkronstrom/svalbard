@@ -36,11 +36,63 @@ type Item struct {
 }
 
 // BuildSpec describes how to build a recipe from source data.
+// Arbitrary key-value pairs (bbox, maxzoom, etc.) are captured in Config
+// and available as template variables in pipeline steps.
 type BuildSpec struct {
-	Family    string `yaml:"family"`
-	SourceURL string `yaml:"source_url,omitempty"`
-	Output    string `yaml:"output,omitempty"`
-	Builder   string `yaml:"builder,omitempty"`
+	Family    string            `yaml:"family,omitempty"`
+	SourceURL string            `yaml:"source_url,omitempty"`
+	Output    string            `yaml:"output,omitempty"`
+	Builder   string            `yaml:"builder,omitempty"`
+	Steps     []BuildStep       `yaml:"steps,omitempty"`
+	Config    map[string]string `yaml:"-"` // populated from remaining YAML keys
+}
+
+// UnmarshalYAML captures known fields and puts the rest into Config.
+func (b *BuildSpec) UnmarshalYAML(value *yaml.Node) error {
+	// Decode known fields via an alias to avoid recursion.
+	type plain BuildSpec
+	if err := value.Decode((*plain)(b)); err != nil {
+		return err
+	}
+
+	// Capture all keys into a raw map, then extract unknown ones into Config.
+	var raw map[string]yaml.Node
+	if err := value.Decode(&raw); err != nil {
+		return nil // non-fatal: known fields already decoded
+	}
+
+	known := map[string]bool{
+		"family": true, "source_url": true, "output": true,
+		"builder": true, "steps": true,
+	}
+	for k, v := range raw {
+		if known[k] {
+			continue
+		}
+		if b.Config == nil {
+			b.Config = make(map[string]string)
+		}
+		var s string
+		if err := v.Decode(&s); err != nil {
+			// Non-string values (arrays, maps) — skip for template vars.
+			continue
+		}
+		b.Config[k] = s
+	}
+	return nil
+}
+
+// BuildStep is a single action in a build pipeline.
+// Exactly one of Download, Extract, Exec, or Verify should be set.
+type BuildStep struct {
+	Download string   `yaml:"download,omitempty"` // URL to fetch
+	Extract  string   `yaml:"extract,omitempty"`  // archive path to unpack
+	Exec     string   `yaml:"exec,omitempty"`     // tool name to run
+	Verify   string   `yaml:"verify,omitempty"`   // path to check exists
+	Args     []string `yaml:"args,omitempty"`      // arguments for exec
+	Dest     string   `yaml:"dest,omitempty"`      // destination for download/extract
+	NotEmpty bool     `yaml:"not_empty,omitempty"` // verify: directory must have files
+	MinSize  int64    `yaml:"min_size,omitempty"`  // verify: minimum file size in bytes
 }
 
 // ViewerSpec describes how a recipe should be presented in a viewer.
