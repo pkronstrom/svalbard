@@ -143,9 +143,8 @@ func firstChatModel(driveRoot string) (string, error) {
 		return "", err
 	}
 	for _, model := range models {
-		base := strings.ToLower(filepath.Base(model))
-		if strings.Contains(base, "embed") || strings.Contains(base, "nomic-embed") ||
-			strings.Contains(base, "bge-") || strings.Contains(base, "e5-") || strings.Contains(base, "arctic-embed") {
+		base := filepath.Base(model)
+		if strings.HasPrefix(base, "._") {
 			continue
 		}
 		return model, nil

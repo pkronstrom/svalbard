@@ -329,7 +329,7 @@ func (m Model) semanticDetail() tui.DetailPane {
 		Theme: m.theme,
 		Title: "Semantic search",
 		Fields: []tui.DetailField{
-			{Label: "Engine", Value: "nomic-embed-text-v1.5"},
+			{Label: "Engine", Value: "GGUF embedding model"},
 			{Label: "Enabled", Value: enabledStr},
 			{Label: "Status", Value: statusStr},
 		},

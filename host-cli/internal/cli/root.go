@@ -357,6 +357,7 @@ func buildWizardConfig(prefillPath string) (hosttui.WizardConfig, error) {
 			pack.Sources = append(pack.Sources, hosttui.PackSource{
 				ID:          item.ID,
 				Type:        item.Type,
+				Strategy:    item.Strategy,
 				Description: item.Description,
 				SizeGB:      item.SizeGB,
 			})
@@ -565,16 +566,13 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 				}
 			}
 		}
-		// Check for embedding model presence
-		modelDir := filepath.Join(root, "models")
-		if entries, err := os.ReadDir(modelDir); err == nil {
+		// Check for embedding model presence in models/embed/
+		embedDir := filepath.Join(root, "models", "embed")
+		if entries, err := os.ReadDir(embedDir); err == nil {
 			for _, e := range entries {
-				if !e.IsDir() && len(e.Name()) > 0 {
-					// Check for nomic embed model
-					if strings.Contains(e.Name(), "nomic") && strings.Contains(e.Name(), "embed") {
-						status.SemanticEnabled = true
-						break
-					}
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".gguf") {
+					status.SemanticEnabled = true
+					break
 				}
 			}
 		}

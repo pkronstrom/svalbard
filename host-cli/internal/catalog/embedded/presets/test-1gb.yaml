@@ -17,5 +17,5 @@ sources:
 - 7z
 - sqliteviz
 - sqlite3
-- nomic-embed-text-v1.5
+- all-minilm-l6-v2
 - dufs

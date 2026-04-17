@@ -10,9 +10,9 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/agent"
 )
 
-func TestResolveModelSkipsEmbeddingModelsByDefault(t *testing.T) {
+func TestResolveModelSkipsMacResourceForks(t *testing.T) {
 	driveRoot := t.TempDir()
-	mustWriteModel(t, driveRoot, "bge-small.gguf")
+	mustWriteModel(t, driveRoot, "._qwen.gguf")
 	mustWriteModel(t, driveRoot, "qwen.gguf")
 
 	got, err := agent.ResolveModel(driveRoot, "")

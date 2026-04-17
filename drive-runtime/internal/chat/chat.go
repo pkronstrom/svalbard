@@ -36,12 +36,8 @@ func ResolveModel(driveRoot, selected string) (string, error) {
 	}
 	filtered := models[:0]
 	for _, model := range models {
-		base := strings.ToLower(filepath.Base(model))
+		base := filepath.Base(model)
 		if strings.HasPrefix(base, "._") {
-			continue
-		}
-		if strings.Contains(base, "embed") || strings.Contains(base, "nomic-embed") ||
-			strings.Contains(base, "bge-") || strings.Contains(base, "e5-") || strings.Contains(base, "arctic-embed") {
 			continue
 		}
 		filtered = append(filtered, model)

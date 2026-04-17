@@ -8,9 +8,9 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/chat"
 )
 
-func TestResolveModelSkipsEmbeddingModelsByDefault(t *testing.T) {
+func TestResolveModelSkipsMacResourceForks(t *testing.T) {
 	driveRoot := t.TempDir()
-	mustWriteModel(t, driveRoot, "nomic-embed-text.gguf")
+	mustWriteModel(t, driveRoot, "._gemma.gguf")
 	mustWriteModel(t, driveRoot, "gemma.gguf")
 
 	got, err := chat.ResolveModel(driveRoot, "")
