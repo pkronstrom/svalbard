@@ -2,8 +2,11 @@ package wizard
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/filepicker"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkronstrom/svalbard/tui"
 )
@@ -28,8 +31,8 @@ type pathOption struct {
 type pathPickerModel struct {
 	options     []pathOption
 	cursor      int
-	customInput bool   // true when in custom path text entry mode
-	inputBuffer string // text typed during custom input mode
+	customInput bool // true when browsing for a custom path
+	picker      filepicker.Model
 	width       int
 	height      int
 	theme       tui.Theme
@@ -86,6 +89,27 @@ func newPathPicker(volumes []Volume, home Volume, prefill string) pathPickerMode
 	}
 }
 
+func newFilePicker() filepicker.Model {
+	fp := filepicker.New()
+	fp.CurrentDirectory, _ = os.UserHomeDir()
+	fp.DirAllowed = true
+	fp.FileAllowed = false
+	fp.ShowPermissions = false
+	fp.ShowSize = false
+	fp.ShowHidden = false
+	fp.AutoHeight = false
+	fp.Cursor = ">"
+
+	// Remove esc from the filepicker's Back binding so we handle it
+	// ourselves to exit the file browser back to the list.
+	fp.KeyMap.Back = key.NewBinding(
+		key.WithKeys("h", "backspace", "left"),
+		key.WithHelp("h", "back"),
+	)
+
+	return fp
+}
+
 // Init satisfies tea.Model. No initial command is needed.
 func (m pathPickerModel) Init() tea.Cmd {
 	return nil
@@ -97,13 +121,27 @@ func (m pathPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.customInput {
+			pickerHeight := msg.Height - 7
+			if pickerHeight < 4 {
+				pickerHeight = 4
+			}
+			m.picker.SetHeight(pickerHeight)
+		}
 		return m, nil
 
 	case tea.KeyMsg:
 		if m.customInput {
-			return m.updateCustomInput(msg)
+			return m.updateFilePicker(msg)
 		}
 		return m.updateList(msg)
+	}
+
+	if m.customInput {
+		// Forward non-key messages (readDirMsg etc.) to the filepicker.
+		var cmd tea.Cmd
+		m.picker, cmd = m.picker.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -131,8 +169,13 @@ func (m pathPickerModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		opt := m.options[m.cursor]
 		if opt.custom {
 			m.customInput = true
-			m.inputBuffer = ""
-			return m, nil
+			m.picker = newFilePicker()
+			pickerHeight := m.height - 7
+			if pickerHeight < 4 {
+				pickerHeight = 4
+			}
+			m.picker.SetHeight(pickerHeight)
+			return m, m.picker.Init()
 		}
 		return m, func() tea.Msg {
 			return pathDoneMsg{path: opt.path, freeGB: opt.freeGB}
@@ -142,44 +185,36 @@ func (m pathPickerModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateCustomInput handles key input when in custom path text entry mode.
-func (m pathPickerModel) updateCustomInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// updateFilePicker handles key input when browsing for a custom path.
+func (m pathPickerModel) updateFilePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.keys.ForceQuit.Matches(msg):
 		return m, tea.Quit
 
-	case msg.Type == tea.KeyEscape:
+	case m.keys.Back.Matches(msg):
+		// Esc exits the file browser back to the list.
 		m.customInput = false
-		m.inputBuffer = ""
-		return m, nil
-
-	case msg.Type == tea.KeyEnter:
-		path := m.inputBuffer
-		if path != "" {
-			return m, func() tea.Msg {
-				return pathDoneMsg{path: path, freeGB: 0}
-			}
-		}
-		return m, nil
-
-	case msg.Type == tea.KeyBackspace:
-		if runes := []rune(m.inputBuffer); len(runes) > 0 {
-			m.inputBuffer = string(runes[:len(runes)-1])
-		}
-		return m, nil
-
-	case msg.Type == tea.KeyRunes:
-		m.inputBuffer += string(msg.Runes)
 		return m, nil
 	}
 
-	return m, nil
+	// Forward to filepicker.
+	var cmd tea.Cmd
+	m.picker, cmd = m.picker.Update(msg)
+
+	// Check if user selected a directory.
+	if didSelect, path := m.picker.DidSelectFile(msg); didSelect {
+		return m, func() tea.Msg {
+			return pathDoneMsg{path: path, freeGB: 0}
+		}
+	}
+
+	return m, cmd
 }
 
 // View renders the path picker UI.
 func (m pathPickerModel) View() string {
 	if m.customInput {
-		return m.viewCustomInput()
+		return m.viewFilePicker()
 	}
 	return m.viewList()
 }
@@ -228,15 +263,17 @@ func (m pathPickerModel) viewList() string {
 	return b.String()
 }
 
-// viewCustomInput renders the custom path text entry UI.
-func (m pathPickerModel) viewCustomInput() string {
+// viewFilePicker renders the file picker for custom path selection.
+func (m pathPickerModel) viewFilePicker() string {
 	var b strings.Builder
 
-	b.WriteString("  Enter path: ")
-	b.WriteString(m.inputBuffer)
-	b.WriteString("\u2588") // block cursor character
+	b.WriteString(m.theme.Muted.Render("Select a directory for the new vault"))
+	b.WriteString("\n")
+	b.WriteString(m.theme.Section.Render(m.picker.CurrentDirectory))
 	b.WriteString("\n\n")
-	b.WriteString(m.theme.Muted.Render("  Press Enter to confirm, Esc to cancel"))
+	b.WriteString(m.picker.View())
+	b.WriteString("\n")
+	b.WriteString(m.theme.Muted.Render("Enter: select | h/←: parent | Esc: cancel"))
 
 	return b.String()
 }

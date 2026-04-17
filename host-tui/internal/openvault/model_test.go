@@ -21,55 +21,6 @@ func sizedModel() Model {
 	return result.(Model)
 }
 
-func TestOpenVaultShowsInput(t *testing.T) {
-	m := sizedModel()
-	out := stripAnsi(m.View())
-
-	if !strings.Contains(out, "Path:") {
-		t.Errorf("View() should contain 'Path:', got:\n%s", out)
-	}
-}
-
-func TestOpenVaultTypeAndBackspace(t *testing.T) {
-	m := sizedModel()
-
-	// Type "/tmp"
-	for _, r := range "/tmp" {
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		m = result.(Model)
-	}
-
-	if m.input != "/tmp" {
-		t.Errorf("after typing '/tmp', expected input='/tmp', got %q", m.input)
-	}
-
-	// Backspace once
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
-	m = result.(Model)
-
-	if m.input != "/tm" {
-		t.Errorf("after backspace, expected input='/tm', got %q", m.input)
-	}
-
-	// Backspace three more times to empty
-	for i := 0; i < 3; i++ {
-		result, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
-		m = result.(Model)
-	}
-
-	if m.input != "" {
-		t.Errorf("after clearing input, expected empty string, got %q", m.input)
-	}
-
-	// Backspace on empty should not panic
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
-	m = result.(Model)
-
-	if m.input != "" {
-		t.Errorf("backspace on empty input should remain empty, got %q", m.input)
-	}
-}
-
 func TestOpenVaultEscEmitsBack(t *testing.T) {
 	m := sizedModel()
 
@@ -85,35 +36,57 @@ func TestOpenVaultEscEmitsBack(t *testing.T) {
 	}
 }
 
-func TestOpenVaultInvalidPath(t *testing.T) {
+func TestOpenVaultQEmitsBack(t *testing.T) {
 	m := sizedModel()
 
-	// Type a path that almost certainly does not have a manifest.yaml.
-	path := "/tmp/svalbard-nonexistent-test-dir-12345"
-	for _, r := range path {
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		m = result.(Model)
+	q := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	_, cmd := m.Update(q)
+	if cmd == nil {
+		t.Fatal("pressing q should produce a command")
 	}
 
-	// Press Enter to validate.
-	enter := tea.KeyMsg{Type: tea.KeyEnter}
-	result, cmd := m.Update(enter)
-	m = result.(Model)
-
-	// Should not emit a command (validation failed).
-	if cmd != nil {
-		t.Error("enter with invalid path should not produce a command")
+	msg := cmd()
+	if _, ok := msg.(BackMsg); !ok {
+		t.Errorf("q should produce BackMsg, got %T", msg)
 	}
+}
 
-	// Should have an error message.
-	if m.errMsg == "" {
-		t.Fatal("errMsg should be set after invalid path submission")
-	}
-
-	// Error should be visible in the View (may be line-wrapped, so check a
-	// short unique fragment instead of the full message).
+func TestOpenVaultShowsCurrentDirectory(t *testing.T) {
+	m := sizedModel()
 	out := stripAnsi(m.View())
-	if !strings.Contains(out, "manifest.yaml") {
-		t.Errorf("View() should contain 'manifest.yaml' error text, got:\n%s", out)
+
+	// The view should show the current directory path.
+	if !strings.Contains(out, m.picker.CurrentDirectory) {
+		t.Errorf("View() should contain current directory %q, got:\n%s", m.picker.CurrentDirectory, out)
+	}
+}
+
+func TestOpenVaultShowsOpenVaultStatus(t *testing.T) {
+	m := sizedModel()
+	out := stripAnsi(m.View())
+
+	if !strings.Contains(out, "open vault") {
+		t.Errorf("View() should contain 'open vault' status, got:\n%s", out)
+	}
+}
+
+func TestOpenVaultDirOnlyMode(t *testing.T) {
+	m := New()
+
+	if !m.picker.DirAllowed {
+		t.Error("filepicker should allow directory selection")
+	}
+	if m.picker.FileAllowed {
+		t.Error("filepicker should not allow file selection")
+	}
+}
+
+func TestOpenVaultValidateNoManifest(t *testing.T) {
+	m := sizedModel()
+
+	// Validate a path that certainly has no manifest.yaml.
+	cmd := m.validate("/tmp")
+	if cmd != nil {
+		t.Error("validate should return nil cmd for path without manifest.yaml")
 	}
 }

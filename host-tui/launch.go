@@ -127,6 +127,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openVault = openvault.New()
 			return m, m.sendSize()
 		case "browse":
+			m.prevScreen = screenWelcome
 			m.screen = screenBrowse
 			m.browse = m.newBrowse(true) // read-only
 			return m, m.sendSize()
@@ -142,6 +143,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dashboard.SelectMsg:
 		switch msg.ID {
 		case "browse":
+			m.prevScreen = screenDashboard
 			m.screen = screenBrowse
 			m.browse = m.newBrowse(false)
 			return m, m.sendSize()
@@ -182,12 +184,10 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// --- Browse messages ---
 	case browse.BackMsg:
-		m.screen = screenDashboard
-		return m, m.sendSize()
+		return m, m.returnFromBrowse()
 
 	case browse.SavedMsg:
-		m.screen = screenDashboard
-		return m, m.sendSize()
+		return m, m.returnFromBrowse()
 
 	// --- Plan messages ---
 	case plan.BackMsg:
@@ -296,6 +296,17 @@ func (m *appModel) sendSize() tea.Cmd {
 	return func() tea.Msg {
 		return tea.WindowSizeMsg{Width: w, Height: h}
 	}
+}
+
+// returnFromBrowse restores the screen the user was on before entering Browse.
+func (m *appModel) returnFromBrowse() tea.Cmd {
+	if m.prevScreen == screenWelcome {
+		m.screen = screenWelcome
+		m.welcome = welcome.New()
+	} else {
+		m.screen = screenDashboard
+	}
+	return m.sendSize()
 }
 
 func (m *appModel) defaultWizardConfig() WizardConfig {
