@@ -2,6 +2,7 @@ package apply
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -97,7 +98,7 @@ func TestApplyDownloadsRealFiles(t *testing.T) {
 	cat := newTestCatalogWithURL(t, "test-item", "zim", "http://example.test/test.zim")
 
 	plan := planner.Plan{ToDownload: []string{"test-item"}}
-	if err := Run(root, &m, plan, cat); err != nil {
+	if err := Run(context.Background(), root, &m, plan, cat); err != nil {
 		t.Fatal(err)
 	}
 
@@ -161,7 +162,7 @@ func TestApplyRemovesFiles(t *testing.T) {
 	}
 
 	plan := planner.Plan{ToRemove: []string{"old-item"}}
-	if err := Run(root, &m, plan, cat); err != nil {
+	if err := Run(context.Background(), root, &m, plan, cat); err != nil {
 		t.Fatal(err)
 	}
 
@@ -192,7 +193,7 @@ func TestApplyRemoveMissingFileIsNotError(t *testing.T) {
 	}
 
 	plan := planner.Plan{ToRemove: []string{"gone-item"}}
-	if err := Run(root, &m, plan, cat); err != nil {
+	if err := Run(context.Background(), root, &m, plan, cat); err != nil {
 		t.Fatalf("should not error on missing file: %v", err)
 	}
 
@@ -216,7 +217,7 @@ func TestApplyIsIdempotent(t *testing.T) {
 	if len(plan1.ToDownload) != 1 {
 		t.Fatalf("expected 1 download in first plan, got %d", len(plan1.ToDownload))
 	}
-	if err := Run(root, &m, plan1, cat); err != nil {
+	if err := Run(context.Background(), root, &m, plan1, cat); err != nil {
 		t.Fatalf("first Run returned error: %v", err)
 	}
 
@@ -249,7 +250,7 @@ func TestApplyUsesRecipeFilename(t *testing.T) {
 	m.Desired.Items = []string{"custom"}
 
 	plan := planner.Plan{ToDownload: []string{"custom"}}
-	if err := Run(root, &m, plan, cat); err != nil {
+	if err := Run(context.Background(), root, &m, plan, cat); err != nil {
 		t.Fatal(err)
 	}
 
@@ -274,7 +275,7 @@ func TestApplyGeneratesOfflineMapViewerForPMTiles(t *testing.T) {
 
 	cat := newTestCatalogWithURL(t, "osm", "pmtiles", "http://example.test/osm.pmtiles")
 	plan := planner.Plan{ToDownload: []string{"osm"}}
-	if err := Run(root, &m, plan, cat); err != nil {
+	if err := Run(context.Background(), root, &m, plan, cat); err != nil {
 		t.Fatal(err)
 	}
 
@@ -316,7 +317,7 @@ func TestApplyRemovesMapViewerWhenNoPMTilesRemain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Run(root, &m, plan, cat); err != nil {
+	if err := Run(context.Background(), root, &m, plan, cat); err != nil {
 		t.Fatal(err)
 	}
 

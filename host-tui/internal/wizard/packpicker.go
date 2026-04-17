@@ -68,7 +68,7 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		// 'a' shortcut → done.
-		case matchRune(msg, 'a'):
+		case tui.MatchRune(msg, 'a'):
 			selected := make(map[string]bool, len(m.picker.CheckedIDs))
 			for id, v := range m.picker.CheckedIDs {
 				if v {
@@ -88,10 +88,6 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// matchRune checks if a key message is a specific rune.
-func matchRune(msg tea.KeyMsg, r rune) bool {
-	return msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == r
-}
 
 // View renders the pack picker.
 func (m packPickerModel) View() string {

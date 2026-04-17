@@ -66,7 +66,7 @@ func buildPipeline(root string, recipe catalog.Item, _ *catalog.Catalog, opts Op
 		switch {
 		case step.Download != "":
 			report(fmt.Sprintf("downloading %s", filepath.Base(resolve(step.Dest, vars))))
-			if err := stepDownload(resolve(step.Download, vars), resolve(step.Dest, vars)); err != nil {
+			if err := stepDownload(ctx, resolve(step.Download, vars), resolve(step.Dest, vars)); err != nil {
 				return nil, fmt.Errorf("step %d (download): %w", i+1, err)
 			}
 		case step.Extract != "":
@@ -129,7 +129,7 @@ func resolve(s string, vars map[string]string) string {
 }
 
 // stepDownload fetches a URL to a local path.
-func stepDownload(url, dest string) error {
+func stepDownload(ctx context.Context, url, dest string) error {
 	if url == "" {
 		return fmt.Errorf("empty download URL")
 	}
@@ -140,7 +140,7 @@ func stepDownload(url, dest string) error {
 		return err
 	}
 	slog.Info("downloading", "file", filepath.Base(dest))
-	_, err := downloader.Download(context.Background(), url, dest, "")
+	_, err := downloader.Download(ctx, url, dest, "")
 	return err
 }
 

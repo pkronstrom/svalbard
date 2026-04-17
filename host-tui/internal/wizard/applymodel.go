@@ -195,9 +195,9 @@ func (m wizardApplyModel) View() string {
 			if s.total > 0 {
 				pct := int(float64(s.downloaded) / float64(s.total) * 100)
 				label += fmt.Sprintf("  %s/%s  %d%%",
-					wizFormatBytes(s.downloaded), wizFormatBytes(s.total), pct)
+					tui.FormatBytes(s.downloaded), tui.FormatBytes(s.total), pct)
 			} else {
-				label += fmt.Sprintf("  %s", wizFormatBytes(s.downloaded))
+				label += fmt.Sprintf("  %s", tui.FormatBytes(s.downloaded))
 			}
 		}
 		if s.err != "" {
@@ -246,13 +246,3 @@ func (m wizardApplyModel) View() string {
 	return b.String()
 }
 
-func wizFormatBytes(b int64) string {
-	switch {
-	case b >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
-	case b >= 1<<20:
-		return fmt.Sprintf("%.0f MB", float64(b)/float64(1<<20))
-	default:
-		return fmt.Sprintf("%.0f KB", float64(b)/float64(1<<10))
-	}
-}

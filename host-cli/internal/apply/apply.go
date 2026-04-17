@@ -141,14 +141,22 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 				var entries []manifest.RealizedEntry
 				var err error
 
+				// Throttled progress: report at most every 250ms to avoid flooding TUI.
+				var lastReport time.Time
+				dlProgress := func(downloaded, total int64) {
+					now := time.Now()
+					if now.Sub(lastReport) < 250*time.Millisecond {
+						return
+					}
+					lastReport = now
+					progress(ProgressEvent{
+						ID: job.id, Status: tui.StatusActive,
+						Downloaded: downloaded, Total: total,
+					})
+				}
+
 				switch {
 				case job.recipe.URL != "" || job.recipe.URLPattern != "":
-					dlProgress := func(downloaded, total int64) {
-						progress(ProgressEvent{
-							ID: job.id, Status: tui.StatusActive,
-							Downloaded: downloaded, Total: total,
-						})
-					}
 					var entry manifest.RealizedEntry
 					entry, err = downloadItem(ctx, root, job.id, job.recipe, dlProgress)
 					if err == nil {
@@ -156,12 +164,6 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 					}
 
 				case len(job.recipe.Platforms) > 0:
-					dlProgress := func(downloaded, total int64) {
-						progress(ProgressEvent{
-							ID: job.id, Status: tui.StatusActive,
-							Downloaded: downloaded, Total: total,
-						})
-					}
 					entries, err = downloadPlatformItems(ctx, root, job.id, job.recipe, m.Desired.Options.HostPlatforms, dlProgress)
 
 				case job.recipe.Strategy == "build" && job.recipe.Build != nil:
@@ -315,7 +317,7 @@ func downloadPlatformItems(ctx context.Context, root, id string, recipe catalog.
 		var downloaded bool
 		for _, candidate := range candidates {
 			if platformURL, ok := recipe.Platforms[candidate]; ok {
-				entry, err := fetchAndRecord(root, id, recipe, platformURL, onProgress)
+				entry, err := fetchAndRecord(ctx, root, id, recipe, platformURL, onProgress)
 				if err != nil {
 					return nil, err
 				}
@@ -386,7 +388,7 @@ func platformKeys(m map[string]string) []string {
 }
 
 // fetchAndRecord downloads a file and returns a RealizedEntry.
-func fetchAndRecord(root, id string, recipe catalog.Item, dlURL string, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
+func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, dlURL string, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
 	typeDir := toolkit.TypeDirs[recipe.Type]
 	filename := recipe.Filename
 	if filename == "" {
@@ -394,7 +396,7 @@ func fetchAndRecord(root, id string, recipe catalog.Item, dlURL string, onProgre
 	}
 	destPath := filepath.Join(root, typeDir, filename)
 
-	result, err := downloader.Download(context.Background(), dlURL, destPath, "", onProgress)
+	result, err := downloader.Download(ctx, dlURL, destPath, "", onProgress)
 	if err != nil {
 		return manifest.RealizedEntry{}, fmt.Errorf("downloading %s: %w", id, err)
 	}

@@ -188,7 +188,9 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		for i, it := range m.items {
 			m.applyItems[i] = applyStep{id: it.ID}
 		}
-		return m, startApply(m.runApply, m.items, &m.applyCancel)
+		cmd, cancel := startApply(m.runApply, m.items)
+		m.applyCancel = cancel
+		return m, cmd
 
 	case m.keys.Back.Matches(msg), m.keys.Quit.Matches(msg):
 		return m, func() tea.Msg { return BackMsg{} }
@@ -251,10 +253,9 @@ func (m *Model) updateApplyStep(ev ApplyEvent) {
 // Async helpers
 // ---------------------------------------------------------------------------
 
-func startApply(runApply func(ctx context.Context, onProgress func(ApplyEvent)) error, items []PlanItem, cancel *context.CancelFunc) tea.Cmd {
-	ctx, cfn := context.WithCancel(context.Background())
-	*cancel = cfn
-	return func() tea.Msg {
+func startApply(runApply func(ctx context.Context, onProgress func(ApplyEvent)) error, items []PlanItem) (tea.Cmd, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := func() tea.Msg {
 		ch := make(chan ApplyEvent, 16)
 		go func() {
 			defer close(ch)
@@ -266,6 +267,7 @@ func startApply(runApply func(ctx context.Context, onProgress func(ApplyEvent)) 
 		}()
 		return applyStartedMsg{ch: ch}
 	}
+	return cmd, cancel
 }
 
 func waitForApplyEvent(ch <-chan ApplyEvent) tea.Cmd {
@@ -450,9 +452,9 @@ func (m Model) viewApply() string {
 				if step.total > 0 {
 					pct := int(float64(step.downloaded) / float64(step.total) * 100)
 					label += fmt.Sprintf("  %s/%s  %d%%",
-						formatBytes(step.downloaded), formatBytes(step.total), pct)
+						tui.FormatBytes(step.downloaded), tui.FormatBytes(step.total), pct)
 				} else {
-					label += fmt.Sprintf("  %s", formatBytes(step.downloaded))
+					label += fmt.Sprintf("  %s", tui.FormatBytes(step.downloaded))
 				}
 			} else if step.step != "" {
 				label += fmt.Sprintf("  %s", step.step)
@@ -507,18 +509,6 @@ func (m Model) viewApply() string {
 	return shell.Render()
 }
 
-func formatBytes(b int64) string {
-	switch {
-	case b >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
-	case b >= 1<<20:
-		return fmt.Sprintf("%.0f MB", float64(b)/float64(1<<20))
-	case b >= 1<<10:
-		return fmt.Sprintf("%.0f KB", float64(b)/float64(1<<10))
-	default:
-		return fmt.Sprintf("%d B", b)
-	}
-}
 
 func actionSymbol(action string) string {
 	if action == "remove" {

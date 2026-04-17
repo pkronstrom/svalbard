@@ -63,14 +63,9 @@ func New(cfg Config) Model {
 		ReadOnly:   cfg.SaveDesired == nil,
 	})
 
-	var presets []PresetOption
-	for _, p := range cfg.Presets {
-		presets = append(presets, PresetOption{Name: p.Name, SourceIDs: p.SourceIDs})
-	}
-
 	return Model{
 		picker:     tp,
-		presets:    presets,
+		presets:    cfg.Presets,
 		presetIdx:  -1,
 		initialIDs: initialIDs,
 		readOnly:   cfg.SaveDesired == nil,
@@ -105,7 +100,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
-		case matchRune(msg, 'p'):
+		case tui.MatchRune(msg, 'p'):
 			if !m.readOnly && len(m.presets) > 0 {
 				m.cyclePreset()
 			}
@@ -128,14 +123,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateSavePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case matchRune(msg, 'y'):
+	case tui.MatchRune(msg, 'y'):
 		if err := m.saveFunc(m.picker.CheckedIDSlice()); err != nil {
 			m.showSavePrompt = false
 			return m, nil
 		}
 		return m, func() tea.Msg { return SavedMsg{} }
 
-	case matchRune(msg, 'n'):
+	case tui.MatchRune(msg, 'n'):
 		return m, func() tea.Msg { return BackMsg{} }
 
 	case m.keys.Back.Matches(msg):
@@ -159,6 +154,8 @@ func (m *Model) cyclePreset() {
 
 // View renders the browse screen.
 func (m Model) View() string {
+	totalGB := m.picker.TotalCheckedGB()
+
 	tree := m.picker.RenderTree()
 	tree += "\n"
 	tree += m.picker.RenderSizeSummary()
@@ -172,7 +169,6 @@ func (m Model) View() string {
 
 	detail := m.picker.RenderDetail()
 
-	totalGB := m.picker.TotalCheckedGB()
 	header := fmt.Sprintf("Browse  %d selected  %.1f GB", m.picker.TotalCheckedCount(), totalGB)
 
 	var footerParts []string
@@ -201,6 +197,3 @@ func (m Model) View() string {
 	return shell.Render()
 }
 
-func matchRune(msg tea.KeyMsg, r rune) bool {
-	return msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == r
-}
