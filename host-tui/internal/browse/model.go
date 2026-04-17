@@ -394,11 +394,11 @@ func (m *Model) totalCheckedCount() int {
 	return len(m.checkedIDs)
 }
 
-// View renders the browse screen.
+// View renders the browse screen with left-pane nav and right-pane detail.
 func (m Model) View() string {
-	var body strings.Builder
+	var nav strings.Builder
 
-	// Tree rows.
+	// Left pane: tree rows.
 	maxVis := m.maxVisible()
 	end := m.scrollOffset + maxVis
 	if end > len(m.rows) {
@@ -417,9 +417,9 @@ func (m Model) View() string {
 		case rowGroup:
 			label := row.groupName
 			if isCursor {
-				body.WriteString(m.theme.Selected.Render(prefix + label))
+				nav.WriteString(m.theme.Selected.Render(prefix + label))
 			} else {
-				body.WriteString(m.theme.Section.Render(prefix + label))
+				nav.WriteString(m.theme.Section.Render(prefix + label))
 			}
 
 		case rowPack:
@@ -427,13 +427,13 @@ func (m Model) View() string {
 			checked, total := packCheckState(pack, m.checkedIDs)
 			mark := markChar(checked, total)
 			size := packCheckedSizeGB(pack, m.checkedIDs)
-			label := fmt.Sprintf("    %s%s %s  %s", prefix, mark, pack.Name, tui.FormatSizeGB(size))
+			label := fmt.Sprintf("  %s%s %s  %s", prefix, mark, pack.Name, tui.FormatSizeGB(size))
 			if isCursor {
-				body.WriteString(m.theme.Selected.Render(label))
+				nav.WriteString(m.theme.Selected.Render(label))
 			} else if checked > 0 {
-				body.WriteString(m.theme.Base.Render(label))
+				nav.WriteString(m.theme.Base.Render(label))
 			} else {
-				body.WriteString(m.theme.Muted.Render(label))
+				nav.WriteString(m.theme.Muted.Render(label))
 			}
 
 		case rowItem:
@@ -442,41 +442,44 @@ func (m Model) View() string {
 			if m.checkedIDs[src.ID] {
 				mark = "✓"
 			}
-			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, src.ID, tui.TypeSymbol(src.Type), tui.FormatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("      %s%s %s %s  %s", prefix, mark, src.ID, tui.TypeSymbol(src.Type), tui.FormatSizeGB(src.SizeGB))
 			if isCursor {
-				body.WriteString(m.theme.Selected.Render(line))
+				nav.WriteString(m.theme.Selected.Render(line))
 			} else if m.checkedIDs[src.ID] {
-				body.WriteString(m.theme.Base.Render(line))
+				nav.WriteString(m.theme.Base.Render(line))
 			} else {
-				body.WriteString(m.theme.Muted.Render(line))
+				nav.WriteString(m.theme.Muted.Render(line))
 			}
 		}
-		body.WriteString("\n")
+		nav.WriteString("\n")
 	}
 
-	body.WriteString("\n")
+	nav.WriteString("\n")
 
-	// Size summary.
+	// Size summary at bottom of nav pane.
 	totalGB := m.totalCheckedGB()
 	if m.freeGB <= 0 {
-		body.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f GB", totalGB)))
+		nav.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f GB", totalGB)))
 	} else if totalGB <= m.freeGB {
-		body.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f / %.0f GB  ", totalGB, m.freeGB)))
-		body.WriteString(m.theme.Success.Render("fits"))
+		nav.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f / %.0f GB  ", totalGB, m.freeGB)))
+		nav.WriteString(m.theme.Success.Render("fits"))
 	} else {
-		body.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f / %.0f GB  ", totalGB, m.freeGB)))
-		body.WriteString(m.theme.Danger.Render(fmt.Sprintf("%.1f GB over", totalGB-m.freeGB)))
+		nav.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f / %.0f GB  ", totalGB, m.freeGB)))
+		nav.WriteString(m.theme.Danger.Render(fmt.Sprintf("%.1f GB over", totalGB-m.freeGB)))
 	}
 
 	// Save prompt overlay.
 	if m.showSavePrompt {
-		body.WriteString("\n\n")
-		body.WriteString(m.theme.Warning.Render("  You have unsaved changes. Save before leaving?"))
-		body.WriteString("\n")
-		body.WriteString(m.theme.Base.Render("  y = save & exit   n = discard & exit   esc = cancel"))
+		nav.WriteString("\n\n")
+		nav.WriteString(m.theme.Warning.Render("  Save changes before leaving?"))
+		nav.WriteString("\n")
+		nav.WriteString(m.theme.Base.Render("  y = save   n = discard   esc = cancel"))
 	}
 
-	// Header line.
+	// Right pane: detail for focused row.
+	detail := m.viewDetail()
+
+	// Header.
 	header := fmt.Sprintf("Browse  %d selected  %.1f GB", m.totalCheckedCount(), totalGB)
 
 	// Footer hints.
@@ -496,13 +499,71 @@ func (m Model) View() string {
 		Theme:   m.theme,
 		AppName: "Svalbard",
 		Status:  header,
-		Right:   body.String(),
+		Left:    nav.String(),
+		Right:   detail,
 		Footer:  footer,
 		Width:   m.width,
 		Height:  m.height,
 	}
 
 	return shell.Render()
+}
+
+// viewDetail renders the right-pane detail preview for the focused row.
+func (m Model) viewDetail() string {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return ""
+	}
+
+	var b strings.Builder
+	row := m.rows[m.cursor]
+
+	switch row.kind {
+	case rowGroup:
+		b.WriteString(m.theme.Section.Render(row.groupName))
+		b.WriteString("\n\n")
+		packCount := len(row.groupPacks)
+		itemCount := 0
+		for _, p := range row.groupPacks {
+			itemCount += len(p.Sources)
+		}
+		b.WriteString(m.theme.Base.Render(fmt.Sprintf("  %d packs, %d sources", packCount, itemCount)))
+
+	case rowPack:
+		pack := row.pack
+		b.WriteString(m.theme.Section.Render(pack.Name))
+		b.WriteString("\n\n")
+		if pack.Description != "" {
+			b.WriteString(m.theme.Base.Render("  " + pack.Description))
+			b.WriteString("\n\n")
+		}
+		checked, total := packCheckState(pack, m.checkedIDs)
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %d / %d selected", checked, total)))
+		b.WriteString("\n")
+		size := packCheckedSizeGB(pack, m.checkedIDs)
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s selected", tui.FormatSizeGB(size))))
+
+	case rowItem:
+		src := row.source
+		sym := tui.TypeSymbol(src.Type)
+		b.WriteString(m.theme.Section.Render(fmt.Sprintf("%s %s", sym, src.ID)))
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  Type: %s", src.Type)))
+		b.WriteString("\n")
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  Size: %s", tui.FormatSizeGB(src.SizeGB))))
+		if src.Description != "" {
+			b.WriteString("\n\n")
+			b.WriteString(m.theme.Base.Render("  " + src.Description))
+		}
+		b.WriteString("\n\n")
+		if m.checkedIDs[src.ID] {
+			b.WriteString(m.theme.Success.Render("  ✓ Selected"))
+		} else {
+			b.WriteString(m.theme.Muted.Render("  · Not selected"))
+		}
+	}
+
+	return b.String()
 }
 
 // --- helpers ---
