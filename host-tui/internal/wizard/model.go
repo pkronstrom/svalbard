@@ -94,13 +94,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.freeGB = msg.freeGB
 		m.stage = stagePlatforms
 		m.platformPicker = newPlatformPicker()
-		return m, nil
+		return m.sizeActiveModel()
 
 	case platformDoneMsg:
 		m.hostPlatforms = msg.platforms
 		m.stage = stagePreset
 		m.presetPicker = newPresetPicker(m.config.Presets, m.config.Regions, m.freeGB)
-		return m, nil
+		return m.sizeActiveModel()
 
 	case presetDoneMsg:
 		m.presetName = msg.preset.Name
@@ -111,18 +111,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.stage = stagePacks
 		m.packPicker = newPackPicker(m.config.PackGroups, m.checkedIDs, m.freeGB)
-		return m, nil
+		return m.sizeActiveModel()
 
 	case packDoneMsg:
 		m.checkedIDs = msg.selectedIDs
 		m.stage = stageReview
 		m.review = newReviewModel(m.vaultPath, m.buildReviewItems(), m.freeGB)
-		return m, nil
+		return m.sizeActiveModel()
 
 	case packCancelMsg:
 		m.stage = stagePreset
 		m.presetPicker = newPresetPicker(m.config.Presets, m.config.Regions, m.freeGB)
-		return m, nil
+		return m.sizeActiveModel()
 
 	case reviewConfirmMsg:
 		return m, func() tea.Msg {
@@ -138,7 +138,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reviewBackMsg:
 		m.stage = stagePacks
 		m.packPicker = newPackPicker(m.config.PackGroups, m.checkedIDs, m.freeGB)
-		return m, nil
+		return m.sizeActiveModel()
 
 	case tea.KeyMsg:
 		if m.keys.ForceQuit.Matches(msg) {
@@ -152,12 +152,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.stage == stagePlatforms && (m.keys.Back.Matches(msg) || m.keys.Quit.Matches(msg)) {
 			m.stage = stagePath
 			m.pathPicker = newPathPicker(m.config.Volumes, m.config.HomeVolume, m.vaultPath)
-			return m, nil
+			return m.sizeActiveModel()
 		}
 	}
 
 	// Forward all other messages to the active sub-model
 	return m.forwardToActive(msg)
+}
+
+// sizeActiveModel sends the current terminal dimensions to the active sub-model
+// so it renders correctly on its first frame (before a real WindowSizeMsg arrives).
+func (m Model) sizeActiveModel() (tea.Model, tea.Cmd) {
+	if m.width > 0 && m.height > 0 {
+		return m.forwardToActive(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+	}
+	return m, nil
 }
 
 func (m Model) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
