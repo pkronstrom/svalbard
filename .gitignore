@@ -2,7 +2,9 @@ __pycache__/
 *.pyc
 *.egg-info/
 dist/
+build
 build/
+bin/
 .venv/
 .worktrees/
 build-tools/zim-compact
@@ -24,6 +26,10 @@ build-tools/zim-compact
 *.cast
 
 docs/plans/archive/
+
+# Build output binaries
+host-cli/svalbard
+host-tui/svalbard-tui
 
 # Embedded drive-runtime binaries (built fresh in CI / make build)
 host-cli/internal/toolkit/embedded/*/
