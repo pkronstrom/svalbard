@@ -3,6 +3,7 @@ package apply
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -32,6 +33,8 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	if len(onProgress) > 0 && onProgress[0] != nil {
 		progress = onProgress[0]
 	}
+
+	slog.Info("apply started", "downloads", len(plan.ToDownload), "removals", len(plan.ToRemove), "vault", root)
 
 	// Process removals first (free up space).
 	removeSet := make(map[string]struct{}, len(plan.ToRemove))
@@ -91,7 +94,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 			entries, err := downloadPlatformItems(root, id, recipe, m.Desired.Options.HostPlatforms)
 			if err != nil {
 				progress(id, "failed")
-				fmt.Fprintf(os.Stderr, "skip %s: %v\n", id, err)
+				slog.Warn("skipping item", "id", id, "reason", err.Error())
 				continue
 			}
 			m.Realized.Entries = append(m.Realized.Entries, entries...)
@@ -106,7 +109,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 				})
 				if err != nil {
 					progress(id, "failed")
-					fmt.Fprintf(os.Stderr, "skip %s: native build failed: %v\n", id, err)
+					slog.Warn("native build failed, skipping", "id", id, "error", err)
 					continue
 				}
 				m.Realized.Entries = append(m.Realized.Entries, entries...)
@@ -114,7 +117,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 				entry, err := buildItem(root, id, recipe)
 				if err != nil {
 					progress(id, "failed")
-					fmt.Fprintf(os.Stderr, "skip %s: docker build failed: %v\n", id, err)
+					slog.Warn("docker build failed, skipping", "id", id, "error", err)
 					continue
 				}
 				m.Realized.Entries = append(m.Realized.Entries, entry)
@@ -123,7 +126,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 
 		default:
 			progress(id, "failed")
-			fmt.Fprintf(os.Stderr, "skip %s: no download URL, platforms, or build config\n", id)
+			slog.Warn("no acquisition strategy", "id", id)
 		}
 	}
 
@@ -151,6 +154,8 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 
 	// Update applied timestamp only after all runtime assets have been regenerated.
 	m.Realized.AppliedAt = time.Now().UTC().Format(time.RFC3339)
+
+	slog.Info("apply completed", "realized", len(m.Realized.Entries))
 
 	return nil
 }
@@ -203,6 +208,7 @@ func downloadItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry,
 	if err != nil {
 		return manifest.RealizedEntry{}, fmt.Errorf("resolving URL for %s: %w", id, err)
 	}
+	slog.Debug("resolved URL", "id", id, "url", resolvedURL)
 	return fetchAndRecord(root, id, recipe, resolvedURL)
 }
 
@@ -231,7 +237,7 @@ func downloadPlatformItems(root, id string, recipe catalog.Item, targetPlatforms
 			}
 		}
 		if !downloaded {
-			fmt.Fprintf(os.Stderr, "skip %s for %s: no download URL (available: %v)\n", id, platform, platformKeys(recipe.Platforms))
+			slog.Debug("no platform URL", "id", id, "platform", platform, "available", platformKeys(recipe.Platforms))
 		}
 	}
 
@@ -311,6 +317,7 @@ func fetchAndRecord(root, id string, recipe catalog.Item, dlURL string) (manifes
 	if err != nil {
 		return manifest.RealizedEntry{}, fmt.Errorf("downloading %s: %w", id, err)
 	}
+	slog.Info("downloaded", "id", id, "path", destPath, "sha256", result.SHA256, "cached", result.Cached)
 
 	fileInfo, err := os.Stat(destPath)
 	if err != nil {
@@ -342,7 +349,7 @@ func buildItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry, er
 		return manifest.RealizedEntry{}, err
 	}
 
-	fmt.Fprintf(os.Stderr, "building %s (family=%s) via docker...\n", id, family)
+	slog.Info("building via docker", "id", id, "family", family)
 
 	// Find the builder script path — embedded recipes include builders/
 	builderScript := fmt.Sprintf("recipes/builders/%s.py", strings.ReplaceAll(family, "-", "_"))
