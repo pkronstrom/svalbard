@@ -228,20 +228,29 @@ func Run(ctx context.Context, stdin io.Reader, stdout io.Writer, driveRoot, init
 
 func detectCapabilities(driveRoot, dbPath, sqliteBin string) (Capabilities, int, int, error) {
 	var caps Capabilities
-	sourceCount, err := scalarInt(sqliteBin, dbPath, "SELECT count(*) FROM sources;")
+
+	// Run all capability queries in a single sqlite3 process.
+	sql := "SELECT count(*) FROM sources;" +
+		"SELECT count(*) FROM articles;" +
+		"SELECT count(*) FROM sqlite_master WHERE name='embeddings';" +
+		"SELECT CASE WHEN (SELECT count(*) FROM sqlite_master WHERE name='embeddings') > 0 THEN (SELECT count(*) FROM embeddings) ELSE 0 END;"
+	out, err := runSQLite(sqliteBin, dbPath, sql)
 	if err != nil {
 		return caps, 0, 0, err
 	}
-	articleCount, err := scalarInt(sqliteBin, dbPath, "SELECT count(*) FROM articles;")
-	if err != nil {
-		return caps, 0, 0, err
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 4 {
+		return caps, 0, 0, fmt.Errorf("unexpected sqlite output: %q", string(out))
 	}
-	hasEmbeddings, err := scalarInt(sqliteBin, dbPath, "SELECT count(*) FROM sqlite_master WHERE name='embeddings';")
-	if err == nil && hasEmbeddings == 1 {
+	sourceCount, _ := strconv.Atoi(strings.TrimSpace(lines[0]))
+	articleCount, _ := strconv.Atoi(strings.TrimSpace(lines[1]))
+	hasEmbeddings, _ := strconv.Atoi(strings.TrimSpace(lines[2]))
+	embedCount, _ := strconv.Atoi(strings.TrimSpace(lines[3]))
+	if hasEmbeddings == 1 {
 		caps.HasEmbeddings = true
-		embedCount, _ := scalarInt(sqliteBin, dbPath, "SELECT count(*) FROM embeddings;")
 		caps.HasEmbeddingData = embedCount > 0
 	}
+
 	if _, err := drivebinary.Resolve("llama-server", driveRoot, platform.Detect); err == nil {
 		caps.HasLlamaServer = true
 	}
