@@ -6,6 +6,9 @@ tags:
 depth: reference-only
 size_gb: 0.03
 python: ">=3.11"
+strategy: build
+build:
+  family: python-venv
 description: Shared Python runtime for drive tools (managed by uv)
 license:
   id: PSF-2.0

@@ -80,16 +80,6 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 
 		// Route by acquisition strategy.
 		switch {
-		case recipe.Type == "python-venv":
-			entries, err := buildNative(root, "python-venv", recipe, cat, m.Desired.Options.HostPlatforms)
-			if err != nil {
-				progress(id, "failed")
-				fmt.Fprintf(os.Stderr, "skip %s: build failed: %v\n", id, err)
-				continue
-			}
-			m.Realized.Entries = append(m.Realized.Entries, entries...)
-			progress(id, "done")
-
 		case recipe.URL != "" || recipe.URLPattern != "":
 			entry, err := downloadItem(root, id, recipe)
 			if err != nil {

@@ -40,13 +40,16 @@ var runtimeBinarySources = buildDriveRuntimeBinaries
 
 // TypeDirs maps content types to their destination subdirectories.
 var TypeDirs = map[string]string{
-	"zim":     "zim",
-	"pmtiles": "maps",
-	"pdf":     "books",
-	"epub":    "books",
-	"gguf":    "models",
-	"binary":  "bin",
-	"app":     "apps",
+	"zim":            "zim",
+	"pmtiles":        "maps",
+	"pdf":            "books",
+	"epub":           "books",
+	"gguf":           "models",
+	"binary":         "bin",
+	"app":            "apps",
+	"dataset":        "data",
+	"python-venv":    "runtime/python",
+	"python-package": "runtime/python",
 }
 
 // runtimeConfig matches the drive-runtime RuntimeConfig JSON structure.
@@ -108,10 +111,17 @@ func humanize(id string) string {
 	return strings.Join(words, " ")
 }
 
+// GenerateOpts holds optional parameters for toolkit generation.
+type GenerateOpts struct {
+	// EnvVars maps environment variable names to drive-relative paths.
+	// Collected from recipe env fields and written into the activate script.
+	EnvVars map[string]string
+}
+
 // Generate creates the .svalbard/actions.json runtime config under root.
 // entries is the list of realized manifest entries; presetName is recorded in
 // the config for the drive-runtime to identify which preset was applied.
-func Generate(root string, entries []manifest.RealizedEntry, presetName string) error {
+func Generate(root string, entries []manifest.RealizedEntry, presetName string, opts ...GenerateOpts) error {
 	if err := os.MkdirAll(filepath.Join(root, svalbardDir), 0o755); err != nil {
 		return err
 	}
@@ -121,7 +131,11 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string) 
 	if err := installRuntimeBinaries(root); err != nil {
 		return err
 	}
-	if err := writeRootScripts(root); err != nil {
+	var envVars map[string]string
+	if len(opts) > 0 && opts[0].EnvVars != nil {
+		envVars = opts[0].EnvVars
+	}
+	if err := writeRootScripts(root, envVars); err != nil {
 		return err
 	}
 	return nil
@@ -236,11 +250,11 @@ func installRuntimeBinaries(root string) error {
 	return nil
 }
 
-func writeRootScripts(root string) error {
+func writeRootScripts(root string, envVars map[string]string) error {
 	if err := os.WriteFile(filepath.Join(root, "run"), []byte(runScriptContents()), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(root, "activate"), []byte(activateScriptContents()), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "activate"), []byte(activateScriptContents(envVars)), 0o755); err != nil {
 		return err
 	}
 	return nil
@@ -293,7 +307,20 @@ exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive" "$@"
 `
 }
 
-func activateScriptContents() string {
+func activateScriptContents(envVars map[string]string) string {
+	var envLines string
+	if len(envVars) > 0 {
+		// Sort keys for deterministic output.
+		keys := make([]string, 0, len(envVars))
+		for k := range envVars {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			envLines += fmt.Sprintf("export %s=\"$DRIVE_ROOT/%s\"\n", k, envVars[k])
+		}
+	}
+
 	return `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -303,16 +330,35 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     exec "$DRIVE_ROOT/run" activate "$@"
 fi
 
+# Detect platform
+case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64)  _SB_PLATFORM=macos-arm64 ;;
+    Darwin-x86_64) _SB_PLATFORM=macos-x86_64 ;;
+    Linux-aarch64) _SB_PLATFORM=linux-arm64 ;;
+    Linux-x86_64)  _SB_PLATFORM=linux-x86_64 ;;
+    *) echo "Unsupported platform: $(uname -s)-$(uname -m)" >&2; return 1 ;;
+esac
+
+# Add drive binaries to PATH (native + Python wrappers)
+export PATH="$DRIVE_ROOT/bin/$_SB_PLATFORM:$PATH"
+
+# Data directory
+export SVALBARD_DATA="$DRIVE_ROOT/data"
+
+# Recipe env vars
+` + envLines + `
 sb() {
     "$DRIVE_ROOT/run" "$@"
 }
 
 deactivate() {
+    export PATH="${PATH//$DRIVE_ROOT\/bin\/$_SB_PLATFORM:/}"
+    unset DRIVE_ROOT SVALBARD_DATA _SB_PLATFORM
     unset -f sb deactivate
 }
 
 export DRIVE_ROOT
-echo "Activated sb shell for $DRIVE_ROOT"
+echo "Activated svalbard shell for $DRIVE_ROOT ($_SB_PLATFORM)"
 echo "Use 'sb' to run drive commands. Run 'deactivate' to leave."
 `
 }

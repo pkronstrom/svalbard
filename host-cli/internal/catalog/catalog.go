@@ -26,11 +26,21 @@ type Item struct {
 	License     *LicenseSpec      `yaml:"license,omitempty"`
 	Tags        []string          `yaml:"tags,omitempty"`
 	Menu        *MenuSpec         `yaml:"menu,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty"`
+
+	// Python venv/package fields
+	Python      string   `yaml:"python,omitempty"`
+	Venv        string   `yaml:"venv,omitempty"`
+	Packages    []string `yaml:"packages,omitempty"`
+	EntryPoints []string `yaml:"entry_points,omitempty"`
 }
 
 // BuildSpec describes how to build a recipe from source data.
 type BuildSpec struct {
-	Family string `yaml:"family"`
+	Family    string `yaml:"family"`
+	SourceURL string `yaml:"source_url,omitempty"`
+	Output    string `yaml:"output,omitempty"`
+	Builder   string `yaml:"builder,omitempty"`
 }
 
 // ViewerSpec describes how a recipe should be presented in a viewer.

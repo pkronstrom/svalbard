@@ -248,6 +248,55 @@ func buildTarBz2(t *testing.T, files map[string]string) []byte {
 	return dst.Bytes()
 }
 
+func TestResolveBareGzExtraction(t *testing.T) {
+	driveRoot := t.TempDir()
+	binDir := filepath.Join(driveRoot, "bin", "linux-x86_64", "chisel")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a bare .gz file containing a fake binary.
+	content := []byte("#!/bin/sh\necho chisel")
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(content); err != nil {
+		t.Fatalf("gzip write error = %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip close error = %v", err)
+	}
+
+	gzPath := filepath.Join(binDir, "chisel_1.0_linux_amd64.gz")
+	if err := os.WriteFile(gzPath, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := binary.Resolve("chisel", driveRoot, func() (string, error) {
+		return "linux-x86_64", nil
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+
+	// Verify extracted file exists and has correct content.
+	data, err := os.ReadFile(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(content) {
+		t.Errorf("extracted content = %q, want %q", data, content)
+	}
+
+	// Verify it's executable.
+	info, err := os.Stat(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Errorf("extracted file is not executable")
+	}
+}
+
 func buildTar(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
