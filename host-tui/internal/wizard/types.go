@@ -40,8 +40,15 @@ type PackSource struct {
 	SizeGB      float64
 }
 
+// ApplyEvent reports progress of a single item during apply.
+type ApplyEvent struct {
+	ID     string
+	Status string // tui.Status* constants
+	Error  string
+}
+
 // ApplyFunc runs vault apply with progress reporting.
-type ApplyFunc func(vaultPath string, onProgress func(id, status string)) error
+type ApplyFunc func(vaultPath string, onProgress func(ApplyEvent)) error
 
 // InitFunc initializes a new vault.
 type InitFunc func(path string, items []string, presetName, region string, platforms []string) error

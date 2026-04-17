@@ -6,11 +6,12 @@ import "github.com/pkronstrom/svalbard/host-tui/internal/wizard"
 
 // Type aliases for wizard data types used by host-cli to build configs.
 type (
-	WizardConfig = wizard.WizardConfig
-	WizardResult = wizard.WizardResult
-	Volume       = wizard.Volume
-	PresetOption = wizard.PresetOption
-	PackGroup    = wizard.PackGroup
-	Pack         = wizard.Pack
-	PackSource   = wizard.PackSource
+	WizardConfig     = wizard.WizardConfig
+	WizardResult     = wizard.WizardResult
+	WizardApplyEvent = wizard.ApplyEvent
+	Volume           = wizard.Volume
+	PresetOption     = wizard.PresetOption
+	PackGroup        = wizard.PackGroup
+	Pack             = wizard.Pack
+	PackSource       = wizard.PackSource
 )

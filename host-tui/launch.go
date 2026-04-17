@@ -19,11 +19,15 @@ import (
 )
 
 // RunInteractive launches the appropriate TUI screen based on vault resolution:
-// vault found → dashboard, no vault → welcome screen.
-func RunInteractive(wizardConfig *WizardConfig, deps *DashboardDeps) error {
+// explicit vault path → dashboard, auto-detect from CWD → dashboard, otherwise → welcome screen.
+func RunInteractive(vaultFlag string, wizardConfig *WizardConfig, deps *DashboardDeps) error {
+	if vaultFlag != "" {
+		return runApp(newAppModel(&vaultFlag, wizardConfig, deps))
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
-		return err
+		return runApp(newAppModel(nil, wizardConfig, deps))
 	}
 
 	vaultPath, err := vault.Resolve(cwd)
@@ -125,7 +129,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "open-vault":
 			m.screen = screenOpenVault
 			m.openVault = openvault.New()
-			return m, m.sendSize()
+			return m, tea.Batch(m.openVault.Init(), m.sendSize())
 		case "browse":
 			m.prevScreen = screenWelcome
 			m.screen = screenBrowse
@@ -218,7 +222,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = screenDashboard
 		m.dashboard = m.newDashboard(msg.Path)
-		return m, m.sendSize()
+		return m, tea.Batch(m.dashboard.Init(), m.sendSize())
 
 	case openvault.BackMsg:
 		m.screen = screenWelcome
@@ -321,11 +325,11 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 		}
 		if m.deps.RunApply != nil && m.deps.RebuildForVault != nil {
 			rebuildForVault := m.deps.RebuildForVault
-			cfg.RunApply = func(vaultPath string, onProgress func(id, status string)) error {
+			cfg.RunApply = func(vaultPath string, onProgress func(wizard.ApplyEvent)) error {
 				// Rebuild deps targeting the new vault path, then run apply
 				newDeps := rebuildForVault(vaultPath)
 				return newDeps.RunApply(context.Background(), func(ev ApplyEvent) {
-					onProgress(ev.ID, ev.Status)
+					onProgress(wizard.ApplyEvent{ID: ev.ID, Status: ev.Status, Error: ev.Error})
 				})
 			}
 		}

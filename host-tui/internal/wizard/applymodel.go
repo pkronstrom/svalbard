@@ -17,16 +17,11 @@ type applyStep struct {
 }
 
 type applyStartedMsg struct {
-	ch <-chan applyEvent
-}
-
-type applyEvent struct {
-	id     string
-	status string
+	ch <-chan ApplyEvent
 }
 
 type applyTickMsg struct {
-	event applyEvent
+	event ApplyEvent
 	done  bool
 }
 
@@ -35,7 +30,7 @@ type wizardApplyModel struct {
 	vaultPath string
 	runApply  ApplyFunc
 	steps     []applyStep
-	ch        <-chan applyEvent
+	ch        <-chan ApplyEvent
 	started   bool
 	finished  bool
 	width     int
@@ -81,8 +76,8 @@ func (m wizardApplyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update step status
 		for i := range m.steps {
-			if m.steps[i].id == msg.event.id {
-				m.steps[i].status = msg.event.status
+			if m.steps[i].id == msg.event.ID {
+				m.steps[i].status = msg.event.Status
 				break
 			}
 		}
@@ -103,20 +98,20 @@ func (m wizardApplyModel) startApply() tea.Cmd {
 	runApply := m.runApply
 	vaultPath := m.vaultPath
 	return func() tea.Msg {
-		ch := make(chan applyEvent, 16)
+		ch := make(chan ApplyEvent, 16)
 		go func() {
 			defer close(ch)
-			if err := runApply(vaultPath, func(id, status string) {
-				ch <- applyEvent{id: id, status: status}
+			if err := runApply(vaultPath, func(ev ApplyEvent) {
+				ch <- ev
 			}); err != nil {
-				ch <- applyEvent{status: tui.StatusFailed}
+				ch <- ApplyEvent{Status: tui.StatusFailed, Error: err.Error()}
 			}
 		}()
 		return applyStartedMsg{ch: ch}
 	}
 }
 
-func waitForEvent(ch <-chan applyEvent) tea.Cmd {
+func waitForEvent(ch <-chan ApplyEvent) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-ch
 		return applyTickMsg{event: ev, done: !ok}
