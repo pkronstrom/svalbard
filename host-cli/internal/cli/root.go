@@ -161,7 +161,7 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return commands.IndexVault(vaultRoot, cmd.OutOrStdout())
+			return commands.IndexVault(vaultRoot, cmd.OutOrStdout(), nil)
 		},
 	}
 
@@ -589,49 +589,43 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return err
 		}
+
+		statusMap := map[string]string{
+			"extracting": tui.StatusIndexing,
+			"embedding":  tui.StatusIndexing,
+			"skip":       tui.StatusSkip,
+			"done":       tui.StatusDone,
+			"failed":     tui.StatusFailed,
+			"starting":   tui.StatusIndexing,
+		}
+		mapStatus := func(s string) string {
+			if v, ok := statusMap[s]; ok {
+				return v
+			}
+			return tui.StatusIndexing
+		}
+
 		if indexType == "semantic" {
-			onProgress(hosttui.IndexEvent{File: "Starting embedding server...", Status: tui.StatusIndexing})
-			const progressKey = "embedding-progress"
-			err := commands.IndexSemantic(ctx, root, io.Discard, func(p commands.SemanticProgress) {
-				switch p.Phase {
-				case "starting":
-					onProgress(hosttui.IndexEvent{File: "Starting embedding server...", Status: tui.StatusIndexing})
-				case "embedding":
-					onProgress(hosttui.IndexEvent{
-						File:   progressKey,
-						Status: tui.StatusIndexing,
-						Detail: fmt.Sprintf("Embedded %d / %d articles", p.Embedded, p.Total),
-					})
-				case "done":
-					onProgress(hosttui.IndexEvent{
-						File:   progressKey,
-						Status: tui.StatusDone,
-						Detail: fmt.Sprintf("%d articles embedded", p.Embedded),
-					})
+			return commands.IndexSemantic(ctx, root, io.Discard, func(p commands.SemanticProgress) {
+				file := p.File
+				if file == "" {
+					file = p.Detail
 				}
+				onProgress(hosttui.IndexEvent{
+					File:   file,
+					Status: mapStatus(p.Status),
+					Detail: p.Detail,
+				})
 			})
-			if err != nil {
-				onProgress(hosttui.IndexEvent{File: err.Error(), Status: tui.StatusFailed})
-				return err
-			}
-			return nil
 		}
-		// Scan ZIM files for progress reporting
-		zimFiles, _ := commands.ScanZIMFiles(root)
-		for _, zf := range zimFiles {
-			onProgress(hosttui.IndexEvent{File: zf, Status: tui.StatusIndexing})
-		}
-		err = commands.IndexVault(root, io.Discard)
-		if err != nil {
-			for _, zf := range zimFiles {
-				onProgress(hosttui.IndexEvent{File: zf, Status: tui.StatusFailed})
-			}
-			return err
-		}
-		for _, zf := range zimFiles {
-			onProgress(hosttui.IndexEvent{File: zf, Status: tui.StatusDone})
-		}
-		return nil
+
+		return commands.IndexVault(root, io.Discard, func(p commands.IndexProgress) {
+			onProgress(hosttui.IndexEvent{
+				File:   p.File,
+				Status: mapStatus(p.Status),
+				Detail: p.Detail,
+			})
+		})
 	}
 
 	return deps

@@ -13,6 +13,15 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/zimext"
 )
 
+// IndexProgress reports per-file indexing progress.
+type IndexProgress struct {
+	File    string // ZIM filename
+	Status  string // "extracting", "skip", "done", "failed"
+	Detail  string // e.g. "3864 articles"
+	Current int64  // articles indexed so far for this file
+	Total   int64  // total articles in this file (0 if unknown)
+}
+
 // ScanZIMFiles returns a sorted list of .zim filenames (not full paths)
 // found in root/zim/.
 func ScanZIMFiles(root string) ([]string, error) {
@@ -36,10 +45,8 @@ func ScanZIMFiles(root string) ([]string, error) {
 }
 
 // IndexVault scans ZIM files in the vault and builds a SQLite FTS5 search index.
-//
-// For each ZIM file not yet indexed, it extracts searchable articles from the
-// archive and stores them in the search database. Progress is written to w.
-func IndexVault(root string, w io.Writer) error {
+// Progress is reported per-file via onProgress. Text output goes to w.
+func IndexVault(root string, w io.Writer, onProgress func(IndexProgress)) error {
 	zimFiles, err := ScanZIMFiles(root)
 	if err != nil {
 		return err
@@ -73,21 +80,34 @@ func IndexVault(root string, w io.Writer) error {
 		indexedSet[fn] = true
 	}
 
+	notify := func(p IndexProgress) {
+		if onProgress != nil {
+			onProgress(p)
+		}
+	}
+
 	for _, zf := range zimFiles {
 		if indexedSet[zf] {
-			fmt.Fprintf(w, "  skip %s (already indexed)\n", zf)
+			notify(IndexProgress{File: zf, Status: "skip", Detail: "already indexed"})
 			continue
 		}
 
-		fmt.Fprintf(w, "  indexing %s ...\n", zf)
+		notify(IndexProgress{File: zf, Status: "extracting", Detail: "extracting articles..."})
 
 		articles, title, err := zimext.ExtractArticles(filepath.Join(root, "zim", zf))
 		if err != nil {
+			notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
 			return fmt.Errorf("extracting articles from %s: %w", zf, err)
 		}
 		if title == "" {
 			title = strings.TrimSuffix(zf, filepath.Ext(zf))
 		}
+
+		notify(IndexProgress{
+			File: zf, Status: "extracting",
+			Detail:  fmt.Sprintf("inserting %d articles...", len(articles)),
+			Current: int64(len(articles)), Total: int64(len(articles)),
+		})
 
 		sourceID, err := db.UpsertSource(zf, title)
 		if err != nil {
@@ -98,7 +118,11 @@ func IndexVault(root string, w io.Writer) error {
 			return fmt.Errorf("inserting articles for %s: %w", zf, err)
 		}
 
-		fmt.Fprintf(w, "  indexed %s (%d article)\n", zf, len(articles))
+		notify(IndexProgress{
+			File: zf, Status: "done",
+			Detail:  fmt.Sprintf("%d articles", len(articles)),
+			Current: int64(len(articles)), Total: int64(len(articles)),
+		})
 	}
 
 	// Store metadata timestamp.
@@ -106,10 +130,5 @@ func IndexVault(root string, w io.Writer) error {
 		return fmt.Errorf("setting indexed_at metadata: %w", err)
 	}
 
-	sc, ac, err := db.Stats()
-	if err != nil {
-		return fmt.Errorf("reading stats: %w", err)
-	}
-	fmt.Fprintf(w, "Index complete: %d source(s), %d article(s)\n", sc, ac)
 	return nil
 }

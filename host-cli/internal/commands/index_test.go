@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,7 +89,7 @@ func TestIndexVaultCreatesSearchDB(t *testing.T) {
 	copyFile(t, testSmallZIMPath(t), filepath.Join(zimDir, "wiki.zim"))
 
 	var buf bytes.Buffer
-	if err := IndexVault(root, &buf); err != nil {
+	if err := IndexVault(root, &buf, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -135,9 +136,6 @@ func TestIndexVaultCreatesSearchDB(t *testing.T) {
 	if strings.Contains(results[0].Body, "<html") {
 		t.Fatalf("search body should be plain text, got %q", results[0].Body)
 	}
-	if !strings.Contains(buf.String(), "indexed wiki.zim (1 article)") {
-		t.Fatalf("unexpected output: %s", buf.String())
-	}
 }
 
 func TestIndexVaultSkipsAlreadyIndexed(t *testing.T) {
@@ -147,17 +145,21 @@ func TestIndexVaultSkipsAlreadyIndexed(t *testing.T) {
 	copyFile(t, testSmallZIMPath(t), filepath.Join(zimDir, "wiki.zim"))
 
 	var buf1 bytes.Buffer
-	if err := IndexVault(root, &buf1); err != nil {
+	if err := IndexVault(root, &buf1, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	var buf2 bytes.Buffer
-	if err := IndexVault(root, &buf2); err != nil {
+	var skipped bool
+	if err := IndexVault(root, io.Discard, func(p IndexProgress) {
+		if p.Status == "skip" {
+			skipped = true
+		}
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(buf2.String(), "skip") {
-		t.Errorf("expected skip message, got: %s", buf2.String())
+	if !skipped {
+		t.Error("expected skip callback for already-indexed file")
 	}
 
 	db, err := searchdb.Open(filepath.Join(root, "data", "search.db"))

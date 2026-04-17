@@ -193,6 +193,11 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case browse.SavedMsg:
 		return m, m.returnFromBrowse()
 
+	case browse.PlanMsg:
+		m.screen = screenPlan
+		m.planScr = m.newPlan()
+		return m, m.sendSize()
+
 	// --- Plan messages ---
 	case plan.BackMsg:
 		m.screen = screenDashboard

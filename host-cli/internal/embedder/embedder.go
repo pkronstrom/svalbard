@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -47,6 +48,8 @@ func StartServer(ctx context.Context, modelPath, driveRoot string) (*Server, err
 		"--port", fmt.Sprintf("%d", s.port),
 		"--host", s.host,
 		"--embedding",
+		"--ubatch-size", "4096",
+		"--batch-size", "4096",
 	)
 	s.proc.Stdout = nil
 	s.proc.Stderr = nil
@@ -94,7 +97,8 @@ func (s *Server) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("embedder: /embedding returned %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("embedder: /embedding returned %d: %s", resp.StatusCode, body)
 	}
 
 	var items []struct {

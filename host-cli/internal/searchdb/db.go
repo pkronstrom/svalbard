@@ -305,6 +305,76 @@ func (d *DB) EmbeddingCount() (int64, error) {
 	return count, err
 }
 
+// SourceInfo holds a source's ID, filename, and article count.
+type SourceInfo struct {
+	ID           int64
+	Filename     string
+	ArticleCount int64
+}
+
+// Sources returns all indexed sources with their article counts.
+func (d *DB) Sources() ([]SourceInfo, error) {
+	rows, err := d.db.Query(
+		`SELECT s.id, s.filename, COUNT(a.id)
+		 FROM sources s
+		 LEFT JOIN articles a ON a.source_id = s.id
+		 GROUP BY s.id
+		 ORDER BY s.filename`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("searchdb: query sources: %w", err)
+	}
+	defer rows.Close()
+
+	var sources []SourceInfo
+	for rows.Next() {
+		var s SourceInfo
+		if err := rows.Scan(&s.ID, &s.Filename, &s.ArticleCount); err != nil {
+			return nil, fmt.Errorf("searchdb: scan source: %w", err)
+		}
+		sources = append(sources, s)
+	}
+	return sources, rows.Err()
+}
+
+// UnembeddedArticlesBySource returns articles without embeddings for a given
+// source, ordered by ID, starting after afterID, limited to limit rows.
+func (d *DB) UnembeddedArticlesBySource(sourceID int64, afterID int64, limit int) ([]UnembeddedArticle, error) {
+	rows, err := d.db.Query(
+		`SELECT a.id, a.title, a.body FROM articles a
+		 LEFT JOIN embeddings e ON e.article_id = a.id
+		 WHERE e.article_id IS NULL AND a.source_id = ? AND a.id > ?
+		 ORDER BY a.id LIMIT ?`,
+		sourceID, afterID, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("searchdb: query unembedded by source: %w", err)
+	}
+	defer rows.Close()
+
+	var articles []UnembeddedArticle
+	for rows.Next() {
+		var a UnembeddedArticle
+		if err := rows.Scan(&a.ID, &a.Title, &a.Body); err != nil {
+			return nil, fmt.Errorf("searchdb: scan unembedded: %w", err)
+		}
+		articles = append(articles, a)
+	}
+	return articles, rows.Err()
+}
+
+// EmbeddingCountBySource returns the number of embeddings for a given source.
+func (d *DB) EmbeddingCountBySource(sourceID int64) (int64, error) {
+	var count int64
+	err := d.db.QueryRow(
+		`SELECT COUNT(*) FROM embeddings e
+		 JOIN articles a ON a.id = e.article_id
+		 WHERE a.source_id = ?`,
+		sourceID,
+	).Scan(&count)
+	return count, err
+}
+
 // Stats returns the number of sources and articles in the database.
 func (d *DB) Stats() (sourceCount, articleCount int64, err error) {
 	err = d.db.QueryRow("SELECT COUNT(*) FROM sources").Scan(&sourceCount)
