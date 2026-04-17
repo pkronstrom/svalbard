@@ -65,6 +65,7 @@ type appModel struct {
 	vaultPath    string
 	deps         *DashboardDeps
 	wizardConfig *WizardConfig
+	width, height int // last known terminal dimensions
 
 	welcome   welcome.Model
 	dashboard dashboard.Model
@@ -105,6 +106,12 @@ func (m *appModel) Init() tea.Cmd {
 }
 
 func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Track terminal dimensions for forwarding to new screens.
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsm.Width
+		m.height = wsm.Height
+	}
+
 	switch msg := msg.(type) {
 
 	// --- Welcome screen messages ---
@@ -114,15 +121,15 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prevScreen = screenWelcome
 			m.screen = screenWizard
 			m.wizard = wizard.New(m.defaultWizardConfig())
-			return m, nil
+			return m, m.sendSize()
 		case "open-vault":
 			m.screen = screenOpenVault
 			m.openVault = openvault.New()
-			return m, nil
+			return m, m.sendSize()
 		case "browse":
 			m.screen = screenBrowse
 			m.browse = m.newBrowse(true) // read-only
-			return m, nil
+			return m, m.sendSize()
 		}
 
 	// --- Dashboard messages ---
@@ -130,26 +137,26 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prevScreen = screenDashboard
 		m.screen = screenWizard
 		m.wizard = wizard.New(m.defaultWizardConfig())
-		return m, nil
+		return m, m.sendSize()
 
 	case dashboard.SelectMsg:
 		switch msg.ID {
 		case "browse":
 			m.screen = screenBrowse
 			m.browse = m.newBrowse(false)
-			return m, nil
+			return m, m.sendSize()
 		case "plan":
 			m.screen = screenPlan
 			m.planScr = m.newPlan()
-			return m, m.planScr.Init()
+			return m, m.sendSize()
 		case "import":
 			m.screen = screenImport
 			m.importScr = m.newImport()
-			return m, nil
+			return m, m.sendSize()
 		case "index":
 			m.screen = screenIndex
 			m.indexScr = m.newIndex()
-			return m, nil
+			return m, m.sendSize()
 		}
 
 	// --- Wizard messages ---
@@ -159,7 +166,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = screenWelcome
 			m.welcome = welcome.New()
 		}
-		return m, nil
+		return m, m.sendSize()
 
 	case wizard.DoneMsg:
 		return m, tea.Quit
@@ -167,31 +174,31 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// --- Browse messages ---
 	case browse.BackMsg:
 		m.screen = screenDashboard
-		return m, nil
+		return m, m.sendSize()
 
 	case browse.SavedMsg:
 		m.screen = screenDashboard
-		return m, nil
+		return m, m.sendSize()
 
 	// --- Plan messages ---
 	case plan.BackMsg:
 		m.screen = screenDashboard
-		return m, nil
+		return m, m.sendSize()
 
 	case plan.BrowseMsg:
 		m.screen = screenBrowse
 		m.browse = m.newBrowse(false)
-		return m, nil
+		return m, m.sendSize()
 
 	// --- Import messages ---
 	case importscreen.BackMsg:
 		m.screen = screenDashboard
-		return m, nil
+		return m, m.sendSize()
 
 	// --- Index messages ---
 	case index.BackMsg:
 		m.screen = screenDashboard
-		return m, nil
+		return m, m.sendSize()
 
 	// --- Open Vault messages ---
 	case openvault.DoneMsg:
@@ -201,7 +208,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = screenDashboard
 		m.dashboard = m.newDashboard(msg.Path)
-		return m, m.dashboard.Init()
+		return m, m.sendSize()
 
 	case openvault.BackMsg:
 		m.screen = screenWelcome
@@ -267,6 +274,18 @@ func (m *appModel) View() string {
 		return m.openVault.View()
 	}
 	return ""
+}
+
+// sendSize returns a tea.Cmd that emits the stored terminal dimensions.
+// Used after screen transitions so the new screen renders correctly.
+func (m *appModel) sendSize() tea.Cmd {
+	if m.width == 0 && m.height == 0 {
+		return nil
+	}
+	w, h := m.width, m.height
+	return func() tea.Msg {
+		return tea.WindowSizeMsg{Width: w, Height: h}
+	}
 }
 
 func (m *appModel) defaultWizardConfig() WizardConfig {
