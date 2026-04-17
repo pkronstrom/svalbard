@@ -1,0 +1,17 @@
+id: owasp-cheat-sheets
+type: zim
+display_group: reference
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.005
+description: OWASP Cheat Sheet Series — developer security quick references
+strategy: build
+build:
+  family: custom
+  builder: zimit-scrape.py
+  source_url: https://cheatsheetseries.owasp.org
+  output: owasp-cheat-sheets.zim
+license:
+  id: CC-BY-SA-4.0
+  attribution: OWASP Foundation

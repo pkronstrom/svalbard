@@ -1,0 +1,18 @@
+id: volatility3
+type: python-package
+display_group: tools
+tags:
+- cybersec
+- forensics
+depth: reference-only
+size_gb: 0.03
+venv: svalbard-python
+packages:
+- volatility3==2.7.0
+entry_points:
+- vol
+description: Memory forensics framework for incident response and malware analysis
+license:
+  id: VSL
+  attribution: Volatility Foundation
+  url: https://github.com/volatilityfoundation/volatility3/blob/develop/LICENSE.txt

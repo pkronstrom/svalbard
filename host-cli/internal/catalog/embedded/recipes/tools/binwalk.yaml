@@ -1,0 +1,17 @@
+id: binwalk
+type: python-package
+display_group: tools
+tags:
+- cybersec
+- forensics
+depth: reference-only
+size_gb: 0.01
+venv: svalbard-python
+packages:
+- binwalk==2.4.3
+entry_points:
+- binwalk
+description: Firmware analysis and extraction tool
+license:
+  id: MIT
+  attribution: Craig Heffner and binwalk contributors

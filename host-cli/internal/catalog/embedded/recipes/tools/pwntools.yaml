@@ -1,0 +1,21 @@
+id: pwntools
+type: python-package
+display_group: tools
+tags:
+- cybersec
+- ctf
+depth: reference-only
+size_gb: 0.05
+venv: svalbard-python
+packages:
+- pwntools==4.13.0
+entry_points:
+- pwn
+- checksec
+- asm
+- disasm
+- cyclic
+description: CTF exploit development and binary manipulation library
+license:
+  id: MIT
+  attribution: Gallopsled and pwntools contributors

@@ -1,0 +1,16 @@
+id: gobuster
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.01
+platforms:
+  linux-x86_64: https://github.com/OJ/gobuster/releases/download/v3.8.2/gobuster_Linux_x86_64.tar.gz
+  linux-arm64: https://github.com/OJ/gobuster/releases/download/v3.8.2/gobuster_Linux_arm64.tar.gz
+  macos-arm64: https://github.com/OJ/gobuster/releases/download/v3.8.2/gobuster_Darwin_arm64.tar.gz
+  macos-x86_64: https://github.com/OJ/gobuster/releases/download/v3.8.2/gobuster_Darwin_x86_64.tar.gz
+description: Directory, DNS, and vhost brute-forcing tool
+license:
+  id: Apache-2.0
+  attribution: OJ Reeves

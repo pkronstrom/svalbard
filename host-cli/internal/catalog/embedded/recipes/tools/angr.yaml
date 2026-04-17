@@ -1,0 +1,17 @@
+id: angr
+type: python-package
+display_group: tools
+tags:
+- cybersec
+- ctf
+depth: reference-only
+size_gb: 0.2
+venv: svalbard-python
+packages:
+- angr==9.2.130
+entry_points:
+- angr
+description: Binary analysis and symbolic execution framework
+license:
+  id: BSD-2-Clause
+  attribution: angr team (UC Santa Barbara)

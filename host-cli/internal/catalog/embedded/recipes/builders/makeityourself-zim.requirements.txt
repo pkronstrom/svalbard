@@ -1,0 +1,6 @@
+pymupdf
+httpx
+beautifulsoup4
+libzim
+Pillow
+playwright

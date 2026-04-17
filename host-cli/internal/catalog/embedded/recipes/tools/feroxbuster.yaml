@@ -1,0 +1,16 @@
+id: feroxbuster
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.015
+platforms:
+  linux-x86_64: https://github.com/epi052/feroxbuster/releases/download/v2.13.1/x86_64-linux-feroxbuster.zip
+  linux-arm64: https://github.com/epi052/feroxbuster/releases/download/v2.13.1/aarch64-linux-feroxbuster.zip
+  macos-arm64: https://github.com/epi052/feroxbuster/releases/download/v2.13.1/aarch64-macos-feroxbuster.zip
+  macos-x86_64: https://github.com/epi052/feroxbuster/releases/download/v2.13.1/x86_64-macos-feroxbuster.zip
+description: Fast recursive content discovery tool
+license:
+  id: MIT
+  attribution: epi052

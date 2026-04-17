@@ -1,0 +1,16 @@
+id: httpx
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.025
+platforms:
+  linux-x86_64: https://github.com/projectdiscovery/httpx/releases/download/v1.9.0/httpx_1.9.0_linux_amd64.zip
+  linux-arm64: https://github.com/projectdiscovery/httpx/releases/download/v1.9.0/httpx_1.9.0_linux_arm64.zip
+  macos-arm64: https://github.com/projectdiscovery/httpx/releases/download/v1.9.0/httpx_1.9.0_macOS_arm64.zip
+  macos-x86_64: https://github.com/projectdiscovery/httpx/releases/download/v1.9.0/httpx_1.9.0_macOS_amd64.zip
+description: Multi-purpose HTTP toolkit — probing, tech detection, fingerprinting
+license:
+  id: MIT
+  attribution: ProjectDiscovery

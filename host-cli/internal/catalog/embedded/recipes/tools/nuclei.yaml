@@ -1,0 +1,16 @@
+id: nuclei
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.05
+platforms:
+  linux-x86_64: https://github.com/projectdiscovery/nuclei/releases/download/v3.7.1/nuclei_3.7.1_linux_amd64.zip
+  linux-arm64: https://github.com/projectdiscovery/nuclei/releases/download/v3.7.1/nuclei_3.7.1_linux_arm64.zip
+  macos-arm64: https://github.com/projectdiscovery/nuclei/releases/download/v3.7.1/nuclei_3.7.1_macOS_arm64.zip
+  macos-x86_64: https://github.com/projectdiscovery/nuclei/releases/download/v3.7.1/nuclei_3.7.1_macOS_amd64.zip
+description: Template-based vulnerability scanner (pair with nuclei-templates dataset)
+license:
+  id: MIT
+  attribution: ProjectDiscovery

@@ -1,0 +1,21 @@
+# Capability pack: CTF competition and reverse engineering tools.
+# Include: RE frameworks, password cracking, exploit dev, forensics.
+# Exclude: recon/web tools (in cybersec pack), wordlists, reference docs.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: cybersec-ctf
+kind: pack
+display_group: Cybersecurity
+description: Reverse engineering, exploit development, password cracking, and forensics
+target_size_gb: 3
+sources:
+# ── Reverse engineering ──
+- ghidra
+- radare2
+# ── Password cracking ──
+- hashcat
+# ── Exploit development (python-package → svalbard-python) ──
+- pwntools
+- angr
+# ── Forensics (python-package → svalbard-python) ──
+- volatility3
+- binwalk

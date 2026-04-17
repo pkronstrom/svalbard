@@ -1,0 +1,18 @@
+id: hacktricks
+type: zim
+display_group: reference
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.2
+description: HackTricks pentest methodology and cheat sheets
+strategy: build
+build:
+  family: custom
+  builder: zimit-scrape.py
+  source_url: https://book.hacktricks.wiki
+  output: hacktricks.zim
+license:
+  id: CC-BY-NC-4.0
+  attribution: Carlos Polop (HackTricks)
+  noncommercial: true

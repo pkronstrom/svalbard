@@ -1,0 +1,16 @@
+id: katana
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.02
+platforms:
+  linux-x86_64: https://github.com/projectdiscovery/katana/releases/download/v1.5.0/katana_1.5.0_linux_amd64.zip
+  linux-arm64: https://github.com/projectdiscovery/katana/releases/download/v1.5.0/katana_1.5.0_linux_arm64.zip
+  macos-arm64: https://github.com/projectdiscovery/katana/releases/download/v1.5.0/katana_1.5.0_macOS_arm64.zip
+  macos-x86_64: https://github.com/projectdiscovery/katana/releases/download/v1.5.0/katana_1.5.0_macOS_amd64.zip
+description: Web crawling and spidering framework
+license:
+  id: MIT
+  attribution: ProjectDiscovery

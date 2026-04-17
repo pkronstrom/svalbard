@@ -1,0 +1,17 @@
+id: hashcat
+type: app
+display_group: tools
+tags:
+- cybersec
+- ctf
+depth: reference-only
+size_gb: 0.3
+strategy: build
+build:
+  family: custom
+  builder: extract-7z.py
+  source_url: https://github.com/hashcat/hashcat/releases/download/v7.1.2/hashcat-7.1.2.7z
+description: GPU-accelerated password recovery (requires OpenCL/CUDA/Metal drivers)
+license:
+  id: MIT
+  attribution: Jens Steube (hashcat)

@@ -1,0 +1,17 @@
+id: payloads-all-the-things
+type: zim
+display_group: reference
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.05
+description: Curated web attack payloads, bypass techniques, and methodology
+strategy: build
+build:
+  family: custom
+  builder: github-wiki-zim.py
+  source_url: https://github.com/swisskyrepo/PayloadsAllTheThings
+  output: payloads-all-the-things.zim
+license:
+  id: MIT
+  attribution: Swissky (PayloadsAllTheThings)

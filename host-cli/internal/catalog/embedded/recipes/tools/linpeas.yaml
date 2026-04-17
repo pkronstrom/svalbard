@@ -1,0 +1,16 @@
+id: linpeas
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.005
+platforms:
+  linux-x86_64: https://github.com/peass-ng/PEASS-ng/releases/download/20260412-090b08ae/linpeas_linux_amd64
+  linux-arm64: https://github.com/peass-ng/PEASS-ng/releases/download/20260412-090b08ae/linpeas_linux_arm64
+  macos-arm64: https://github.com/peass-ng/PEASS-ng/releases/download/20260412-090b08ae/linpeas_darwin_arm64
+  macos-x86_64: https://github.com/peass-ng/PEASS-ng/releases/download/20260412-090b08ae/linpeas_darwin_amd64
+description: Linux privilege escalation enumeration script (compiled binary)
+license:
+  id: GPL-3.0-only
+  attribution: Carlos Polop (PEASS-ng)

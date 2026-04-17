@@ -1,0 +1,17 @@
+id: lolbas
+type: zim
+display_group: reference
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.005
+description: LOLBAS — Windows living-off-the-land binaries, scripts, and libraries
+strategy: build
+build:
+  family: custom
+  builder: zimit-scrape.py
+  source_url: https://lolbas-project.github.io
+  output: lolbas.zim
+license:
+  id: GPL-3.0-only
+  attribution: LOLBAS Project contributors
