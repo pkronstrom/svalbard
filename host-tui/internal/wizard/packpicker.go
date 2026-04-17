@@ -424,10 +424,10 @@ func (m packPickerModel) View() string {
 		case rowItem:
 			src := row.source
 			line := fmt.Sprintf("  %s · %s · %s", src.ID, src.Type, formatSizeGB(src.SizeGB))
-			b.WriteString(m.theme.Muted.Render(line))
+			b.WriteString(m.theme.Muted.Render(truncate(line, m.paneWidth())))
 			if src.Description != "" {
 				b.WriteString("\n")
-				b.WriteString(m.theme.Muted.Render("  " + src.Description))
+				b.WriteString(m.theme.Muted.Render(truncate("  "+src.Description, m.paneWidth())))
 			}
 		}
 	}
@@ -453,6 +453,26 @@ func (m packPickerModel) View() string {
 	b.WriteString("\n")
 
 	return b.String()
+}
+
+func (m *packPickerModel) paneWidth() int {
+	// Right pane is ~75% of terminal minus gutter
+	w := int(float64(m.width)*0.75) - 4
+	if w < 40 {
+		w = 40
+	}
+	return w
+}
+
+func truncate(s string, maxWidth int) string {
+	runes := []rune(s)
+	if len(runes) <= maxWidth {
+		return s
+	}
+	if maxWidth <= 3 {
+		return string(runes[:maxWidth])
+	}
+	return string(runes[:maxWidth-1]) + "…"
 }
 
 // packCheckedSizeGB returns the total size of checked sources in a pack.
