@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed embedded
+//go:embed all:embedded
 var embeddedRuntime embed.FS
 
 // extractEmbeddedBinaries extracts pre-built svalbard-drive binaries from the
