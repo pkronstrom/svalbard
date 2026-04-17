@@ -15,12 +15,13 @@ import (
 )
 
 // DefaultDockerImage is the default Docker image for build fallbacks.
-const DefaultDockerImage = "svalbard-tools"
+const DefaultDockerImage = "ghcr.io/pkronstrom/svalbard-tools:latest"
 
 // Options provides context from the apply layer to builders.
 type Options struct {
 	Platforms  []string          // target platforms (from manifest HostPlatforms)
 	DesiredIDs map[string]bool   // item IDs the user selected (from plan.ToDownload)
+	OnStatus   func(step string) // optional: report current build step (e.g. "wget", "warc2zim")
 }
 
 // Func is the signature for a native builder.

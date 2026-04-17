@@ -52,6 +52,14 @@ tar xzf svalbard_linux_amd64.tar.gz
 sudo mv svalbard /usr/local/bin/
 ```
 
+The binary handles all download-based recipes (ZIMs, maps, models, PDFs, binaries) with zero dependencies. For build recipes (site scraping, geodata processing) and media import (YouTube, Yle), you also need Docker:
+
+```bash
+docker pull ghcr.io/pkronstrom/svalbard-tools
+```
+
+The `svalbard-tools` image includes warc2zim, tippecanoe, zim-tools, GDAL, ffmpeg, yt-dlp, yle-dl, and other build tools. Svalbard falls back to it automatically when a build step needs a tool that isn't available locally.
+
 ### Build from source
 
 Requires Go 1.25+.

@@ -31,6 +31,7 @@ const maxWorkers = 4
 type ProgressEvent struct {
 	ID         string
 	Status     string // tui.Status* constants
+	Step       string // current build step (e.g. "wget", "warc2zim")
 	Downloaded int64  // bytes so far (only meaningful during StatusActive)
 	Total      int64  // total bytes (-1 if unknown)
 	Error      string
@@ -116,42 +117,70 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 		}
 	}
 
-	// Run HTTP downloads in parallel.
+	// Run all jobs (downloads + builds) in a shared worker pool.
+	allJobs := append(httpJobs, buildJobs...)
+
 	var mu sync.Mutex
-	var downloadErrors []string
+	var applyErrors []string
 
-	results := make(chan downloadResult, len(httpJobs))
-	jobs := make(chan downloadJob, len(httpJobs))
+	results := make(chan downloadResult, len(allJobs))
+	jobs := make(chan downloadJob, len(allJobs))
 
-	// Start workers.
 	var wg sync.WaitGroup
-	for i := 0; i < maxWorkers && i < len(httpJobs); i++ {
+	workerCount := maxWorkers
+	if workerCount > len(allJobs) {
+		workerCount = len(allJobs)
+	}
+	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
 				progress(ProgressEvent{ID: job.id, Status: tui.StatusActive})
 
-				dlProgress := func(downloaded, total int64) {
-					progress(ProgressEvent{
-						ID:         job.id,
-						Status:     tui.StatusActive,
-						Downloaded: downloaded,
-						Total:      total,
-					})
-				}
-
 				var entries []manifest.RealizedEntry
 				var err error
 
-				if job.recipe.URL != "" || job.recipe.URLPattern != "" {
+				switch {
+				case job.recipe.URL != "" || job.recipe.URLPattern != "":
+					dlProgress := func(downloaded, total int64) {
+						progress(ProgressEvent{
+							ID: job.id, Status: tui.StatusActive,
+							Downloaded: downloaded, Total: total,
+						})
+					}
 					var entry manifest.RealizedEntry
 					entry, err = downloadItem(root, job.id, job.recipe, dlProgress)
 					if err == nil {
 						entries = []manifest.RealizedEntry{entry}
 					}
-				} else if len(job.recipe.Platforms) > 0 {
+
+				case len(job.recipe.Platforms) > 0:
+					dlProgress := func(downloaded, total int64) {
+						progress(ProgressEvent{
+							ID: job.id, Status: tui.StatusActive,
+							Downloaded: downloaded, Total: total,
+						})
+					}
 					entries, err = downloadPlatformItems(root, job.id, job.recipe, m.Desired.Options.HostPlatforms, dlProgress)
+
+				case job.recipe.Strategy == "build" && job.recipe.Build != nil:
+					jobID := job.id
+					if nativeFn, ok := builder.Dispatch(job.recipe); ok {
+						entries, err = nativeFn(root, job.recipe, cat, builder.Options{
+							Platforms:  m.Desired.Options.HostPlatforms,
+							DesiredIDs: desiredIDs,
+							OnStatus: func(step string) {
+								progress(ProgressEvent{ID: jobID, Status: tui.StatusActive, Step: step})
+							},
+						})
+					} else {
+						var entry manifest.RealizedEntry
+						entry, err = buildItem(root, job.id, job.recipe)
+						if err == nil {
+							entries = []manifest.RealizedEntry{entry}
+						}
+					}
 				}
 
 				results <- downloadResult{id: job.id, entries: entries, err: err}
@@ -159,13 +188,11 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 		}()
 	}
 
-	// Feed jobs.
-	for _, job := range httpJobs {
+	for _, job := range allJobs {
 		jobs <- job
 	}
 	close(jobs)
 
-	// Collect results.
 	go func() {
 		wg.Wait()
 		close(results)
@@ -174,9 +201,9 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	for res := range results {
 		if res.err != nil {
 			progress(ProgressEvent{ID: res.id, Status: tui.StatusFailed, Error: res.err.Error()})
-			slog.Warn("download failed", "id", res.id, "error", res.err)
+			slog.Warn("job failed", "id", res.id, "error", res.err)
 			mu.Lock()
-			downloadErrors = append(downloadErrors, fmt.Sprintf("%s: %s", res.id, res.err))
+			applyErrors = append(applyErrors, fmt.Sprintf("%s: %s", res.id, res.err))
 			mu.Unlock()
 			continue
 		}
@@ -184,35 +211,6 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 		m.Realized.Entries = append(m.Realized.Entries, res.entries...)
 		mu.Unlock()
 		progress(ProgressEvent{ID: res.id, Status: tui.StatusDone})
-	}
-
-	// Run build jobs sequentially (they may need Docker / heavy resources).
-	for _, job := range buildJobs {
-		progress(ProgressEvent{ID: job.id, Status: tui.StatusActive})
-
-		if nativeFn, ok := builder.Dispatch(job.recipe); ok {
-			entries, err := nativeFn(root, job.recipe, cat, builder.Options{
-				Platforms:  m.Desired.Options.HostPlatforms,
-				DesiredIDs: desiredIDs,
-			})
-			if err != nil {
-				progress(ProgressEvent{ID: job.id, Status: tui.StatusFailed, Error: err.Error()})
-				slog.Warn("native build failed", "id", job.id, "error", err)
-				downloadErrors = append(downloadErrors, fmt.Sprintf("%s: %s", job.id, err))
-				continue
-			}
-			m.Realized.Entries = append(m.Realized.Entries, entries...)
-		} else {
-			entry, err := buildItem(root, job.id, job.recipe)
-			if err != nil {
-				progress(ProgressEvent{ID: job.id, Status: tui.StatusFailed, Error: err.Error()})
-				slog.Warn("docker build failed", "id", job.id, "error", err)
-				downloadErrors = append(downloadErrors, fmt.Sprintf("%s: %s", job.id, err))
-				continue
-			}
-			m.Realized.Entries = append(m.Realized.Entries, entry)
-		}
-		progress(ProgressEvent{ID: job.id, Status: tui.StatusDone})
 	}
 
 	// Collect env vars from all realized recipes.
@@ -239,9 +237,9 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 
 	m.Realized.AppliedAt = time.Now().UTC().Format(time.RFC3339)
 
-	if len(downloadErrors) > 0 {
-		slog.Warn("apply completed with errors", "errors", len(downloadErrors), "realized", len(m.Realized.Entries))
-		return fmt.Errorf("%d item(s) failed", len(downloadErrors))
+	if len(applyErrors) > 0 {
+		slog.Warn("apply completed with errors", "errors", len(applyErrors), "realized", len(m.Realized.Entries))
+		return fmt.Errorf("%d item(s) failed", len(applyErrors))
 	}
 
 	slog.Info("apply completed", "realized", len(m.Realized.Entries))
@@ -435,7 +433,7 @@ func buildItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry, er
 		"docker", "run", "--rm",
 		"-v", root + ":/vault",
 		"-v", filepath.Join(root, "..") + "/recipes/builders:/builders:ro",
-		"svalbard-tools",
+		builder.DefaultDockerImage,
 		"python3", "/builders/" + filepath.Base(builderScript),
 		"--output", "/vault/" + filepath.Join(typeDir, filename),
 	}
