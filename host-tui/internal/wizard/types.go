@@ -1,5 +1,7 @@
 package wizard
 
+import "github.com/pkronstrom/svalbard/tui"
+
 // Volume is a detected storage mount point.
 type Volume struct {
 	Path    string  // e.g. "/Volumes/KINGSTON/svalbard"
@@ -19,31 +21,18 @@ type PresetOption struct {
 	SourceIDs    []string // resolved source IDs (with extends)
 }
 
-// PackGroup is a display group containing packs.
-type PackGroup struct {
-	Name  string // display_group value, e.g. "Maps & Geodata"
-	Packs []Pack
-}
-
-// Pack is a named bundle of sources (kind: pack).
-type Pack struct {
-	Name        string
-	Description string
-	Sources     []PackSource
-}
-
-// PackSource is a single recipe inside a pack.
-type PackSource struct {
-	ID          string
-	Type        string // e.g. "zim", "binary", "pmtiles"
-	Description string
-	SizeGB      float64
-}
+// Type aliases — pack types now live in tui/ as the shared tree picker data model.
+type (
+	PackGroup  = tui.PackGroup
+	Pack       = tui.Pack
+	PackSource = tui.PackSource
+)
 
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
 	ID         string
 	Status     string // tui.Status* constants
+	Step       string // current build step
 	Downloaded int64
 	Total      int64
 	Error      string

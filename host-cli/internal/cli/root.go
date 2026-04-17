@@ -144,7 +144,7 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("loading catalog: %w", err)
 			}
-			if err := commands.ApplyVault(vaultRoot, cat); err != nil {
+			if err := commands.ApplyVault(cmd.Context(), vaultRoot, cat); err != nil {
 				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Apply complete")
@@ -506,7 +506,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		return commands.InitVaultWithOptions(path, items, presetName, region, platforms)
 	}
 
-	deps.RunApply = func(_ context.Context, onProgress func(hosttui.ApplyEvent)) error {
+	deps.RunApply = func(ctx context.Context, onProgress func(hosttui.ApplyEvent)) error {
 		root, err := ResolveVaultRoot(vaultFlag)
 		if err != nil {
 			return err
@@ -525,7 +525,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 				Error:      ev.Error,
 			})
 		})
-		return commands.ApplyVault(root, cat, progress)
+		return commands.ApplyVault(ctx, root, cat, progress)
 	}
 
 	deps.RunImport = func(_ context.Context, source string) (hosttui.ImportResult, error) {
@@ -584,13 +584,37 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		return status, nil
 	}
 
-	deps.RunIndex = func(_ context.Context, indexType string, onProgress func(hosttui.IndexEvent)) error {
+	deps.RunIndex = func(ctx context.Context, indexType string, onProgress func(hosttui.IndexEvent)) error {
 		root, err := ResolveVaultRoot(vaultFlag)
 		if err != nil {
 			return err
 		}
 		if indexType == "semantic" {
-			return fmt.Errorf("semantic indexing not yet implemented")
+			onProgress(hosttui.IndexEvent{File: "Starting embedding server...", Status: tui.StatusIndexing})
+			const progressKey = "embedding-progress"
+			err := commands.IndexSemantic(ctx, root, io.Discard, func(p commands.SemanticProgress) {
+				switch p.Phase {
+				case "starting":
+					onProgress(hosttui.IndexEvent{File: "Starting embedding server...", Status: tui.StatusIndexing})
+				case "embedding":
+					onProgress(hosttui.IndexEvent{
+						File:   progressKey,
+						Status: tui.StatusIndexing,
+						Detail: fmt.Sprintf("Embedded %d / %d articles", p.Embedded, p.Total),
+					})
+				case "done":
+					onProgress(hosttui.IndexEvent{
+						File:   progressKey,
+						Status: tui.StatusDone,
+						Detail: fmt.Sprintf("%d articles embedded", p.Embedded),
+					})
+				}
+			})
+			if err != nil {
+				onProgress(hosttui.IndexEvent{File: err.Error(), Status: tui.StatusFailed})
+				return err
+			}
+			return nil
 		}
 		// Scan ZIM files for progress reporting
 		zimFiles, _ := commands.ScanZIMFiles(root)

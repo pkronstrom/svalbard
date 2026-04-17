@@ -90,14 +90,14 @@ func TestPackPickerTogglePack(t *testing.T) {
 	// now on pack "core", toggle with Space => check all
 	m = sendKey(m, " ")
 
-	if !m.checkedIDs["wikiciv"] || !m.checkedIDs["permacomputing"] {
-		t.Error("Space on pack should check all sources; got:", m.checkedIDs)
+	if !m.picker.CheckedIDs["wikiciv"] || !m.picker.CheckedIDs["permacomputing"] {
+		t.Error("Space on pack should check all sources; got:", m.picker.CheckedIDs)
 	}
 
 	// Space again => uncheck all
 	m = sendKey(m, " ")
-	if m.checkedIDs["wikiciv"] || m.checkedIDs["permacomputing"] {
-		t.Error("Second Space on pack should uncheck all; got:", m.checkedIDs)
+	if m.picker.CheckedIDs["wikiciv"] || m.picker.CheckedIDs["permacomputing"] {
+		t.Error("Second Space on pack should uncheck all; got:", m.picker.CheckedIDs)
 	}
 }
 
@@ -145,8 +145,8 @@ func TestPackPickerPreChecked(t *testing.T) {
 	}
 	m := newPackPicker(samplePackGroups(), checked, 64)
 
-	if !m.checkedIDs["wikiciv"] || !m.checkedIDs["permacomputing"] {
-		t.Error("Constructor should pre-select items from checked map; got:", m.checkedIDs)
+	if !m.picker.CheckedIDs["wikiciv"] || !m.picker.CheckedIDs["permacomputing"] {
+		t.Error("Constructor should pre-select items from checked map; got:", m.picker.CheckedIDs)
 	}
 
 	out := m.View()

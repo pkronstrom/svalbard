@@ -98,7 +98,7 @@ func TestBrowseToggleItem(t *testing.T) {
 	m = result.(Model)
 
 	// Verify the item is not checked initially.
-	if m.checkedIDs["osm-planet"] {
+	if m.picker.CheckedIDs["osm-planet"] {
 		t.Fatal("osm-planet should not be checked initially")
 	}
 
@@ -106,7 +106,7 @@ func TestBrowseToggleItem(t *testing.T) {
 	result, _ = m.Update(space)
 	m = result.(Model)
 
-	if !m.checkedIDs["osm-planet"] {
+	if !m.picker.CheckedIDs["osm-planet"] {
 		t.Error("osm-planet should be checked after space toggle")
 	}
 
@@ -114,7 +114,7 @@ func TestBrowseToggleItem(t *testing.T) {
 	result, _ = m.Update(space)
 	m = result.(Model)
 
-	if m.checkedIDs["osm-planet"] {
+	if m.picker.CheckedIDs["osm-planet"] {
 		t.Error("osm-planet should be unchecked after second space toggle")
 	}
 
@@ -152,7 +152,7 @@ func TestBrowseEscWithChanges(t *testing.T) {
 	m := sizedBrowse(cfg)
 
 	// Make a change: directly toggle an ID so the model becomes dirty.
-	m.checkedIDs["osm-planet"] = true
+	m.picker.CheckedIDs["osm-planet"] = true
 
 	esc := tea.KeyMsg{Type: tea.KeyEscape}
 	result, cmd := m.Update(esc)
@@ -191,7 +191,7 @@ func TestBrowseSave(t *testing.T) {
 	m := sizedBrowse(cfg)
 
 	// Make a change.
-	m.checkedIDs["wiki-en"] = true
+	m.picker.CheckedIDs["wiki-en"] = true
 
 	// Press esc to trigger save prompt.
 	esc := tea.KeyMsg{Type: tea.KeyEscape}
@@ -259,7 +259,7 @@ func TestBrowseReadOnly(t *testing.T) {
 	result, _ = m.Update(space)
 	m = result.(Model)
 
-	if m.checkedIDs["osm-planet"] {
+	if m.picker.CheckedIDs["osm-planet"] {
 		t.Error("toggle should be ignored in read-only mode")
 	}
 

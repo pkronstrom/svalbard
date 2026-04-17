@@ -65,6 +65,7 @@ type PlanItem struct {
 type ApplyEvent struct {
 	ID         string
 	Status     string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
+	Step       string // current build step (e.g. "wget", "warc2zim")
 	Downloaded int64  // bytes downloaded so far
 	Total      int64  // total bytes (-1 if unknown)
 	Error      string
@@ -90,4 +91,5 @@ type IndexStatus struct {
 type IndexEvent struct {
 	File   string
 	Status string // tui.StatusIndexing, tui.StatusSkip, tui.StatusDone, tui.StatusFailed
+	Detail string // optional detail text (e.g. "Embedded 128/3864 articles")
 }

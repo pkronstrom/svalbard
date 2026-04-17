@@ -28,6 +28,7 @@ type PlanItem struct {
 type ApplyEvent struct {
 	ID         string
 	Status     string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
+	Step       string // current build step (e.g. "wget", "warc2zim")
 	Downloaded int64  // bytes downloaded so far
 	Total      int64  // total bytes (-1 if unknown)
 	Error      string
@@ -66,6 +67,7 @@ type applyTickMsg struct {
 type applyStep struct {
 	id         string
 	status     string // tui.Status* constants
+	step       string // current build step
 	err        string
 	downloaded int64
 	total      int64
@@ -83,11 +85,12 @@ type Model struct {
 	scrollOffset int
 
 	// Apply sub-state
-	applying   bool
-	applyItems []applyStep
-	applyCh    <-chan ApplyEvent
-	applyDone  bool
-	applyErr   string
+	applying     bool
+	applyItems   []applyStep
+	applyCh      <-chan ApplyEvent
+	applyDone    bool
+	applyErr     string
+	applyCancel  context.CancelFunc
 
 	width, height int
 	theme         tui.Theme
@@ -185,7 +188,7 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		for i, it := range m.items {
 			m.applyItems[i] = applyStep{id: it.ID}
 		}
-		return m, startApply(m.runApply, m.items)
+		return m, startApply(m.runApply, m.items, &m.applyCancel)
 
 	case m.keys.Back.Matches(msg), m.keys.Quit.Matches(msg):
 		return m, func() tea.Msg { return BackMsg{} }
@@ -202,6 +205,9 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateApplying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.keys.ForceQuit.Matches(msg):
+		if m.applyCancel != nil {
+			m.applyCancel()
+		}
 		return m, tea.Quit
 
 	case m.keys.Enter.Matches(msg):
@@ -214,7 +220,11 @@ func (m Model) updateApplying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.applyDone {
 			return m, func() tea.Msg { return BackMsg{} }
 		}
-		return m, nil
+		// Cancel running apply and go back.
+		if m.applyCancel != nil {
+			m.applyCancel()
+		}
+		return m, func() tea.Msg { return BackMsg{} }
 	}
 
 	return m, nil
@@ -226,6 +236,9 @@ func (m *Model) updateApplyStep(ev ApplyEvent) {
 			m.applyItems[i].status = ev.Status
 			m.applyItems[i].downloaded = ev.Downloaded
 			m.applyItems[i].total = ev.Total
+			if ev.Step != "" {
+				m.applyItems[i].step = ev.Step
+			}
 			if ev.Error != "" {
 				m.applyItems[i].err = ev.Error
 			}
@@ -238,12 +251,14 @@ func (m *Model) updateApplyStep(ev ApplyEvent) {
 // Async helpers
 // ---------------------------------------------------------------------------
 
-func startApply(runApply func(ctx context.Context, onProgress func(ApplyEvent)) error, items []PlanItem) tea.Cmd {
+func startApply(runApply func(ctx context.Context, onProgress func(ApplyEvent)) error, items []PlanItem, cancel *context.CancelFunc) tea.Cmd {
+	ctx, cfn := context.WithCancel(context.Background())
+	*cancel = cfn
 	return func() tea.Msg {
 		ch := make(chan ApplyEvent, 16)
 		go func() {
 			defer close(ch)
-			if err := runApply(context.Background(), func(ev ApplyEvent) {
+			if err := runApply(ctx, func(ev ApplyEvent) {
 				ch <- ev
 			}); err != nil {
 				ch <- ApplyEvent{Status: tui.StatusFailed, Error: err.Error()}
@@ -429,14 +444,18 @@ func (m Model) viewApply() string {
 		// Use short ID instead of long description to keep lines compact.
 		label := step.id
 
-		// Append download progress for active items.
-		if step.status == tui.StatusActive && step.downloaded > 0 {
-			if step.total > 0 {
-				pct := int(float64(step.downloaded) / float64(step.total) * 100)
-				label += fmt.Sprintf("  %s/%s  %d%%",
-					formatBytes(step.downloaded), formatBytes(step.total), pct)
-			} else {
-				label += fmt.Sprintf("  %s", formatBytes(step.downloaded))
+		// Append progress for active items.
+		if step.status == tui.StatusActive {
+			if step.downloaded > 0 {
+				if step.total > 0 {
+					pct := int(float64(step.downloaded) / float64(step.total) * 100)
+					label += fmt.Sprintf("  %s/%s  %d%%",
+						formatBytes(step.downloaded), formatBytes(step.total), pct)
+				} else {
+					label += fmt.Sprintf("  %s", formatBytes(step.downloaded))
+				}
+			} else if step.step != "" {
+				label += fmt.Sprintf("  %s", step.step)
 			}
 		}
 

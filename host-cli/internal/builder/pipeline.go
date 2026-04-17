@@ -3,6 +3,7 @@ package builder
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,17 +19,16 @@ import (
 
 // buildPipeline executes a sequence of build steps defined in recipe.Build.Steps.
 // Template variables in step fields are resolved against the recipe and runtime context.
-func buildPipeline(root string, recipe catalog.Item, _ *catalog.Catalog, _ Options) ([]manifest.RealizedEntry, error) {
+func buildPipeline(root string, recipe catalog.Item, _ *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if recipe.Build == nil || len(recipe.Build.Steps) == 0 {
 		return nil, fmt.Errorf("pipeline %s: no build steps defined", recipe.ID)
 	}
 
 	typeDir := toolkit.TypeDirs[recipe.Type]
-	workdir, err := os.MkdirTemp("", "svalbard-build-"+recipe.ID+"-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(workdir)
 
 	// Compute output path.
 	outputDir := filepath.Join(root, typeDir, recipe.ID)
@@ -37,25 +37,50 @@ func buildPipeline(root string, recipe catalog.Item, _ *catalog.Catalog, _ Optio
 		outputFile = filepath.Join(root, typeDir, recipe.Build.Output)
 	}
 
+	// Cache check: skip build if output already exists with non-zero size.
+	if info, err := os.Stat(outputFile); err == nil && info.Size() > 0 {
+		slog.Info("build cache hit", "id", recipe.ID, "path", outputFile)
+		entry, err := recordOutput(root, recipe, typeDir, outputDir, outputFile)
+		if err == nil {
+			return []manifest.RealizedEntry{entry}, nil
+		}
+		// Cache entry invalid — rebuild.
+	}
+
+	workdir, err := os.MkdirTemp("", "svalbard-build-"+recipe.ID+"-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(workdir)
+
 	// Build template vars from recipe build config + well-known paths.
 	vars := buildTemplateVars(root, recipe, workdir, outputDir, outputFile)
+
+	report := func(step string) {
+		if opts.OnStatus != nil {
+			opts.OnStatus(step)
+		}
+	}
 
 	for i, step := range recipe.Build.Steps {
 		switch {
 		case step.Download != "":
+			report(fmt.Sprintf("downloading %s", filepath.Base(resolve(step.Dest, vars))))
 			if err := stepDownload(resolve(step.Download, vars), resolve(step.Dest, vars)); err != nil {
 				return nil, fmt.Errorf("step %d (download): %w", i+1, err)
 			}
 		case step.Extract != "":
+			report("extracting")
 			if err := stepExtract(resolve(step.Extract, vars), resolve(step.Dest, vars)); err != nil {
 				return nil, fmt.Errorf("step %d (extract): %w", i+1, err)
 			}
 		case step.Exec != "":
+			report(step.Exec)
 			resolvedArgs := make([]string, len(step.Args))
 			for j, arg := range step.Args {
 				resolvedArgs[j] = resolve(arg, vars)
 			}
-			if err := stepExec(root, step.Exec, resolvedArgs, step.DockerImage); err != nil {
+			if err := stepExec(ctx, root, workdir, step.Exec, resolvedArgs, step.DockerImage); err != nil {
 				return nil, fmt.Errorf("step %d (exec %s): %w", i+1, step.Exec, err)
 			}
 		case step.Verify != "":
@@ -144,18 +169,23 @@ func stepExtract(archivePath, destDir string) error {
 // stepExec finds a tool and runs it with args.
 // Resolution order: drive bin/<platform>/ → PATH → Docker.
 // dockerImage overrides the default svalbard-tools container when non-empty.
-func stepExec(root, tool string, args []string, dockerImage string) error {
+// workdir is the build temp directory, mounted into Docker as /work.
+func stepExec(ctx context.Context, root, workdir, tool string, args []string, dockerImage string) error {
 	toolPath := findTool(root, tool)
 	slog.Info("exec", "tool", tool, "args", args)
 
 	if toolPath != "" {
-		cmd := exec.Command(toolPath, args...)
+		cmd := exec.CommandContext(ctx, toolPath, args...)
 		var buf bytes.Buffer
 		cmd.Stderr = &buf
 		cmd.Stdout = &buf
 		if err := cmd.Run(); err != nil {
-			slog.Warn("exec failed", "tool", tool, "output", truncate(buf.String(), 200))
-			return err
+			if wgetNonFatal(tool, err) {
+				slog.Info("wget mirror completed with partial errors (non-fatal)", "tool", tool)
+			} else {
+				slog.Warn("exec failed", "tool", tool, "output", truncate(buf.String(), 200))
+				return err
+			}
 		}
 		return nil
 	}
@@ -165,9 +195,17 @@ func stepExec(root, tool string, args []string, dockerImage string) error {
 	if dockerImage != "" {
 		image = dockerImage
 	}
-	// Translate host paths under vault root to /vault/... for the container.
+	// Translate host paths to container paths:
+	//   vault root → /vault
+	//   workdir    → /work
 	translated := make([]string, len(args))
 	for i, arg := range args {
+		if workdir != "" && strings.HasPrefix(arg, workdir+string(filepath.Separator)) {
+			if rel, err := filepath.Rel(workdir, arg); err == nil {
+				translated[i] = "/work/" + filepath.ToSlash(rel)
+				continue
+			}
+		}
 		if strings.HasPrefix(arg, root+string(filepath.Separator)) {
 			if rel, err := filepath.Rel(root, arg); err == nil {
 				translated[i] = "/vault/" + filepath.ToSlash(rel)
@@ -180,11 +218,13 @@ func stepExec(root, tool string, args []string, dockerImage string) error {
 	dockerArgs := []string{
 		"run", "--rm",
 		"-v", root + ":/vault",
-		image,
-		tool,
 	}
+	if workdir != "" {
+		dockerArgs = append(dockerArgs, "-v", workdir+":/work")
+	}
+	dockerArgs = append(dockerArgs, image, tool)
 	dockerArgs = append(dockerArgs, translated...)
-	cmd := exec.Command("docker", dockerArgs...)
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
 	var buf bytes.Buffer
 	cmd.Stderr = &buf
 	cmd.Stdout = &buf
@@ -269,6 +309,20 @@ func recordOutput(root string, recipe catalog.Item, typeDir, outputDir, outputFi
 	}
 
 	return manifest.RealizedEntry{}, fmt.Errorf("pipeline %s: no output produced at %s or %s", recipe.ID, outputDir, outputFile)
+}
+
+// wgetNonFatal returns true if the tool is wget and the error is a non-fatal
+// exit code (4-8: network/server errors during mirror are expected).
+func wgetNonFatal(tool string, err error) bool {
+	if tool != "wget" {
+		return false
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		code := exitErr.ExitCode()
+		return code >= 4 && code <= 8
+	}
+	return false
 }
 
 func truncate(s string, n int) string {

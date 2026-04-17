@@ -56,7 +56,7 @@ type downloadResult struct {
 // Run executes a reconciliation plan against the vault at root, mutating the
 // manifest's realized state to reflect what was applied.
 // The optional onProgress callback reports per-item status.
-func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Catalog, onProgress ...ProgressFunc) error {
+func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Catalog, onProgress ...ProgressFunc) error {
 	progress := func(ev ProgressEvent) {}
 	if len(onProgress) > 0 && onProgress[0] != nil {
 		progress = onProgress[0]
@@ -168,6 +168,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 					jobID := job.id
 					if nativeFn, ok := builder.Dispatch(job.recipe); ok {
 						entries, err = nativeFn(root, job.recipe, cat, builder.Options{
+							Ctx:        ctx,
 							Platforms:  m.Desired.Options.HostPlatforms,
 							DesiredIDs: desiredIDs,
 							OnStatus: func(step string) {
@@ -176,7 +177,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 						})
 					} else {
 						var entry manifest.RealizedEntry
-						entry, err = buildItem(root, job.id, job.recipe)
+						entry, err = buildItem(ctx, root, job.id, job.recipe)
 						if err == nil {
 							entries = []manifest.RealizedEntry{entry}
 						}
@@ -412,7 +413,7 @@ func fetchAndRecord(root, id string, recipe catalog.Item, dlURL string, onProgre
 }
 
 // buildItem runs a Docker-based builder for strategy=build recipes.
-func buildItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry, error) {
+func buildItem(ctx context.Context, root, id string, recipe catalog.Item) (manifest.RealizedEntry, error) {
 	family := recipe.Build.Family
 	typeDir := toolkit.TypeDirs[recipe.Type]
 	filename := recipe.Filename
@@ -438,7 +439,7 @@ func buildItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry, er
 		"--output", "/vault/" + filepath.Join(typeDir, filename),
 	}
 
-	cmd := execCommand(args[0], args[1:]...)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	var outputBuf bytes.Buffer
 	cmd.Stderr = &outputBuf
 	cmd.Stdout = &outputBuf

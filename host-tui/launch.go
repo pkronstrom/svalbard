@@ -330,7 +330,7 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 				newDeps := rebuildForVault(vaultPath)
 				return newDeps.RunApply(context.Background(), func(ev ApplyEvent) {
 					onProgress(wizard.ApplyEvent{
-						ID: ev.ID, Status: ev.Status,
+						ID: ev.ID, Status: ev.Status, Step: ev.Step,
 						Downloaded: ev.Downloaded, Total: ev.Total,
 						Error: ev.Error,
 					})
@@ -369,12 +369,16 @@ func (m *appModel) newDashboard(vaultPath string) dashboard.Model {
 func (m *appModel) newBrowse(readOnly bool) browse.Model {
 	cfg := browse.Config{}
 	// Prefer deps for catalog data, fall back to wizardConfig
+	var srcPresets []PresetOption
 	if m.deps != nil {
 		cfg.PackGroups = m.deps.PackGroups
-		cfg.Presets = m.deps.Presets
+		srcPresets = m.deps.Presets
 	} else if m.wizardConfig != nil {
 		cfg.PackGroups = m.wizardConfig.PackGroups
-		cfg.Presets = m.wizardConfig.Presets
+		srcPresets = m.wizardConfig.Presets
+	}
+	for _, p := range srcPresets {
+		cfg.Presets = append(cfg.Presets, browse.PresetOption{Name: p.Name, SourceIDs: p.SourceIDs})
 	}
 	if !readOnly && m.deps != nil {
 		if m.deps.LoadStatus != nil {
@@ -417,7 +421,7 @@ func (m *appModel) newPlan() plan.Model {
 			cfg.RunApply = func(ctx context.Context, onProgress func(plan.ApplyEvent)) error {
 				return m.deps.RunApply(ctx, func(ev ApplyEvent) {
 					onProgress(plan.ApplyEvent{
-						ID: ev.ID, Status: ev.Status,
+						ID: ev.ID, Status: ev.Status, Step: ev.Step,
 						Downloaded: ev.Downloaded, Total: ev.Total,
 						Error: ev.Error,
 					})
@@ -462,7 +466,7 @@ func (m *appModel) newIndex() index.Model {
 		if m.deps.RunIndex != nil {
 			cfg.RunIndex = func(ctx context.Context, indexType string, onProgress func(index.IndexEvent)) error {
 				return m.deps.RunIndex(ctx, indexType, func(ev IndexEvent) {
-					onProgress(index.IndexEvent{File: ev.File, Status: ev.Status})
+					onProgress(index.IndexEvent{File: ev.File, Status: ev.Status, Detail: ev.Detail})
 				})
 			}
 		}

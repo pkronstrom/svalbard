@@ -10,6 +10,8 @@
 package builder
 
 import (
+	"context"
+
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
@@ -19,6 +21,7 @@ const DefaultDockerImage = "ghcr.io/pkronstrom/svalbard-tools:latest"
 
 // Options provides context from the apply layer to builders.
 type Options struct {
+	Ctx        context.Context   // cancellation context — child processes are killed on cancel
 	Platforms  []string          // target platforms (from manifest HostPlatforms)
 	DesiredIDs map[string]bool   // item IDs the user selected (from plan.ToDownload)
 	OnStatus   func(step string) // optional: report current build step (e.g. "wget", "warc2zim")

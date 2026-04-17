@@ -14,142 +14,23 @@ type packDoneMsg struct {
 }
 type packCancelMsg struct{}
 
-// Row kinds for the flattened tree display.
-const (
-	rowGroup = iota
-	rowPack
-	rowItem
-	rowAction // "Continue to review →" at the bottom
-)
-
-// pickerRow is a single row in the flattened tree view.
-type pickerRow struct {
-	kind       int
-	groupName  string
-	pack       *Pack
-	source     *PackSource
-	groupPacks []Pack // only set for rowGroup rows
-}
-
-// packPickerModel is the Bubble Tea model for the pack picker sub-screen.
+// packPickerModel is the Bubble Tea sub-model for the pack picker sub-screen.
 type packPickerModel struct {
-	groups          []PackGroup
-	checkedIDs      map[string]bool
-	collapsedGroups map[string]bool
-	collapsedPacks  map[string]bool
-	rows            []pickerRow
-	cursor          int
-	scrollOffset    int
-	freeGB          float64
-	width           int
-	height          int
-	theme           tui.Theme
-	keys            tui.KeyMap
+	picker tui.TreePicker
+	width  int
+	height int
 }
 
 // newPackPicker creates a pack picker model.
-// Groups start expanded, packs start collapsed.
-// checked may be nil; it is copied (not mutated).
-func newPackPicker(groups []PackGroup, checked map[string]bool, freeGB float64) packPickerModel {
-	m := packPickerModel{
-		groups:          groups,
-		checkedIDs:      make(map[string]bool),
-		collapsedGroups: make(map[string]bool),
-		collapsedPacks:  make(map[string]bool),
-		freeGB:          freeGB,
-		theme:           tui.DefaultTheme(),
-		keys:            tui.DefaultKeyMap(),
-	}
+func newPackPicker(groups []tui.PackGroup, checked map[string]bool, freeGB float64) packPickerModel {
+	tp := tui.NewTreePicker(tui.TreePickerConfig{
+		Groups:     groups,
+		CheckedIDs: checked,
+		FreeGB:     freeGB,
+		ShowAction: true,
+	})
 
-	// Copy checked map.
-	for id, v := range checked {
-		if v {
-			m.checkedIDs[id] = true
-		}
-	}
-
-	// Groups start expanded (false = not collapsed).
-	for _, g := range groups {
-		m.collapsedGroups[g.Name] = false
-	}
-
-	// Packs start collapsed.
-	for _, g := range groups {
-		for _, p := range g.Packs {
-			m.collapsedPacks[p.Name] = true
-		}
-	}
-
-	m.rebuildRows()
-
-	// Set cursor to first selectable row (skip nothing — all rows are selectable).
-	if len(m.rows) > 0 {
-		m.cursor = 0
-	}
-
-	return m
-}
-
-// rebuildRows flattens the tree respecting collapsed state.
-func (m *packPickerModel) rebuildRows() {
-	m.rows = nil
-	for _, g := range m.groups {
-		m.rows = append(m.rows, pickerRow{
-			kind:       rowGroup,
-			groupName:  g.Name,
-			groupPacks: g.Packs,
-		})
-		if m.collapsedGroups[g.Name] {
-			continue
-		}
-		for i := range g.Packs {
-			p := &g.Packs[i]
-			m.rows = append(m.rows, pickerRow{
-				kind: rowPack,
-				pack: p,
-			})
-			if m.collapsedPacks[p.Name] {
-				continue
-			}
-			for j := range p.Sources {
-				s := &p.Sources[j]
-				m.rows = append(m.rows, pickerRow{
-					kind:   rowItem,
-					source: s,
-				})
-			}
-		}
-	}
-	// Action row at the bottom
-	m.rows = append(m.rows, pickerRow{kind: rowAction})
-}
-
-// totalCheckedGB returns the total size of all checked sources (dedup by ID).
-func (m *packPickerModel) totalCheckedGB() float64 {
-	seen := make(map[string]bool)
-	total := 0.0
-	for _, g := range m.groups {
-		for _, p := range g.Packs {
-			for _, s := range p.Sources {
-				if m.checkedIDs[s.ID] && !seen[s.ID] {
-					seen[s.ID] = true
-					total += s.SizeGB
-				}
-			}
-		}
-	}
-	return total
-}
-
-// packCheckState returns the count of checked and total sources for a pack.
-func packCheckState(pack *Pack, checked map[string]bool) (int, int) {
-	c := 0
-	for _, s := range pack.Sources {
-		if checked[s.ID] {
-			c++
-		}
-	}
-	return c, len(pack.Sources)
+	return packPickerModel{picker: tp}
 }
 
 // Init satisfies tea.Model.
@@ -163,66 +44,45 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.picker.Width = msg.Width
+		m.picker.Height = msg.Height
 		return m, nil
 
 	case tea.KeyMsg:
+		// Let the shared picker handle navigation/toggle.
+		if m.picker.Update(msg) {
+			return m, nil
+		}
+
 		switch {
-		// Navigate up
-		case m.keys.MoveUp.Matches(msg):
-			if m.cursor > 0 {
-				m.cursor--
-			}
-			m.ensureVisible()
-			return m, nil
-
-		// Navigate down
-		case m.keys.MoveDown.Matches(msg):
-			if m.cursor < len(m.rows)-1 {
-				m.cursor++
-			}
-			m.ensureVisible()
-			return m, nil
-
-		// Toggle selection
-		case m.keys.Toggle.Matches(msg):
-			m.toggleAtCursor()
-			return m, nil
-
-		// Enter: expand/collapse on groups/packs, or confirm on action row
-		case m.keys.Enter.Matches(msg):
-			if m.cursor >= 0 && m.cursor < len(m.rows) && m.rows[m.cursor].kind == rowAction {
-				selected := make(map[string]bool, len(m.checkedIDs))
-				for id, v := range m.checkedIDs {
+		// Enter on action row → done.
+		case m.picker.Keys.Enter.Matches(msg):
+			if row := m.picker.CursorRow(); row != nil && row.Kind == tui.RowAction {
+				selected := make(map[string]bool, len(m.picker.CheckedIDs))
+				for id, v := range m.picker.CheckedIDs {
 					if v {
 						selected[id] = true
 					}
 				}
 				return m, func() tea.Msg { return packDoneMsg{selectedIDs: selected} }
 			}
-			m.expandCollapseAtCursor()
-			return m, nil
 
-		case msg.Type == tea.KeyRight:
-			m.expandAtCursor()
-			return m, nil
-
-		case msg.Type == tea.KeyLeft:
-			m.collapseAtCursor()
-			return m, nil
-
-		// Apply
+		// 'a' shortcut → done.
 		case matchRune(msg, 'a'):
-			selected := make(map[string]bool, len(m.checkedIDs))
-			for id, v := range m.checkedIDs {
+			selected := make(map[string]bool, len(m.picker.CheckedIDs))
+			for id, v := range m.picker.CheckedIDs {
 				if v {
 					selected[id] = true
 				}
 			}
 			return m, func() tea.Msg { return packDoneMsg{selectedIDs: selected} }
 
-		// Cancel
-		case m.keys.Quit.Matches(msg):
+		// Cancel.
+		case m.picker.Keys.Quit.Matches(msg):
 			return m, func() tea.Msg { return packCancelMsg{} }
+
+		case m.picker.Keys.ForceQuit.Matches(msg):
+			return m, tea.Quit
 		}
 	}
 	return m, nil
@@ -233,377 +93,18 @@ func matchRune(msg tea.KeyMsg, r rune) bool {
 	return msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == r
 }
 
-// toggleAtCursor toggles the selection at the current cursor position.
-func (m *packPickerModel) toggleAtCursor() {
-	if m.cursor < 0 || m.cursor >= len(m.rows) {
-		return
-	}
-	row := m.rows[m.cursor]
-	switch row.kind {
-	case rowGroup:
-		// Toggle all sources in all packs of the group.
-		allChecked := true
-		for _, p := range row.groupPacks {
-			for _, s := range p.Sources {
-				if !m.checkedIDs[s.ID] {
-					allChecked = false
-					break
-				}
-			}
-			if !allChecked {
-				break
-			}
-		}
-		for _, p := range row.groupPacks {
-			for _, s := range p.Sources {
-				if allChecked {
-					delete(m.checkedIDs, s.ID)
-				} else {
-					m.checkedIDs[s.ID] = true
-				}
-			}
-		}
-
-	case rowPack:
-		pack := row.pack
-		checked, total := packCheckState(pack, m.checkedIDs)
-		if checked == total && total > 0 {
-			// All checked => uncheck all
-			for _, s := range pack.Sources {
-				delete(m.checkedIDs, s.ID)
-			}
-		} else {
-			// Some or none checked => check all
-			for _, s := range pack.Sources {
-				m.checkedIDs[s.ID] = true
-			}
-		}
-
-	case rowItem:
-		src := row.source
-		if m.checkedIDs[src.ID] {
-			delete(m.checkedIDs, src.ID)
-		} else {
-			m.checkedIDs[src.ID] = true
-		}
-	}
-}
-
-// expandCollapseAtCursor toggles expand/collapse at the current cursor position.
-// expandAtCursor expands the group or pack at the cursor.
-func (m *packPickerModel) expandAtCursor() {
-	if m.cursor < 0 || m.cursor >= len(m.rows) {
-		return
-	}
-	row := m.rows[m.cursor]
-	switch row.kind {
-	case rowGroup:
-		if m.collapsedGroups[row.groupName] {
-			m.collapsedGroups[row.groupName] = false
-			m.rebuildRows()
-		}
-	case rowPack:
-		if m.collapsedPacks[row.pack.Name] {
-			m.collapsedPacks[row.pack.Name] = false
-			m.rebuildRows()
-		}
-	}
-}
-
-// collapseAtCursor collapses the current level or moves to the parent.
-// On an expanded group/pack: collapse it.
-// On a collapsed group/pack or an item: move cursor to the parent.
-func (m *packPickerModel) collapseAtCursor() {
-	if m.cursor < 0 || m.cursor >= len(m.rows) {
-		return
-	}
-	row := m.rows[m.cursor]
-	switch row.kind {
-	case rowGroup:
-		if !m.collapsedGroups[row.groupName] {
-			m.collapsedGroups[row.groupName] = true
-			m.rebuildRows()
-			if m.cursor >= len(m.rows) {
-				m.cursor = len(m.rows) - 1
-			}
-		}
-	case rowPack:
-		if !m.collapsedPacks[row.pack.Name] {
-			// Collapse this pack
-			m.collapsedPacks[row.pack.Name] = true
-			m.rebuildRows()
-			if m.cursor >= len(m.rows) {
-				m.cursor = len(m.rows) - 1
-			}
-		} else {
-			// Already collapsed — move to parent group
-			m.moveCursorToParentGroup()
-		}
-	case rowItem:
-		// Move to parent pack
-		m.moveCursorToParentPack()
-	}
-}
-
-// moveCursorToParentGroup moves the cursor to the group header above.
-func (m *packPickerModel) moveCursorToParentGroup() {
-	for i := m.cursor - 1; i >= 0; i-- {
-		if m.rows[i].kind == rowGroup {
-			m.cursor = i
-			m.ensureVisible()
-			return
-		}
-	}
-}
-
-// moveCursorToParentPack moves the cursor to the pack header above.
-func (m *packPickerModel) moveCursorToParentPack() {
-	for i := m.cursor - 1; i >= 0; i-- {
-		if m.rows[i].kind == rowPack {
-			m.cursor = i
-			m.ensureVisible()
-			return
-		}
-	}
-}
-
-func (m *packPickerModel) expandCollapseAtCursor() {
-	if m.cursor < 0 || m.cursor >= len(m.rows) {
-		return
-	}
-	row := m.rows[m.cursor]
-	switch row.kind {
-	case rowGroup:
-		m.collapsedGroups[row.groupName] = !m.collapsedGroups[row.groupName]
-	case rowPack:
-		m.collapsedPacks[row.pack.Name] = !m.collapsedPacks[row.pack.Name]
-	}
-	m.rebuildRows()
-	// Clamp cursor after rows change.
-	if m.cursor >= len(m.rows) {
-		m.cursor = len(m.rows) - 1
-	}
-}
-
-// maxVisible returns the number of visible rows based on terminal height.
-func (m *packPickerModel) maxVisible() int {
-	// Reserve: header(2) + detail area(4) + total/free(1) + help(1) + margins(2)
-	v := m.height - 10
-	if v < 4 {
-		v = 4
-	}
-	return v
-}
-
-// ensureVisible adjusts scrollOffset so the cursor stays in view.
-func (m *packPickerModel) ensureVisible() {
-	maxVis := m.maxVisible()
-	if m.cursor < m.scrollOffset+2 {
-		m.scrollOffset = m.cursor - 2
-		if m.scrollOffset < 0 {
-			m.scrollOffset = 0
-		}
-	}
-	if m.cursor >= m.scrollOffset+maxVis-2 {
-		m.scrollOffset = m.cursor - maxVis + 3
-		maxOff := len(m.rows) - maxVis
-		if maxOff < 0 {
-			maxOff = 0
-		}
-		if m.scrollOffset > maxOff {
-			m.scrollOffset = maxOff
-		}
-	}
-	if m.scrollOffset < 0 {
-		m.scrollOffset = 0
-	}
-}
-
 // View renders the pack picker.
 func (m packPickerModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(m.theme.Title.Render("Svalbard — Pack Picker"))
-	b.WriteString("\n\n")
-
-	maxVis := m.maxVisible()
-	end := m.scrollOffset + maxVis
-	if end > len(m.rows) {
-		end = len(m.rows)
-	}
-
-	for i := m.scrollOffset; i < end; i++ {
-		row := m.rows[i]
-		isCursor := i == m.cursor
-		prefix := "  "
-		if isCursor {
-			prefix = "> "
-		}
-
-		switch row.kind {
-		case rowGroup:
-			label := row.groupName
-			if label == "" {
-				label = "Other"
-			}
-			if isCursor {
-				b.WriteString(m.theme.Selected.Render(prefix + label))
-			} else {
-				b.WriteString(m.theme.Section.Render(prefix + label))
-			}
-
-		case rowPack:
-			pack := row.pack
-			checked, total := packCheckState(pack, m.checkedIDs)
-			mark := "·"
-			if checked == total && total > 0 {
-				mark = "✓"
-			} else if checked > 0 {
-				mark = "~"
-			}
-			suffix := fmt.Sprintf("%d/%d", checked, total)
-			if checked > 0 && checked < total {
-				suffix += " shared"
-			}
-			sym := packTypeSymbol(pack)
-			label := fmt.Sprintf("    %s%s %s %s  %s", prefix, mark, pack.Name, sym, suffix)
-			if isCursor {
-				b.WriteString(m.theme.Selected.Render(label))
-			} else if checked > 0 {
-				b.WriteString(m.theme.Base.Render(label))
-			} else {
-				b.WriteString(m.theme.Muted.Render(label))
-			}
-
-		case rowItem:
-			src := row.source
-			mark := "·"
-			if m.checkedIDs[src.ID] {
-				mark = "✓"
-			}
-			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, src.ID, tui.TypeSymbol(src.Type), tui.FormatSizeGB(src.SizeGB))
-			if isCursor {
-				b.WriteString(m.theme.Selected.Render(line))
-			} else if m.checkedIDs[src.ID] {
-				b.WriteString(m.theme.Base.Render(line))
-			} else {
-				b.WriteString(m.theme.Muted.Render(line))
-			}
-
-		case rowAction:
-			b.WriteString("\n")
-			line := prefix + "Continue to review →"
-			if isCursor {
-				b.WriteString(m.theme.Success.Render(line))
-			} else {
-				b.WriteString(m.theme.Focus.Render(line))
-			}
-		}
-		b.WriteString("\n")
-	}
-
-	// Detail area for cursor item
+	b.WriteString(m.picker.RenderTree())
 	b.WriteString("\n")
-	b.WriteString(m.theme.Muted.Render("  ─────────────────────────────────"))
-	b.WriteString("\n")
-	if m.cursor >= 0 && m.cursor < len(m.rows) {
-		row := m.rows[m.cursor]
-		switch row.kind {
-		case rowGroup:
-			total := 0
-			for _, p := range row.groupPacks {
-				total += len(p.Sources)
-			}
-			b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s — %d packs, %d items", row.groupName, len(row.groupPacks), total)))
-		case rowPack:
-			desc := row.pack.Description
-			if desc == "" {
-				desc = row.pack.Name
-			}
-			b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s — %d items", desc, len(row.pack.Sources))))
-		case rowItem:
-			src := row.source
-			line := fmt.Sprintf("  %s %s · %s · %s", tui.TypeSymbol(src.Type), src.ID, src.Type, tui.FormatSizeGB(src.SizeGB))
-			b.WriteString(m.theme.Muted.Render(line))
-			if src.Description != "" {
-				b.WriteString("\n")
-				b.WriteString(m.theme.Muted.Render("  " + src.Description))
-			}
-		}
-	}
-	b.WriteString("\n\n")
-
-	// Footer: total / free with fits/over indicator.
-	totalGB := m.totalCheckedGB()
-	if m.freeGB <= 0 {
-		// Free space unknown (e.g. custom path) — show total only
-		b.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f GB", totalGB)))
-	} else if totalGB <= m.freeGB {
-		b.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f / %.0f GB  ", totalGB, m.freeGB)))
-		b.WriteString(m.theme.Success.Render("fits"))
-	} else {
-		b.WriteString(m.theme.Base.Render(fmt.Sprintf("  Total: %.1f / %.0f GB  ", totalGB, m.freeGB)))
-		b.WriteString(m.theme.Danger.Render(fmt.Sprintf("%.1f GB over", totalGB-m.freeGB)))
-	}
+	b.WriteString(m.picker.RenderSizeSummary())
 	b.WriteString("\n")
 
-	// Help line — derived from key bindings.
-	b.WriteString(m.theme.Help.Render(fmt.Sprintf("  %s/%s navigate  %s toggle  %s expand/collapse  a apply  q cancel",
-		m.keys.MoveUp.Key, m.keys.MoveDown.Key, m.keys.Toggle.Key, m.keys.Enter.Key)))
+	b.WriteString(m.picker.Theme.Help.Render(fmt.Sprintf("  %s/%s navigate  %s toggle  %s expand/collapse  a apply  q cancel",
+		m.picker.Keys.MoveUp.Key, m.picker.Keys.MoveDown.Key, m.picker.Keys.Toggle.Key, m.picker.Keys.Enter.Key)))
 	b.WriteString("\n")
 
 	return b.String()
 }
-
-// packTypeSymbol returns the type symbol for a pack. If all items share
-// the same type, returns that symbol. Otherwise returns a mixed indicator.
-func packTypeSymbol(pack *Pack) string {
-	if len(pack.Sources) == 0 {
-		return "·"
-	}
-	first := pack.Sources[0].Type
-	allSame := true
-	for _, s := range pack.Sources[1:] {
-		if s.Type != first {
-			allSame = false
-			break
-		}
-	}
-	if allSame {
-		return tui.TypeSymbol(first)
-	}
-	return "+"
-}
-
-
-func (m *packPickerModel) paneWidth() int {
-	// Right pane is ~75% of terminal minus gutter
-	w := int(float64(m.width)*0.75) - 4
-	if w < 40 {
-		w = 40
-	}
-	return w
-}
-
-func truncate(s string, maxWidth int) string {
-	runes := []rune(s)
-	if len(runes) <= maxWidth {
-		return s
-	}
-	if maxWidth <= 3 {
-		return string(runes[:maxWidth])
-	}
-	return string(runes[:maxWidth-1]) + "…"
-}
-
-// packCheckedSizeGB returns the total size of checked sources in a pack.
-func packCheckedSizeGB(pack *Pack, checked map[string]bool) float64 {
-	total := 0.0
-	for _, s := range pack.Sources {
-		if checked[s.ID] {
-			total += s.SizeGB
-		}
-	}
-	return total
-}
-

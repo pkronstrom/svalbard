@@ -8,13 +8,14 @@ size_gb: 0.2
 description: HackTricks pentest methodology and cheat sheets
 strategy: build
 build:
-  source_url: https://book.hacktricks.wiki
+  source_url: https://hacktricks.wiki/en/
   steps:
     - exec: wget
       args: ["--mirror", "--warc-file={workdir}/{id}", "--warc-cdx",
              "--page-requisites", "--adjust-extension", "--convert-links",
-             "--no-parent", "--tries=3", "--timeout=30",
-             "--reject", "*.mp4,*.webm",
+             "--no-parent", "--tries=2", "--timeout=20",
+             "--level=5", "--wait=0.2",
+             "--reject", "*.mp4,*.webm,*.zip,*.tar.gz",
              "-P", "{workdir}/site",
              "{source_url}"]
     - exec: warc2zim
