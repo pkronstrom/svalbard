@@ -23,6 +23,15 @@ func TypeSymbol(t string) string {
 	}
 }
 
+// StrategySymbol returns a small indicator for the acquisition strategy.
+// "⚒" for build recipes, "" (empty) for downloads (the common default).
+func StrategySymbol(strategy string) string {
+	if strategy == "build" {
+		return "⚒"
+	}
+	return ""
+}
+
 // FormatSizeGB formats a size in GB to a human-readable string with a ~ prefix.
 func FormatSizeGB(gb float64) string {
 	if gb < 1 {

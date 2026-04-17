@@ -2,6 +2,7 @@
 globs:
 - tui/**
 - host-tui/**
+- host-cli/**
 rook-arch: true
 scope: module
 ---

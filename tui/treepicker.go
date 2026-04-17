@@ -24,6 +24,7 @@ type Pack struct {
 type PackSource struct {
 	ID          string
 	Type        string // e.g. "zim", "binary", "pmtiles"
+	Strategy    string // "download" or "build"
 	Description string
 	SizeGB      float64
 }
@@ -460,6 +461,16 @@ func PackTypeSymbol(pack *Pack) string {
 	return TypeSymbol(first)
 }
 
+// PackHasBuild returns true if any source in the pack uses the "build" strategy.
+func PackHasBuild(pack *Pack) bool {
+	for _, s := range pack.Sources {
+		if s.Strategy == "build" {
+			return true
+		}
+	}
+	return false
+}
+
 // RenderTree renders the tree rows as a string.
 func (tp *TreePicker) RenderTree() string {
 	var b strings.Builder
@@ -501,7 +512,11 @@ func (tp *TreePicker) RenderTree() string {
 			}
 			suffix := fmt.Sprintf("%d/%d", checked, total)
 			sym := PackTypeSymbol(pack)
-			label := fmt.Sprintf("    %s%s %s %s  %s", prefix, mark, pack.Name, sym, suffix)
+			buildTag := ""
+			if PackHasBuild(pack) {
+				buildTag = " ⚒"
+			}
+			label := fmt.Sprintf("    %s%s %s %s%s  %s", prefix, mark, pack.Name, sym, buildTag, suffix)
 			if isCursor {
 				b.WriteString(tp.Theme.Selected.Render(label))
 			} else if checked > 0 {
@@ -516,7 +531,11 @@ func (tp *TreePicker) RenderTree() string {
 			if tp.CheckedIDs[src.ID] {
 				mark = "✓"
 			}
-			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, src.ID, TypeSymbol(src.Type), FormatSizeGB(src.SizeGB))
+			strat := StrategySymbol(src.Strategy)
+			if strat != "" {
+				strat = " " + strat
+			}
+			line := fmt.Sprintf("        %s%s %s %s%s  %s", prefix, mark, src.ID, TypeSymbol(src.Type), strat, FormatSizeGB(src.SizeGB))
 			if isCursor {
 				b.WriteString(tp.Theme.Selected.Render(line))
 			} else if tp.CheckedIDs[src.ID] {
@@ -573,7 +592,11 @@ func (tp *TreePicker) RenderDetail() string {
 
 	case RowItem:
 		src := row.Source
-		info := tp.Theme.Muted.Render(fmt.Sprintf("  %s · %s", src.Type, FormatSizeGB(src.SizeGB)))
+		stratLabel := "download"
+		if src.Strategy == "build" {
+			stratLabel = "build ⚒"
+		}
+		info := tp.Theme.Muted.Render(fmt.Sprintf("  %s · %s · %s", src.Type, stratLabel, FormatSizeGB(src.SizeGB)))
 		if src.Description != "" {
 			info += "\n" + tp.Theme.Muted.Render("  "+src.Description)
 		}
