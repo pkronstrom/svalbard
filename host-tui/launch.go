@@ -209,7 +209,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case plan.BackMsg:
 		m.screen = screenDashboard
 		m.dashboard = m.newDashboard(m.vaultPath)
-		return m, m.sendSize()
+		return m, tea.Batch(m.dashboard.Init(), m.sendSize())
 
 	case plan.BrowseMsg:
 		m.screen = screenBrowse
@@ -239,7 +239,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openvault.BackMsg:
 		m.screen = screenWelcome
 		m.welcome = welcome.New()
-		return m, nil
+		return m, m.sendSize()
 	}
 
 	// Forward to active screen

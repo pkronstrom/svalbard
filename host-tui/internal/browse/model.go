@@ -439,15 +439,11 @@ func (m Model) View() string {
 
 		case rowItem:
 			src := row.source
-			mark := "[ ]"
+			mark := "·"
 			if m.checkedIDs[src.ID] {
-				mark = "[x]"
+				mark = "✓"
 			}
-			label := src.Description
-			if label == "" {
-				label = src.ID
-			}
-			line := fmt.Sprintf("        %s%s %s  %s", prefix, mark, label, formatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, src.ID, typeSymbol(src.Type), formatSizeGB(src.SizeGB))
 			if isCursor {
 				body.WriteString(m.theme.Selected.Render(line))
 			} else if m.checkedIDs[src.ID] {
@@ -501,7 +497,7 @@ func (m Model) View() string {
 		Theme:   m.theme,
 		AppName: "Svalbard",
 		Status:  header,
-		Left:    body.String(),
+		Right:   body.String(),
 		Footer:  footer,
 		Width:   m.width,
 		Height:  m.height,
@@ -557,4 +553,19 @@ func formatSizeGB(gb float64) string {
 		return fmt.Sprintf("~%.0f MB", math.Round(mb))
 	}
 	return fmt.Sprintf("~%.0f GB", math.Round(gb))
+}
+
+func typeSymbol(t string) string {
+	switch t {
+	case "zim", "pdf", "epub", "html":
+		return "✦"
+	case "binary", "toolchain", "app", "sqlite", "python-package", "python-venv":
+		return "⚙"
+	case "pmtiles", "gpkg":
+		return "⊞"
+	case "gguf":
+		return "∿"
+	default:
+		return "·"
+	}
 }
