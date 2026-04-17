@@ -2,6 +2,7 @@ package builder
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,7 +73,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			"--platform", uvPlatform + "_" + uvArch,
 		}
 		args = append(args, allPackages...)
-		fmt.Fprintf(os.Stderr, "  downloading wheels for %s...\n", platform)
+		slog.Info("downloading wheels", "platform", platform)
 		if err := uv.run(args...); err != nil {
 			return nil, fmt.Errorf("downloading wheels for %s: %w", platform, err)
 		}
@@ -106,7 +107,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 		// Phase 2: Install Python interpreter.
 		pythonBin := filepath.Join(platformDir, "bin", "python3")
 		if _, err := os.Stat(pythonBin); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "  installing python %s for %s...\n", pythonSpec, platform)
+			slog.Info("installing python", "version", pythonSpec, "platform", platform)
 			if err := uv.run("python", "install", "--install-dir", pythonDir, pythonSpec); err != nil {
 				return nil, fmt.Errorf("installing python for %s: %w", platform, err)
 			}
@@ -129,7 +130,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			toolPython := filepath.Join(toolDir, "bin", "python3")
 
 			if _, err := os.Stat(toolPython); os.IsNotExist(err) {
-				fmt.Fprintf(os.Stderr, "  creating venv for %s (%s)...\n", pkg.ID, platform)
+				slog.Info("creating venv", "package", pkg.ID, "platform", platform)
 
 				// Create tool venv using the platform's python.
 				if err := uv.run("venv", toolDir, "--python", pythonBin); err != nil {

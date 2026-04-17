@@ -3,6 +3,7 @@ package builder
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,7 +113,7 @@ func stepDownload(url, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "  downloading %s\n", filepath.Base(dest))
+	slog.Info("downloading", "file", filepath.Base(dest))
 	_, err := downloader.Download(context.Background(), url, dest, "")
 	return err
 }
@@ -128,7 +129,7 @@ func stepExtract(archivePath, destDir string) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "  extracting %s\n", filepath.Base(archivePath))
+	slog.Info("extracting", "file", filepath.Base(archivePath))
 	switch {
 	case strings.HasSuffix(archivePath, ".zip"):
 		return extractZipToDir(archivePath, destDir)
@@ -144,7 +145,7 @@ func stepExtract(archivePath, destDir string) error {
 // dockerImage overrides the default svalbard-tools container when non-empty.
 func stepExec(root, tool string, args []string, dockerImage string) error {
 	toolPath := findTool(root, tool)
-	fmt.Fprintf(os.Stderr, "  exec %s %s\n", tool, strings.Join(args, " "))
+	slog.Info("exec", "tool", tool, "args", args)
 
 	if toolPath != "" {
 		cmd := exec.Command(toolPath, args...)
@@ -158,7 +159,7 @@ func stepExec(root, tool string, args []string, dockerImage string) error {
 	if dockerImage != "" {
 		image = dockerImage
 	}
-	fmt.Fprintf(os.Stderr, "  (using docker %s for %s)\n", image, tool)
+	slog.Info("exec via docker", "tool", tool, "image", image)
 	dockerArgs := []string{
 		"run", "--rm",
 		"-v", root + ":/vault",
