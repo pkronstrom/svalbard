@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -39,6 +40,7 @@ func Download(ctx context.Context, url, destPath, expectedSHA256 string) (Result
 		if info, err := os.Stat(destPath); err == nil && info.Size() > 0 {
 			hash, err := ComputeSHA256(destPath)
 			if err == nil && hash == expectedSHA256 {
+				slog.Debug("cache hit", "path", destPath, "sha256", expectedSHA256)
 				return Result{Path: destPath, SHA256: expectedSHA256, Cached: true}, nil
 			}
 			// Hash mismatch — remove and redownload.
@@ -64,12 +66,14 @@ func Download(ctx context.Context, url, destPath, expectedSHA256 string) (Result
 	if existingSize > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", existingSize))
 	}
+	slog.Debug("downloading", "url", url, "resume_from", existingSize)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return Result{}, fmt.Errorf("http request: %w", err)
 	}
 	defer resp.Body.Close()
+	slog.Debug("download response", "url", url, "status", resp.StatusCode)
 
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -108,6 +112,7 @@ func Download(ctx context.Context, url, destPath, expectedSHA256 string) (Result
 	if err != nil {
 		return Result{}, fmt.Errorf("compute sha256: %w", err)
 	}
+	slog.Debug("download complete", "path", destPath, "sha256", hash)
 
 	if expectedSHA256 != "" && hash != expectedSHA256 {
 		os.Remove(destPath)
