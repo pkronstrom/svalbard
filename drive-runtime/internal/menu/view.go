@@ -91,9 +91,24 @@ func renderSearchView(m Model) string {
 		return b.String()
 	}
 
-	for idx, result := range m.searchResults {
+	maxVis := m.searchMaxVisible()
+	start := m.searchScrollOffset
+	end := start + maxVis
+	if end > len(m.searchResults) {
+		end = len(m.searchResults)
+	}
+	if start > 0 {
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString("\n")
+	}
+	for idx := start; idx < end; idx++ {
+		result := m.searchResults[idx]
 		line := renderSearchResultLine(m, idx+1, result.Filename, result.Title, idx == m.searchSelected)
 		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if end < len(m.searchResults) {
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  ↓ %d more", len(m.searchResults)-end)))
 		b.WriteString("\n")
 	}
 

@@ -71,6 +71,7 @@ type Model struct {
 	searchQuery        string
 	searchResults      []search.Result
 	searchSelected     int
+	searchScrollOffset int
 	searchResultsFocus bool
 	searchLoading      bool
 	searchStatus       string
@@ -158,6 +159,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.searchMode = msg.response.EffectiveMode
 		m.searchResults = limitSearchResults(msg.response.Results)
 		m.searchSelected = 0
+		m.searchScrollOffset = 0
 		m.searchResultsFocus = len(m.searchResults) > 0
 		switch {
 		case msg.response.Status != "":
@@ -277,6 +279,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.searchResultsFocus {
 			if m.searchSelected > 0 {
 				m.searchSelected--
+				m.ensureSearchVisible()
 			} else {
 				m.searchResultsFocus = false
 			}
@@ -288,10 +291,12 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if !m.searchResultsFocus {
 			m.searchResultsFocus = true
+			m.ensureSearchVisible()
 			return m, nil
 		}
 		if m.searchSelected < len(m.searchResults)-1 {
 			m.searchSelected++
+			m.ensureSearchVisible()
 		}
 		return m, nil
 	case "enter":
@@ -336,6 +341,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchQuery = ""
 			m.searchResults = nil
 			m.searchSelected = 0
+			m.searchScrollOffset = 0
 			m.searchStatus = ""
 			m.searchErr = nil
 			return m, nil
@@ -355,8 +361,12 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if !m.searchResultsFocus && msg.Type == tea.KeyRunes {
-		m.searchQuery += msg.String()
+	if !m.searchResultsFocus {
+		if msg.Type == tea.KeyRunes {
+			m.searchQuery += string(msg.Runes)
+		} else if msg.Type == tea.KeySpace {
+			m.searchQuery += " "
+		}
 	}
 	return m, nil
 }
@@ -376,6 +386,7 @@ func (m *Model) openSearchSession() error {
 	m.searchQuery = ""
 	m.searchResults = nil
 	m.searchSelected = 0
+	m.searchScrollOffset = 0
 	m.searchResultsFocus = false
 	m.searchLoading = false
 	m.searchStatus = ""
@@ -398,12 +409,37 @@ func (m *Model) closeSearchSession() {
 	m.searchQuery = ""
 	m.searchResults = nil
 	m.searchSelected = 0
+	m.searchScrollOffset = 0
 	m.searchResultsFocus = false
 	m.searchLoading = false
 	m.searchStatus = ""
 	m.searchErr = nil
 	m.inGroup = false
 	m.activeGroup = ""
+}
+
+// searchMaxVisible returns how many result rows fit on screen.
+// The search view uses ~7 lines for header/input/footer chrome plus ~5 for the
+// selected-result detail block at the bottom.
+func (m Model) searchMaxVisible() int {
+	const chrome = 12 // header, status, input, blank, section header, detail block, footer
+	avail := m.height - chrome
+	if avail < 3 {
+		return 3
+	}
+	return avail
+}
+
+// ensureSearchVisible adjusts searchScrollOffset so that searchSelected is in
+// the visible window.
+func (m *Model) ensureSearchVisible() {
+	maxVis := m.searchMaxVisible()
+	if m.searchSelected < m.searchScrollOffset {
+		m.searchScrollOffset = m.searchSelected
+	}
+	if m.searchSelected >= m.searchScrollOffset+maxVis {
+		m.searchScrollOffset = m.searchSelected - maxVis + 1
+	}
 }
 
 func limitSearchResults(results []search.Result) []search.Result {
