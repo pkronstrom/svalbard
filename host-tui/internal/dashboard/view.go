@@ -38,11 +38,13 @@ func (m Model) View() string {
 		}
 	}
 
+	leftWidth := int(float64(m.width) * tui.LeftFraction)
 	nav := tui.NavList{
 		Items:       items,
 		Selected:    m.selected,
 		Theme:       m.theme,
 		ShowNumbers: true,
+		Width:       leftWidth,
 	}
 
 	// Build the detail pane for the currently selected destination.

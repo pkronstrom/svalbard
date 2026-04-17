@@ -12,8 +12,11 @@ import (
 type wizardApplyDoneMsg struct{}
 
 type applyStep struct {
-	id     string
-	status string // tui.Status* constants
+	id         string
+	status     string // tui.Status* constants
+	downloaded int64
+	total      int64
+	err        string
 }
 
 type applyStartedMsg struct {
@@ -74,10 +77,14 @@ func (m wizardApplyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.finished = true
 			return m, nil
 		}
-		// Update step status
 		for i := range m.steps {
 			if m.steps[i].id == msg.event.ID {
 				m.steps[i].status = msg.event.Status
+				m.steps[i].downloaded = msg.event.Downloaded
+				m.steps[i].total = msg.event.Total
+				if msg.event.Error != "" {
+					m.steps[i].err = msg.event.Error
+				}
 				break
 			}
 		}
@@ -129,13 +136,12 @@ func (m wizardApplyModel) View() string {
 	b.WriteString(m.theme.Section.Render("Downloading & applying"))
 	b.WriteString("\n\n")
 
-	// Show steps with status
 	maxVis := m.height - 10
 	if maxVis < 3 {
 		maxVis = 3
 	}
 
-	// Find a good scroll offset — show the active item
+	// Scroll to show active items.
 	offset := 0
 	for i, s := range m.steps {
 		if s.status == tui.StatusActive {
@@ -158,12 +164,15 @@ func (m wizardApplyModel) View() string {
 
 	doneCount := 0
 	failCount := 0
+	activeCount := 0
 	for _, s := range m.steps {
-		if s.status == tui.StatusDone {
+		switch s.status {
+		case tui.StatusDone:
 			doneCount++
-		}
-		if s.status == tui.StatusFailed {
+		case tui.StatusFailed:
 			failCount++
+		case tui.StatusActive:
+			activeCount++
 		}
 	}
 
@@ -174,19 +183,35 @@ func (m wizardApplyModel) View() string {
 		case tui.StatusDone:
 			symbol = m.theme.Success.Render("✓")
 		case tui.StatusActive:
-			symbol = m.theme.Focus.Render("·")
+			symbol = m.theme.Focus.Render("↓")
 		case tui.StatusFailed:
 			symbol = m.theme.Danger.Render("✗")
 		default:
 			symbol = m.theme.Muted.Render(" ")
 		}
 
-		line := fmt.Sprintf("  %s  %s", symbol, s.id)
+		label := s.id
+		if s.status == tui.StatusActive && s.downloaded > 0 {
+			if s.total > 0 {
+				pct := int(float64(s.downloaded) / float64(s.total) * 100)
+				label += fmt.Sprintf("  %s/%s  %d%%",
+					wizFormatBytes(s.downloaded), wizFormatBytes(s.total), pct)
+			} else {
+				label += fmt.Sprintf("  %s", wizFormatBytes(s.downloaded))
+			}
+		}
+		if s.err != "" {
+			errMsg := s.err
+			if len(errMsg) > 50 {
+				errMsg = errMsg[:50] + "..."
+			}
+			label += "  " + errMsg
+		}
+
+		line := fmt.Sprintf("  %s  %s", symbol, label)
 		switch s.status {
 		case tui.StatusActive:
 			b.WriteString(m.theme.Base.Render(line))
-		case tui.StatusDone:
-			b.WriteString(m.theme.Muted.Render(line))
 		case tui.StatusFailed:
 			b.WriteString(m.theme.Danger.Render(line))
 		default:
@@ -211,8 +236,23 @@ func (m wizardApplyModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Help.Render("  Enter: continue to dashboard"))
 	} else {
-		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %d / %d", doneCount, len(m.steps))))
+		summary := fmt.Sprintf("  %d/%d done", doneCount, len(m.steps))
+		if activeCount > 0 {
+			summary += fmt.Sprintf("  %d active", activeCount)
+		}
+		b.WriteString(m.theme.Muted.Render(summary))
 	}
 
 	return b.String()
+}
+
+func wizFormatBytes(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.0f MB", float64(b)/float64(1<<20))
+	default:
+		return fmt.Sprintf("%.0f KB", float64(b)/float64(1<<10))
+	}
 }

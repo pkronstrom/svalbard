@@ -24,6 +24,7 @@ type NavList struct {
 	Selected    int
 	Theme       Theme
 	ShowNumbers bool // render 1-9 number prefixes for shortcut keys
+	Width       int  // available width for rendering (0 = use default separator)
 }
 
 // MoveDown increments Selected, clamping to bounds and skipping disabled items.
@@ -117,7 +118,11 @@ func (nl *NavList) Render() string {
 	for i, item := range nl.Items {
 		// Separator line before this item
 		if item.Separator && i > 0 {
-			b.WriteString(nl.Theme.Muted.Render("  ─────────────────────────────"))
+			sepWidth := nl.Width - 4
+			if sepWidth < 6 {
+				sepWidth = 6
+			}
+			b.WriteString(nl.Theme.Muted.Render("  " + strings.Repeat("─", sepWidth)))
 			b.WriteString("\n")
 		}
 

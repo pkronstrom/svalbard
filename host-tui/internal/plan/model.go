@@ -26,9 +26,11 @@ type PlanItem struct {
 
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
-	ID     string
-	Status string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
-	Error  string
+	ID         string
+	Status     string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
+	Downloaded int64  // bytes downloaded so far
+	Total      int64  // total bytes (-1 if unknown)
+	Error      string
 }
 
 // Config holds everything the plan screen needs from its parent.
@@ -62,9 +64,11 @@ type applyTickMsg struct {
 // ---------------------------------------------------------------------------
 
 type applyStep struct {
-	id     string
-	status string // tui.Status* constants
-	err    string
+	id         string
+	status     string // tui.Status* constants
+	err        string
+	downloaded int64
+	total      int64
 }
 
 // Model is the bubbletea model for the Plan + Apply screen.
@@ -132,10 +136,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Global error (empty ID) — mark remaining queued items as failed.
 		if msg.event.ID == "" && msg.event.Status == tui.StatusFailed {
-			m.applyErr = msg.event.Error
 			for i := range m.applyItems {
-				if m.applyItems[i].status == "" {
+				if m.applyItems[i].status == "" || m.applyItems[i].status == tui.StatusActive {
 					m.applyItems[i].status = tui.StatusFailed
+					m.applyItems[i].err = msg.event.Error
 				}
 			}
 		} else {
@@ -220,9 +224,10 @@ func (m *Model) updateApplyStep(ev ApplyEvent) {
 	for i := range m.applyItems {
 		if m.applyItems[i].id == ev.ID {
 			m.applyItems[i].status = ev.Status
-			m.applyItems[i].err = ev.Error
-			if ev.Status == tui.StatusFailed && ev.Error != "" {
-				m.applyErr = ev.Error
+			m.applyItems[i].downloaded = ev.Downloaded
+			m.applyItems[i].total = ev.Total
+			if ev.Error != "" {
+				m.applyItems[i].err = ev.Error
 			}
 			return
 		}
@@ -396,6 +401,10 @@ func (m Model) viewApply() string {
 	b.WriteString(m.theme.Section.Render("Applying changes"))
 	b.WriteString("\n\n")
 
+	doneCount := 0
+	failedCount := 0
+	activeCount := 0
+
 	for _, step := range m.applyItems {
 		var symbol string
 		var style lipgloss.Style
@@ -403,58 +412,60 @@ func (m Model) viewApply() string {
 		case tui.StatusDone:
 			symbol = m.theme.Success.Render("✓")
 			style = m.theme.Base
+			doneCount++
 		case tui.StatusActive:
-			symbol = m.theme.Warning.Render("·")
+			symbol = m.theme.Warning.Render("↓")
 			style = m.theme.Base
+			activeCount++
 		case tui.StatusFailed:
 			symbol = m.theme.Danger.Render("✗")
 			style = m.theme.Danger
+			failedCount++
 		default:
 			symbol = m.theme.Muted.Render(" ")
 			style = m.theme.Muted
 		}
 
-		// Find description from original items.
-		desc := step.id
-		for _, it := range m.items {
-			if it.ID == step.id {
-				desc = it.Description
-				break
+		// Use short ID instead of long description to keep lines compact.
+		label := step.id
+
+		// Append download progress for active items.
+		if step.status == tui.StatusActive && step.downloaded > 0 {
+			if step.total > 0 {
+				pct := int(float64(step.downloaded) / float64(step.total) * 100)
+				label += fmt.Sprintf("  %s/%s  %d%%",
+					formatBytes(step.downloaded), formatBytes(step.total), pct)
+			} else {
+				label += fmt.Sprintf("  %s", formatBytes(step.downloaded))
 			}
 		}
 
-		b.WriteString(fmt.Sprintf("  %s  %s", symbol, style.Render(desc)))
+		// Append error inline (truncated).
 		if step.err != "" {
-			b.WriteString("  " + m.theme.Danger.Render(step.err))
+			errMsg := step.err
+			if len(errMsg) > 60 {
+				errMsg = errMsg[:60] + "..."
+			}
+			label += "  " + errMsg
 		}
+
+		b.WriteString(fmt.Sprintf("  %s  %s", symbol, style.Render(label)))
 		b.WriteString("\n")
 	}
 
-	// Summary
+	// Summary line.
 	b.WriteString("\n")
-	doneCount := 0
-	failedCount := 0
-	for _, s := range m.applyItems {
-		switch s.status {
-		case tui.StatusDone:
-			doneCount++
-		case tui.StatusFailed:
-			failedCount++
-		}
-	}
 	total := len(m.applyItems)
-	b.WriteString(m.theme.Muted.Render(fmt.Sprintf(
-		"%d/%d complete", doneCount, total,
-	)))
+	summary := fmt.Sprintf("%d/%d done", doneCount, total)
+	if activeCount > 0 {
+		summary += fmt.Sprintf("  %d active", activeCount)
+	}
+	b.WriteString(m.theme.Muted.Render(summary))
 	if failedCount > 0 {
 		b.WriteString("  " + m.theme.Danger.Render(fmt.Sprintf("%d failed", failedCount)))
 	}
-	if m.applyErr != "" {
-		b.WriteString("\n\n")
-		b.WriteString("  " + m.theme.Danger.Render(m.applyErr))
-	}
 
-	// Footer
+	// Footer.
 	var footer string
 	if m.applyDone {
 		footer = tui.FooterHints(
@@ -462,7 +473,7 @@ func (m Model) viewApply() string {
 			m.keys.Back,
 		)
 	} else {
-		footer = m.theme.Status.Render("applying...")
+		footer = fmt.Sprintf("downloading %d/%d ...", doneCount+activeCount, total)
 	}
 
 	shell := tui.ShellLayout{
@@ -475,6 +486,19 @@ func (m Model) viewApply() string {
 		Height:  m.height,
 	}
 	return shell.Render()
+}
+
+func formatBytes(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.0f MB", float64(b)/float64(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(b)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 func actionSymbol(action string) string {

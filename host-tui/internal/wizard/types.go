@@ -42,9 +42,11 @@ type PackSource struct {
 
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
-	ID     string
-	Status string // tui.Status* constants
-	Error  string
+	ID         string
+	Status     string // tui.Status* constants
+	Downloaded int64
+	Total      int64
+	Error      string
 }
 
 // ApplyFunc runs vault apply with progress reporting.

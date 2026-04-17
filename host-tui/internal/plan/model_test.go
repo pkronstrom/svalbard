@@ -207,11 +207,11 @@ func TestApplyGlobalErrorMarksItemsFailed(t *testing.T) {
 	result, cmd = m.Update(tickMsg)
 	m = result.(Model)
 
-	if m.applyErr == "" {
-		t.Error("expected applyErr to be set after global error event")
-	}
-	if !strings.Contains(m.applyErr, "not found in catalog") {
-		t.Errorf("expected applyErr to contain error details, got %q", m.applyErr)
+	// All items should have the error propagated.
+	for _, step := range m.applyItems {
+		if !strings.Contains(step.err, "not found in catalog") {
+			t.Errorf("item %q should have error containing 'not found in catalog', got %q", step.id, step.err)
+		}
 	}
 
 	// All items should be marked failed
@@ -273,8 +273,15 @@ func TestApplyPerItemErrorThenGlobalError(t *testing.T) {
 			t.Errorf("item %d (%s) should be failed, got %q", i, m.applyItems[i].id, m.applyItems[i].status)
 		}
 	}
-	// Error message should be visible
-	if m.applyErr == "" {
-		t.Error("expected applyErr to contain the global error message")
+	// Error message should be visible in item errors
+	hasError := false
+	for _, step := range m.applyItems {
+		if step.err != "" {
+			hasError = true
+			break
+		}
+	}
+	if !hasError {
+		t.Error("expected at least one item to have an error message")
 	}
 }

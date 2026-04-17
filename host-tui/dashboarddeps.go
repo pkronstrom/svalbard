@@ -63,9 +63,11 @@ type PlanItem struct {
 
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
-	ID     string
-	Status string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
-	Error  string
+	ID         string
+	Status     string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
+	Downloaded int64  // bytes downloaded so far
+	Total      int64  // total bytes (-1 if unknown)
+	Error      string
 }
 
 // ImportResult is returned after a successful import.

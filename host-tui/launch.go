@@ -329,7 +329,11 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 				// Rebuild deps targeting the new vault path, then run apply
 				newDeps := rebuildForVault(vaultPath)
 				return newDeps.RunApply(context.Background(), func(ev ApplyEvent) {
-					onProgress(wizard.ApplyEvent{ID: ev.ID, Status: ev.Status, Error: ev.Error})
+					onProgress(wizard.ApplyEvent{
+						ID: ev.ID, Status: ev.Status,
+						Downloaded: ev.Downloaded, Total: ev.Total,
+						Error: ev.Error,
+					})
 				})
 			}
 		}
@@ -412,7 +416,11 @@ func (m *appModel) newPlan() plan.Model {
 		if m.deps.RunApply != nil {
 			cfg.RunApply = func(ctx context.Context, onProgress func(plan.ApplyEvent)) error {
 				return m.deps.RunApply(ctx, func(ev ApplyEvent) {
-					onProgress(plan.ApplyEvent{ID: ev.ID, Status: ev.Status, Error: ev.Error})
+					onProgress(plan.ApplyEvent{
+						ID: ev.ID, Status: ev.Status,
+						Downloaded: ev.Downloaded, Total: ev.Total,
+						Error: ev.Error,
+					})
 				})
 			}
 		}

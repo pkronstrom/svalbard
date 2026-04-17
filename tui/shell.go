@@ -58,25 +58,38 @@ func (s ShellLayout) Render() string {
 }
 
 func (s ShellLayout) renderWide(topBar, footer string) string {
-	gutter := 2
-	leftWidth := int(float64(s.Width) * LeftFraction)
-	rightWidth := s.Width - leftWidth - gutter
-
 	// Reserve lines for top bar(1) + blank(1) + blank(1) + footer(1) = 4
 	bodyHeight := s.Height - 4
 	if bodyHeight < 1 {
 		bodyHeight = 1
 	}
 
-	leftStyle := lipgloss.NewStyle().Width(leftWidth).MaxHeight(bodyHeight)
-	rightStyle := lipgloss.NewStyle().Width(rightWidth).MaxHeight(bodyHeight)
+	var body string
 
-	body := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		leftStyle.Render(s.Left),
-		strings.Repeat(" ", gutter),
-		rightStyle.Render(s.Right),
-	)
+	// Single-pane mode: if only one pane has content, use full width.
+	if s.Left == "" || s.Right == "" {
+		content := s.Left
+		if content == "" {
+			content = s.Right
+		}
+		style := lipgloss.NewStyle().Width(s.Width).MaxHeight(bodyHeight)
+		body = style.Render(content)
+	} else {
+		// Two-pane mode.
+		gutter := 2
+		leftWidth := int(float64(s.Width) * LeftFraction)
+		rightWidth := s.Width - leftWidth - gutter
+
+		leftStyle := lipgloss.NewStyle().Width(leftWidth).MaxHeight(bodyHeight)
+		rightStyle := lipgloss.NewStyle().Width(rightWidth).MaxHeight(bodyHeight)
+
+		body = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			leftStyle.Render(s.Left),
+			strings.Repeat(" ", gutter),
+			rightStyle.Render(s.Right),
+		)
+	}
 
 	out := lipgloss.JoinVertical(
 		lipgloss.Left,
