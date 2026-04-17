@@ -46,6 +46,11 @@ func resolveFromDir(name, dir string) (string, error) {
 		return "", fmt.Errorf("%s not found in %s", name, dir)
 	}
 
+	// Check if the binary already exists before extracting archives.
+	if found, err := findMatchingBinary(dir, name); err == nil {
+		return found, nil
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", err
@@ -85,9 +90,6 @@ func resolveFromDir(name, dir string) (string, error) {
 		if found, err := findMatchingBinary(dir, name); err == nil {
 			return found, nil
 		}
-	}
-	if found, err := findMatchingBinary(dir, name); err == nil {
-		return found, nil
 	}
 	return "", fmt.Errorf("%s not found in %s", name, dir)
 }
