@@ -126,123 +126,61 @@ func waitForEvent(ch <-chan ApplyEvent) tea.Cmd {
 }
 
 func (m wizardApplyModel) View() string {
-	var b strings.Builder
-
 	if !m.started {
-		b.WriteString(m.theme.Muted.Render("  Preparing to apply..."))
-		return b.String()
+		return m.theme.Muted.Render("  Preparing to apply...")
 	}
 
+	pv := m.progressView()
+
+	var b strings.Builder
 	b.WriteString(m.theme.Section.Render("Downloading & applying"))
 	b.WriteString("\n\n")
-
-	maxVis := m.height - 10
-	if maxVis < 3 {
-		maxVis = 3
-	}
-
-	// Scroll to show active items.
-	offset := 0
-	for i, s := range m.steps {
-		if s.status == tui.StatusActive {
-			offset = i - maxVis/2
-			break
-		}
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	end := offset + maxVis
-	if end > len(m.steps) {
-		end = len(m.steps)
-	}
-
-	if offset > 0 {
-		b.WriteString(m.theme.Muted.Render("  ↑ more"))
-		b.WriteString("\n")
-	}
-
-	doneCount := 0
-	failCount := 0
-	activeCount := 0
-	for _, s := range m.steps {
-		switch s.status {
-		case tui.StatusDone:
-			doneCount++
-		case tui.StatusFailed:
-			failCount++
-		case tui.StatusActive:
-			activeCount++
-		}
-	}
-
-	for i := offset; i < end; i++ {
-		s := m.steps[i]
-		var symbol string
-		switch s.status {
-		case tui.StatusDone:
-			symbol = m.theme.Success.Render("✓")
-		case tui.StatusActive:
-			symbol = m.theme.Focus.Render("↓")
-		case tui.StatusFailed:
-			symbol = m.theme.Danger.Render("✗")
-		default:
-			symbol = m.theme.Muted.Render(" ")
-		}
-
-		label := s.id
-		if s.status == tui.StatusActive && s.downloaded > 0 {
-			if s.total > 0 {
-				pct := int(float64(s.downloaded) / float64(s.total) * 100)
-				label += fmt.Sprintf("  %s/%s  %d%%",
-					tui.FormatBytes(s.downloaded), tui.FormatBytes(s.total), pct)
-			} else {
-				label += fmt.Sprintf("  %s", tui.FormatBytes(s.downloaded))
-			}
-		}
-		if s.err != "" {
-			errMsg := s.err
-			if len(errMsg) > 50 {
-				errMsg = errMsg[:50] + "..."
-			}
-			label += "  " + errMsg
-		}
-
-		line := fmt.Sprintf("  %s  %s", symbol, label)
-		switch s.status {
-		case tui.StatusActive:
-			b.WriteString(m.theme.Base.Render(line))
-		case tui.StatusFailed:
-			b.WriteString(m.theme.Danger.Render(line))
-		default:
-			b.WriteString(m.theme.Muted.Render(line))
-		}
-		b.WriteString("\n")
-	}
-
-	if end < len(m.steps) {
-		b.WriteString(m.theme.Muted.Render("  ↓ more"))
-		b.WriteString("\n")
-	}
-
+	b.WriteString(pv.Render())
 	b.WriteString("\n")
 
 	if m.finished {
-		if failCount > 0 {
-			b.WriteString(m.theme.Warning.Render(fmt.Sprintf("  Done: %d completed, %d failed", doneCount, failCount)))
+		done, failed := 0, 0
+		for _, s := range pv.Steps {
+			switch s.Status {
+			case tui.StatusDone:
+				done++
+			case tui.StatusFailed:
+				failed++
+			}
+		}
+		if failed > 0 {
+			b.WriteString(m.theme.Warning.Render(fmt.Sprintf("  Done: %d completed, %d failed", done, failed)))
 		} else {
-			b.WriteString(m.theme.Success.Render(fmt.Sprintf("  Done: %d items applied", doneCount)))
+			b.WriteString(m.theme.Success.Render(fmt.Sprintf("  Done: %d items applied", done)))
 		}
 		b.WriteString("\n\n")
-		b.WriteString(m.theme.Help.Render("  Enter: continue to dashboard"))
+		b.WriteString(m.theme.Help.Render("  Enter: continue"))
 	} else {
-		summary := fmt.Sprintf("  %d/%d done", doneCount, len(m.steps))
-		if activeCount > 0 {
-			summary += fmt.Sprintf("  %d active", activeCount)
-		}
-		b.WriteString(m.theme.Muted.Render(summary))
+		b.WriteString(pv.RenderSummary())
 	}
 
 	return b.String()
+}
+
+func (m wizardApplyModel) progressView() tui.ProgressView {
+	steps := make([]tui.ProgressStep, len(m.steps))
+	for i, s := range m.steps {
+		steps[i] = tui.ProgressStep{
+			ID:         s.id,
+			Status:     s.status,
+			Downloaded: s.downloaded,
+			Total:      s.total,
+			Error:      s.err,
+		}
+	}
+	maxVis := m.height - 10
+	if maxVis < 4 {
+		maxVis = 4
+	}
+	return tui.ProgressView{
+		Theme:      m.theme,
+		Steps:      steps,
+		MaxVisible: maxVis,
+	}
 }
 

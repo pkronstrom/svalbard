@@ -19,6 +19,7 @@ var wizardSteps = []struct{ id, label string }{
 	{"packs", "Pack Picker"},
 	{"review", "Review"},
 	{"apply", "Apply"},
+	{"index", "Build Index"},
 }
 
 // BackMsg is sent when the user navigates back from the first wizard step.
@@ -34,6 +35,7 @@ const (
 	stagePacks
 	stageReview
 	stageApply
+	stageIndex
 )
 
 // Model is the Bubble Tea model for the init wizard.
@@ -52,6 +54,7 @@ type Model struct {
 	packPicker       packPickerModel
 	review           reviewModel
 	applyModel       wizardApplyModel
+	indexModel       wizardIndexModel
 
 	// Accumulated state across stages
 	vaultPath     string
@@ -151,6 +154,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.doneCmd()
 
 	case wizardApplyDoneMsg:
+		if m.config.RunIndex != nil {
+			m.stage = stageIndex
+			m.indexModel = newWizardIndex(m.vaultPath, m.config.RunIndex)
+			sized, sizeCmd := m.sizeActiveModel()
+			m = sized.(Model)
+			return m, tea.Batch(m.indexModel.Init(), sizeCmd)
+		}
+		return m, m.doneCmd()
+
+	case wizardIndexDoneMsg:
 		return m, m.doneCmd()
 
 	case reviewBackMsg:
@@ -212,6 +225,10 @@ func (m Model) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stageApply:
 		updated, cmd := m.applyModel.Update(msg)
 		m.applyModel = updated.(wizardApplyModel)
+		return m, cmd
+	case stageIndex:
+		updated, cmd := m.indexModel.Update(msg)
+		m.indexModel = updated.(wizardIndexModel)
 		return m, cmd
 	}
 	return m, nil

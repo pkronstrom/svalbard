@@ -8,7 +8,6 @@ import (
 	"github.com/pkronstrom/svalbard/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // ---------------------------------------------------------------------------
@@ -413,80 +412,15 @@ func (m Model) viewPlan() string {
 
 
 func (m Model) viewApply() string {
-	var b strings.Builder
+	pv := m.applyProgressView()
 
+	var b strings.Builder
 	b.WriteString(m.theme.Section.Render("Applying changes"))
 	b.WriteString("\n\n")
-
-	doneCount := 0
-	failedCount := 0
-	activeCount := 0
-
-	for _, step := range m.applyItems {
-		var symbol string
-		var style lipgloss.Style
-		switch step.status {
-		case tui.StatusDone:
-			symbol = m.theme.Success.Render("✓")
-			style = m.theme.Base
-			doneCount++
-		case tui.StatusActive:
-			symbol = m.theme.Warning.Render("↓")
-			style = m.theme.Base
-			activeCount++
-		case tui.StatusFailed:
-			symbol = m.theme.Danger.Render("✗")
-			style = m.theme.Danger
-			failedCount++
-		default:
-			symbol = m.theme.Muted.Render(" ")
-			style = m.theme.Muted
-		}
-
-		// Use short ID instead of long description to keep lines compact.
-		label := step.id
-
-		// Append progress for active items.
-		if step.status == tui.StatusActive {
-			if step.downloaded > 0 {
-				if step.total > 0 {
-					pct := int(float64(step.downloaded) / float64(step.total) * 100)
-					label += fmt.Sprintf("  %s/%s  %d%%",
-						tui.FormatBytes(step.downloaded), tui.FormatBytes(step.total), pct)
-				} else {
-					label += fmt.Sprintf("  %s", tui.FormatBytes(step.downloaded))
-				}
-			} else if step.step != "" {
-				label += fmt.Sprintf("  %s", step.step)
-			}
-		}
-
-		// Append error inline (truncated).
-		if step.err != "" {
-			errMsg := step.err
-			if len(errMsg) > 60 {
-				errMsg = errMsg[:60] + "..."
-			}
-			label += "  " + errMsg
-		}
-
-		b.WriteString(fmt.Sprintf("  %s  %s", symbol, style.Render(label)))
-		b.WriteString("\n")
-	}
-
-	// Summary line.
+	b.WriteString(pv.Render())
 	b.WriteString("\n")
-	total := len(m.applyItems)
-	summary := fmt.Sprintf("%d/%d done", doneCount, total)
-	if activeCount > 0 {
-		summary += fmt.Sprintf("  %d active", activeCount)
-	}
-	b.WriteString(m.theme.Muted.Render(summary))
-	if failedCount > 0 {
-		b.WriteString("  " + m.theme.Danger.Render(fmt.Sprintf("%d failed", failedCount)))
-	}
+	b.WriteString(pv.RenderSummary())
 
-	// Footer.
 	var footer string
 	if m.applyDone {
 		footer = tui.FooterHints(
@@ -494,7 +428,16 @@ func (m Model) viewApply() string {
 			m.keys.Back,
 		)
 	} else {
-		footer = fmt.Sprintf("downloading %d/%d ...", doneCount+activeCount, total)
+		done, active := 0, 0
+		for _, s := range pv.Steps {
+			switch s.Status {
+			case tui.StatusDone:
+				done++
+			case tui.StatusActive:
+				active++
+			}
+		}
+		footer = fmt.Sprintf("downloading %d/%d ...", done+active, len(pv.Steps))
 	}
 
 	shell := tui.ShellLayout{
@@ -507,6 +450,29 @@ func (m Model) viewApply() string {
 		Height:  m.height,
 	}
 	return shell.Render()
+}
+
+func (m Model) applyProgressView() tui.ProgressView {
+	steps := make([]tui.ProgressStep, len(m.applyItems))
+	for i, s := range m.applyItems {
+		steps[i] = tui.ProgressStep{
+			ID:         s.id,
+			Status:     s.status,
+			Step:       s.step,
+			Downloaded: s.downloaded,
+			Total:      s.total,
+			Error:      s.err,
+		}
+	}
+	maxVis := m.height - 12
+	if maxVis < 4 {
+		maxVis = 4
+	}
+	return tui.ProgressView{
+		Theme:      m.theme,
+		Steps:      steps,
+		MaxVisible: maxVis,
+	}
 }
 
 

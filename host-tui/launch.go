@@ -337,6 +337,19 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 				})
 			}
 		}
+		if m.deps.RunIndex != nil {
+			rebuildForVault := m.deps.RebuildForVault
+			depsRef := m.deps
+			cfg.RunIndex = func(ctx context.Context, vaultPath string, onProgress func(file, status, detail string)) error {
+				deps := depsRef
+				if rebuildForVault != nil {
+					deps = rebuildForVault(vaultPath)
+				}
+				return deps.RunIndex(ctx, "keyword", func(ev IndexEvent) {
+					onProgress(ev.File, ev.Status, ev.Detail)
+				})
+			}
+		}
 	}
 	return cfg
 }

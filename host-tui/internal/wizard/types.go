@@ -56,6 +56,7 @@ type WizardConfig struct {
 	StartAtStep int
 	InitVault   InitFunc  // called after review confirm
 	RunApply    ApplyFunc // called to download content
+	RunIndex    IndexFunc // called to build search index after apply
 }
 
 // WizardResult is returned when the wizard completes.

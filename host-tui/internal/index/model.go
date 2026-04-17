@@ -338,70 +338,42 @@ func (m Model) semanticDetail() tui.DetailPane {
 }
 
 func (m Model) viewRebuilding() string {
-	var b strings.Builder
+	steps := make([]tui.ProgressStep, len(m.steps))
+	for i, s := range m.steps {
+		label := s.file
+		if s.detail != "" {
+			label = s.detail
+		}
+		steps[i] = tui.ProgressStep{
+			ID:     s.file,
+			Label:  label,
+			Status: s.status,
+		}
+	}
+
+	maxVis := m.height - 8
+	if maxVis < 5 {
+		maxVis = 5
+	}
+	pv := tui.ProgressView{
+		Theme:        m.theme,
+		Steps:        steps,
+		MaxVisible:   maxVis,
+		ScrollToTail: true,
+	}
 
 	title := "Rebuilding keyword index"
 	if m.rebuildType == "semantic" {
 		title = "Rebuilding semantic index"
 	}
+
+	var b strings.Builder
 	b.WriteString(m.theme.Section.Render(title))
 	b.WriteString("\n\n")
-
-	// Show recent steps (keep list manageable).
-	maxVisible := m.height - 8
-	if maxVisible < 5 {
-		maxVisible = 5
-	}
-	start := 0
-	if len(m.steps) > maxVisible {
-		start = len(m.steps) - maxVisible
-	}
-
-	for i := start; i < len(m.steps); i++ {
-		step := m.steps[i]
-		display := step.file
-		if step.detail != "" {
-			display = step.detail
-		}
-		var symbol, label string
-		switch step.status {
-		case tui.StatusDone:
-			symbol = m.theme.Success.Render("✓")
-			label = m.theme.Base.Render(display)
-		case tui.StatusIndexing:
-			symbol = m.theme.Warning.Render("·")
-			label = m.theme.Base.Render(display)
-		case tui.StatusSkip:
-			symbol = m.theme.Muted.Render("–")
-			label = m.theme.Muted.Render(display)
-		case tui.StatusFailed:
-			symbol = m.theme.Danger.Render("✗")
-			label = m.theme.Danger.Render(display)
-		default:
-			symbol = m.theme.Muted.Render(" ")
-			label = m.theme.Muted.Render(display)
-		}
-		b.WriteString(fmt.Sprintf("  %s  %s\n", symbol, label))
-	}
-
-	// Summary line.
+	b.WriteString(pv.Render())
 	b.WriteString("\n")
-	doneCount := 0
-	failedCount := 0
-	for _, s := range m.steps {
-		switch s.status {
-		case tui.StatusDone:
-			doneCount++
-		case tui.StatusFailed:
-			failedCount++
-		}
-	}
-	b.WriteString(m.theme.Muted.Render(fmt.Sprintf("%d files indexed", doneCount)))
-	if failedCount > 0 {
-		b.WriteString("  " + m.theme.Danger.Render(fmt.Sprintf("%d failed", failedCount)))
-	}
+	b.WriteString(pv.RenderSummary())
 
-	// Footer.
 	var footer string
 	if m.rebuildDone {
 		footer = tui.FooterHints(
@@ -416,7 +388,7 @@ func (m Model) viewRebuilding() string {
 		Theme:   m.theme,
 		AppName: "Svalbard",
 		Status:  m.rebuildType + " index",
-		Left:    b.String(),
+		Right:   b.String(),
 		Footer:  m.theme.Help.Render(footer),
 		Width:   m.width,
 		Height:  m.height,

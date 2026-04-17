@@ -35,6 +35,8 @@ func (m Model) View() string {
 		right = m.review.View()
 	case stageApply:
 		right = m.applyModel.View()
+	case stageIndex:
+		right = m.indexModel.View()
 	}
 
 	footer := tui.FooterHints(m.keys.Enter, m.keys.Back)
