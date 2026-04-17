@@ -18,11 +18,15 @@ import (
 
 func ResolveModel(driveRoot, selected string) (string, error) {
 	if selected != "" {
-		info, err := os.Stat(selected)
-		if err != nil || info.IsDir() {
-			return "", fmt.Errorf("model not found: %s", selected)
+		// Try as-is first (absolute path), then resolve relative to models dir.
+		if info, err := os.Stat(selected); err == nil && !info.IsDir() {
+			return selected, nil
 		}
-		return selected, nil
+		path := filepath.Join(driveRoot, "models", selected)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, nil
+		}
+		return "", fmt.Errorf("model not found: %s", selected)
 	}
 
 	pattern := filepath.Join(driveRoot, "models", "*.gguf")

@@ -125,6 +125,10 @@ type GenerateOpts struct {
 	// EnvVars maps environment variable names to drive-relative paths.
 	// Collected from recipe env fields and written into the activate script.
 	EnvVars map[string]string
+
+	// Descriptions maps entry IDs to human-readable descriptions from the
+	// catalog. Used for menu item labels when available.
+	Descriptions map[string]string
 }
 
 // Generate creates the .svalbard/actions.json runtime config under root.
@@ -134,7 +138,11 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	if err := os.MkdirAll(filepath.Join(root, svalbardDir), 0o755); err != nil {
 		return err
 	}
-	if err := writeActionsConfig(root, entries, presetName); err != nil {
+	var descriptions map[string]string
+	if len(opts) > 0 && opts[0].Descriptions != nil {
+		descriptions = opts[0].Descriptions
+	}
+	if err := writeActionsConfig(root, entries, presetName, descriptions); err != nil {
 		return err
 	}
 	if err := installRuntimeBinaries(root); err != nil {
@@ -150,28 +158,72 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	return nil
 }
 
-func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string) error {
+func isEmbeddingModel(filename string) bool {
+	base := strings.ToLower(filename)
+	return strings.Contains(base, "embed") || strings.Contains(base, "bge-") ||
+		strings.Contains(base, "e5-") || strings.Contains(base, "arctic-embed")
+}
+
+func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string, descriptions map[string]string) error {
+	descFor := func(id, fallback string) string {
+		if d, ok := descriptions[id]; ok && d != "" {
+			return d
+		}
+		return fallback
+	}
+
 	var libraryItems []menuItem
 	var mapsItems []menuItem
+	var chatItems []menuItem
+	var appsItems []menuItem
+	var dataItems []menuItem
 
 	for i, e := range entries {
 		order := (i + 1) * 100
+		label := descFor(e.ID, humanize(e.ID))
 		switch e.Type {
 		case "zim":
 			libraryItems = append(libraryItems, menuItem{
 				ID:          "browse-" + e.ID,
-				Label:       humanize(e.ID),
-				Description: "Browse the " + humanize(e.ID) + " archive.",
+				Label:       label,
+				Description: "Browse the " + label + " archive.",
 				Order:       order,
 				Action:      builtinAction("browse", map[string]string{"zim": e.Filename}),
 			})
 		case "pmtiles":
 			mapsItems = append(mapsItems, menuItem{
 				ID:          "map-" + e.ID,
-				Label:       humanize(e.ID),
-				Description: "View the " + humanize(e.ID) + " map.",
+				Label:       label,
+				Description: "View the " + label + " map.",
 				Order:       order,
 				Action:      builtinAction("maps", nil),
+			})
+		case "gguf":
+			if isEmbeddingModel(e.Filename) {
+				continue
+			}
+			chatItems = append(chatItems, menuItem{
+				ID:          "chat-" + e.ID,
+				Label:       label,
+				Description: "Chat with " + label + " locally.",
+				Order:       order,
+				Action:      builtinAction("chat", map[string]string{"model": e.Filename}),
+			})
+		case "app":
+			appsItems = append(appsItems, menuItem{
+				ID:          "app-" + e.ID,
+				Label:       label,
+				Description: "Open " + label + ".",
+				Order:       order,
+				Action:      builtinAction("apps", map[string]string{"app": e.ID}),
+			})
+		case "sqlite":
+			dataItems = append(dataItems, menuItem{
+				ID:          "data-" + e.ID,
+				Label:       label,
+				Description: "Query " + label + ".",
+				Order:       order,
+				Action:      builtinAction("apps", map[string]string{"app": "sqliteviz"}),
 			})
 		}
 	}
@@ -195,6 +247,63 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			Description: "View offline map layers.",
 			Order:       300,
 			Items:       mapsItems,
+		})
+	}
+
+	if len(chatItems) > 0 {
+		groups = append(groups, menuGroup{
+			ID:          "chat",
+			Label:       "AI Chat",
+			Description: "Chat with local AI models.",
+			Order:       400,
+			Items:       chatItems,
+		})
+	}
+
+	if len(appsItems) > 0 {
+		groups = append(groups, menuGroup{
+			ID:          "apps",
+			Label:       "Apps",
+			Description: "Interactive offline applications.",
+			Order:       500,
+			Items:       appsItems,
+		})
+	}
+
+	if len(dataItems) > 0 {
+		groups = append(groups, menuGroup{
+			ID:          "data",
+			Label:       "Data",
+			Description: "Query offline datasets.",
+			Order:       600,
+			Items:       dataItems,
+		})
+	}
+
+	// Serve group — shown when there are any browseable/serveable services.
+	hasServices := len(libraryItems) > 0 || len(mapsItems) > 0 || len(chatItems) > 0
+	if hasServices {
+		groups = append(groups, menuGroup{
+			ID:          "share",
+			Label:       "Serve",
+			Description: "Serve content on the local network.",
+			Order:       800,
+			Items: []menuItem{
+				{
+					ID:          "serve-all",
+					Label:       "Serve Everything",
+					Description: "Start all services at once.",
+					Order:       100,
+					Action:      builtinAction("serve-all", nil),
+				},
+				{
+					ID:          "share-files",
+					Label:       "Share on Local Network",
+					Description: "Share drive files on the local network.",
+					Order:       200,
+					Action:      builtinAction("share", nil),
+				},
+			},
 		})
 	}
 

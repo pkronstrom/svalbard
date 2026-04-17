@@ -150,7 +150,7 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 						})
 					}
 					var entry manifest.RealizedEntry
-					entry, err = downloadItem(root, job.id, job.recipe, dlProgress)
+					entry, err = downloadItem(ctx, root, job.id, job.recipe, dlProgress)
 					if err == nil {
 						entries = []manifest.RealizedEntry{entry}
 					}
@@ -162,7 +162,7 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 							Downloaded: downloaded, Total: total,
 						})
 					}
-					entries, err = downloadPlatformItems(root, job.id, job.recipe, m.Desired.Options.HostPlatforms, dlProgress)
+					entries, err = downloadPlatformItems(ctx, root, job.id, job.recipe, m.Desired.Options.HostPlatforms, dlProgress)
 
 				case job.recipe.Strategy == "build" && job.recipe.Build != nil:
 					jobID := job.id
@@ -214,12 +214,16 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 		progress(ProgressEvent{ID: res.id, Status: tui.StatusDone})
 	}
 
-	// Collect env vars from all realized recipes.
+	// Collect env vars and descriptions from all realized recipes.
 	envVars := make(map[string]string)
+	descriptions := make(map[string]string)
 	for _, e := range m.Realized.Entries {
 		if recipe, ok := cat.RecipeByID(e.ID); ok {
 			for k, v := range recipe.Env {
 				envVars[k] = v
+			}
+			if recipe.Description != "" {
+				descriptions[e.ID] = recipe.Description
 			}
 		}
 	}
@@ -229,7 +233,7 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 	if len(m.Desired.Presets) > 0 {
 		presetName = m.Desired.Presets[0]
 	}
-	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars}); err != nil {
+	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars, Descriptions: descriptions}); err != nil {
 		return fmt.Errorf("generating toolkit: %w", err)
 	}
 	if err := syncMapViewer(root, m.Realized.Entries); err != nil {
@@ -289,17 +293,17 @@ func hostPlatform() string {
 }
 
 // downloadItem handles url/url_pattern recipes.
-func downloadItem(root, id string, recipe catalog.Item, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
+func downloadItem(ctx context.Context, root, id string, recipe catalog.Item, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
 	resolvedURL, err := resolver.Resolve(recipe.URL, recipe.URLPattern)
 	if err != nil {
 		return manifest.RealizedEntry{}, fmt.Errorf("resolving URL for %s: %w", id, err)
 	}
 	slog.Debug("resolved URL", "id", id, "url", resolvedURL)
-	return fetchAndRecord(root, id, recipe, resolvedURL, onProgress)
+	return fetchAndRecord(ctx, root, id, recipe, resolvedURL, onProgress)
 }
 
 // downloadPlatformItems downloads platform-specific binaries for all target platforms.
-func downloadPlatformItems(root, id string, recipe catalog.Item, targetPlatforms []string, onProgress downloader.ProgressFunc) ([]manifest.RealizedEntry, error) {
+func downloadPlatformItems(ctx context.Context, root, id string, recipe catalog.Item, targetPlatforms []string, onProgress downloader.ProgressFunc) ([]manifest.RealizedEntry, error) {
 	targets := targetPlatforms
 	if len(targets) == 0 {
 		targets = hostPlatformCandidates()

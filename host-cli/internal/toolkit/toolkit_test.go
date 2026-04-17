@@ -292,18 +292,21 @@ func TestGenerateGroupsOrderedCorrectly(t *testing.T) {
 	var cfg testRuntimeConfig
 	json.Unmarshal(raw, &cfg)
 
-	if len(cfg.Groups) != 3 {
-		t.Fatalf("expected 3 groups, got %d", len(cfg.Groups))
+	if len(cfg.Groups) != 4 {
+		t.Fatalf("expected 4 groups, got %d", len(cfg.Groups))
 	}
-	// Should be ordered: library (200), maps (300), tools (900).
+	// Should be ordered: library (200), maps (300), share (800), tools (900).
 	if cfg.Groups[0].ID != "library" {
 		t.Errorf("groups[0] = %q, want library", cfg.Groups[0].ID)
 	}
 	if cfg.Groups[1].ID != "maps" {
 		t.Errorf("groups[1] = %q, want maps", cfg.Groups[1].ID)
 	}
-	if cfg.Groups[2].ID != "tools" {
-		t.Errorf("groups[2] = %q, want tools", cfg.Groups[2].ID)
+	if cfg.Groups[2].ID != "share" {
+		t.Errorf("groups[2] = %q, want share", cfg.Groups[2].ID)
+	}
+	if cfg.Groups[3].ID != "tools" {
+		t.Errorf("groups[3] = %q, want tools", cfg.Groups[3].ID)
 	}
 }
 
