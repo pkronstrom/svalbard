@@ -20,37 +20,36 @@ type presetPickerModel struct {
 	regions      []string
 	freeGB       float64
 	cursor       int
+	recommended  int // index of recommended preset (largest that fits)
 	scrollOffset int
-	hasCustom    bool // always true; the Customize entry is appended
+	hasCustom    bool
 	width        int
 	height       int
 	theme        tui.Theme
 	keys         tui.KeyMap
 }
 
-// newPresetPicker creates a presetPickerModel. presets must already be sorted
-// by size (ascending). The cursor defaults to the recommended preset: the
-// largest preset where ContentGB <= freeGB.
 func newPresetPicker(presets []PresetOption, regions []string, freeGB float64) presetPickerModel {
-	cursor := 0
+	recommended := 0
 	for i, p := range presets {
 		if p.ContentGB <= freeGB {
-			cursor = i
+			recommended = i
 		}
 	}
 
 	return presetPickerModel{
-		presets:   presets,
-		regions:   regions,
-		freeGB:    freeGB,
-		cursor:    cursor,
-		hasCustom: true,
-		theme:     tui.DefaultTheme(),
-		keys:      tui.DefaultKeyMap(),
+		presets:      presets,
+		regions:      regions,
+		freeGB:       freeGB,
+		cursor:       recommended,
+		recommended:  recommended,
+		scrollOffset: 0, // always start at top
+		hasCustom:    true,
+		theme:        tui.DefaultTheme(),
+		keys:         tui.DefaultKeyMap(),
 	}
 }
 
-// itemCount returns the total number of selectable items (presets + Customize).
 func (m presetPickerModel) itemCount() int {
 	n := len(m.presets)
 	if m.hasCustom {
@@ -59,14 +58,15 @@ func (m presetPickerModel) itemCount() int {
 	return n
 }
 
+// maxVisible returns how many preset lines fit in the scroll area.
+// Each preset is 1 line. Region headers and other chrome are accounted for.
 func (m presetPickerModel) maxVisible() int {
-	// Reserve lines for header (2) and footer (2) and customize entry (2)
-	avail := m.height - 6
-	// Each preset takes 2 lines (name + description), plus region headers
-	if avail < 4 {
-		avail = 4
+	// Reserve: header(2) + customize(2) + description area(4) + footer(1)
+	avail := m.height - 9
+	if avail < 3 {
+		avail = 3
 	}
-	return avail / 2 // approximate: 2 lines per item
+	return avail
 }
 
 func (m *presetPickerModel) ensureVisible() {
@@ -82,12 +82,8 @@ func (m *presetPickerModel) ensureVisible() {
 	}
 }
 
-// Init satisfies tea.Model. No initial command is needed.
-func (m presetPickerModel) Init() tea.Cmd {
-	return nil
-}
+func (m presetPickerModel) Init() tea.Cmd { return nil }
 
-// Update handles messages for the preset picker.
 func (m presetPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -99,23 +95,19 @@ func (m presetPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case m.keys.ForceQuit.Matches(msg):
 			return m, tea.Quit
-
 		case m.keys.MoveDown.Matches(msg):
 			if m.cursor < m.itemCount()-1 {
 				m.cursor++
 				m.ensureVisible()
 			}
 			return m, nil
-
 		case m.keys.MoveUp.Matches(msg):
 			if m.cursor > 0 {
 				m.cursor--
 				m.ensureVisible()
 			}
 			return m, nil
-
 		case m.keys.Enter.Matches(msg):
-			// Customize option is the last item
 			if m.cursor >= len(m.presets) {
 				return m, func() tea.Msg {
 					return presetDoneMsg{preset: PresetOption{}}
@@ -127,11 +119,9 @@ func (m presetPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-
 	return m, nil
 }
 
-// View renders the preset picker UI.
 func (m presetPickerModel) View() string {
 	var b strings.Builder
 
@@ -143,25 +133,35 @@ func (m presetPickerModel) View() string {
 	}
 	b.WriteString("\n\n")
 
+	// Determine visible range
 	maxVis := m.maxVisible()
-	endIdx := m.scrollOffset + maxVis
-	if endIdx > len(m.presets) {
-		endIdx = len(m.presets)
+	totalPresets := len(m.presets)
+
+	startIdx := m.scrollOffset
+	endIdx := startIdx + maxVis
+	if endIdx > totalPresets {
+		endIdx = totalPresets
 	}
 
-	// Show scroll indicator at top
-	if m.scrollOffset > 0 {
+	// Scroll indicator top
+	if startIdx > 0 {
 		b.WriteString(m.theme.Muted.Render("  ↑ more"))
 		b.WriteString("\n")
 	}
 
+	// Preset list — one line per item
 	prevRegion := ""
-	for i := m.scrollOffset; i < endIdx; i++ {
+	// Track region of items before the visible window for proper headers
+	if startIdx > 0 {
+		prevRegion = m.presets[startIdx-1].Region
+	}
+
+	for i := startIdx; i < endIdx; i++ {
 		p := m.presets[i]
 
-		// Region header
+		// Region header when region changes
 		if p.Region != "" && p.Region != prevRegion {
-			if prevRegion != "" {
+			if i > startIdx {
 				b.WriteString("\n")
 			}
 			b.WriteString(m.theme.Section.Render("  " + p.Region))
@@ -171,40 +171,37 @@ func (m presetPickerModel) View() string {
 
 		isCursor := i == m.cursor
 		tooLarge := m.freeGB > 0 && p.ContentGB > m.freeGB
+		isRecommended := i == m.recommended
 
-		// Line 1: cursor + name + size
+		// Build the line: caret + name + size + markers
 		caret := "  "
 		if isCursor {
 			caret = "> "
 		}
-		size := formatSizeGB(p.ContentGB)
-		nameLine := fmt.Sprintf("%s%-20s %8s", caret, p.Name, size)
 
+		size := formatSizeGB(p.ContentGB)
+		line := fmt.Sprintf("%s%-20s %8s", caret, p.Name, size)
+
+		if isRecommended && !isCursor {
+			line += "  *"
+		}
 		if tooLarge && !isCursor {
-			nameLine += "  (too large)"
+			line += "  (too large)"
 		}
 
-		// Line 2: description (indented)
-		descLine := "    " + p.Description
-
-		if isCursor {
-			b.WriteString(m.theme.Focus.Render(nameLine))
-			b.WriteString("\n")
-			b.WriteString(m.theme.Muted.Render(descLine))
-		} else if tooLarge {
-			b.WriteString(m.theme.Muted.Render(nameLine))
-			b.WriteString("\n")
-			b.WriteString(m.theme.Muted.Render(descLine))
-		} else {
-			b.WriteString(m.theme.Base.Render(nameLine))
-			b.WriteString("\n")
-			b.WriteString(m.theme.Muted.Render(descLine))
+		switch {
+		case isCursor:
+			b.WriteString(m.theme.Focus.Render(line))
+		case tooLarge:
+			b.WriteString(m.theme.Muted.Render(line))
+		default:
+			b.WriteString(m.theme.Base.Render(line))
 		}
 		b.WriteString("\n")
 	}
 
-	// Show scroll indicator at bottom
-	if endIdx < len(m.presets) {
+	// Scroll indicator bottom
+	if endIdx < totalPresets {
 		b.WriteString(m.theme.Muted.Render("  ↓ more"))
 		b.WriteString("\n")
 	}
@@ -223,13 +220,26 @@ func (m presetPickerModel) View() string {
 		} else {
 			b.WriteString(m.theme.Base.Render(line))
 		}
+		b.WriteString("\n")
+	}
+
+	// Description area for selected preset
+	b.WriteString("\n")
+	b.WriteString(m.theme.Muted.Render("  ─────────────────────────────────"))
+	b.WriteString("\n")
+	if m.cursor < len(m.presets) {
+		desc := m.presets[m.cursor].Description
+		if desc != "" {
+			b.WriteString(m.theme.Muted.Render("  " + desc))
+		}
+	} else {
+		b.WriteString(m.theme.Muted.Render("  Browse the full content catalog and pick individual items."))
 	}
 
 	return b.String()
 }
 
 // formatSizeGB formats a size in GB to a human-readable string.
-// Values < 1 GB are shown as "~N MB", values >= 1 GB as "~N GB".
 func formatSizeGB(gb float64) string {
 	if gb < 1 {
 		mb := gb * 1024
