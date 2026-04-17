@@ -89,7 +89,7 @@ func TestIndexVaultCreatesSearchDB(t *testing.T) {
 	copyFile(t, testSmallZIMPath(t), filepath.Join(zimDir, "wiki.zim"))
 
 	var buf bytes.Buffer
-	if err := IndexVault(root, &buf, nil); err != nil {
+	if err := IndexVault(root, false, &buf, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,12 +145,12 @@ func TestIndexVaultSkipsAlreadyIndexed(t *testing.T) {
 	copyFile(t, testSmallZIMPath(t), filepath.Join(zimDir, "wiki.zim"))
 
 	var buf1 bytes.Buffer
-	if err := IndexVault(root, &buf1, nil); err != nil {
+	if err := IndexVault(root, false, &buf1, nil); err != nil {
 		t.Fatal(err)
 	}
 
 	var skipped bool
-	if err := IndexVault(root, io.Discard, func(p IndexProgress) {
+	if err := IndexVault(root, false, io.Discard, func(p IndexProgress) {
 		if p.Status == "skip" {
 			skipped = true
 		}

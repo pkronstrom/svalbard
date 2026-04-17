@@ -46,7 +46,7 @@ func ScanZIMFiles(root string) ([]string, error) {
 
 // IndexVault scans ZIM files in the vault and builds a SQLite FTS5 search index.
 // Progress is reported per-file via onProgress. Text output goes to w.
-func IndexVault(root string, w io.Writer, onProgress func(IndexProgress)) error {
+func IndexVault(root string, force bool, w io.Writer, onProgress func(IndexProgress)) error {
 	zimFiles, err := ScanZIMFiles(root)
 	if err != nil {
 		return err
@@ -87,9 +87,15 @@ func IndexVault(root string, w io.Writer, onProgress func(IndexProgress)) error 
 	}
 
 	for _, zf := range zimFiles {
-		if indexedSet[zf] {
+		if !force && indexedSet[zf] {
 			notify(IndexProgress{File: zf, Status: "skip", Detail: "already indexed"})
 			continue
+		}
+		if force && indexedSet[zf] {
+			// Re-index: remove old articles first.
+			if sourceID, err := db.UpsertSource(zf, zf); err == nil {
+				_ = db.DeleteSourceArticles(sourceID)
+			}
 		}
 
 		notify(IndexProgress{File: zf, Status: "extracting", Detail: "extracting articles..."})

@@ -161,7 +161,7 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return commands.IndexVault(vaultRoot, cmd.OutOrStdout(), nil)
+			return commands.IndexVault(vaultRoot, false, cmd.OutOrStdout(), nil)
 		},
 	}
 
@@ -606,7 +606,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		}
 
 		if indexType == "semantic" {
-			return commands.IndexSemantic(ctx, root, io.Discard, func(p commands.SemanticProgress) {
+			return commands.IndexSemantic(ctx, root, true, io.Discard, func(p commands.SemanticProgress) {
 				file := p.File
 				if file == "" {
 					file = p.Detail
@@ -619,7 +619,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			})
 		}
 
-		return commands.IndexVault(root, io.Discard, func(p commands.IndexProgress) {
+		return commands.IndexVault(root, true, io.Discard, func(p commands.IndexProgress) {
 			onProgress(hosttui.IndexEvent{
 				File:   p.File,
 				Status: mapStatus(p.Status),

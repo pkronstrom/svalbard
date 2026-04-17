@@ -298,6 +298,12 @@ func (d *DB) UnembeddedArticles(afterID int64, limit int) ([]UnembeddedArticle, 
 	return articles, rows.Err()
 }
 
+// DeleteAllEmbeddings removes all stored embeddings.
+func (d *DB) DeleteAllEmbeddings() error {
+	_, err := d.db.Exec("DELETE FROM embeddings")
+	return err
+}
+
 // EmbeddingCount returns the number of articles with embeddings.
 func (d *DB) EmbeddingCount() (int64, error) {
 	var count int64

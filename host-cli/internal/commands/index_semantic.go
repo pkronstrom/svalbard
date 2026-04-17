@@ -27,7 +27,7 @@ type SemanticProgress struct {
 // database, reporting progress per source (ZIM file).
 //
 // The keyword index must already exist (run IndexVault first).
-func IndexSemantic(ctx context.Context, root string, w io.Writer, onProgress func(SemanticProgress)) error {
+func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, onProgress func(SemanticProgress)) error {
 	dataDir := filepath.Join(root, "data")
 	dbPath := filepath.Join(dataDir, "search.db")
 	if _, err := os.Stat(dbPath); err != nil {
@@ -46,6 +46,12 @@ func IndexSemantic(ctx context.Context, root string, w io.Writer, onProgress fun
 	}
 	if len(sources) == 0 {
 		return fmt.Errorf("no indexed sources — run keyword indexing first")
+	}
+
+	if force {
+		if err := db.DeleteAllEmbeddings(); err != nil {
+			return fmt.Errorf("clearing embeddings: %w", err)
+		}
 	}
 
 	notify := func(p SemanticProgress) {
