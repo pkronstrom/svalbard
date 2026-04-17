@@ -25,6 +25,9 @@ build-tools/zim-compact
 
 docs/plans/archive/
 
+# Embedded drive-runtime binaries (built fresh in CI / make build)
+host-cli/internal/toolkit/embedded/*/
+
 # Local-only packs and files (personal, not committed)
 *.local.*
 .claude/
