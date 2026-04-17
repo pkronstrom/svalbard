@@ -132,9 +132,9 @@ func TestPackPickerTriState(t *testing.T) {
 	m.height = 30
 
 	out := m.View()
-	// The core pack should show partial indicator ◐
-	if !strings.Contains(out, "◐") {
-		t.Errorf("Partial check should show ◐; got:\n%s", stripAnsi(out))
+	// The core pack should show partial indicator ~
+	if !strings.Contains(out, "~") {
+		t.Errorf("Partial check should show ~; got:\n%s", stripAnsi(out))
 	}
 }
 
@@ -150,9 +150,9 @@ func TestPackPickerPreChecked(t *testing.T) {
 	}
 
 	out := m.View()
-	// Full check should show ☑
-	if !strings.Contains(out, "☑") {
-		t.Errorf("Fully checked pack should show ☑; got:\n%s", stripAnsi(out))
+	// Full check should show ✓
+	if !strings.Contains(out, "✓") {
+		t.Errorf("Fully checked pack should show ✓; got:\n%s", stripAnsi(out))
 	}
 }
 

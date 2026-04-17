@@ -376,11 +376,11 @@ func (m packPickerModel) View() string {
 		case rowPack:
 			pack := row.pack
 			checked, total := packCheckState(pack, m.checkedIDs)
-			mark := "☐"
+			mark := "·"
 			if checked == total && total > 0 {
-				mark = "☑"
+				mark = "✓"
 			} else if checked > 0 {
-				mark = "◐"
+				mark = "~"
 			}
 			size := packCheckedSizeGB(pack, m.checkedIDs)
 			suffix := formatSizeGB(size)
@@ -398,11 +398,11 @@ func (m packPickerModel) View() string {
 
 		case rowItem:
 			src := row.source
-			mark := "☐"
+			mark := "·"
 			if m.checkedIDs[src.ID] {
-				mark = "☑"
+				mark = "✓"
 			}
-			line := fmt.Sprintf("        %s%s %s  %s", prefix, mark, src.ID, formatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, typeSymbol(src.Type), src.ID, formatSizeGB(src.SizeGB))
 			if isCursor {
 				b.WriteString(m.theme.Selected.Render(line))
 			} else if m.checkedIDs[src.ID] {
@@ -444,7 +444,7 @@ func (m packPickerModel) View() string {
 			b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s — %d items", desc, len(row.pack.Sources))))
 		case rowItem:
 			src := row.source
-			line := fmt.Sprintf("  %s · %s · %s", src.ID, src.Type, formatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("  %s %s · %s · %s", typeSymbol(src.Type), src.ID, src.Type, formatSizeGB(src.SizeGB))
 			b.WriteString(m.theme.Muted.Render(truncate(line, m.paneWidth())))
 			if src.Description != "" {
 				b.WriteString("\n")
@@ -474,6 +474,22 @@ func (m packPickerModel) View() string {
 	b.WriteString("\n")
 
 	return b.String()
+}
+
+// typeSymbol returns a small Unicode symbol indicating the recipe type.
+func typeSymbol(t string) string {
+	switch t {
+	case "zim", "pdf", "epub", "html":
+		return "✦"
+	case "binary", "toolchain", "app", "sqlite":
+		return "⚙"
+	case "pmtiles", "gpkg":
+		return "⊞"
+	case "gguf":
+		return "∿"
+	default:
+		return "·"
+	}
 }
 
 func (m *packPickerModel) paneWidth() int {
