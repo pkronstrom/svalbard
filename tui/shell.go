@@ -38,6 +38,11 @@ type ShellLayout struct {
 // Wide mode (Width >= MinTwoPaneWidth) places panes side-by-side.
 // Narrow mode (Width < MinTwoPaneWidth) stacks them vertically.
 func (s ShellLayout) Render() string {
+	// Wait for initial WindowSizeMsg before rendering layout.
+	if s.Width == 0 {
+		return ""
+	}
+
 	// Top bar: AppName + Identity + Status, space-separated
 	topBar := s.Theme.Title.Render(s.AppName) +
 		" " + s.Theme.Muted.Render(s.Identity) +
