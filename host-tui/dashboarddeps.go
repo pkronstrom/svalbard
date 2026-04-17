@@ -14,6 +14,7 @@ type DashboardDeps struct {
 
 	// State mutation
 	SaveDesiredItems func(ids []string) error
+	InitVault        func(path string, items []string, presetName, region string, platforms []string) error
 
 	// Long-running operations (run in goroutines, report progress via callback)
 	RunApply  func(ctx context.Context, onProgress func(ApplyEvent)) error

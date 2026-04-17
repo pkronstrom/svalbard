@@ -494,6 +494,10 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		return manifest.Save(mPath, m)
 	}
 
+	deps.InitVault = func(path string, items []string, presetName, region string, platforms []string) error {
+		return commands.InitVaultWithOptions(path, items, presetName, region, platforms)
+	}
+
 	deps.RunApply = func(_ context.Context, onProgress func(hosttui.ApplyEvent)) error {
 		root, err := ResolveVaultRoot(vaultFlag)
 		if err != nil {

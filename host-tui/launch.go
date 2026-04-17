@@ -38,6 +38,12 @@ func RunInitWizard(config WizardConfig) error {
 	return runApp(&appModel{screen: screenWizard, wizard: wizard.New(config), wizardConfig: &config})
 }
 
+// WizardCompleted returns the wizard result if the TUI exited after
+// a wizard completion, or nil if the user quit normally.
+func (m *appModel) WizardCompleted() *WizardResult {
+	return m.wizardResult
+}
+
 func runApp(m *appModel) error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
@@ -65,7 +71,8 @@ type appModel struct {
 	vaultPath    string
 	deps         *DashboardDeps
 	wizardConfig *WizardConfig
-	width, height int // last known terminal dimensions
+	wizardResult *WizardResult // set when wizard completes
+	width, height int
 
 	welcome   welcome.Model
 	dashboard dashboard.Model
@@ -169,6 +176,24 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.sendSize()
 
 	case wizard.DoneMsg:
+		r := msg.Result
+		// Init the vault
+		if m.deps != nil && m.deps.InitVault != nil {
+			if err := m.deps.InitVault(r.VaultPath, r.SelectedIDs, r.PresetName, r.Region, r.HostPlatforms); err != nil {
+				// TODO: show error in TUI
+				return m, tea.Quit
+			}
+			// Rebuild deps for the new vault
+			if m.deps.RebuildForVault != nil {
+				m.deps = m.deps.RebuildForVault(r.VaultPath)
+			}
+			// Transition to plan+apply for the new vault
+			m.vaultPath = r.VaultPath
+			m.screen = screenPlan
+			m.planScr = m.newPlan()
+			return m, m.sendSize()
+		}
+		// No deps — just quit
 		return m, tea.Quit
 
 	// --- Browse messages ---
@@ -183,6 +208,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// --- Plan messages ---
 	case plan.BackMsg:
 		m.screen = screenDashboard
+		m.dashboard = m.newDashboard(m.vaultPath)
 		return m, m.sendSize()
 
 	case plan.BrowseMsg:
