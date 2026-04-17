@@ -185,9 +185,18 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toggleAtCursor()
 			return m, nil
 
-		// Expand/collapse
+		// Expand/collapse — Enter, or left/right arrows on group/pack headers
 		case m.keys.Enter.Matches(msg):
 			m.expandCollapseAtCursor()
+			return m, nil
+
+		case msg.Type == tea.KeyRight || msg.Type == tea.KeyLeft:
+			if m.cursor >= 0 && m.cursor < len(m.rows) {
+				row := m.rows[m.cursor]
+				if row.kind == rowGroup || row.kind == rowPack {
+					m.expandCollapseAtCursor()
+				}
+			}
 			return m, nil
 
 		// Apply
