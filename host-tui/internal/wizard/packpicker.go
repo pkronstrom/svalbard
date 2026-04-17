@@ -19,6 +19,7 @@ const (
 	rowGroup = iota
 	rowPack
 	rowItem
+	rowAction // "Continue to review →" at the bottom
 )
 
 // pickerRow is a single row in the flattened tree view.
@@ -119,6 +120,8 @@ func (m *packPickerModel) rebuildRows() {
 			}
 		}
 	}
+	// Action row at the bottom
+	m.rows = append(m.rows, pickerRow{kind: rowAction})
 }
 
 // totalCheckedGB returns the total size of all checked sources (dedup by ID).
@@ -185,8 +188,17 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toggleAtCursor()
 			return m, nil
 
-		// Expand/collapse — Enter, or left/right arrows on group/pack headers
+		// Enter: expand/collapse on groups/packs, or confirm on action row
 		case m.keys.Enter.Matches(msg):
+			if m.cursor >= 0 && m.cursor < len(m.rows) && m.rows[m.cursor].kind == rowAction {
+				selected := make(map[string]bool, len(m.checkedIDs))
+				for id, v := range m.checkedIDs {
+					if v {
+						selected[id] = true
+					}
+				}
+				return m, func() tea.Msg { return packDoneMsg{selectedIDs: selected} }
+			}
 			m.expandCollapseAtCursor()
 			return m, nil
 
@@ -397,6 +409,15 @@ func (m packPickerModel) View() string {
 				b.WriteString(m.theme.Base.Render(line))
 			} else {
 				b.WriteString(m.theme.Muted.Render(line))
+			}
+
+		case rowAction:
+			b.WriteString("\n")
+			line := prefix + "Continue to review →"
+			if isCursor {
+				b.WriteString(m.theme.Success.Render(line))
+			} else {
+				b.WriteString(m.theme.Focus.Render(line))
 			}
 		}
 		b.WriteString("\n")
