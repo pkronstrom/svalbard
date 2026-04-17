@@ -365,6 +365,43 @@ func buildWizardConfig(prefillPath string) (hosttui.WizardConfig, error) {
 		pg.Packs = append(pg.Packs, pack)
 	}
 
+	// Collect IDs that are in packs.
+	inPack := make(map[string]bool)
+	for _, pg := range groupMap {
+		for _, pack := range pg.Packs {
+			for _, src := range pack.Sources {
+				inPack[src.ID] = true
+			}
+		}
+	}
+
+	// Add individual recipes that aren't in any pack.
+	var loose []hosttui.PackSource
+	for _, item := range cat.AllRecipes() {
+		if inPack[item.ID] {
+			continue
+		}
+		loose = append(loose, hosttui.PackSource{
+			ID:          item.ID,
+			Type:        item.Type,
+			Strategy:    item.Strategy,
+			Description: item.Description,
+			SizeGB:      item.SizeGB,
+		})
+	}
+	if len(loose) > 0 {
+		pg, ok := groupMap["Other"]
+		if !ok {
+			pg = &hosttui.PackGroup{Name: "Other"}
+			groupMap["Other"] = pg
+		}
+		pg.Packs = append(pg.Packs, hosttui.Pack{
+			Name:        "individual-items",
+			Description: "Recipes not included in any pack",
+			Sources:     loose,
+		})
+	}
+
 	var packGroups []hosttui.PackGroup
 	for _, pg := range groupMap {
 		packGroups = append(packGroups, *pg)
