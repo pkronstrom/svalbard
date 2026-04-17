@@ -382,12 +382,12 @@ func (m packPickerModel) View() string {
 			} else if checked > 0 {
 				mark = "~"
 			}
-			size := packCheckedSizeGB(pack, m.checkedIDs)
-			suffix := formatSizeGB(size)
+			suffix := fmt.Sprintf("%d/%d", checked, total)
 			if checked > 0 && checked < total {
-				suffix = "(shared)"
+				suffix += " shared"
 			}
-			label := fmt.Sprintf("    %s%s %s  %s", prefix, mark, pack.Name, suffix)
+			sym := packTypeSymbol(pack)
+			label := fmt.Sprintf("    %s%s %s %s  %s", prefix, mark, pack.Name, sym, suffix)
 			if isCursor {
 				b.WriteString(m.theme.Selected.Render(label))
 			} else if checked > 0 {
@@ -402,7 +402,7 @@ func (m packPickerModel) View() string {
 			if m.checkedIDs[src.ID] {
 				mark = "✓"
 			}
-			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, typeSymbol(src.Type), src.ID, formatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, src.ID, typeSymbol(src.Type), formatSizeGB(src.SizeGB))
 			if isCursor {
 				b.WriteString(m.theme.Selected.Render(line))
 			} else if m.checkedIDs[src.ID] {
@@ -474,6 +474,26 @@ func (m packPickerModel) View() string {
 	b.WriteString("\n")
 
 	return b.String()
+}
+
+// packTypeSymbol returns the type symbol for a pack. If all items share
+// the same type, returns that symbol. Otherwise returns a mixed indicator.
+func packTypeSymbol(pack *Pack) string {
+	if len(pack.Sources) == 0 {
+		return "·"
+	}
+	first := pack.Sources[0].Type
+	allSame := true
+	for _, s := range pack.Sources[1:] {
+		if s.Type != first {
+			allSame = false
+			break
+		}
+	}
+	if allSame {
+		return typeSymbol(first)
+	}
+	return "+"
 }
 
 // typeSymbol returns a small Unicode symbol indicating the recipe type.
