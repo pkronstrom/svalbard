@@ -37,6 +37,7 @@ type KeyMap struct {
 	Palette    KeyBinding
 	Toggle     KeyBinding
 	SwitchPane KeyBinding
+	Help       KeyBinding
 	Quit       KeyBinding
 	ForceQuit  KeyBinding
 }
@@ -52,6 +53,7 @@ func DefaultKeyMap() KeyMap {
 		Palette:    KeyBinding{Key: "ctrl+k", Label: "Ctrl+K: palette"},
 		Toggle:     KeyBinding{Key: " ", Label: "Space: toggle"},
 		SwitchPane: KeyBinding{Key: "tab", Label: "Tab: switch pane"},
+		Help:       KeyBinding{Key: "?", Label: ""},
 		Quit:       KeyBinding{Key: "q", Label: "q: quit"},
 		ForceQuit:  KeyBinding{Key: "ctrl+c", Label: ""},
 	}
@@ -67,4 +69,22 @@ func FooterHints(bindings ...KeyBinding) string {
 		}
 	}
 	return strings.Join(parts, " | ")
+}
+
+// NumberKeyIndex checks if a key message is a digit '1'-'9' and returns
+// the corresponding 0-based index (0-8) and true. Returns -1 and false
+// if the key is not a digit or is out of the given count.
+func NumberKeyIndex(msg tea.KeyMsg, count int) (int, bool) {
+	if msg.Type != tea.KeyRunes || len(msg.Runes) != 1 {
+		return -1, false
+	}
+	r := msg.Runes[0]
+	if r < '1' || r > '9' {
+		return -1, false
+	}
+	idx := int(r - '1')
+	if idx >= count {
+		return -1, false
+	}
+	return idx, true
 }

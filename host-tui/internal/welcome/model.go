@@ -8,29 +8,32 @@ import (
 	"github.com/pkronstrom/svalbard/tui"
 )
 
-// welcomeDestination pairs an ID with a human-readable label shown in the nav list.
+// welcomeDestination pairs an ID with a human-readable label and description.
 type welcomeDestination struct {
 	id    string
 	label string
+	desc  string
 }
 
 var welcomeDestinations = []welcomeDestination{
-	{"init", "Init Vault"},
-	{"preset", "Choose Preset"},
+	{"new-vault", "New Vault", "full setup wizard"},
+	{"open-vault", "Open Vault", "point to existing vault"},
+	{"browse", "Browse", "explore available content & presets"},
 }
 
 // SelectMsg is sent when the user activates a welcome destination.
 type SelectMsg struct {
-	ID string // "init" or "preset"
+	ID string // "new-vault", "open-vault", or "browse"
 }
 
 // Model is the Bubble Tea model for the welcome / no-vault-found screen.
 type Model struct {
-	selected int
-	width    int
-	height   int
-	theme    tui.Theme
-	keys     tui.KeyMap
+	selected  int
+	width     int
+	height    int
+	theme     tui.Theme
+	keys      tui.KeyMap
+	statusMsg string // transient feedback message
 }
 
 // New creates a welcome Model with the default theme and key map.
@@ -65,16 +68,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.keys.MoveDown.Matches(msg):
 			if m.selected < len(welcomeDestinations)-1 {
 				m.selected++
+				m.statusMsg = ""
 			}
 			return m, nil
 		case m.keys.MoveUp.Matches(msg):
 			if m.selected > 0 {
 				m.selected--
+				m.statusMsg = ""
 			}
 			return m, nil
 		case m.keys.Enter.Matches(msg):
 			dest := welcomeDestinations[m.selected]
-			return m, func() tea.Msg { return SelectMsg{ID: dest.id} }
+			switch dest.id {
+			case "new-vault":
+				return m, func() tea.Msg { return SelectMsg{ID: dest.id} }
+			default:
+				m.statusMsg = dest.label + ": not yet implemented"
+				return m, nil
+			}
+		default:
+			if idx, ok := tui.NumberKeyIndex(msg, len(welcomeDestinations)); ok {
+				m.selected = idx
+				return m, nil
+			}
 		}
 	}
 
@@ -86,19 +102,28 @@ func (m Model) View() string {
 	// Build navigation list from destinations
 	items := make([]tui.NavItem, len(welcomeDestinations))
 	for i, d := range welcomeDestinations {
-		items[i] = tui.NavItem{ID: d.id, Label: d.label}
+		items[i] = tui.NavItem{
+			ID:          d.id,
+			Label:       d.label,
+			Description: d.desc,
+		}
 	}
 
 	nav := tui.NavList{
-		Items:    items,
-		Selected: m.selected,
-		Theme:    m.theme,
+		Items:       items,
+		Selected:    m.selected,
+		Theme:       m.theme,
+		ShowNumbers: true,
 	}
 
+	body := "No vault found in the current directory.\nCreate a new vault or open an existing one to get started."
+	if m.statusMsg != "" {
+		body = m.statusMsg
+	}
 	detail := tui.DetailPane{
 		Theme: m.theme,
 		Title: "Welcome",
-		Body:  "No vault found in the current directory.\nCreate a new vault or browse presets to get started.",
+		Body:  body,
 	}
 
 	footer := tui.FooterHints(

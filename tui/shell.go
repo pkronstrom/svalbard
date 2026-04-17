@@ -22,15 +22,16 @@ const (
 // vertically in narrow ones. Callers provide pre-rendered Left and Right
 // pane content; ShellLayout handles only geometry.
 type ShellLayout struct {
-	Theme    Theme
-	AppName  string
-	Identity string // vault name, drive identity
-	Status   string // status badge text
-	Left     string // pre-rendered left pane content
-	Right    string // pre-rendered right pane content
-	Footer   string // key hint line
-	Width    int
-	Height   int // reserved for future vertical overflow management
+	Theme        Theme
+	AppName      string
+	Identity     string // vault name, drive identity
+	Status       string // status badge text
+	Left         string // pre-rendered left pane content
+	Right        string // pre-rendered right pane content
+	CompactRight string // 1-2 line summary for narrow mode (falls back to Right if empty)
+	Footer       string // key hint line
+	Width        int
+	Height       int // reserved for future vertical overflow management
 }
 
 // Render produces the adaptive layout string.
@@ -77,7 +78,11 @@ func (s ShellLayout) renderWide(topBar, footer string) string {
 }
 
 func (s ShellLayout) renderNarrow(topBar, footer string) string {
-	rightContent := s.Theme.Muted.Render(s.Right)
+	summary := s.CompactRight
+	if summary == "" {
+		summary = s.Right
+	}
+	rightContent := s.Theme.Muted.Render(summary)
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -93,8 +98,8 @@ func (s ShellLayout) renderNarrow(topBar, footer string) string {
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-// stripAnsi removes ANSI escape sequences from a string.
-// Useful for width calculations where visible character count matters.
-func stripAnsi(s string) string {
+// StripAnsi removes ANSI escape sequences from a string.
+// Useful for width calculations and test assertions on styled output.
+func StripAnsi(s string) string {
 	return ansiRe.ReplaceAllString(s, "")
 }

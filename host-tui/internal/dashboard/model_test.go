@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pkronstrom/svalbard/tui"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -90,83 +88,75 @@ func TestDashboardRightPaneChangesWithSelection(t *testing.T) {
 	m.width = 80
 	m.height = 24
 
-	// View at selected=0 (Overview)
+	// View at selected=0 (Status)
 	view0 := m.View()
 
-	// Move to selected=4 (Plan)
-	m.selected = 4
-	view4 := m.View()
+	// Move to selected=2 (Plan)
+	m.selected = 2
+	view2 := m.View()
 
-	if view0 == view4 {
-		t.Errorf("View() should differ between selected=0 and selected=4")
+	if view0 == view2 {
+		t.Errorf("View() should differ between selected=0 and selected=2")
 	}
 
 	// Verify the right-pane content reflects the selection
 	plain0 := stripAnsi(view0)
-	plain4 := stripAnsi(view4)
+	plain2 := stripAnsi(view2)
 
-	if !strings.Contains(plain0, "Vault summary and status.") {
-		t.Errorf("selected=0 should show Overview body, got:\n%s", plain0)
+	if !strings.Contains(plain0, "sync state") {
+		t.Errorf("selected=0 should show Status body, got:\n%s", plain0)
 	}
-	if !strings.Contains(plain4, "what changes will be made") {
-		t.Errorf("selected=4 should show Plan body, got:\n%s", plain4)
+	if !strings.Contains(plain2, "reconcile") {
+		t.Errorf("selected=2 should show Plan body, got:\n%s", plain2)
 	}
 }
 
-func TestHostPaletteOpensOnCtrlK(t *testing.T) {
+func TestDashboardNumberKeyJumps(t *testing.T) {
 	m := New("/tmp/test-vault")
 	m.width = 80
 	m.height = 24
 
-	if m.paletteActive {
-		t.Fatal("palette should start inactive")
-	}
-
-	ctrlK := tea.KeyMsg{Type: tea.KeyCtrlK}
-	result, _ := m.Update(ctrlK)
+	// Press '3' to jump to item index 2 (Plan)
+	key3 := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}
+	result, _ := m.Update(key3)
 	m = result.(Model)
-
-	if !m.paletteActive {
-		t.Error("palette should be active after Ctrl+K")
+	if m.selected != 2 {
+		t.Errorf("after pressing '3', expected selected=2, got %d", m.selected)
 	}
-}
 
-func TestHostPaletteClosesOnMsg(t *testing.T) {
-	m := New("/tmp/test-vault")
-	m.width = 80
-	m.height = 24
-	m.paletteActive = true
-	m.paletteModel = tui.NewPaletteModel(buildHostPaletteEntries(), m.theme)
-
-	result, _ := m.Update(tui.PaletteCloseMsg{})
+	// Press '1' to jump back to item index 0 (Status)
+	key1 := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}
+	result, _ = m.Update(key1)
 	m = result.(Model)
-
-	if m.paletteActive {
-		t.Error("palette should be inactive after PaletteCloseMsg")
-	}
-}
-
-func TestHostPaletteSelectNavigates(t *testing.T) {
-	m := New("/tmp/test-vault")
-	m.width = 80
-	m.height = 24
-
-	// Start at overview (index 0)
 	if m.selected != 0 {
-		t.Fatalf("expected initial selected=0, got %d", m.selected)
+		t.Errorf("after pressing '1', expected selected=0, got %d", m.selected)
 	}
 
-	// Simulate selecting "plan" via palette
-	m.paletteActive = true
-	result, _ := m.Update(tui.PaletteSelectMsg{
-		Entry: tui.PaletteEntry{ID: "plan", Label: "Plan"},
-	})
+	// Press '9' — out of range, should not change
+	key9 := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}}
+	result, _ = m.Update(key9)
 	m = result.(Model)
-
-	if m.paletteActive {
-		t.Error("palette should be inactive after PaletteSelectMsg")
+	if m.selected != 0 {
+		t.Errorf("pressing '9' (out of range) should not change selection, got %d", m.selected)
 	}
-	if m.selected != 4 {
-		t.Errorf("expected selected=4 (Plan), got %d", m.selected)
+}
+
+func TestDashboardNewVaultEmitsMsg(t *testing.T) {
+	m := New("/tmp/test-vault")
+	m.width = 80
+	m.height = 24
+
+	// Navigate to New Vault (last item)
+	m.selected = len(hostDestinations) - 1
+
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	_, cmd := m.Update(enterMsg)
+	if cmd == nil {
+		t.Fatal("pressing Enter on New Vault should produce a command")
+	}
+
+	msg := cmd()
+	if _, ok := msg.(NewVaultMsg); !ok {
+		t.Errorf("expected NewVaultMsg, got %T", msg)
 	}
 }

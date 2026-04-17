@@ -1,18 +1,13 @@
 package tui_test
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/pkronstrom/svalbard/tui"
 )
 
-// stripAnsi removes ANSI escape sequences for width calculations in tests.
-func stripAnsi(s string) string {
-	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	return re.ReplaceAllString(s, "")
-}
+func stripAnsi(s string) string { return tui.StripAnsi(s) }
 
 func newTestShell(width int) tui.ShellLayout {
 	return tui.ShellLayout{

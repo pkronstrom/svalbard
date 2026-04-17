@@ -51,6 +51,7 @@ const (
 // appModel is a top-level Bubble Tea model that manages screen transitions.
 type appModel struct {
 	screen       screen
+	prevScreen   screen // where to return when wizard emits BackMsg
 	welcome      welcome.Model
 	dashboard    dashboard.Model
 	wizard       wizard.Model
@@ -89,17 +90,35 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case welcome.SelectMsg:
 		config := m.defaultWizardConfig()
 		switch msg.ID {
-		case "init", "preset":
-			// Both paths start the wizard at the path picker.
-			// Every wizard run needs a vault path selected first.
+		case "new-vault":
+			m.prevScreen = screenWelcome
 			m.screen = screenWizard
 			m.wizard = wizard.New(config)
 			return m, nil
+		case "open-vault":
+			// TODO: implement open vault screen
+			return m, nil
+		case "browse":
+			// TODO: implement read-only catalog browse
+			return m, nil
 		}
 
+	case dashboard.NewVaultMsg:
+		config := m.defaultWizardConfig()
+		m.prevScreen = screenDashboard
+		m.screen = screenWizard
+		m.wizard = wizard.New(config)
+		return m, nil
+
 	case wizard.BackMsg:
-		m.screen = screenWelcome
-		m.welcome = welcome.New()
+		m.screen = m.prevScreen
+		switch m.prevScreen {
+		case screenDashboard:
+			// dashboard is already initialized, just return to it
+		default:
+			m.screen = screenWelcome
+			m.welcome = welcome.New()
+		}
 		return m, nil
 
 	case wizard.DoneMsg:

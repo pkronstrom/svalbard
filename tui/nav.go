@@ -10,17 +10,20 @@ const (
 
 // NavItem represents a single entry in a navigation list.
 type NavItem struct {
-	ID        string
-	Label     string
-	Subheader string // optional — groups items under a section header
-	Disabled  bool   // visible but not activatable
+	ID          string
+	Label       string
+	Description string // short description shown alongside label
+	Subheader   string // optional — groups items under a section header
+	Separator   bool   // render a separator line before this item
+	Disabled    bool   // visible but not activatable
 }
 
 // NavList is a navigable list of items used in the left pane of dashboards and pickers.
 type NavList struct {
-	Items    []NavItem
-	Selected int
-	Theme    Theme
+	Items       []NavItem
+	Selected    int
+	Theme       Theme
+	ShowNumbers bool // render 1-9 number prefixes for shortcut keys
 }
 
 // MoveDown increments Selected, clamping to bounds and skipping disabled items.
@@ -101,6 +104,7 @@ func (nl *NavList) Render() string {
 	var b strings.Builder
 	prevSubheader := ""
 	hasSubheaders := false
+	num := 0 // visible item number for shortcuts
 
 	// Check if any item has a subheader
 	for _, item := range nl.Items {
@@ -111,6 +115,12 @@ func (nl *NavList) Render() string {
 	}
 
 	for i, item := range nl.Items {
+		// Separator line before this item
+		if item.Separator && i > 0 {
+			b.WriteString(nl.Theme.Muted.Render("  ─────────────────────────────"))
+			b.WriteString("\n")
+		}
+
 		// Subheader grouping
 		if item.Subheader != "" && item.Subheader != prevSubheader {
 			// Blank line between groups (except before first)
@@ -121,6 +131,8 @@ func (nl *NavList) Render() string {
 			b.WriteString("\n")
 			prevSubheader = item.Subheader
 		}
+
+		num++
 
 		// Build the line
 		var line strings.Builder
@@ -137,17 +149,40 @@ func (nl *NavList) Render() string {
 			line.WriteString(caretSpace)
 		}
 
+		// Optional number prefix
+		prefix := ""
+		if nl.ShowNumbers {
+			if num <= 9 {
+				prefix = string(rune('0'+num)) + "  "
+			} else {
+				prefix = "   "
+			}
+		}
+
 		// Label with appropriate style
 		label := item.Label
 		switch {
 		case item.Disabled:
-			label = nl.Theme.Muted.Render(label)
+			line.WriteString(nl.Theme.Muted.Render(prefix + label))
 		case i == nl.Selected:
-			label = nl.Theme.Selected.Render(label)
+			line.WriteString(nl.Theme.Selected.Render(prefix + label))
+		default:
+			line.WriteString(nl.Theme.Base.Render(prefix + label))
 		}
 
-		line.WriteString(label)
 		b.WriteString(line.String())
+
+		// Description on second line, dimmed
+		if item.Description != "" {
+			descIndent := caretSpace
+			if hasSubheaders {
+				descIndent = subIndent + descIndent
+			}
+			if nl.ShowNumbers {
+				descIndent += "   "
+			}
+			b.WriteString("\n" + descIndent + nl.Theme.Muted.Render(item.Description))
+		}
 
 		// Newline between items (not after last)
 		if i < len(nl.Items)-1 {
