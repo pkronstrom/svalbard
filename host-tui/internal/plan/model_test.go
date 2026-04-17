@@ -36,8 +36,8 @@ func TestPlanShowsItems(t *testing.T) {
 	out := stripAnsi(m.View())
 
 	for _, it := range items {
-		if !strings.Contains(out, it.Description) {
-			t.Errorf("View() should contain item description %q, got:\n%s", it.Description, out)
+		if !strings.Contains(out, it.ID) {
+			t.Errorf("View() should contain item ID %q, got:\n%s", it.ID, out)
 		}
 	}
 }

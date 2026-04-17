@@ -288,8 +288,8 @@ func (m Model) viewPlan() string {
 	b.WriteString(m.theme.Section.Render("Pending changes"))
 	b.WriteString("\n\n")
 
-	// Visible height: reserve lines for header/summary/footer.
-	visibleHeight := m.height - 10
+	// Visible height: reserve for header(2) + detail(4) + summary(2) + footer(2) + shell(4)
+	visibleHeight := m.height - 14
 	if visibleHeight < 3 {
 		visibleHeight = 3
 	}
@@ -307,6 +307,11 @@ func (m Model) viewPlan() string {
 		end = len(m.items)
 	}
 
+	if m.scrollOffset > 0 {
+		b.WriteString(m.theme.Muted.Render("  ↑ more"))
+		b.WriteString("\n")
+	}
+
 	for i := m.scrollOffset; i < end; i++ {
 		it := m.items[i]
 		prefix := "  "
@@ -314,24 +319,40 @@ func (m Model) viewPlan() string {
 			prefix = "> "
 		}
 
-		symbol := m.theme.Success.Render("+")
-		if it.Action == "remove" {
-			symbol = m.theme.Danger.Render("-")
-		}
+		sym := actionSymbol(it.Action)
+		line := fmt.Sprintf("%s %s %s  %s", prefix, sym, it.ID, formatSize(it.SizeGB))
 
-		label := fmt.Sprintf("%s  %-40s %6.2f GB", symbol, it.Description, it.SizeGB)
 		if i == m.cursor {
-			label = m.theme.Selected.Render(fmt.Sprintf("%s  %-40s %6.2f GB", actionSymbol(it.Action), it.Description, it.SizeGB))
+			b.WriteString(m.theme.Selected.Render(line))
+		} else {
+			b.WriteString(m.theme.Base.Render(line))
 		}
+		b.WriteString("\n")
+	}
 
-		b.WriteString(prefix + label + "\n")
+	if end < len(m.items) {
+		b.WriteString(m.theme.Muted.Render("  ↓ more"))
+		b.WriteString("\n")
+	}
+
+	// Detail area for selected item
+	b.WriteString("\n")
+	b.WriteString(m.theme.Muted.Render("  ─────────────────────────────────"))
+	b.WriteString("\n")
+	if m.cursor >= 0 && m.cursor < len(m.items) {
+		it := m.items[m.cursor]
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s · %s · %s · %s", it.ID, it.Type, formatSize(it.SizeGB), it.Action)))
+		if it.Description != "" {
+			b.WriteString("\n")
+			b.WriteString(m.theme.Muted.Render("  " + it.Description))
+		}
 	}
 
 	// Summary
-	b.WriteString("\n")
+	b.WriteString("\n\n")
 	b.WriteString(m.theme.Muted.Render(fmt.Sprintf(
-		"Download: %.2f GB  |  Remove: %.2f GB  |  Free after: %.2f GB",
-		m.downloadGB, m.removeGB, m.freeAfterGB,
+		"  Download: %s  |  Remove: %s",
+		formatSize(m.downloadGB), formatSize(m.removeGB),
 	)))
 
 	// Footer
@@ -356,6 +377,16 @@ func (m Model) viewPlan() string {
 		Height:  m.height,
 	}
 	return shell.Render()
+}
+
+func formatSize(gb float64) string {
+	if gb < 0.01 {
+		return fmt.Sprintf("%.0f MB", gb*1024)
+	}
+	if gb < 1 {
+		return fmt.Sprintf("%.0f MB", gb*1024)
+	}
+	return fmt.Sprintf("%.1f GB", gb)
 }
 
 func (m Model) viewApply() string {
