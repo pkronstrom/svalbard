@@ -28,6 +28,7 @@ type IndexStatus struct {
 type IndexEvent struct {
 	File   string
 	Status string // tui.Status* constants
+	Detail string // optional detail text
 }
 
 // Config holds everything the index screen needs from its parent.
@@ -57,6 +58,7 @@ type rebuildTickMsg struct {
 type indexStep struct {
 	file   string
 	status string
+	detail string
 }
 
 // Model is the bubbletea model for the Index management screen.
@@ -193,12 +195,14 @@ func (m *Model) updateStep(ev IndexEvent) {
 	for i := range m.steps {
 		if m.steps[i].file == ev.File {
 			m.steps[i].status = ev.Status
+			m.steps[i].detail = ev.Detail
 			return
 		}
 	}
 	m.steps = append(m.steps, indexStep{
 		file:   ev.File,
 		status: ev.Status,
+		detail: ev.Detail,
 	})
 }
 
@@ -355,23 +359,27 @@ func (m Model) viewRebuilding() string {
 
 	for i := start; i < len(m.steps); i++ {
 		step := m.steps[i]
+		display := step.file
+		if step.detail != "" {
+			display = step.detail
+		}
 		var symbol, label string
 		switch step.status {
 		case tui.StatusDone:
 			symbol = m.theme.Success.Render("✓")
-			label = m.theme.Base.Render(step.file)
+			label = m.theme.Base.Render(display)
 		case tui.StatusIndexing:
 			symbol = m.theme.Warning.Render("·")
-			label = m.theme.Base.Render(step.file)
+			label = m.theme.Base.Render(display)
 		case tui.StatusSkip:
 			symbol = m.theme.Muted.Render("–")
-			label = m.theme.Muted.Render(step.file)
+			label = m.theme.Muted.Render(display)
 		case tui.StatusFailed:
 			symbol = m.theme.Danger.Render("✗")
-			label = m.theme.Danger.Render(step.file)
+			label = m.theme.Danger.Render(display)
 		default:
 			symbol = m.theme.Muted.Render(" ")
-			label = m.theme.Muted.Render(step.file)
+			label = m.theme.Muted.Render(display)
 		}
 		b.WriteString(fmt.Sprintf("  %s  %s\n", symbol, label))
 	}

@@ -60,6 +60,11 @@ END;
 CREATE TRIGGER IF NOT EXISTS articles_ad AFTER DELETE ON articles BEGIN
     INSERT INTO articles_fts(articles_fts, rowid, title, body) VALUES('delete', old.id, old.title, old.body);
 END;
+
+CREATE TABLE IF NOT EXISTS embeddings (
+    article_id INTEGER PRIMARY KEY REFERENCES articles(id),
+    vector BLOB NOT NULL
+);
 `
 
 // Open opens (or creates) the search database at path and ensures the schema exists.
@@ -228,6 +233,76 @@ func (d *DB) Search(query string, limit int) ([]SearchResult, error) {
 		results = append(results, r)
 	}
 	return results, rows.Err()
+}
+
+// EmbeddingPair holds an article ID and its embedding vector blob.
+type EmbeddingPair struct {
+	ArticleID int64
+	Vector    []byte // little-endian float32 blob
+}
+
+// UnembeddedArticle is an article that has not yet been embedded.
+type UnembeddedArticle struct {
+	ID    int64
+	Title string
+	Body  string
+}
+
+// InsertEmbeddings stores a batch of embedding vectors within a transaction.
+func (d *DB) InsertEmbeddings(pairs []EmbeddingPair) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("searchdb: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(
+		"INSERT OR REPLACE INTO embeddings (article_id, vector) VALUES (?, ?)",
+	)
+	if err != nil {
+		return fmt.Errorf("searchdb: prepare insert embedding: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, p := range pairs {
+		if _, err := stmt.Exec(p.ArticleID, p.Vector); err != nil {
+			return fmt.Errorf("searchdb: insert embedding %d: %w", p.ArticleID, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// UnembeddedArticles returns articles without embeddings, ordered by ID,
+// starting after afterID, limited to limit rows.
+func (d *DB) UnembeddedArticles(afterID int64, limit int) ([]UnembeddedArticle, error) {
+	rows, err := d.db.Query(
+		`SELECT a.id, a.title, a.body FROM articles a
+		 LEFT JOIN embeddings e ON e.article_id = a.id
+		 WHERE e.article_id IS NULL AND a.id > ?
+		 ORDER BY a.id LIMIT ?`,
+		afterID, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("searchdb: query unembedded: %w", err)
+	}
+	defer rows.Close()
+
+	var articles []UnembeddedArticle
+	for rows.Next() {
+		var a UnembeddedArticle
+		if err := rows.Scan(&a.ID, &a.Title, &a.Body); err != nil {
+			return nil, fmt.Errorf("searchdb: scan unembedded: %w", err)
+		}
+		articles = append(articles, a)
+	}
+	return articles, rows.Err()
+}
+
+// EmbeddingCount returns the number of articles with embeddings.
+func (d *DB) EmbeddingCount() (int64, error) {
+	var count int64
+	err := d.db.QueryRow("SELECT COUNT(*) FROM embeddings").Scan(&count)
+	return count, err
 }
 
 // Stats returns the number of sources and articles in the database.

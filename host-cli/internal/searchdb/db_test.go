@@ -218,3 +218,72 @@ func TestUpsertSourceUpdatesTitle(t *testing.T) {
 		t.Errorf("upsert returned different IDs: %d vs %d", sid1, sid2)
 	}
 }
+
+func TestEmbeddings(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	sid, err := db.UpsertSource("wiki.zim", "Wikipedia")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.InsertArticles(sid, []Article{
+		{Path: "/A/One", Title: "One", Body: "first article"},
+		{Path: "/A/Two", Title: "Two", Body: "second article"},
+		{Path: "/A/Three", Title: "Three", Body: "third article"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Initially no embeddings.
+	count, err := db.EmbeddingCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Errorf("initial embedding count = %d", count)
+	}
+
+	// Get unembedded articles.
+	unembedded, err := db.UnembeddedArticles(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unembedded) != 3 {
+		t.Fatalf("unembedded = %d, want 3", len(unembedded))
+	}
+
+	// Insert embeddings for first two.
+	fakeVec := make([]byte, 8) // 2 floats
+	err = db.InsertEmbeddings([]EmbeddingPair{
+		{ArticleID: unembedded[0].ID, Vector: fakeVec},
+		{ArticleID: unembedded[1].ID, Vector: fakeVec},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count, err = db.EmbeddingCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Errorf("embedding count = %d, want 2", count)
+	}
+
+	// Only one article should remain unembedded.
+	remaining, err := db.UnembeddedArticles(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 {
+		t.Errorf("remaining unembedded = %d, want 1", len(remaining))
+	}
+	if remaining[0].Title != "Three" {
+		t.Errorf("remaining title = %q, want Three", remaining[0].Title)
+	}
+}
