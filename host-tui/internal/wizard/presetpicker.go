@@ -13,6 +13,9 @@ type presetDoneMsg struct {
 	preset PresetOption
 }
 
+// presetCancelMsg is sent when the user navigates back from the preset picker.
+type presetCancelMsg struct{}
+
 // presetPickerModel is the Bubble Tea sub-model for preset selection.
 type presetPickerModel struct {
 	presets      []PresetOption
@@ -95,6 +98,8 @@ func (m presetPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case m.keys.ForceQuit.Matches(msg):
 			return m, tea.Quit
+		case m.keys.Back.Matches(msg), m.keys.Quit.Matches(msg):
+			return m, func() tea.Msg { return presetCancelMsg{} }
 		case m.keys.MoveDown.Matches(msg):
 			if m.cursor < m.itemCount()-1 {
 				m.cursor++
@@ -235,6 +240,8 @@ func (m presetPickerModel) View() string {
 	} else {
 		b.WriteString(m.theme.Muted.Render("  Browse the full content catalog and pick individual items."))
 	}
+	b.WriteString("\n\n")
+	b.WriteString(m.theme.Help.Render("  j/k navigate  enter select  esc back"))
 
 	return b.String()
 }

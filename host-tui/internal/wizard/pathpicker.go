@@ -91,7 +91,7 @@ func newPathPicker(volumes []Volume, home Volume, prefill string) pathPickerMode
 
 func newFilePicker() filepicker.Model {
 	fp := filepicker.New()
-	fp.CurrentDirectory, _ = os.UserHomeDir()
+	fp.CurrentDirectory, _ = os.Getwd()
 	fp.DirAllowed = true
 	fp.FileAllowed = false
 	fp.ShowPermissions = false
@@ -273,7 +273,7 @@ func (m pathPickerModel) viewFilePicker() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.picker.View())
 	b.WriteString("\n")
-	b.WriteString(m.theme.Muted.Render("Enter: select | h/←: parent | Esc: cancel"))
+	b.WriteString(m.theme.Help.Render("  enter select  h/← parent  esc cancel"))
 
 	return b.String()
 }

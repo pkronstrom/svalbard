@@ -47,11 +47,12 @@ type PickerRow struct {
 
 // TreePickerConfig configures a TreePicker.
 type TreePickerConfig struct {
-	Groups     []PackGroup
-	CheckedIDs map[string]bool // initial selection (copied, not mutated)
-	FreeGB     float64         // available disk space (0 = unknown)
-	ReadOnly   bool            // disable toggling
-	ShowAction bool            // show "Continue →" action row at bottom
+	Groups      []PackGroup
+	CheckedIDs  map[string]bool // initial selection (copied, not mutated)
+	FreeGB      float64         // available disk space (0 = unknown)
+	ReadOnly    bool            // disable toggling
+	ShowAction  bool            // show action row at bottom
+	ActionLabel string          // label for action row (default "Continue to review →")
 }
 
 // TreePicker is a collapsible tree view with checkboxes for selecting pack sources.
@@ -66,8 +67,10 @@ type TreePicker struct {
 	FreeGB          float64
 	ReadOnly        bool
 	ShowAction      bool
+	ActionLabel     string
 	Width           int
 	Height          int
+	ReserveLines    int // lines reserved for chrome below tree (default 10)
 	Theme           Theme
 	Keys            KeyMap
 }
@@ -82,6 +85,7 @@ func NewTreePicker(cfg TreePickerConfig) TreePicker {
 		FreeGB:          cfg.FreeGB,
 		ReadOnly:        cfg.ReadOnly,
 		ShowAction:      cfg.ShowAction,
+		ActionLabel:     cfg.ActionLabel,
 		Theme:           DefaultTheme(),
 		Keys:            DefaultKeyMap(),
 	}
@@ -297,6 +301,16 @@ func (tp *TreePicker) CollapseAtCursor() {
 			if tp.Cursor >= len(tp.Rows) {
 				tp.Cursor = len(tp.Rows) - 1
 			}
+		} else {
+			// Already collapsed — collapse all groups.
+			for name := range tp.CollapsedGroups {
+				tp.CollapsedGroups[name] = true
+			}
+			tp.RebuildRows()
+			if tp.Cursor >= len(tp.Rows) {
+				tp.Cursor = len(tp.Rows) - 1
+			}
+			tp.EnsureVisible()
 		}
 	case RowPack:
 		if !tp.CollapsedPacks[row.Pack.Name] {
@@ -328,8 +342,14 @@ func (tp *TreePicker) CollapseAtCursor() {
 }
 
 // MaxVisible returns the number of visible rows based on terminal height.
+// ReserveLines controls how many lines are reserved for chrome outside the tree
+// (header, detail, summary, footer). Defaults to 10 if not set.
 func (tp *TreePicker) MaxVisible() int {
-	v := tp.Height - 10
+	reserve := tp.ReserveLines
+	if reserve == 0 {
+		reserve = 10
+	}
+	v := tp.Height - reserve
 	if v < 4 {
 		v = 4
 	}
@@ -507,7 +527,11 @@ func (tp *TreePicker) RenderTree() string {
 
 		case RowAction:
 			b.WriteString("\n")
-			line := prefix + "Continue to review →"
+			label := tp.ActionLabel
+			if label == "" {
+				label = "Continue to review →"
+			}
+			line := prefix + label
 			if isCursor {
 				b.WriteString(tp.Theme.Success.Render(line))
 			} else {
@@ -520,52 +544,43 @@ func (tp *TreePicker) RenderTree() string {
 	return b.String()
 }
 
-// RenderDetail renders the detail pane for the row at the cursor.
+// RenderDetail renders compact detail lines for the row at the cursor.
 func (tp *TreePicker) RenderDetail() string {
 	if tp.Cursor < 0 || tp.Cursor >= len(tp.Rows) {
 		return ""
 	}
 
-	var b strings.Builder
 	row := tp.Rows[tp.Cursor]
 
 	switch row.Kind {
 	case RowGroup:
-		b.WriteString(tp.Theme.Section.Render(row.GroupName))
-		b.WriteString("\n\n")
 		packCount := len(row.GroupPacks)
 		itemCount := 0
 		for _, p := range row.GroupPacks {
 			itemCount += len(p.Sources)
 		}
-		b.WriteString(tp.Theme.Base.Render(fmt.Sprintf("  %d packs, %d sources", packCount, itemCount)))
+		return tp.Theme.Muted.Render(fmt.Sprintf("  %d packs, %d sources", packCount, itemCount))
 
 	case RowPack:
 		pack := row.Pack
-		b.WriteString(tp.Theme.Section.Render(pack.Name))
-		b.WriteString("\n\n")
-		if pack.Description != "" {
-			b.WriteString(tp.Theme.Base.Render("  " + pack.Description))
-			b.WriteString("\n\n")
-		}
 		checked, total := PackCheckState(pack, tp.CheckedIDs)
-		b.WriteString(tp.Theme.Muted.Render(fmt.Sprintf("  %d / %d selected", checked, total)))
-		b.WriteString("\n")
 		size := PackCheckedSizeGB(pack, tp.CheckedIDs)
-		b.WriteString(tp.Theme.Muted.Render(fmt.Sprintf("  %s", FormatSizeGB(size))))
+		info := tp.Theme.Muted.Render(fmt.Sprintf("  %d/%d selected · %s", checked, total, FormatSizeGB(size)))
+		if pack.Description != "" {
+			info += "\n" + tp.Theme.Muted.Render("  "+pack.Description)
+		}
+		return info
 
 	case RowItem:
 		src := row.Source
-		b.WriteString(tp.Theme.Section.Render(src.ID))
-		b.WriteString("\n\n")
-		b.WriteString(tp.Theme.Muted.Render(fmt.Sprintf("  %s · %s", src.Type, FormatSizeGB(src.SizeGB))))
+		info := tp.Theme.Muted.Render(fmt.Sprintf("  %s · %s", src.Type, FormatSizeGB(src.SizeGB)))
 		if src.Description != "" {
-			b.WriteString("\n\n")
-			b.WriteString(tp.Theme.Base.Render("  " + src.Description))
+			info += "\n" + tp.Theme.Muted.Render("  "+src.Description)
 		}
+		return info
 	}
 
-	return b.String()
+	return ""
 }
 
 // RenderSizeSummary renders the total/free size summary line.

@@ -14,6 +14,9 @@ type BackMsg struct{}
 // SavedMsg is sent when the user saves changes and exits.
 type SavedMsg struct{}
 
+// PlanMsg is sent when the user saves and wants to go to the plan screen.
+type PlanMsg struct{}
+
 // Config holds everything the browse screen needs.
 type Config struct {
 	PackGroups   []tui.PackGroup
@@ -61,7 +64,10 @@ func New(cfg Config) Model {
 		CheckedIDs: checkedIDs,
 		FreeGB:     cfg.FreeGB,
 		ReadOnly:   cfg.SaveDesired == nil,
+		ShowAction:  cfg.SaveDesired != nil,
+		ActionLabel: "Save & review plan →",
 	})
+	tp.ReserveLines = 11 // detail(3) + summary(1) + shell chrome(7)
 
 	return Model{
 		picker:     tp,
@@ -100,6 +106,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
+		// Enter on action row → save & go to plan.
+		case m.keys.Enter.Matches(msg):
+			if row := m.picker.CursorRow(); row != nil && row.Kind == tui.RowAction {
+				return m, m.saveAndPlan()
+			}
+			return m, nil
+
+		// 'a' shortcut → save & go to plan.
+		case tui.MatchRune(msg, 'a'):
+			if !m.readOnly {
+				return m, m.saveAndPlan()
+			}
+			return m, nil
+
 		case tui.MatchRune(msg, 'p'):
 			if !m.readOnly && len(m.presets) > 0 {
 				m.cyclePreset()
@@ -143,6 +163,15 @@ func (m Model) updateSavePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) saveAndPlan() tea.Cmd {
+	if m.saveFunc != nil {
+		if err := m.saveFunc(m.picker.CheckedIDSlice()); err != nil {
+			return nil
+		}
+	}
+	return func() tea.Msg { return PlanMsg{} }
+}
+
 func (m *Model) cyclePreset() {
 	m.presetIdx = (m.presetIdx + 1) % len(m.presets)
 	preset := m.presets[m.presetIdx]
@@ -156,29 +185,50 @@ func (m *Model) cyclePreset() {
 func (m Model) View() string {
 	totalGB := m.picker.TotalCheckedGB()
 
-	tree := m.picker.RenderTree()
-	tree += "\n"
-	tree += m.picker.RenderSizeSummary()
-
+	// Reserve extra lines for save prompt so tree shrinks to make room.
 	if m.showSavePrompt {
-		tree += "\n\n"
-		tree += m.picker.Theme.Warning.Render("  Save changes before leaving?")
-		tree += "\n"
-		tree += m.picker.Theme.Base.Render("  y = save   n = discard   esc = cancel")
+		m.picker.ReserveLines = 14
+	} else {
+		m.picker.ReserveLines = 11
 	}
 
+	var body strings.Builder
+	body.WriteString(m.picker.RenderTree())
+	body.WriteString("\n")
+	body.WriteString(m.picker.RenderSizeSummary())
+
+	// Detail for focused item below the tree.
 	detail := m.picker.RenderDetail()
+	if detail != "" {
+		body.WriteString("\n")
+		body.WriteString(m.picker.Theme.Muted.Render("  ───"))
+		body.WriteString("\n")
+		body.WriteString(detail)
+	}
+
+	if m.showSavePrompt {
+		body.WriteString("\n\n")
+		body.WriteString(m.picker.Theme.Warning.Render("  Save changes before leaving?"))
+		body.WriteString("\n")
+		body.WriteString(m.picker.Theme.Base.Render("  y = save   n = discard   esc = cancel"))
+	}
 
 	header := fmt.Sprintf("Browse  %d selected  %.1f GB", m.picker.TotalCheckedCount(), totalGB)
+	if m.presetIdx >= 0 && m.presetIdx < len(m.presets) {
+		header += "  preset: " + m.presets[m.presetIdx].Name
+	}
 
 	var footerParts []string
 	footerParts = append(footerParts,
 		fmt.Sprintf("%s/%s navigate", m.keys.MoveUp.Key, m.keys.MoveDown.Key),
 		fmt.Sprintf("%s toggle", m.keys.Toggle.Key),
-		fmt.Sprintf("%s expand/collapse", m.keys.Enter.Key),
+		"←/→ collapse/expand",
 	)
-	if !m.readOnly && len(m.presets) > 0 {
-		footerParts = append(footerParts, "p preset")
+	if !m.readOnly {
+		footerParts = append(footerParts, "a apply")
+		if len(m.presets) > 0 {
+			footerParts = append(footerParts, "p preset")
+		}
 	}
 	footerParts = append(footerParts, "esc back")
 	footer := strings.Join(footerParts, "  ")
@@ -187,8 +237,7 @@ func (m Model) View() string {
 		Theme:   m.picker.Theme,
 		AppName: "Svalbard",
 		Status:  header,
-		Left:    detail,
-		Right:   tree,
+		Right:   body.String(),
 		Footer:  footer,
 		Width:   m.width,
 		Height:  m.height,

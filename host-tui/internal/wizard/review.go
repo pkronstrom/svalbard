@@ -180,7 +180,7 @@ func (m reviewModel) View() string {
 	}
 
 	// Footer
-	b.WriteString(m.theme.Help.Render("  Enter: confirm  |  Esc: go back  |  j/k: scroll"))
+	b.WriteString(m.theme.Help.Render("  j/k scroll  enter confirm  esc back"))
 
 	return b.String()
 }

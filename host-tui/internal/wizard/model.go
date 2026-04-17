@@ -109,6 +109,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.presetPicker = newPresetPicker(m.config.Presets, m.config.Regions, m.freeGB)
 		return m.sizeActiveModel()
 
+	case presetCancelMsg:
+		m.stage = stagePlatforms
+		m.platformPicker = newPlatformPicker()
+		return m.sizeActiveModel()
+
 	case presetDoneMsg:
 		m.presetName = msg.preset.Name
 		m.region = msg.preset.Region
@@ -176,7 +181,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		// Back from path picker goes to welcome screen
-		if m.stage == stagePath && m.keys.Back.Matches(msg) && !m.pathPicker.customInput {
+		if m.stage == stagePath && (m.keys.Back.Matches(msg) || m.keys.Quit.Matches(msg)) && !m.pathPicker.customInput {
 			return m, func() tea.Msg { return BackMsg{} }
 		}
 		// Back from platform picker goes to path picker

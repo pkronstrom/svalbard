@@ -55,6 +55,8 @@ func (m platformPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch {
+		case m.keys.ForceQuit.Matches(msg):
+			return m, tea.Quit
 		case m.keys.MoveDown.Matches(msg):
 			if m.cursor < len(allPlatforms)-1 {
 				m.cursor++
@@ -141,7 +143,7 @@ func (m platformPickerModel) View() string {
 	b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  Binaries: ~%.1f GB for %d platform(s)", estimate, count)))
 	b.WriteString("\n\n")
 
-	b.WriteString(m.theme.Help.Render("space toggle · h this host · a all · enter continue"))
+	b.WriteString(m.theme.Help.Render("  space toggle  h this host  a all  enter continue  esc back"))
 
 	return b.String()
 }

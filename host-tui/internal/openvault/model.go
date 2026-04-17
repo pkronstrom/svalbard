@@ -32,7 +32,7 @@ type Model struct {
 // New creates an open-vault model with a directory-only file picker.
 func New() Model {
 	fp := filepicker.New()
-	fp.CurrentDirectory, _ = os.UserHomeDir()
+	fp.CurrentDirectory, _ = os.Getwd()
 	fp.DirAllowed = true
 	fp.FileAllowed = false
 	fp.ShowPermissions = false
@@ -126,7 +126,7 @@ func (m Model) View() string {
 		body.WriteString(m.theme.Error.Render("  " + m.errMsg))
 	}
 
-	footer := "Enter: select | h/←: parent | Esc: back"
+	footer := "enter select  h/← parent  esc back"
 
 	shell := tui.ShellLayout{
 		Theme:   m.theme,
