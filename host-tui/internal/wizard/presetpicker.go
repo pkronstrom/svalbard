@@ -16,15 +16,16 @@ type presetDoneMsg struct {
 
 // presetPickerModel is the Bubble Tea sub-model for preset selection.
 type presetPickerModel struct {
-	presets   []PresetOption
-	regions   []string
-	freeGB    float64
-	cursor    int
-	hasCustom bool // always true; the Customize entry is appended
-	width     int
-	height    int
-	theme     tui.Theme
-	keys      tui.KeyMap
+	presets      []PresetOption
+	regions      []string
+	freeGB       float64
+	cursor       int
+	scrollOffset int
+	hasCustom    bool // always true; the Customize entry is appended
+	width        int
+	height       int
+	theme        tui.Theme
+	keys         tui.KeyMap
 }
 
 // newPresetPicker creates a presetPickerModel. presets must already be sorted
@@ -58,6 +59,29 @@ func (m presetPickerModel) itemCount() int {
 	return n
 }
 
+func (m presetPickerModel) maxVisible() int {
+	// Reserve lines for header (2) and footer (2) and customize entry (2)
+	avail := m.height - 6
+	// Each preset takes 2 lines (name + description), plus region headers
+	if avail < 4 {
+		avail = 4
+	}
+	return avail / 2 // approximate: 2 lines per item
+}
+
+func (m *presetPickerModel) ensureVisible() {
+	maxVis := m.maxVisible()
+	if m.cursor < m.scrollOffset {
+		m.scrollOffset = m.cursor
+	}
+	if m.cursor >= m.scrollOffset+maxVis {
+		m.scrollOffset = m.cursor - maxVis + 1
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+}
+
 // Init satisfies tea.Model. No initial command is needed.
 func (m presetPickerModel) Init() tea.Cmd {
 	return nil
@@ -79,12 +103,14 @@ func (m presetPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.keys.MoveDown.Matches(msg):
 			if m.cursor < m.itemCount()-1 {
 				m.cursor++
+				m.ensureVisible()
 			}
 			return m, nil
 
 		case m.keys.MoveUp.Matches(msg):
 			if m.cursor > 0 {
 				m.cursor--
+				m.ensureVisible()
 			}
 			return m, nil
 
@@ -111,48 +137,87 @@ func (m presetPickerModel) View() string {
 
 	// Free space header
 	if m.freeGB > 0 {
-		b.WriteString(fmt.Sprintf("  %s free\n\n", formatSizeGB(m.freeGB)))
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s free", formatSizeGB(m.freeGB))))
 	} else {
-		b.WriteString("  Free space unknown\n\n")
+		b.WriteString(m.theme.Muted.Render("  Free space unknown"))
+	}
+	b.WriteString("\n\n")
+
+	maxVis := m.maxVisible()
+	endIdx := m.scrollOffset + maxVis
+	if endIdx > len(m.presets) {
+		endIdx = len(m.presets)
 	}
 
-	for i, p := range m.presets {
-		cursor := "  "
-		if i == m.cursor {
-			cursor = "> "
+	// Show scroll indicator at top
+	if m.scrollOffset > 0 {
+		b.WriteString(m.theme.Muted.Render("  ↑ more"))
+		b.WriteString("\n")
+	}
+
+	prevRegion := ""
+	for i := m.scrollOffset; i < endIdx; i++ {
+		p := m.presets[i]
+
+		// Region header
+		if p.Region != "" && p.Region != prevRegion {
+			if prevRegion != "" {
+				b.WriteString("\n")
+			}
+			b.WriteString(m.theme.Section.Render("  " + p.Region))
+			b.WriteString("\n")
+			prevRegion = p.Region
 		}
 
+		isCursor := i == m.cursor
+		tooLarge := m.freeGB > 0 && p.ContentGB > m.freeGB
+
+		// Line 1: cursor + name + size
+		caret := "  "
+		if isCursor {
+			caret = "> "
+		}
 		size := formatSizeGB(p.ContentGB)
+		nameLine := fmt.Sprintf("%s%-20s %8s", caret, p.Name, size)
 
-		// Check if preset exceeds free space (skip when unknown)
-		extra := ""
-		if m.freeGB > 0 && p.ContentGB > m.freeGB {
-			needed := p.ContentGB - m.freeGB
-			extra = fmt.Sprintf(" (needs %s more)", formatSizeGB(needed))
+		if tooLarge && !isCursor {
+			nameLine += "  (too large)"
 		}
 
-		line := fmt.Sprintf("%s%d) %-18s %8s  %s%s", cursor, i+1, p.Name, size, p.Description, extra)
+		// Line 2: description (indented)
+		descLine := "    " + p.Description
 
-		if i == m.cursor {
-			b.WriteString(m.theme.Focus.Render(line))
-		} else if p.ContentGB > m.freeGB {
-			b.WriteString(m.theme.Muted.Render(line))
+		if isCursor {
+			b.WriteString(m.theme.Focus.Render(nameLine))
+			b.WriteString("\n")
+			b.WriteString(m.theme.Muted.Render(descLine))
+		} else if tooLarge {
+			b.WriteString(m.theme.Muted.Render(nameLine))
+			b.WriteString("\n")
+			b.WriteString(m.theme.Muted.Render(descLine))
 		} else {
-			b.WriteString(m.theme.Base.Render(line))
+			b.WriteString(m.theme.Base.Render(nameLine))
+			b.WriteString("\n")
+			b.WriteString(m.theme.Muted.Render(descLine))
 		}
+		b.WriteString("\n")
+	}
 
+	// Show scroll indicator at bottom
+	if endIdx < len(m.presets) {
+		b.WriteString(m.theme.Muted.Render("  ↓ more"))
 		b.WriteString("\n")
 	}
 
 	// Customize option
 	if m.hasCustom {
-		cursor := "  "
+		b.WriteString("\n")
 		customIdx := len(m.presets)
+		caret := "  "
 		if m.cursor == customIdx {
-			cursor = "> "
+			caret = "> "
 		}
-
-		line := fmt.Sprintf("%sc) Customize — browse all content", cursor)
+		line := caret + "Customize — browse all content"
 		if m.cursor == customIdx {
 			b.WriteString(m.theme.Focus.Render(line))
 		} else {

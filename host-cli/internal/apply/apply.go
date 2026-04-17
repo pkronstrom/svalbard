@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/builder"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
@@ -19,6 +20,15 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/resolver"
 	"github.com/pkronstrom/svalbard/host-cli/internal/toolkit"
 )
+
+// buildNative dispatches to a Go-native builder by family name.
+func buildNative(root, family string, recipe catalog.Item, cat *catalog.Catalog, platforms []string) ([]manifest.RealizedEntry, error) {
+	fn, ok := builder.Dispatch(family)
+	if !ok {
+		return nil, fmt.Errorf("no native builder for family %q", family)
+	}
+	return fn(root, recipe, cat, platforms)
+}
 
 // ProgressFunc reports per-item progress during apply. May be nil.
 type ProgressFunc func(id, status string)
@@ -56,14 +66,30 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 
 	// Process downloads: resolve URLs, download files, add realized entries.
 	for _, id := range plan.ToDownload {
-		progress(id, "active")
 		recipe, ok := cat.RecipeByID(id)
 		if !ok {
 			return fmt.Errorf("recipe %q not found in catalog", id)
 		}
 
+		// python-package items are installed by the python-venv builder, not individually.
+		if recipe.Type == "python-package" {
+			continue
+		}
+
+		progress(id, "active")
+
 		// Route by acquisition strategy.
 		switch {
+		case recipe.Type == "python-venv":
+			entries, err := buildNative(root, "python-venv", recipe, cat, m.Desired.Options.HostPlatforms)
+			if err != nil {
+				progress(id, "failed")
+				fmt.Fprintf(os.Stderr, "skip %s: build failed: %v\n", id, err)
+				continue
+			}
+			m.Realized.Entries = append(m.Realized.Entries, entries...)
+			progress(id, "done")
+
 		case recipe.URL != "" || recipe.URLPattern != "":
 			entry, err := downloadItem(root, id, recipe)
 			if err != nil {
@@ -84,13 +110,24 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 			progress(id, "done")
 
 		case recipe.Strategy == "build" && recipe.Build != nil:
-			entry, err := buildItem(root, id, recipe)
-			if err != nil {
-				progress(id, "failed")
-				fmt.Fprintf(os.Stderr, "skip %s: build failed: %v\n", id, err)
-				continue
+			// Try Go-native builder first, fall through to Docker.
+			if nativeFn, ok := builder.Dispatch(recipe.Build.Family); ok {
+				entries, err := nativeFn(root, recipe, cat, m.Desired.Options.HostPlatforms)
+				if err != nil {
+					progress(id, "failed")
+					fmt.Fprintf(os.Stderr, "skip %s: native build failed: %v\n", id, err)
+					continue
+				}
+				m.Realized.Entries = append(m.Realized.Entries, entries...)
+			} else {
+				entry, err := buildItem(root, id, recipe)
+				if err != nil {
+					progress(id, "failed")
+					fmt.Fprintf(os.Stderr, "skip %s: docker build failed: %v\n", id, err)
+					continue
+				}
+				m.Realized.Entries = append(m.Realized.Entries, entry)
 			}
-			m.Realized.Entries = append(m.Realized.Entries, entry)
 			progress(id, "done")
 
 		default:
@@ -99,12 +136,22 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 		}
 	}
 
+	// Collect env vars from all realized recipes.
+	envVars := make(map[string]string)
+	for _, e := range m.Realized.Entries {
+		if recipe, ok := cat.RecipeByID(e.ID); ok {
+			for k, v := range recipe.Env {
+				envVars[k] = v
+			}
+		}
+	}
+
 	// Regenerate runtime assets.
 	presetName := ""
 	if len(m.Desired.Presets) > 0 {
 		presetName = m.Desired.Presets[0]
 	}
-	if err := toolkit.Generate(root, m.Realized.Entries, presetName); err != nil {
+	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars}); err != nil {
 		return fmt.Errorf("generating toolkit: %w", err)
 	}
 	if err := syncMapViewer(root, m.Realized.Entries); err != nil {

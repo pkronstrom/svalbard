@@ -14,7 +14,7 @@ const (
 
 	// LeftFraction is the proportion of width allocated to the left pane
 	// in wide (two-pane) mode.
-	LeftFraction = 0.40
+	LeftFraction = 0.25
 )
 
 // ShellLayout is the core layout primitive for Svalbard TUI applications.

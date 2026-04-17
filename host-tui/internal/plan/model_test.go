@@ -30,7 +30,7 @@ func TestPlanShowsItems(t *testing.T) {
 		DownloadGB: 2.0,
 		RemoveGB:   0.5,
 	})
-	m.width = 80
+	m.width = 120
 	m.height = 24
 
 	out := stripAnsi(m.View())

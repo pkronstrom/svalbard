@@ -42,8 +42,9 @@ var networkFSTypes = map[string]bool{
 
 // skipNames lists volume names to exclude on macOS.
 var skipNames = map[string]bool{
-	"Macintosh HD":       true,
+	"Macintosh HD":        true,
 	"Macintosh HD - Data": true,
+	".timemachine":        true,
 }
 
 // timeMachineMarkers are paths within a volume that indicate a Time Machine mount.

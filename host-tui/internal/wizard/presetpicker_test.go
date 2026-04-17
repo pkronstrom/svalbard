@@ -153,9 +153,9 @@ func TestPresetPickerShowsNeedsMoreSpace(t *testing.T) {
 
 	out := stripAnsi(m.View())
 
-	// default-128 needs 100 GB but only 50 GB free => "needs ~50 GB more"
-	if !strings.Contains(out, "needs") {
-		t.Errorf("View() should show 'needs' for presets exceeding free space, got:\n%s", out)
+	// default-128 needs 100 GB but only 50 GB free => "too large"
+	if !strings.Contains(out, "too large") {
+		t.Errorf("View() should show 'too large' for presets exceeding free space, got:\n%s", out)
 	}
 }
 
