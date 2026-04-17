@@ -450,6 +450,22 @@ Milestone 1 should not attempt freeform natural-language parsing. Matching
 should be label-and-alias based, with optional lightweight verb prefixes such
 as `add`, `remove`, `apply`, `browse`, or `open`.
 
+Milestone 1 may support a small whitelist of verb + freeform trailing argument
+forms, but only when the receiving flow already accepts a single raw input and
+can safely route into the normal reviewed UI path.
+
+Approved milestone-1 examples:
+
+- `import /path/to/manual.pdf`
+- `import https://example.com`
+- `import https://youtube.com/...`
+
+These palette entries should open the normal import flow with the input
+prefilled. They should not bypass the ordinary review, destination selection,
+or optional `--add` decisions.
+
+Non-import freeform parsing is out of scope for milestone 1.
+
 Recommended use:
 
 - jump to actions
@@ -481,6 +497,9 @@ Host-side examples:
   - show a simple host-side welcome screen in the normal shell
   - include `Init Vault` and `Choose Preset` as primary destinations
   - do not fall back to a plain CLI error for interactive `svalbard`
+  - `Choose Preset` opens preset browsing inside the welcome shell and then
+    enters the normal `init` flow with the chosen preset preselected while
+    keeping the `Vault Path` step active
 - empty vault
   - emphasize `Add Content`, `Import`, and starter presets
 - clean vault with no pending changes
