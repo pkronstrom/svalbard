@@ -8,8 +8,10 @@ import (
 )
 
 var (
-	tagRe = regexp.MustCompile(`(?s)<[^>]*>`)
-	wsRe  = regexp.MustCompile(`[\s]+`)
+	scriptRe = regexp.MustCompile(`(?si)<script[^>]*>.*?</script>`)
+	styleRe  = regexp.MustCompile(`(?si)<style[^>]*>.*?</style>`)
+	tagRe    = regexp.MustCompile(`(?s)<[^>]*>`)
+	wsRe     = regexp.MustCompile(`[\s]+`)
 )
 
 var entityReplacer = strings.NewReplacer(
@@ -28,8 +30,12 @@ func StripHTML(raw string) string {
 		return ""
 	}
 
+	// Remove script and style blocks before stripping tags.
+	s := scriptRe.ReplaceAllString(raw, " ")
+	s = styleRe.ReplaceAllString(s, " ")
+
 	// Remove all HTML tags (including multi-line).
-	s := tagRe.ReplaceAllString(raw, " ")
+	s = tagRe.ReplaceAllString(s, " ")
 
 	// Decode common HTML entities.
 	s = entityReplacer.Replace(s)

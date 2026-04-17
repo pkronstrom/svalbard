@@ -135,7 +135,8 @@ func (s *Session) OpenResult(result Result) error {
 		return err
 	}
 	book := strings.TrimSuffix(result.Filename, ".zim")
-	url := fmt.Sprintf("http://localhost:%d/content/%s/%s", s.kiwixPort, book, result.Path)
+	path := strings.TrimLeft(result.Path, "/")
+	url := fmt.Sprintf("http://localhost:%d/content/%s/%s", s.kiwixPort, book, path)
 	return s.opener(url)
 }
 

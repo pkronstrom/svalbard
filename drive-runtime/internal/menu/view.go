@@ -95,11 +95,6 @@ func renderSearchView(m Model) string {
 		line := renderSearchResultLine(m, idx+1, result.Filename, result.Title, idx == m.searchSelected)
 		b.WriteString(line)
 		b.WriteString("\n")
-		if result.Snippet != "" {
-			snippet := renderSearchResultSnippet(m, result.Snippet, idx == m.searchSelected)
-			b.WriteString(snippet)
-			b.WriteString("\n")
-		}
 	}
 
 	if m.searchSelected >= len(m.searchResults) {
