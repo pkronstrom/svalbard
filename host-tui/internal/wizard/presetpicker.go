@@ -2,7 +2,6 @@ package wizard
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -128,7 +127,7 @@ func (m presetPickerModel) View() string {
 
 	// Free space header
 	if m.freeGB > 0 {
-		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s free", formatSizeGB(m.freeGB))))
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s free", tui.FormatSizeGB(m.freeGB))))
 	} else {
 		b.WriteString(m.theme.Muted.Render("  Free space unknown"))
 	}
@@ -180,7 +179,7 @@ func (m presetPickerModel) View() string {
 			caret = "> "
 		}
 
-		size := formatSizeGB(p.ContentGB)
+		size := tui.FormatSizeGB(p.ContentGB)
 		line := fmt.Sprintf("%s%-20s %8s", caret, p.Name, size)
 
 		if isRecommended && !isCursor {
@@ -240,11 +239,3 @@ func (m presetPickerModel) View() string {
 	return b.String()
 }
 
-// formatSizeGB formats a size in GB to a human-readable string.
-func formatSizeGB(gb float64) string {
-	if gb < 1 {
-		mb := gb * 1024
-		return fmt.Sprintf("~%.0f MB", math.Round(mb))
-	}
-	return fmt.Sprintf("~%.0f GB", math.Round(gb))
-}

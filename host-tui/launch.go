@@ -324,7 +324,7 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 			cfg.RunApply = func(vaultPath string, onProgress func(id, status string)) error {
 				// Rebuild deps targeting the new vault path, then run apply
 				newDeps := rebuildForVault(vaultPath)
-				return newDeps.RunApply(nil, func(ev ApplyEvent) {
+				return newDeps.RunApply(context.Background(), func(ev ApplyEvent) {
 					onProgress(ev.ID, ev.Status)
 				})
 			}

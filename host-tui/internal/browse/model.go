@@ -2,7 +2,6 @@ package browse
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -428,7 +427,7 @@ func (m Model) View() string {
 			checked, total := packCheckState(pack, m.checkedIDs)
 			mark := markChar(checked, total)
 			size := packCheckedSizeGB(pack, m.checkedIDs)
-			label := fmt.Sprintf("    %s%s %s  %s", prefix, mark, pack.Name, formatSizeGB(size))
+			label := fmt.Sprintf("    %s%s %s  %s", prefix, mark, pack.Name, tui.FormatSizeGB(size))
 			if isCursor {
 				body.WriteString(m.theme.Selected.Render(label))
 			} else if checked > 0 {
@@ -443,7 +442,7 @@ func (m Model) View() string {
 			if m.checkedIDs[src.ID] {
 				mark = "✓"
 			}
-			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, src.ID, typeSymbol(src.Type), formatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, src.ID, tui.TypeSymbol(src.Type), tui.FormatSizeGB(src.SizeGB))
 			if isCursor {
 				body.WriteString(m.theme.Selected.Render(line))
 			} else if m.checkedIDs[src.ID] {
@@ -546,26 +545,4 @@ func markChar(checked, total int) string {
 	return "[ ]"
 }
 
-// formatSizeGB formats a size in GB to a human-readable string.
-func formatSizeGB(gb float64) string {
-	if gb < 1 {
-		mb := gb * 1024
-		return fmt.Sprintf("~%.0f MB", math.Round(mb))
-	}
-	return fmt.Sprintf("~%.0f GB", math.Round(gb))
-}
 
-func typeSymbol(t string) string {
-	switch t {
-	case "zim", "pdf", "epub", "html":
-		return "✦"
-	case "binary", "toolchain", "app", "sqlite", "python-package", "python-venv":
-		return "⚙"
-	case "pmtiles", "gpkg":
-		return "⊞"
-	case "gguf":
-		return "∿"
-	default:
-		return "·"
-	}
-}

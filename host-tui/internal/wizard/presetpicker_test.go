@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/pkronstrom/svalbard/tui"
 )
 
 func samplePresets() []PresetOption {
@@ -202,9 +203,9 @@ func TestFormatSizeGB(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := formatSizeGB(tt.gb)
+		got := tui.FormatSizeGB(tt.gb)
 		if got != tt.want {
-			t.Errorf("formatSizeGB(%v) = %q, want %q", tt.gb, got, tt.want)
+			t.Errorf("tui.FormatSizeGB(%v) = %q, want %q", tt.gb, got, tt.want)
 		}
 	}
 }

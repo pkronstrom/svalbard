@@ -481,7 +481,7 @@ func (m packPickerModel) View() string {
 			if m.checkedIDs[src.ID] {
 				mark = "✓"
 			}
-			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, src.ID, typeSymbol(src.Type), formatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("        %s%s %s %s  %s", prefix, mark, src.ID, tui.TypeSymbol(src.Type), tui.FormatSizeGB(src.SizeGB))
 			if isCursor {
 				b.WriteString(m.theme.Selected.Render(line))
 			} else if m.checkedIDs[src.ID] {
@@ -523,7 +523,7 @@ func (m packPickerModel) View() string {
 			b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s — %d items", desc, len(row.pack.Sources))))
 		case rowItem:
 			src := row.source
-			line := fmt.Sprintf("  %s %s · %s · %s", typeSymbol(src.Type), src.ID, src.Type, formatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("  %s %s · %s · %s", tui.TypeSymbol(src.Type), src.ID, src.Type, tui.FormatSizeGB(src.SizeGB))
 			b.WriteString(m.theme.Muted.Render(line))
 			if src.Description != "" {
 				b.WriteString("\n")
@@ -570,26 +570,11 @@ func packTypeSymbol(pack *Pack) string {
 		}
 	}
 	if allSame {
-		return typeSymbol(first)
+		return tui.TypeSymbol(first)
 	}
 	return "+"
 }
 
-// typeSymbol returns a small Unicode symbol indicating the recipe type.
-func typeSymbol(t string) string {
-	switch t {
-	case "zim", "pdf", "epub", "html":
-		return "✦"
-	case "binary", "toolchain", "app", "sqlite", "python-package", "python-venv":
-		return "⚙"
-	case "pmtiles", "gpkg":
-		return "⊞"
-	case "gguf":
-		return "∿"
-	default:
-		return "·"
-	}
-}
 
 func (m *packPickerModel) paneWidth() int {
 	// Right pane is ~75% of terminal minus gutter
@@ -622,4 +607,3 @@ func packCheckedSizeGB(pack *Pack, checked map[string]bool) float64 {
 	return total
 }
 
-// formatSizeGB is defined in presetpicker.go — reused here.

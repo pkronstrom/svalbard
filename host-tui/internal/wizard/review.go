@@ -34,6 +34,7 @@ type reviewModel struct {
 	height       int
 	theme        tui.Theme
 	keys         tui.KeyMap
+	errMsg       string
 }
 
 func newReviewModel(vaultPath string, items []ReviewItem, freeGB float64) reviewModel {
@@ -116,9 +117,9 @@ func (m reviewModel) View() string {
 	// Header
 	totalGB := m.totalSizeGB()
 	b.WriteString(fmt.Sprintf("  Target: %s\n", m.vaultPath))
-	b.WriteString(fmt.Sprintf("  Items:  %d sources, %s", len(m.items), formatSizeGB(totalGB)))
+	b.WriteString(fmt.Sprintf("  Items:  %d sources, %s", len(m.items), tui.FormatSizeGB(totalGB)))
 	if m.freeGB > 0 {
-		b.WriteString(fmt.Sprintf(" / %s free", formatSizeGB(m.freeGB)))
+		b.WriteString(fmt.Sprintf(" / %s free", tui.FormatSizeGB(m.freeGB)))
 	}
 	b.WriteString("\n\n")
 
@@ -143,8 +144,8 @@ func (m reviewModel) View() string {
 			prefix = "> "
 		}
 
-		sym := typeSymbol(item.Type)
-		line := fmt.Sprintf("  %s%s %s  %s", prefix, sym, item.ID, formatSizeGB(item.SizeGB))
+		sym := tui.TypeSymbol(item.Type)
+		line := fmt.Sprintf("  %s%s %s  %s", prefix, sym, item.ID, tui.FormatSizeGB(item.SizeGB))
 
 		if isCursor {
 			b.WriteString(m.theme.Selected.Render(line))
@@ -165,13 +166,18 @@ func (m reviewModel) View() string {
 	b.WriteString("\n")
 	if m.cursor >= 0 && m.cursor < len(m.items) {
 		item := m.items[m.cursor]
-		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s %s · %s · %s", typeSymbol(item.Type), item.ID, item.Type, formatSizeGB(item.SizeGB))))
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s %s · %s · %s", tui.TypeSymbol(item.Type), item.ID, item.Type, tui.FormatSizeGB(item.SizeGB))))
 		if item.Description != "" {
 			b.WriteString("\n")
 			b.WriteString(m.theme.Muted.Render("  " + item.Description))
 		}
 	}
 	b.WriteString("\n\n")
+
+	if m.errMsg != "" {
+		b.WriteString(m.theme.Danger.Render("  " + m.errMsg))
+		b.WriteString("\n\n")
+	}
 
 	// Footer
 	b.WriteString(m.theme.Help.Render("  Enter: confirm  |  Esc: go back  |  j/k: scroll"))

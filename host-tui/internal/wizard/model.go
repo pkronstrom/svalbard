@@ -5,6 +5,7 @@
 package wizard
 
 import (
+	"fmt"
 	"sort"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -128,40 +129,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.sizeActiveModel()
 
 	case reviewConfirmMsg:
+		ids := m.selectedIDList()
 		// Init the vault if callback is available
 		if m.config.InitVault != nil {
-			if err := m.config.InitVault(m.vaultPath, m.selectedIDList(), m.presetName, m.region, m.hostPlatforms); err != nil {
-				// TODO: show error
-				return m, tea.Quit
+			if err := m.config.InitVault(m.vaultPath, ids, m.presetName, m.region, m.hostPlatforms); err != nil {
+				m.stage = stageReview
+				m.review = newReviewModel(m.vaultPath, m.buildReviewItems(), m.freeGB)
+				m.review.errMsg = fmt.Sprintf("Init failed: %v", err)
+				return m.sizeActiveModel()
 			}
 		}
 		// Transition to apply stage
 		if m.config.RunApply != nil {
 			m.stage = stageApply
-			m.applyModel = newWizardApply(m.vaultPath, m.selectedIDList(), m.config.RunApply)
+			m.applyModel = newWizardApply(m.vaultPath, ids, m.config.RunApply)
 			return m.sizeActiveModel()
 		}
 		// No apply callback — just exit with result
-		return m, func() tea.Msg {
-			return DoneMsg{Result: WizardResult{
-				VaultPath:     m.vaultPath,
-				SelectedIDs:   m.selectedIDList(),
-				PresetName:    m.presetName,
-				Region:        m.region,
-				HostPlatforms: m.hostPlatforms,
-			}}
-		}
+		return m, m.doneCmd()
 
 	case wizardApplyDoneMsg:
-		return m, func() tea.Msg {
-			return DoneMsg{Result: WizardResult{
-				VaultPath:     m.vaultPath,
-				SelectedIDs:   m.selectedIDList(),
-				PresetName:    m.presetName,
-				Region:        m.region,
-				HostPlatforms: m.hostPlatforms,
-			}}
-		}
+		return m, m.doneCmd()
 
 	case reviewBackMsg:
 		m.stage = stagePacks
@@ -255,4 +243,15 @@ func (m Model) selectedIDList() []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+func (m Model) doneCmd() tea.Cmd {
+	result := WizardResult{
+		VaultPath:     m.vaultPath,
+		SelectedIDs:   m.selectedIDList(),
+		PresetName:    m.presetName,
+		Region:        m.region,
+		HostPlatforms: m.hostPlatforms,
+	}
+	return func() tea.Msg { return DoneMsg{Result: result} }
 }

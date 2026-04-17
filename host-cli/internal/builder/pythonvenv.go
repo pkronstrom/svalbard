@@ -218,7 +218,7 @@ func (u uvRunner) run(args ...string) error {
 		dockerArgs := []string{
 			"run", "--rm",
 			"-v", u.root + ":/vault",
-			"svalbard-tools",
+			DefaultDockerImage,
 			"uv",
 		}
 		dockerArgs = append(dockerArgs, args...)

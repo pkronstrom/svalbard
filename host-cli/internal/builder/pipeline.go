@@ -155,7 +155,7 @@ func stepExec(root, tool string, args []string, dockerImage string) error {
 	}
 
 	// Docker fallback.
-	image := "svalbard-tools"
+	image := DefaultDockerImage
 	if dockerImage != "" {
 		image = dockerImage
 	}

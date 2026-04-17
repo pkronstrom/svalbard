@@ -14,7 +14,6 @@ type wizardApplyDoneMsg struct{}
 type applyStep struct {
 	id     string
 	status string // "", "active", "done", "failed"
-	err    string
 }
 
 type applyStartedMsg struct {
@@ -34,13 +33,11 @@ type applyTickMsg struct {
 // wizardApplyModel runs the apply process within the wizard.
 type wizardApplyModel struct {
 	vaultPath string
-	itemIDs   []string
 	runApply  ApplyFunc
 	steps     []applyStep
 	ch        <-chan applyEvent
 	started   bool
 	finished  bool
-	errMsg    string
 	width     int
 	height    int
 	theme     tui.Theme
@@ -54,7 +51,6 @@ func newWizardApply(vaultPath string, itemIDs []string, runApply ApplyFunc) wiza
 	}
 	return wizardApplyModel{
 		vaultPath: vaultPath,
-		itemIDs:   itemIDs,
 		runApply:  runApply,
 		steps:     steps,
 		theme:     tui.DefaultTheme(),
@@ -110,9 +106,11 @@ func (m wizardApplyModel) startApply() tea.Cmd {
 		ch := make(chan applyEvent, 16)
 		go func() {
 			defer close(ch)
-			_ = runApply(vaultPath, func(id, status string) {
+			if err := runApply(vaultPath, func(id, status string) {
 				ch <- applyEvent{id: id, status: status}
-			})
+			}); err != nil {
+				ch <- applyEvent{status: "failed"}
+			}
 		}()
 		return applyStartedMsg{ch: ch}
 	}

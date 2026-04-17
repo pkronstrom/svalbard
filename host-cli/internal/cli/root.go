@@ -39,7 +39,6 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	root.PersistentFlags().String("vault", "", "path to vault root (default: auto-detect from cwd)")
-	root.PersistentFlags().Bool("debug", false, "enable debug logging")
 
 	addCmd := &cobra.Command{
 		Use:   "add <item...>",

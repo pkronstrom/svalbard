@@ -14,6 +14,9 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
+// DefaultDockerImage is the default Docker image for build fallbacks.
+const DefaultDockerImage = "svalbard-tools"
+
 // Options provides context from the apply layer to builders.
 type Options struct {
 	Platforms  []string          // target platforms (from manifest HostPlatforms)
