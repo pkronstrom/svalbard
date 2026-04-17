@@ -290,7 +290,8 @@ func (m *packPickerModel) expandCollapseAtCursor() {
 
 // maxVisible returns the number of visible rows based on terminal height.
 func (m *packPickerModel) maxVisible() int {
-	v := m.height - 8
+	// Reserve: header(2) + detail area(4) + total/free(1) + help(1) + margins(2)
+	v := m.height - 10
 	if v < 4 {
 		v = 4
 	}
@@ -392,7 +393,36 @@ func (m packPickerModel) View() string {
 		b.WriteString("\n")
 	}
 
+	// Detail area for cursor item
 	b.WriteString("\n")
+	b.WriteString(m.theme.Muted.Render("  ─────────────────────────────────"))
+	b.WriteString("\n")
+	if m.cursor >= 0 && m.cursor < len(m.rows) {
+		row := m.rows[m.cursor]
+		switch row.kind {
+		case rowGroup:
+			total := 0
+			for _, p := range row.groupPacks {
+				total += len(p.Sources)
+			}
+			b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s — %d packs, %d items", row.groupName, len(row.groupPacks), total)))
+		case rowPack:
+			desc := row.pack.Description
+			if desc == "" {
+				desc = row.pack.Name
+			}
+			b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s — %d items", desc, len(row.pack.Sources))))
+		case rowItem:
+			src := row.source
+			line := fmt.Sprintf("  %s · %s · %s", src.ID, src.Type, formatSizeGB(src.SizeGB))
+			b.WriteString(m.theme.Muted.Render(line))
+			if src.Description != "" {
+				b.WriteString("\n")
+				b.WriteString(m.theme.Muted.Render("  " + src.Description))
+			}
+		}
+	}
+	b.WriteString("\n\n")
 
 	// Footer: total / free with fits/over indicator.
 	totalGB := m.totalCheckedGB()
