@@ -445,10 +445,10 @@ func (m packPickerModel) View() string {
 		case rowItem:
 			src := row.source
 			line := fmt.Sprintf("  %s %s · %s · %s", typeSymbol(src.Type), src.ID, src.Type, formatSizeGB(src.SizeGB))
-			b.WriteString(m.theme.Muted.Render(truncate(line, m.paneWidth())))
+			b.WriteString(m.theme.Muted.Render(line))
 			if src.Description != "" {
 				b.WriteString("\n")
-				b.WriteString(m.theme.Muted.Render(truncate("  "+src.Description, m.paneWidth())))
+				b.WriteString(m.theme.Muted.Render("  " + src.Description))
 			}
 		}
 	}
