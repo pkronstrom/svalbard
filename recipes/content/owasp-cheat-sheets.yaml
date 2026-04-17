@@ -8,10 +8,13 @@ size_gb: 0.005
 description: OWASP Cheat Sheet Series — developer security quick references
 strategy: build
 build:
-  family: custom
-  builder: zimit-scrape.py
   source_url: https://cheatsheetseries.owasp.org
-  output: owasp-cheat-sheets.zim
+  steps:
+    - exec: zimit
+      args: ["--url", "{source_url}", "--output", "/vault/zim/{id}.zim", "--name", "{id}"]
+      docker_image: openzim/zimit
+    - verify: "{output}"
+      min_size: 10240
 license:
   id: CC-BY-SA-4.0
   attribution: OWASP Foundation

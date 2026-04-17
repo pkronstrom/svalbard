@@ -8,9 +8,14 @@ depth: reference-only
 size_gb: 0.3
 strategy: build
 build:
-  family: custom
-  builder: extract-7z.py
   source_url: https://github.com/hashcat/hashcat/releases/download/v7.1.2/hashcat-7.1.2.7z
+  steps:
+    - download: "{source_url}"
+      dest: "{workdir}/hashcat.7z"
+    - exec: 7z
+      args: [x, "{workdir}/hashcat.7z", "-o{output_dir}"]
+    - verify: "{output_dir}"
+      not_empty: true
 description: GPU-accelerated password recovery (requires OpenCL/CUDA/Metal drivers)
 license:
   id: MIT

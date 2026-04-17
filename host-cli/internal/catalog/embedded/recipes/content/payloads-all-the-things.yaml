@@ -8,10 +8,13 @@ size_gb: 0.05
 description: Curated web attack payloads, bypass techniques, and methodology
 strategy: build
 build:
-  family: custom
-  builder: github-wiki-zim.py
-  source_url: https://github.com/swisskyrepo/PayloadsAllTheThings
-  output: payloads-all-the-things.zim
+  source_url: https://swisskyrepo.github.io/PayloadsAllTheThings/
+  steps:
+    - exec: zimit
+      args: ["--url", "{source_url}", "--output", "/vault/zim/{id}.zim", "--name", "{id}"]
+      docker_image: openzim/zimit
+    - verify: "{output}"
+      min_size: 10240
 license:
   id: MIT
   attribution: Swissky (PayloadsAllTheThings)

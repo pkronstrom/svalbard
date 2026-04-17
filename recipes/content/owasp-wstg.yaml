@@ -8,10 +8,13 @@ size_gb: 0.01
 description: OWASP Web Security Testing Guide
 strategy: build
 build:
-  family: custom
-  builder: zimit-scrape.py
   source_url: https://owasp.org/www-project-web-security-testing-guide/
-  output: owasp-wstg.zim
+  steps:
+    - exec: zimit
+      args: ["--url", "{source_url}", "--output", "/vault/zim/{id}.zim", "--name", "{id}"]
+      docker_image: openzim/zimit
+    - verify: "{output}"
+      min_size: 10240
 license:
   id: CC-BY-SA-4.0
   attribution: OWASP Foundation

@@ -16,7 +16,7 @@ import (
 
 // buildPipeline executes a sequence of build steps defined in recipe.Build.Steps.
 // Template variables in step fields are resolved against the recipe and runtime context.
-func buildPipeline(root string, recipe catalog.Item, _ *catalog.Catalog, _ []string) ([]manifest.RealizedEntry, error) {
+func buildPipeline(root string, recipe catalog.Item, _ *catalog.Catalog, _ Options) ([]manifest.RealizedEntry, error) {
 	if recipe.Build == nil || len(recipe.Build.Steps) == 0 {
 		return nil, fmt.Errorf("pipeline %s: no build steps defined", recipe.ID)
 	}
@@ -53,7 +53,7 @@ func buildPipeline(root string, recipe catalog.Item, _ *catalog.Catalog, _ []str
 			for j, arg := range step.Args {
 				resolvedArgs[j] = resolve(arg, vars)
 			}
-			if err := stepExec(root, step.Exec, resolvedArgs); err != nil {
+			if err := stepExec(root, step.Exec, resolvedArgs, step.DockerImage); err != nil {
 				return nil, fmt.Errorf("step %d (exec %s): %w", i+1, step.Exec, err)
 			}
 		case step.Verify != "":
@@ -140,25 +140,29 @@ func stepExtract(archivePath, destDir string) error {
 }
 
 // stepExec finds a tool and runs it with args.
-// Resolution order: drive bin/<platform>/ → PATH → Docker svalbard-tools.
-func stepExec(root, tool string, args []string) error {
+// Resolution order: drive bin/<platform>/ → PATH → Docker.
+// dockerImage overrides the default svalbard-tools container when non-empty.
+func stepExec(root, tool string, args []string, dockerImage string) error {
 	toolPath := findTool(root, tool)
 	fmt.Fprintf(os.Stderr, "  exec %s %s\n", tool, strings.Join(args, " "))
 
 	if toolPath != "" {
-		// Run locally.
 		cmd := exec.Command(toolPath, args...)
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stderr
 		return cmd.Run()
 	}
 
-	// Fallback: run via Docker.
-	fmt.Fprintf(os.Stderr, "  (using docker fallback for %s)\n", tool)
+	// Docker fallback.
+	image := "svalbard-tools"
+	if dockerImage != "" {
+		image = dockerImage
+	}
+	fmt.Fprintf(os.Stderr, "  (using docker %s for %s)\n", image, tool)
 	dockerArgs := []string{
 		"run", "--rm",
 		"-v", root + ":/vault",
-		"svalbard-tools",
+		image,
 		tool,
 	}
 	dockerArgs = append(dockerArgs, args...)

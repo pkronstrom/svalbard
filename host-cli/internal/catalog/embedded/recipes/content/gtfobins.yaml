@@ -8,10 +8,13 @@ size_gb: 0.005
 description: GTFOBins — Unix binaries that can be exploited for privilege escalation
 strategy: build
 build:
-  family: custom
-  builder: zimit-scrape.py
   source_url: https://gtfobins.github.io
-  output: gtfobins.zim
+  steps:
+    - exec: zimit
+      args: ["--url", "{source_url}", "--output", "/vault/zim/{id}.zim", "--name", "{id}"]
+      docker_image: openzim/zimit
+    - verify: "{output}"
+      min_size: 10240
 license:
   id: GPL-3.0-only
   attribution: GTFOBins contributors

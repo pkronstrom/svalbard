@@ -85,14 +85,15 @@ func (b *BuildSpec) UnmarshalYAML(value *yaml.Node) error {
 // BuildStep is a single action in a build pipeline.
 // Exactly one of Download, Extract, Exec, or Verify should be set.
 type BuildStep struct {
-	Download string   `yaml:"download,omitempty"` // URL to fetch
-	Extract  string   `yaml:"extract,omitempty"`  // archive path to unpack
-	Exec     string   `yaml:"exec,omitempty"`     // tool name to run
-	Verify   string   `yaml:"verify,omitempty"`   // path to check exists
-	Args     []string `yaml:"args,omitempty"`      // arguments for exec
-	Dest     string   `yaml:"dest,omitempty"`      // destination for download/extract
-	NotEmpty bool     `yaml:"not_empty,omitempty"` // verify: directory must have files
-	MinSize  int64    `yaml:"min_size,omitempty"`  // verify: minimum file size in bytes
+	Download    string   `yaml:"download,omitempty"`     // URL to fetch
+	Extract     string   `yaml:"extract,omitempty"`      // archive path to unpack
+	Exec        string   `yaml:"exec,omitempty"`         // tool name to run
+	Verify      string   `yaml:"verify,omitempty"`       // path to check exists
+	Args        []string `yaml:"args,omitempty"`          // arguments for exec
+	Dest        string   `yaml:"dest,omitempty"`          // destination for download/extract
+	NotEmpty    bool     `yaml:"not_empty,omitempty"`     // verify: directory must have files
+	MinSize     int64    `yaml:"min_size,omitempty"`      // verify: minimum file size in bytes
+	DockerImage string   `yaml:"docker_image,omitempty"` // exec: override Docker image (default: svalbard-tools)
 }
 
 // ViewerSpec describes how a recipe should be presented in a viewer.
