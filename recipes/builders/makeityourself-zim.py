@@ -5,8 +5,8 @@ Downloads the Make It Yourself PDF, extracts all project links, verifies them,
 crawls each site with domain-specific extractors, and packages everything into
 a single searchable ZIM file with a responsive HTML frontpage.
 
-Requirements: pip install pymupdf httpx beautifulsoup4 libzim Pillow
-Optional: pip install playwright (for JS-heavy generic sites)
+Requirements: pip install pymupdf httpx beautifulsoup4 libzim Pillow playwright
+Optional: playwright install chromium (for Instructables and JS-heavy sites)
 
 Usage:
     python3 makeityourself-zim.py --workdir /data/miy
@@ -14,6 +14,7 @@ Usage:
     python3 makeityourself-zim.py --workdir /data/miy --force-stage verify
     python3 makeityourself-zim.py --workdir /data/miy --retry-failed
     python3 makeityourself-zim.py --workdir /data/miy --retry-dead
+    python3 makeityourself-zim.py --workdir /data/miy --recrawl-domain instructables.com
 
 Environment variables:
     MIY_THINGIVERSE_TOKEN  — Thingiverse API app token (required for STL downloads).
@@ -36,13 +37,17 @@ import mimetypes
 import re
 import sys
 import time
+import zipfile
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from html import escape, unescape
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
 
-import fitz  # pymupdf
+try:
+    import fitz  # pymupdf — only needed for PDF extraction stage
+except ImportError:
+    fitz = None
 import httpx
 from bs4 import BeautifulSoup
 from libzim.writer import Creator, Item, StringProvider, FileProvider, Hint
@@ -505,6 +510,10 @@ EXTRACTOR_MAP: dict[str, str] = {
     "instructables.com": "instructables",
     "cults3d.com": "cults3d",
     "www.cults3d.com": "cults3d",
+    "ana-white.com": "anawhite",
+    "www.ana-white.com": "anawhite",
+    "hackaday.io": "hackaday",
+    "www.hackaday.io": "hackaday",
 }
 
 
@@ -697,7 +706,12 @@ def _download_file(
     client: httpx.Client, url: str, dest: Path, *,
     timeout: float = 120, headers: dict | None = None, cookies: dict | None = None,
 ) -> bool:
-    """Download a file to dest. Returns True on success."""
+    """Download a file to dest. Returns True on success.
+
+    Auto-corrects extension if the server returns WebP content with a .jpg/.png name.
+    When the extension is corrected, the file is saved at the new path and `dest` is
+    updated in-place (caller should use the returned path via dest).
+    """
     if dest.exists() and dest.stat().st_size > 0:
         return True
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -710,6 +724,12 @@ def _download_file(
             with open(dest, "wb") as f:
                 for chunk in r.iter_bytes(65536):
                     f.write(chunk)
+        # Fix extension if content is WebP but filename says .jpg/.png
+        if dest.suffix.lower() in (".jpg", ".jpeg", ".png") and dest.stat().st_size > 16:
+            header = dest.read_bytes()[:16]
+            if b"RIFF" in header and b"WEBP" in header:
+                new_dest = dest.with_suffix(".webp")
+                dest.rename(new_dest)
         return True
     except Exception as e:
         log.warning("    Failed to download %s: %s", url[:80], e)
@@ -985,7 +1005,10 @@ class ImgTagImages(ImageStrategy):
                 continue
             elif not self.domain_filter:
                 if img_domain != base_domain and not any(
-                    cdn in img_domain for cdn in ["cloudfront", "cdn", "imgur", "wp.com", "squarespace"]
+                    cdn in img_domain for cdn in [
+                        "cloudfront", "cdn", "imgur", "wp.com", "squarespace",
+                        "imgix", "media.", "images.", "static.", "assets.",
+                    ]
                 ):
                     continue
             base = src.split("?")[0]
@@ -1482,7 +1505,11 @@ def _thingiverse_post_parse(
                         continue
                     fname = f"img_{i:02d}.jpg"
                     if _download_file(client, img_url, images_dir / fname, headers=cdn_headers, cookies=cdn_cookies or None):
-                        meta.images.append(f"images/{fname}")
+                        # _download_file may rename .jpg -> .webp if content is WebP
+                        actual = images_dir / fname
+                        if not actual.exists():
+                            actual = actual.with_suffix(".webp")
+                        meta.images.append(f"images/{actual.name}")
                     time.sleep(0.3)
             time.sleep(CRAWL_DELAY_PER_DOMAIN)
         except Exception as e:
@@ -1660,6 +1687,21 @@ def _github_post_parse(
         except Exception:
             continue
 
+    # Enrich description from README if API tagline is too short
+    readme_path = site_dir / "README.md"
+    if len(meta.description.strip()) < 100 and readme_path.exists():
+        readme_text = readme_path.read_text()
+        # Extract first substantial paragraph (skip badges, headers, blank lines)
+        for line in readme_text.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("[") or line.startswith("!") or line.startswith("<") or line.startswith("|") or line.startswith("```"):
+                continue
+            if line.startswith("[![") or line.startswith("!["):
+                continue
+            if len(line) > 60:
+                meta.description = line[:2000]
+                break
+
     # Download OG image
     images_dir = site_dir / "images"
     images_dir.mkdir(exist_ok=True)
@@ -1693,10 +1735,23 @@ def _instructables_post_parse(
     """Instructables post-parse: CDN images, step extraction, file attachments."""
     url = meta.url
 
-    # Author
-    author_tag = soup.find("a", class_="member-header-display-name") or soup.find("a", attrs={"rel": "author"})
+    # Author — handle both classic and CSS-module class names
+    def _has_author_name_class(css):
+        return css and any(c == "member-header-display-name" or "authorName" in c for c in css.split())
+
+    author_tag = (
+        soup.find(class_=_has_author_name_class)
+        or soup.find(attrs={"data-testid": "author-name"})
+        or soup.find("a", class_="member-header-display-name")
+        or soup.find("a", attrs={"rel": "author"})
+    )
     if author_tag:
-        meta.author = meta.author or author_tag.get_text().strip()
+        # CSS-module authorName wraps an <a> with the actual name
+        a_tag = author_tag.find("a") if author_tag.name != "a" else author_tag
+        meta.author = meta.author or (a_tag or author_tag).get_text().strip()
+        # Clean up "By " prefix
+        if meta.author.startswith("By "):
+            meta.author = meta.author[3:].strip()
 
     # Clean up title
     if meta.title:
@@ -1740,15 +1795,22 @@ def _instructables_post_parse(
             if _download_file(client, og_img["content"], images_dir / "og.jpg"):
                 meta.images.append("images/og.jpg")
 
-    # Extract steps
+    # Extract steps — handle both classic ("step") and CSS-module ("_step_xyz_1") class names
+    def _has_step_class(css):
+        return css and any(c == "step" or re.match(r"_step_[a-z0-9]+_\d+$", c) for c in css.split())
+
+    def _has_step_title_class(css):
+        return css and any(c == "step-title" or "stepTitle" in c for c in css.split())
+
+    def _has_step_body_class(css):
+        return css and any(c == "step-body" or "stepBody" in c for c in css.split())
+
     steps = []
-    step_elements = soup.find_all("div", class_="step")
-    if not step_elements:
-        step_elements = soup.find_all("section", class_="step")
+    step_elements = soup.find_all(["div", "section"], class_=_has_step_class)
     for step in step_elements:
-        step_title_el = step.find(["h2", "h3"])
+        step_title_el = step.find(class_=_has_step_title_class) or step.find(["h2", "h3"])
         step_title = step_title_el.get_text().strip() if step_title_el else ""
-        step_body = step.find("div", class_="step-body")
+        step_body = step.find(class_=_has_step_body_class) or step.find("div", class_="step-body")
         step_text = step_body.get_text().strip() if step_body else step.get_text().strip()
         steps.append({"title": step_title, "text": step_text[:2000]})
 
@@ -1777,7 +1839,9 @@ def _instructables_post_parse(
 INSTRUCTABLES_CONFIG = SiteConfig(
     name="instructables",
     domain="instructables.com",
-    fetch_chain=_DEFAULT_FETCH_CHAIN,
+    # Playwright first — HTTP returns only a page shell (header/footer/nav),
+    # step content and instructions are JS-rendered.
+    fetch_chain=[PlaywrightFetcher(), HttpFetcher(), SslBypassFetcher()],
     metadata_strategies=[OpenGraphMetadata(), HtmlMetadata()],
     image_strategies=[],  # Images handled in post_parse (CDN regex)
     artifact_strategies=[],
@@ -1796,7 +1860,7 @@ class Cults3DJsonLdMetadata(MetadataStrategy):
         for script in soup.find_all("script", type="application/ld+json"):
             try:
                 data = json.loads(script.string)
-                if isinstance(data, dict) and data.get("@type") == "MediaObject":
+                if isinstance(data, dict) and data.get("@type") in ("MediaObject", "3DModel", "Product"):
                     meta.title = meta.title or data.get("name", "")
                     meta.description = meta.description or (data.get("description") or "")[:2000]
                     creator = data.get("creator") or {}
@@ -1824,7 +1888,7 @@ class Cults3DImages(ImageStrategy):
         # Collect all image sources: eager src + lazy data-src
         for img in soup.find_all("img"):
             src = img.get("data-src") or img.get("src") or ""
-            if not src.startswith("http") or "images.cults3d.com" not in src:
+            if not src.startswith("http") or not any(d in src for d in ("images.cults3d.com", "static.cults3d.com", "files.cults3d.com")):
                 continue
             base = src.split("?")[0]
             if base in seen_bases:
@@ -1897,6 +1961,166 @@ CULTS3D_CONFIG = SiteConfig(
 )
 
 
+# ── Ana-White ────────────────────────────────────────────────────────────
+
+
+def _anawhite_post_parse(
+    soup: BeautifulSoup, meta: ProjectMeta, site_dir: Path, client: httpx.Client, **kw
+) -> None:
+    """Ana-White post-parse: images from entry-content, author, PDF plan links."""
+    # Author from entry meta
+    author_el = soup.find("span", class_="entry-author") or soup.find("a", attrs={"rel": "author"})
+    if author_el:
+        meta.author = meta.author or author_el.get_text(strip=True)
+
+    # Images from main content area
+    content = soup.find("div", class_="entry-content") or soup.find("article")
+    images_dir = site_dir / "images"
+    images_dir.mkdir(exist_ok=True)
+    img_count = 0
+    seen: set[str] = set()
+    if content:
+        for img in content.find_all("img"):
+            if img_count >= 15:
+                break
+            src = img.get("data-src") or img.get("src") or ""
+            if not src.startswith("http"):
+                continue
+            base = src.split("?")[0]
+            if base in seen:
+                continue
+            seen.add(base)
+            # Skip tiny icons and ads
+            w = img.get("width", "")
+            if w and w.isdigit() and int(w) < 80:
+                continue
+            ext = Path(urlparse(base).path).suffix.lower() or ".jpg"
+            if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+                continue
+            fname = f"img_{img_count:02d}{ext}"
+            if _download_file(client, src, images_dir / fname):
+                meta.images.append(f"images/{fname}")
+                img_count += 1
+            time.sleep(0.2)
+
+    # Fallback OG image
+    if not meta.images:
+        og_img = soup.find("meta", property="og:image")
+        if og_img and og_img.get("content", "").startswith("http"):
+            if _download_file(client, og_img["content"], images_dir / "og.jpg"):
+                meta.images.append("images/og.jpg")
+
+    # PDF plan links
+    artifacts_dir = site_dir / "artifacts"
+    artifacts_dir.mkdir(exist_ok=True)
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if not href.startswith("http"):
+            href = urljoin(meta.url, href)
+        ext = Path(urlparse(href).path).suffix.lower()
+        if ext in ARTIFACT_EXTS:
+            fname = _sanitize_filename(Path(urlparse(href).path).name)
+            if _download_file(client, href, artifacts_dir / fname):
+                meta.artifacts.append(_artifact_entry(fname, artifacts_dir))
+            time.sleep(0.3)
+
+    meta.title = meta.title or "Ana White Project"
+
+
+ANAWHITE_CONFIG = SiteConfig(
+    name="anawhite",
+    domain="ana-white.com",
+    fetch_chain=_DEFAULT_FETCH_CHAIN,
+    metadata_strategies=[OpenGraphMetadata(), HtmlMetadata()],
+    image_strategies=[],  # Images handled in post_parse
+    artifact_strategies=[],
+    post_parse=_anawhite_post_parse,
+)
+
+
+# ── Hackaday.io ──────────────────────────────────────────────────────────
+
+
+def _hackaday_post_parse(
+    soup: BeautifulSoup, meta: ProjectMeta, site_dir: Path, client: httpx.Client, **kw
+) -> None:
+    """Hackaday.io post-parse: project images, description, author, files."""
+    # Author
+    creator = soup.find("a", class_="project-creator") or soup.find("a", class_="hacker-link")
+    if creator:
+        meta.author = meta.author or creator.get_text(strip=True)
+
+    # Better description from project detail
+    desc_el = soup.find("div", class_="project-description") or soup.find("section", id="project-description")
+    if desc_el:
+        text = desc_el.get_text(separator=" ", strip=True)
+        if len(text) > len(meta.description or ""):
+            meta.description = text[:2000]
+
+    # Images — project gallery and inline images
+    images_dir = site_dir / "images"
+    images_dir.mkdir(exist_ok=True)
+    img_count = 0
+    seen: set[str] = set()
+
+    # Main project image
+    for img in soup.find_all("img"):
+        if img_count >= 15:
+            break
+        src = img.get("data-src") or img.get("src") or ""
+        if not src.startswith("http"):
+            continue
+        # Accept hackaday CDN and common image hosts
+        if not any(d in src for d in ("cdn.hackaday.io", "hackaday.io", "cloudfront.net", "imgur.com")):
+            continue
+        base = src.split("?")[0]
+        if base in seen:
+            continue
+        seen.add(base)
+        ext = Path(urlparse(base).path).suffix.lower() or ".jpg"
+        if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+            continue
+        fname = f"img_{img_count:02d}{ext}"
+        if _download_file(client, src, images_dir / fname):
+            meta.images.append(f"images/{fname}")
+            img_count += 1
+        time.sleep(0.2)
+
+    # Fallback OG image
+    if not meta.images:
+        og_img = soup.find("meta", property="og:image")
+        if og_img and og_img.get("content", "").startswith("http"):
+            if _download_file(client, og_img["content"], images_dir / "og.jpg"):
+                meta.images.append("images/og.jpg")
+
+    # Downloadable files
+    artifacts_dir = site_dir / "artifacts"
+    artifacts_dir.mkdir(exist_ok=True)
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if not href.startswith("http"):
+            href = urljoin(meta.url, href)
+        ext = Path(urlparse(href).path).suffix.lower()
+        if ext in ARTIFACT_EXTS:
+            fname = _sanitize_filename(Path(urlparse(href).path).name)
+            if _download_file(client, href, artifacts_dir / fname):
+                meta.artifacts.append(_artifact_entry(fname, artifacts_dir))
+            time.sleep(0.3)
+
+    meta.title = meta.title or "Hackaday.io Project"
+
+
+HACKADAY_CONFIG = SiteConfig(
+    name="hackaday",
+    domain="hackaday.io",
+    fetch_chain=_DEFAULT_FETCH_CHAIN,
+    metadata_strategies=[JsonLdMetadata(), OpenGraphMetadata(), HtmlMetadata()],
+    image_strategies=[],  # Images handled in post_parse
+    artifact_strategies=[],
+    post_parse=_hackaday_post_parse,
+)
+
+
 # ── Generic ──────────────────────────────────────────────────────────────
 
 GENERIC_CONFIG = SiteConfig(
@@ -1917,6 +2141,8 @@ SITE_CONFIGS: dict[str, SiteConfig] = {
     "github": GITHUB_CONFIG,
     "instructables": INSTRUCTABLES_CONFIG,
     "cults3d": CULTS3D_CONFIG,
+    "anawhite": ANAWHITE_CONFIG,
+    "hackaday": HACKADAY_CONFIG,
     "generic": GENERIC_CONFIG,
 }
 
@@ -2120,6 +2346,7 @@ def stage_crawl(
     state: PipelineState,
     verified: list[VerifiedLink],
     retry_failed: bool = False,
+    recrawl_domain: str = "",
     printables_token: str = "",
     thingiverse_token: str = "",
     thingiverse_cookies: dict[str, str] | None = None,
@@ -2139,18 +2366,25 @@ def stage_crawl(
 
     # Determine what to crawl
     to_crawl = []
+    recrawl_count = 0
     for v in verified:
         if v.status == "dead":
             continue
         existing = progress.get(v.url)
         if existing:
             if existing["status"] == "completed":
-                continue  # never re-crawl completed items
+                # Re-crawl if domain matches --recrawl-domain
+                if recrawl_domain and recrawl_domain in urlparse(v.url).netloc:
+                    recrawl_count += 1
+                else:
+                    continue
             if existing["status"] == "failed":
                 if not retry_failed and existing.get("attempts", 0) >= MAX_RETRIES:
                     continue
                 # retry_failed=True → re-attempt failed items regardless of attempts
         to_crawl.append(v)
+    if recrawl_count:
+        log.info("  Re-crawling %d completed items from %s", recrawl_count, recrawl_domain)
 
     if not to_crawl:
         log.info("  All links already crawled")
@@ -2269,8 +2503,91 @@ def _strip_html(html: str) -> str:
     return soup.get_text(separator=" ", strip=True)
 
 
-def _clean_description_html(html: str) -> str:
-    """Clean description HTML: keep safe tags, strip scripts/styles."""
+def _raw_img_local_path(site_dir: Path, url: str) -> Path | None:
+    """Return the expected local path for a raw content image URL."""
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+    raw_imgs = site_dir / "raw_images"
+    for ext in (".jpg", ".webp"):
+        p = raw_imgs / f"{url_hash}{ext}"
+        if p.exists():
+            return p
+    return raw_imgs / f"{url_hash}.jpg"  # default expected path
+
+
+def _localize_raw_images(projects: list[dict], state: "PipelineState") -> None:
+    """Download external images from raw.html and save locally for offline viewing."""
+    total_downloaded = 0
+    total_skipped = 0
+
+    try:
+        from PIL import Image as PILImage
+    except ImportError:
+        PILImage = None
+
+    with httpx.Client(timeout=20, follow_redirects=True, headers=HEADERS) as client:
+        for proj in projects:
+            proj_dir = state.sites_dir / proj["_dir"]
+            raw_path = proj_dir / "raw.html"
+            if not raw_path.exists() or raw_path.stat().st_size < 500:
+                continue
+
+            # Collect external images from raw.html and description
+            external_imgs = []
+            seen_srcs: set[str] = set()
+            html_sources = [raw_path.read_text()]
+            desc = proj.get("description", "")
+            if "<img" in desc:
+                html_sources.append(desc)
+            for html_src in html_sources:
+                soup = BeautifulSoup(html_src, "html.parser")
+                for img in soup.find_all("img"):
+                    src = img.get("src") or img.get("data-src") or ""
+                    if src.startswith("//"):
+                        src = "https:" + src
+                    if src.startswith("http") and src not in seen_srcs:
+                        external_imgs.append(src)
+                        seen_srcs.add(src)
+
+            if not external_imgs:
+                continue
+
+            raw_imgs_dir = proj_dir / "raw_images"
+            raw_imgs_dir.mkdir(exist_ok=True)
+
+            for src in external_imgs[:40]:  # cap per project
+                url_hash = hashlib.md5(src.encode()).hexdigest()[:12]
+                dest = raw_imgs_dir / f"{url_hash}.jpg"
+                if dest.exists():
+                    total_skipped += 1
+                    continue
+                try:
+                    r = client.get(src, timeout=10)
+                    if r.status_code != 200 or len(r.content) < 2000:
+                        continue
+                    dest.write_bytes(r.content)
+                    # Resize to max 600px for inline content
+                    if PILImage:
+                        try:
+                            im = PILImage.open(dest)
+                            if max(im.size) > 600:
+                                ratio = 600 / max(im.size)
+                                im = im.resize((int(im.size[0] * ratio), int(im.size[1] * ratio)), PILImage.LANCZOS)
+                            if im.mode in ("RGBA", "P"):
+                                im = im.convert("RGB")
+                            im.save(str(dest), "JPEG", quality=75)
+                        except Exception:
+                            pass
+                    total_downloaded += 1
+                except Exception:
+                    dest.unlink(missing_ok=True)
+                time.sleep(0.1)
+
+    if total_downloaded:
+        log.info("  Downloaded %d raw content images (%d already cached)", total_downloaded, total_skipped)
+
+
+def _clean_description_html(html: str, site_dir: Path | None = None) -> str:
+    """Clean description HTML: keep safe tags, strip scripts/styles, localize images."""
     soup = BeautifulSoup(html, "html.parser")
     # Remove scripts, styles, iframes
     for tag in soup.find_all(["script", "style", "iframe", "oembed"]):
@@ -2280,6 +2597,22 @@ def _clean_description_html(html: str) -> str:
     for tag in soup.find_all(True):
         if tag.name not in safe_tags:
             tag.unwrap()
+    # Localize or strip external images
+    if site_dir:
+        for img in list(soup.find_all("img")):
+            src = img.get("src") or ""
+            if src.startswith("//"):
+                src = "https:" + src
+            if src.startswith("http"):
+                local = _raw_img_local_path(site_dir, src)
+                if local and local.exists():
+                    img["src"] = str(local.relative_to(site_dir))
+                    img["loading"] = "lazy"
+                    img["style"] = "max-width:100%;height:auto;"
+                else:
+                    img.decompose()
+            elif src.startswith("data:"):
+                img.decompose()
     return str(soup).strip()
 
 
@@ -2301,7 +2634,9 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
             ftype = art.get("type", "").upper()
             fsize = art.get("size_bytes", 0)
             size_str = f"{fsize / 1024:.0f} KB" if fsize < 1_000_000 else f"{fsize / 1_000_000:.1f} MB"
-            artifacts_html += f'<li><a href="{escape(art["filename"])}">{escape(fname)}</a> <span class="badge">{ftype}</span> <span class="size">{size_str}</span></li>\n'
+            contents = art.get("contents", "")
+            contents_html = f' <span class="size">({escape(contents)})</span>' if contents else ""
+            artifacts_html += f'<li><a href="{escape(art["filename"])}">{escape(fname)}</a> <span class="badge">{ftype}</span> <span class="size">{size_str}</span>{contents_html}</li>\n'
         artifacts_html += "</ul>\n"
 
     # Steps (Instructables)
@@ -2320,7 +2655,7 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
     desc = unescape(desc)
 
     if "<p>" in desc or "<br" in desc or "<strong>" in desc:
-        desc_html = f'<div class="description">{_clean_description_html(desc)}</div>'
+        desc_html = f'<div class="description">{_clean_description_html(desc, site_dir)}</div>'
     else:
         desc_html = f'<p class="description">{escape(desc)}</p>' if desc else ""
 
@@ -2392,11 +2727,26 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
                     x in str(c).lower() for x in ["ad-", "sidebar", "newsletter", "popup", "cookie", "social"]
                 )):
                     tag.decompose()
-                # Fix image paths — make relative to site_dir
-                for img in main.find_all("img"):
-                    src = img.get("src") or img.get("data-src")
-                    if src:
-                        img["src"] = src
+                # Rewrite images to local paths (downloaded by _localize_raw_images)
+                for img in list(main.find_all("img")):
+                    src = img.get("src") or img.get("data-src") or ""
+                    if src.startswith("//"):
+                        src = "https:" + src
+                    if src.startswith("http"):
+                        local = _raw_img_local_path(site_dir, src)
+                        if local and local.exists():
+                            img["src"] = str(local.relative_to(site_dir))
+                        else:
+                            img.decompose()
+                            continue
+                    elif src.startswith("data:"):
+                        img.decompose()
+                        continue
+                    elif src and not (site_dir / src).exists():
+                        # Relative path but file doesn't exist locally
+                        img.decompose()
+                        continue
+                    if img.parent and src:
                         img["loading"] = "lazy"
                         img["style"] = "max-width:100%;height:auto;"
                 content_text = main.get_text(strip=True)
@@ -2455,7 +2805,8 @@ def _generate_project_page(site_dir: Path, meta: ProjectMeta, steps: list[dict] 
 # ── Post-crawl optimization ────────────────────────────────────────────────
 
 # Extensions to always drop (compiler output, installers, redundant formats)
-DROP_ALWAYS = {".o", ".crf", ".exe", ".wrl", ".ttf", ".iges", ".igs"}
+DROP_ALWAYS = {".o", ".crf", ".exe", ".dll", ".so", ".dylib", ".wrl", ".ttf", ".otf",
+               ".woff", ".woff2", ".iges", ".igs", ".pyc", ".pyo", ".class", ".DS_Store"}
 
 # Extensions to drop when a better alternative exists in the same project
 DROP_IF_REDUNDANT = {
@@ -2463,11 +2814,17 @@ DROP_IF_REDUNDANT = {
 }
 
 # Non-essential CAD source formats (proprietary, or redundant when .step exists)
-DROP_CAD_NON_ESSENTIAL = {".blend", ".skp"}
+DROP_CAD_NON_ESSENTIAL = {".blend", ".blend1", ".skp", ".f3z", ".3dm"}
+
+# Extensions to strip when repacking zip archives (not useful for rebuilding)
+DROP_INSIDE_ZIPS = (
+    DROP_ALWAYS | DROP_CAD_NON_ESSENTIAL
+    | {".gif", ".mp3", ".mp4", ".wav", ".avi", ".mov"}  # media demos
+)
 
 # Max image dimension (pixels) for resized images
-IMAGE_MAX_DIM = 1200
-IMAGE_JPEG_QUALITY = 85
+IMAGE_MAX_DIM = 800
+IMAGE_JPEG_QUALITY = 80
 
 
 def _optimize_project(site_dir: Path, meta: ProjectMeta) -> int:
@@ -2549,10 +2906,28 @@ def _optimize_project(site_dir: Path, meta: ProjectMeta) -> int:
                 saved += old_size - new_size
             except Exception:
                 pass
+
+        # 4. Convert PNG → WebP (lossless, ~30% smaller than optimized PNG)
+        img_dir = site_dir / "images"
+        if img_dir.is_dir():
+            for f in list(img_dir.glob("*.png")):
+                try:
+                    old_size = f.stat().st_size
+                    img = PILImage.open(f)
+                    webp_path = f.with_suffix(".webp")
+                    img.save(str(webp_path), "WEBP", quality=IMAGE_JPEG_QUALITY, method=4)
+                    new_size = webp_path.stat().st_size
+                    f.unlink()
+                    saved += old_size - new_size
+                    old_rel = str(f.relative_to(site_dir))
+                    new_rel = str(webp_path.relative_to(site_dir))
+                    meta.images = [new_rel if i == old_rel else i for i in meta.images]
+                except Exception:
+                    pass
     except ImportError:
         log.debug("    Pillow not installed, skipping image optimization")
 
-    # 4. Update meta.json artifacts list (remove deleted files)
+    # 5. Update meta.json artifacts list (remove deleted files)
     meta.artifacts = [
         a for a in meta.artifacts
         if not a.get("download_failed")
@@ -2562,6 +2937,85 @@ def _optimize_project(site_dir: Path, meta: ProjectMeta) -> int:
         p = site_dir / a["filename"]
         if p.exists():
             a["size_bytes"] = p.stat().st_size
+
+    # 6. Repack existing zip archives — strip non-essential files
+    for a in meta.artifacts:
+        fpath = site_dir / a["filename"]
+        if fpath.suffix.lower() != ".zip" or not fpath.exists():
+            continue
+        try:
+            old_size = fpath.stat().st_size
+            tmp_path = fpath.with_suffix(".zip.tmp")
+            dropped = 0
+            kept = 0
+            with zipfile.ZipFile(fpath, "r") as src, zipfile.ZipFile(tmp_path, "w") as dst:
+                for info in src.infolist():
+                    if info.is_dir():
+                        continue
+                    ext = Path(info.filename).suffix.lower()
+                    name_lower = Path(info.filename).name.lower()
+                    if ext in DROP_INSIDE_ZIPS or name_lower in {".ds_store", "thumbs.db"}:
+                        dropped += info.file_size
+                        continue
+                    data = src.read(info.filename)
+                    dst.writestr(info, data)
+                    kept += 1
+            if dropped > 0 and kept > 0:
+                new_size = tmp_path.stat().st_size
+                tmp_path.replace(fpath)
+                a["size_bytes"] = new_size
+                saved += old_size - new_size
+                log.debug("    repack %s: %d KB → %d KB (dropped %d KB)",
+                          fpath.name, old_size // 1024, new_size // 1024, dropped // 1024)
+            else:
+                tmp_path.unlink()
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    # 7. Bundle artifacts into a single ZIP per project
+    real_arts = [a for a in meta.artifacts if (site_dir / a["filename"]).exists()]
+    if real_arts:
+        _ALREADY_COMPRESSED = {".zip", ".gz", ".7z", ".rar", ".3mf", ".tar"}
+        zip_path = site_dir / "artifacts.zip"
+        total_before = 0
+        try:
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                for a in real_arts:
+                    fpath = site_dir / a["filename"]
+                    total_before += fpath.stat().st_size
+                    ext = fpath.suffix.lower()
+                    compress = zipfile.ZIP_STORED if ext in _ALREADY_COMPRESSED else zipfile.ZIP_DEFLATED
+                    zf.write(fpath, fpath.name, compress_type=compress)
+            zip_size = zip_path.stat().st_size
+            # Only keep the zip if it actually saves space
+            if zip_size < total_before:
+                # Remove individual artifact files
+                for a in real_arts:
+                    fpath = site_dir / a["filename"]
+                    fpath.unlink(missing_ok=True)
+                # Clean up empty artifacts dir
+                arts_dir = site_dir / "artifacts"
+                if arts_dir.is_dir() and not any(arts_dir.iterdir()):
+                    arts_dir.rmdir()
+                # Build contents summary for display
+                type_counts: dict[str, int] = {}
+                for a in real_arts:
+                    t = a.get("type", "file").upper()
+                    type_counts[t] = type_counts.get(t, 0) + 1
+                contents = ", ".join(f"{c} {t}" for t, c in sorted(type_counts.items()))
+                meta.artifacts = [{
+                    "filename": "artifacts.zip",
+                    "type": "zip",
+                    "size_bytes": zip_size,
+                    "contents": contents,
+                }]
+                saved += total_before - zip_size
+                log.debug("    zip %d artifacts: %d KB → %d KB", len(real_arts), total_before // 1024, zip_size // 1024)
+            else:
+                zip_path.unlink()
+        except Exception:
+            zip_path.unlink(missing_ok=True)
 
     return saved
 
@@ -2669,6 +3123,10 @@ def stage_package(
     _refetch_truncated_descriptions(projects, state)
     _enrich_descriptions_from_raw_html(projects, state)
 
+    # Download external images from raw.html for offline viewing
+    log.info("  Localizing raw content images...")
+    _localize_raw_images(projects, state)
+
     # Optimize existing crawl data (drop redundant files, resize large images)
     # Runs before image validation since it may rename/delete image files.
     log.info("  Optimizing project assets...")
@@ -2697,6 +3155,7 @@ def stage_package(
     # Validate image paths: drop references to missing files, discover actual images on disk
     log.info("  Validating image paths...")
     images_fixed = 0
+    tiny_stripped = 0
     for proj in projects:
         proj_dir = state.sites_dir / proj["_dir"]
         images = proj.get("images", [])
@@ -2713,12 +3172,46 @@ def stage_package(
                     if img not in seen:
                         valid.append(img)
                         seen.add(img)
-            if valid != images:
-                proj["images"] = valid
-                _patch_meta(proj_dir, images=valid)
-                images_fixed += 1
+        # Strip tiny/broken images (<5KB = icons, tracking pixels, error pages)
+        # Sort largest first so category thumbnails use the best image
+        clean = []
+        for img in valid:
+            img_path = proj_dir / img
+            if img_path.exists() and img_path.stat().st_size >= 5000:
+                clean.append(img)
+            else:
+                tiny_stripped += 1
+        clean.sort(key=lambda i: (proj_dir / i).stat().st_size, reverse=True)
+        if clean != images:
+            proj["images"] = clean
+            _patch_meta(proj_dir, images=clean)
+            images_fixed += 1
     if images_fixed:
         log.info("  Fixed image references for %d projects", images_fixed)
+    if tiny_stripped:
+        log.info("  Stripped %d tiny/broken images (<2KB)", tiny_stripped)
+
+    # Compute quality scores for badges and logging
+    log.info("  Computing quality scores...")
+    for proj in projects:
+        proj_dir = state.sites_dir / proj["_dir"]
+        proj["_quality"] = _quality_score(proj_dir)
+
+    # Log quality distribution
+    q_high = sum(1 for p in projects if p["_quality"]["score"] >= 6)
+    q_good = sum(1 for p in projects if 4 <= p["_quality"]["score"] < 6)
+    q_basic = sum(1 for p in projects if 1 <= p["_quality"]["score"] < 4)
+    q_none = sum(1 for p in projects if p["_quality"]["score"] == 0)
+    q_avg = sum(p["_quality"]["score"] for p in projects) / max(len(projects), 1)
+    issue_counts: dict[str, int] = {}
+    for p in projects:
+        for issue in p["_quality"].get("issues", []):
+            issue_counts[issue] = issue_counts.get(issue, 0) + 1
+    log.info("  Quality: %.1f avg — ★★★ %d, ★★ %d, ★ %d, none %d",
+             q_avg, q_high, q_good, q_basic, q_none)
+    if issue_counts:
+        issues_str = ", ".join(f"{k}: {v}" for k, v in sorted(issue_counts.items(), key=lambda x: -x[1]))
+        log.info("  Issues: %s", issues_str)
 
     # Regenerate all project pages with latest template
     log.info("  Regenerating project pages...")
@@ -2751,7 +3244,7 @@ def stage_package(
     log.info("  Creating ZIM: %s", output_path)
     zim = Creator(str(output_path))
     zim.config_indexing(True, "eng")
-    zim.config_clustersize(2048)
+    zim.config_clustersize(2097152)  # 2 MB — larger clusters improve LZMA compression
     zim.set_mainpath("index.html")
 
     with zim:
@@ -2840,6 +3333,17 @@ def stage_package(
                     mime = mimetypes.guess_type(str(full_path))[0] or "image/jpeg"
                     zim.add_item(FileItem(zim_path, mime, full_path))
 
+            # Raw content images (localized from external URLs)
+            raw_imgs_dir = proj_dir / "raw_images"
+            if raw_imgs_dir.is_dir():
+                for img_file in raw_imgs_dir.iterdir():
+                    if img_file.is_file():
+                        zim_path = f"{zim_prefix}/raw_images/{img_file.name}"
+                        if zim_path not in added_paths:
+                            added_paths.add(zim_path)
+                            mime = mimetypes.guess_type(str(img_file))[0] or "image/jpeg"
+                            zim.add_item(FileItem(zim_path, mime, img_file))
+
             # Artifacts
             for art in proj.get("artifacts", []):
                 full_path = proj_dir / art["filename"]
@@ -2922,6 +3426,9 @@ h2 { font-size: 20px; color: #444; margin-top: 32px; }
 .badge-artifacts { background: #dcfce7; color: #166534; }
 .badge-wayback { background: #fef3c7; color: #92400e; }
 .badge-dead { background: #fee2e2; color: #991b1b; }
+.badge-quality-high { background: #fef3c7; color: #92400e; }
+.badge-quality-good { background: #e0f2fe; color: #075985; }
+.badge-quality-basic { background: #f3f4f6; color: #6b7280; }
 .credit { margin-top: 40px; padding: 16px; background: #f9fafb; border-radius: 8px;
   font-size: 13px; color: #666; line-height: 1.6; }
 .credit a { color: #2563eb; }
@@ -2940,12 +3447,13 @@ def _make_index_page(
     total_artifacts: int,
     dead_count: int,
 ) -> str:
+    dead_label = '<a href="dead/index.html">Dead Links</a>' if dead_count > 0 else "Dead Links"
     stats = f"""
     <div class="stats">
       <div class="stat"><span class="stat-num">{total_projects}</span><span class="stat-label">Projects Archived</span></div>
       <div class="stat"><span class="stat-num">{total_artifacts}</span><span class="stat-label">Downloadable Files</span></div>
       <div class="stat"><span class="stat-num">{len(by_category)}</span><span class="stat-label">Categories</span></div>
-      <div class="stat"><span class="stat-num">{dead_count}</span><span class="stat-label">Dead Links</span></div>
+      <div class="stat"><span class="stat-num">{dead_count}</span><span class="stat-label">{dead_label}</span></div>
     </div>"""
 
     cat_cards = ""
@@ -3006,6 +3514,13 @@ def _make_category_page(cat_name: str, projects: list[dict]) -> str:
             badges += f' <span class="badge badge-artifacts">{n_artifacts} files</span>'
         if status == "wayback":
             badges += ' <span class="badge badge-wayback">Wayback</span>'
+        qscore = proj.get("_quality", {}).get("score", 0)
+        if qscore >= 6:
+            badges += ' <span class="badge badge-quality-high">★★★</span>'
+        elif qscore >= 4:
+            badges += ' <span class="badge badge-quality-good">★★</span>'
+        elif qscore >= 1:
+            badges += ' <span class="badge badge-quality-basic">★</span>'
 
         cards += f"""
         <a href="../../sites/{proj_dir}/index.html" class="project-card">
@@ -3189,6 +3704,11 @@ def main():
         "--thingiverse-browser", action="store_true",
         help="Open a browser to capture Thingiverse Cloudflare cookies for CDN downloads",
     )
+    parser.add_argument(
+        "--recrawl-domain",
+        default="",
+        help="Re-crawl completed items matching this domain (e.g. 'instructables.com')",
+    )
     args = parser.parse_args()
 
     # Logging
@@ -3277,6 +3797,7 @@ def main():
     crawl_results = stage_crawl(
         state, verified,
         retry_failed=args.retry_failed,
+        recrawl_domain=args.recrawl_domain,
         printables_token=printables_token,
         thingiverse_token=thingiverse_token,
         thingiverse_cookies=tv_cookies,
