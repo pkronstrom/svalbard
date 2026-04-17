@@ -10,6 +10,7 @@ import (
 
 	hosttui "github.com/pkronstrom/svalbard/host-tui"
 	"github.com/pkronstrom/svalbard/host-cli/internal/apply"
+	"github.com/pkronstrom/svalbard/tui"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
@@ -27,14 +28,14 @@ func NewRootCommand() *cobra.Command {
 		Short: "Provision and reconcile offline knowledge vaults",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// No subcommand → launch interactive TUI dashboard
+			vaultFlag, _ := cmd.Flags().GetString("vault")
 			config, err := buildWizardConfig("")
 			if err != nil {
 				// Degrade gracefully — launch TUI without wizard data
-				return hosttui.RunInteractive(nil, nil)
+				return hosttui.RunInteractive(vaultFlag, nil, nil)
 			}
-			vaultFlag, _ := cmd.Flags().GetString("vault")
 			deps := buildDashboardDeps(vaultFlag, &config)
-			return hosttui.RunInteractive(&config, deps)
+			return hosttui.RunInteractive(vaultFlag, &config, deps)
 		},
 	}
 
@@ -581,17 +582,17 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		// Scan ZIM files for progress reporting
 		zimFiles, _ := commands.ScanZIMFiles(root)
 		for _, zf := range zimFiles {
-			onProgress(hosttui.IndexEvent{File: zf, Status: "indexing"})
+			onProgress(hosttui.IndexEvent{File: zf, Status: tui.StatusIndexing})
 		}
 		err = commands.IndexVault(root, os.Stderr)
 		if err != nil {
 			for _, zf := range zimFiles {
-				onProgress(hosttui.IndexEvent{File: zf, Status: "failed"})
+				onProgress(hosttui.IndexEvent{File: zf, Status: tui.StatusFailed})
 			}
 			return err
 		}
 		for _, zf := range zimFiles {
-			onProgress(hosttui.IndexEvent{File: zf, Status: "done"})
+			onProgress(hosttui.IndexEvent{File: zf, Status: tui.StatusDone})
 		}
 		return nil
 	}

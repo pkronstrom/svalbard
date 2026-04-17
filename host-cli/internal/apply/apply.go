@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/builder"
+	"github.com/pkronstrom/svalbard/tui"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
@@ -27,7 +28,7 @@ type ProgressFunc func(id, status string)
 
 // Run executes a reconciliation plan against the vault at root, mutating the
 // manifest's realized state to reflect what was applied.
-// The optional onProgress callback reports per-item status ("active", "done", "failed").
+// The optional onProgress callback reports per-item status using tui.Status* constants.
 func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Catalog, onProgress ...ProgressFunc) error {
 	progress := func(id, status string) {}
 	if len(onProgress) > 0 && onProgress[0] != nil {
@@ -40,7 +41,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	removeSet := make(map[string]struct{}, len(plan.ToRemove))
 	for _, id := range plan.ToRemove {
 		removeSet[id] = struct{}{}
-		progress(id, "active")
+		progress(id, tui.StatusActive)
 	}
 	for _, e := range m.Realized.Entries {
 		if _, ok := removeSet[e.ID]; ok {
@@ -56,7 +57,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	}
 	m.Realized.Entries = filtered
 	for _, id := range plan.ToRemove {
-		progress(id, "done")
+		progress(id, tui.StatusDone)
 	}
 
 	// Build the desired ID set for native builders to filter against.
@@ -77,28 +78,28 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 			continue
 		}
 
-		progress(id, "active")
+		progress(id, tui.StatusActive)
 
 		// Route by acquisition strategy.
 		switch {
 		case recipe.URL != "" || recipe.URLPattern != "":
 			entry, err := downloadItem(root, id, recipe)
 			if err != nil {
-				progress(id, "failed")
+				progress(id, tui.StatusFailed)
 				return err
 			}
 			m.Realized.Entries = append(m.Realized.Entries, entry)
-			progress(id, "done")
+			progress(id, tui.StatusDone)
 
 		case len(recipe.Platforms) > 0:
 			entries, err := downloadPlatformItems(root, id, recipe, m.Desired.Options.HostPlatforms)
 			if err != nil {
-				progress(id, "failed")
+				progress(id, tui.StatusFailed)
 				slog.Warn("skipping item", "id", id, "reason", err.Error())
 				continue
 			}
 			m.Realized.Entries = append(m.Realized.Entries, entries...)
-			progress(id, "done")
+			progress(id, tui.StatusDone)
 
 		case recipe.Strategy == "build" && recipe.Build != nil:
 			// Try Go-native builder first, fall through to Docker.
@@ -108,7 +109,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 					DesiredIDs: desiredIDs,
 				})
 				if err != nil {
-					progress(id, "failed")
+					progress(id, tui.StatusFailed)
 					slog.Warn("native build failed, skipping", "id", id, "error", err)
 					continue
 				}
@@ -116,16 +117,16 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 			} else {
 				entry, err := buildItem(root, id, recipe)
 				if err != nil {
-					progress(id, "failed")
+					progress(id, tui.StatusFailed)
 					slog.Warn("docker build failed, skipping", "id", id, "error", err)
 					continue
 				}
 				m.Realized.Entries = append(m.Realized.Entries, entry)
 			}
-			progress(id, "done")
+			progress(id, tui.StatusDone)
 
 		default:
-			progress(id, "failed")
+			progress(id, tui.StatusFailed)
 			slog.Warn("no acquisition strategy", "id", id)
 		}
 	}

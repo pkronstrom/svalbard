@@ -13,7 +13,7 @@ type wizardApplyDoneMsg struct{}
 
 type applyStep struct {
 	id     string
-	status string // "", "active", "done", "failed"
+	status string // tui.Status* constants
 }
 
 type applyStartedMsg struct {
@@ -109,7 +109,7 @@ func (m wizardApplyModel) startApply() tea.Cmd {
 			if err := runApply(vaultPath, func(id, status string) {
 				ch <- applyEvent{id: id, status: status}
 			}); err != nil {
-				ch <- applyEvent{status: "failed"}
+				ch <- applyEvent{status: tui.StatusFailed}
 			}
 		}()
 		return applyStartedMsg{ch: ch}
@@ -143,7 +143,7 @@ func (m wizardApplyModel) View() string {
 	// Find a good scroll offset — show the active item
 	offset := 0
 	for i, s := range m.steps {
-		if s.status == "active" {
+		if s.status == tui.StatusActive {
 			offset = i - maxVis/2
 			break
 		}
@@ -164,10 +164,10 @@ func (m wizardApplyModel) View() string {
 	doneCount := 0
 	failCount := 0
 	for _, s := range m.steps {
-		if s.status == "done" {
+		if s.status == tui.StatusDone {
 			doneCount++
 		}
-		if s.status == "failed" {
+		if s.status == tui.StatusFailed {
 			failCount++
 		}
 	}
@@ -176,11 +176,11 @@ func (m wizardApplyModel) View() string {
 		s := m.steps[i]
 		var symbol string
 		switch s.status {
-		case "done":
+		case tui.StatusDone:
 			symbol = m.theme.Success.Render("✓")
-		case "active":
+		case tui.StatusActive:
 			symbol = m.theme.Focus.Render("·")
-		case "failed":
+		case tui.StatusFailed:
 			symbol = m.theme.Danger.Render("✗")
 		default:
 			symbol = m.theme.Muted.Render(" ")
@@ -188,11 +188,11 @@ func (m wizardApplyModel) View() string {
 
 		line := fmt.Sprintf("  %s  %s", symbol, s.id)
 		switch s.status {
-		case "active":
+		case tui.StatusActive:
 			b.WriteString(m.theme.Base.Render(line))
-		case "done":
+		case tui.StatusDone:
 			b.WriteString(m.theme.Muted.Render(line))
-		case "failed":
+		case tui.StatusFailed:
 			b.WriteString(m.theme.Danger.Render(line))
 		default:
 			b.WriteString(m.theme.Muted.Render(line))

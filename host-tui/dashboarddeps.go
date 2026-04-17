@@ -64,7 +64,7 @@ type PlanItem struct {
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
 	ID     string
-	Status string // "queued", "active", "done", "failed"
+	Status string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
 	Error  string
 }
 
@@ -87,5 +87,5 @@ type IndexStatus struct {
 // IndexEvent reports progress during index rebuild.
 type IndexEvent struct {
 	File   string
-	Status string // "indexing", "skip", "done", "failed"
+	Status string // tui.StatusIndexing, tui.StatusSkip, tui.StatusDone, tui.StatusFailed
 }

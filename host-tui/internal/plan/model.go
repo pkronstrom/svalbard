@@ -27,7 +27,7 @@ type PlanItem struct {
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
 	ID     string
-	Status string // "queued", "active", "done", "failed"
+	Status string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
 	Error  string
 }
 
@@ -63,7 +63,7 @@ type applyTickMsg struct {
 
 type applyStep struct {
 	id     string
-	status string // "", "active", "done", "failed"
+	status string // tui.Status* constants
 	err    string
 }
 
@@ -131,11 +131,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Global error (empty ID) — mark remaining queued items as failed.
-		if msg.event.ID == "" && msg.event.Status == "failed" {
+		if msg.event.ID == "" && msg.event.Status == tui.StatusFailed {
 			m.applyErr = msg.event.Error
 			for i := range m.applyItems {
 				if m.applyItems[i].status == "" {
-					m.applyItems[i].status = "failed"
+					m.applyItems[i].status = tui.StatusFailed
 				}
 			}
 		} else {
@@ -221,7 +221,7 @@ func (m *Model) updateApplyStep(ev ApplyEvent) {
 		if m.applyItems[i].id == ev.ID {
 			m.applyItems[i].status = ev.Status
 			m.applyItems[i].err = ev.Error
-			if ev.Status == "failed" && ev.Error != "" {
+			if ev.Status == tui.StatusFailed && ev.Error != "" {
 				m.applyErr = ev.Error
 			}
 			return
@@ -241,7 +241,7 @@ func startApply(runApply func(ctx context.Context, onProgress func(ApplyEvent)) 
 			if err := runApply(context.Background(), func(ev ApplyEvent) {
 				ch <- ev
 			}); err != nil {
-				ch <- ApplyEvent{Status: "failed", Error: err.Error()}
+				ch <- ApplyEvent{Status: tui.StatusFailed, Error: err.Error()}
 			}
 		}()
 		return applyStartedMsg{ch: ch}
@@ -284,7 +284,7 @@ func (m Model) viewEmpty() string {
 		Theme:   m.theme,
 		AppName: "Svalbard",
 		Status:  "plan",
-		Left:    body,
+		Right:   body,
 		Footer:  m.theme.Help.Render(footer),
 		Width:   m.width,
 		Height:  m.height,
@@ -381,7 +381,7 @@ func (m Model) viewPlan() string {
 		Theme:   m.theme,
 		AppName: "Svalbard",
 		Status:  "plan",
-		Left:    b.String(),
+		Right:   b.String(),
 		Footer:  m.theme.Help.Render(footer),
 		Width:   m.width,
 		Height:  m.height,
@@ -400,13 +400,13 @@ func (m Model) viewApply() string {
 		var symbol string
 		var style lipgloss.Style
 		switch step.status {
-		case "done":
+		case tui.StatusDone:
 			symbol = m.theme.Success.Render("✓")
 			style = m.theme.Base
-		case "active":
+		case tui.StatusActive:
 			symbol = m.theme.Warning.Render("·")
 			style = m.theme.Base
-		case "failed":
+		case tui.StatusFailed:
 			symbol = m.theme.Danger.Render("✗")
 			style = m.theme.Danger
 		default:
@@ -436,9 +436,9 @@ func (m Model) viewApply() string {
 	failedCount := 0
 	for _, s := range m.applyItems {
 		switch s.status {
-		case "done":
+		case tui.StatusDone:
 			doneCount++
-		case "failed":
+		case tui.StatusFailed:
 			failedCount++
 		}
 	}
@@ -469,7 +469,7 @@ func (m Model) viewApply() string {
 		Theme:   m.theme,
 		AppName: "Svalbard",
 		Status:  "apply",
-		Left:    b.String(),
+		Right:   b.String(),
 		Footer:  m.theme.Help.Render(footer),
 		Width:   m.width,
 		Height:  m.height,

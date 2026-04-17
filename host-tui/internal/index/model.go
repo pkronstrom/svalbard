@@ -27,7 +27,7 @@ type IndexStatus struct {
 // IndexEvent reports progress during index rebuild.
 type IndexEvent struct {
 	File   string
-	Status string // "indexing", "skip", "done", "failed"
+	Status string // tui.Status* constants
 }
 
 // Config holds everything the index screen needs from its parent.
@@ -214,7 +214,7 @@ func startRebuild(runIndex func(ctx context.Context, indexType string, onProgres
 			if err := runIndex(context.Background(), indexType, func(ev IndexEvent) {
 				ch <- ev
 			}); err != nil {
-				ch <- IndexEvent{Status: "failed", File: err.Error()}
+				ch <- IndexEvent{Status: tui.StatusFailed, File: err.Error()}
 			}
 		}()
 		return rebuildStartedMsg{ch: ch}
@@ -357,16 +357,16 @@ func (m Model) viewRebuilding() string {
 		step := m.steps[i]
 		var symbol, label string
 		switch step.status {
-		case "done":
+		case tui.StatusDone:
 			symbol = m.theme.Success.Render("✓")
 			label = m.theme.Base.Render(step.file)
-		case "indexing":
+		case tui.StatusIndexing:
 			symbol = m.theme.Warning.Render("·")
 			label = m.theme.Base.Render(step.file)
-		case "skip":
+		case tui.StatusSkip:
 			symbol = m.theme.Muted.Render("–")
 			label = m.theme.Muted.Render(step.file)
-		case "failed":
+		case tui.StatusFailed:
 			symbol = m.theme.Danger.Render("✗")
 			label = m.theme.Danger.Render(step.file)
 		default:
@@ -382,9 +382,9 @@ func (m Model) viewRebuilding() string {
 	failedCount := 0
 	for _, s := range m.steps {
 		switch s.status {
-		case "done":
+		case tui.StatusDone:
 			doneCount++
-		case "failed":
+		case tui.StatusFailed:
 			failedCount++
 		}
 	}

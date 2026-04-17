@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/pkronstrom/svalbard/tui"
 )
 
 // stripAnsi removes ANSI escape sequences for plain-text assertions.
@@ -215,7 +216,7 @@ func TestApplyGlobalErrorMarksItemsFailed(t *testing.T) {
 
 	// All items should be marked failed
 	for _, step := range m.applyItems {
-		if step.status != "failed" {
+		if step.status != tui.StatusFailed {
 			t.Errorf("item %q should be failed, got %q", step.id, step.status)
 		}
 	}
@@ -234,8 +235,8 @@ func TestApplyPerItemErrorThenGlobalError(t *testing.T) {
 		DownloadGB: 2.0,
 		RemoveGB:   0.5,
 		RunApply: func(ctx context.Context, onProgress func(ApplyEvent)) error {
-			onProgress(ApplyEvent{ID: "wiki-physics", Status: "active"})
-			onProgress(ApplyEvent{ID: "wiki-physics", Status: "failed"})
+			onProgress(ApplyEvent{ID: "wiki-physics", Status: tui.StatusActive})
+			onProgress(ApplyEvent{ID: "wiki-physics", Status: tui.StatusFailed})
 			return fmt.Errorf("download failed for wiki-physics")
 		},
 	})
@@ -263,12 +264,12 @@ func TestApplyPerItemErrorThenGlobalError(t *testing.T) {
 	}
 
 	// First item should be failed
-	if m.applyItems[0].status != "failed" {
+	if m.applyItems[0].status != tui.StatusFailed {
 		t.Errorf("first item should be failed, got %q", m.applyItems[0].status)
 	}
 	// Remaining items should also be failed (from global error)
 	for i := 1; i < len(m.applyItems); i++ {
-		if m.applyItems[i].status != "failed" {
+		if m.applyItems[i].status != tui.StatusFailed {
 			t.Errorf("item %d (%s) should be failed, got %q", i, m.applyItems[i].id, m.applyItems[i].status)
 		}
 	}
