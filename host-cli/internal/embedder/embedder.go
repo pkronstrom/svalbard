@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -42,7 +43,12 @@ func StartServer(ctx context.Context, modelPath, driveRoot string) (*Server, err
 		return nil, err
 	}
 
-	s := &Server{host: defaultHost, port: defaultPort}
+	port, err := findFreePort()
+	if err != nil {
+		return nil, fmt.Errorf("embedder: find free port: %w", err)
+	}
+
+	s := &Server{host: defaultHost, port: port}
 	s.proc = exec.CommandContext(ctx, bin,
 		"--model", modelPath,
 		"--port", fmt.Sprintf("%d", s.port),
@@ -139,6 +145,16 @@ func BlobToVector(blob []byte) []float32 {
 }
 
 // --- internal helpers ---
+
+func findFreePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port, nil
+}
 
 func (s *Server) waitHealthy() error {
 	url := fmt.Sprintf("http://%s:%d/health", s.host, s.port)
