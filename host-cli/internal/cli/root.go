@@ -664,8 +664,26 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			if err := commands.IndexVault(root, true, io.Discard, keywordCb); err != nil {
 				return err
 			}
+			// Semantic uses prefixed file IDs to avoid overwriting keyword entries.
+			fullSemanticCb := func(p commands.SemanticProgress) {
+				file := p.File
+				if file != "" {
+					file = "embed: " + file
+				} else {
+					file = p.Detail
+				}
+				detail := p.Detail
+				if p.File != "" && p.Detail != "" {
+					detail = p.File + "  " + p.Detail
+				}
+				onProgress(hosttui.IndexEvent{
+					File:   file,
+					Status: mapStatus(p.Status),
+					Detail: detail,
+				})
+			}
 			// Semantic is best-effort — keyword index still succeeds if model is missing.
-			if err := commands.IndexSemantic(ctx, root, true, io.Discard, semanticCb); err != nil {
+			if err := commands.IndexSemantic(ctx, root, true, io.Discard, fullSemanticCb); err != nil {
 				onProgress(hosttui.IndexEvent{
 					File: "semantic", Status: tui.StatusFailed, Detail: err.Error(),
 				})
