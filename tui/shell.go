@@ -62,8 +62,14 @@ func (s ShellLayout) renderWide(topBar, footer string) string {
 	leftWidth := int(float64(s.Width) * LeftFraction)
 	rightWidth := s.Width - leftWidth - gutter
 
-	leftStyle := lipgloss.NewStyle().Width(leftWidth)
-	rightStyle := lipgloss.NewStyle().Width(rightWidth)
+	// Reserve lines for top bar(1) + blank(1) + blank(1) + footer(1) = 4
+	bodyHeight := s.Height - 4
+	if bodyHeight < 1 {
+		bodyHeight = 1
+	}
+
+	leftStyle := lipgloss.NewStyle().Width(leftWidth).MaxHeight(bodyHeight)
+	rightStyle := lipgloss.NewStyle().Width(rightWidth).MaxHeight(bodyHeight)
 
 	body := lipgloss.JoinHorizontal(
 		lipgloss.Top,

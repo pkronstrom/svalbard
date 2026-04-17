@@ -61,8 +61,9 @@ func (m presetPickerModel) itemCount() int {
 // maxVisible returns how many preset lines fit in the scroll area.
 // Each preset is 1 line. Region headers and other chrome are accounted for.
 func (m presetPickerModel) maxVisible() int {
-	// Reserve: header(2) + customize(2) + description area(4) + footer(1)
-	avail := m.height - 9
+	// Shell chrome: top bar(1) + blanks(2) + footer(1) = 4
+	// Own chrome: free space header(2) + customize(3) + detail area(4) = 9
+	avail := m.height - 13
 	if avail < 3 {
 		avail = 3
 	}
