@@ -362,7 +362,11 @@ func (m packPickerModel) View() string {
 				mark = "◐"
 			}
 			size := packCheckedSizeGB(pack, m.checkedIDs)
-			label := fmt.Sprintf("    %s%s %s  %s", prefix, mark, pack.Name, formatSizeGB(size))
+			suffix := formatSizeGB(size)
+			if checked > 0 && checked < total {
+				suffix = "(shared)"
+			}
+			label := fmt.Sprintf("    %s%s %s  %s", prefix, mark, pack.Name, suffix)
 			if isCursor {
 				b.WriteString(m.theme.Selected.Render(label))
 			} else if checked > 0 {
