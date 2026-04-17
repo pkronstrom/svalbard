@@ -1,0 +1,20 @@
+# Capability pack: offline cybersecurity reference documentation.
+# Include: pentest knowledge bases, cheat sheets, payload references.
+# Exclude: tools, wordlists, CTF-specific content.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: cybersec-reference
+kind: pack
+display_group: Cybersecurity
+description: Offline security docs — HackTricks, OWASP, GTFOBins, payload references
+target_size_gb: 0.5
+sources:
+# ── Pentest knowledge ──
+- hacktricks
+# ── Binary exploitation references ──
+- gtfobins
+- lolbas
+# ── Payload references ──
+- payloads-all-the-things
+# ── OWASP ──
+- owasp-wstg
+- owasp-cheat-sheets

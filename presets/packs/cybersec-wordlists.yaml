@@ -1,0 +1,13 @@
+# Capability pack: security testing wordlists and vulnerability templates.
+# Include: password lists, fuzzing dictionaries, nuclei templates.
+# Exclude: tools, reference docs.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: cybersec-wordlists
+kind: pack
+display_group: Cybersecurity
+description: SecLists, rockyou, and nuclei vulnerability templates
+target_size_gb: 1.5
+sources:
+- seclists
+- rockyou
+- nuclei-templates

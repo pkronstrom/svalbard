@@ -1,0 +1,12 @@
+id: nuclei-templates
+type: dataset
+display_group: tools
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.2
+description: Nuclei community vulnerability detection templates
+url: https://github.com/projectdiscovery/nuclei-templates/archive/refs/heads/main.zip
+license:
+  id: MIT
+  attribution: ProjectDiscovery and nuclei-templates contributors

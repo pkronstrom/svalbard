@@ -1,0 +1,12 @@
+id: seclists
+type: dataset
+display_group: tools
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.5
+description: SecLists — security tester's companion (passwords, fuzzing, discovery)
+url: https://github.com/danielmiessler/SecLists/archive/refs/heads/master.zip
+license:
+  id: MIT
+  attribution: Daniel Miessler, Jason Haddix, and SecLists contributors

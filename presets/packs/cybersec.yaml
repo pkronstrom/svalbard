@@ -1,0 +1,35 @@
+# Capability pack: portable penetration testing and network security tools.
+# Include: recon, web testing, tunneling, vuln scanning, priv-esc helpers.
+# Exclude: CTF-specific RE/exploit tools, large wordlists, reference docs.
+# Overlap with other packs is acceptable when needed for standalone usefulness.
+name: cybersec
+kind: pack
+display_group: Cybersecurity
+description: Core recon, web testing, tunneling, and vulnerability scanning tools
+target_size_gb: 0.5
+sources:
+# ── Network scanning ──
+- nmap-static
+- rustscan
+- naabu
+# ── Vulnerability scanning ──
+- nuclei
+# ── Web fuzzing & discovery ──
+- gobuster
+- feroxbuster
+- ffuf
+# ── Web recon ──
+- httpx
+- subfinder
+- katana
+# ── Web proxy ──
+- caido
+# ── Tunneling & pivoting ──
+- chisel
+- ligolo-ng-proxy
+- ligolo-ng-agent
+# ── Privilege escalation helpers ──
+- linpeas
+- winpeas
+# ── SQL injection (python-package → svalbard-python) ──
+- sqlmap

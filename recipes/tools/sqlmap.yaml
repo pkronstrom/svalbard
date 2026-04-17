@@ -1,0 +1,16 @@
+id: sqlmap
+type: python-package
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.02
+venv: svalbard-python
+packages:
+- sqlmap==1.8.4
+entry_points:
+- sqlmap
+description: Automatic SQL injection and database takeover tool
+license:
+  id: GPL-2.0-only
+  attribution: Bernardo Damele and Miroslav Stampar

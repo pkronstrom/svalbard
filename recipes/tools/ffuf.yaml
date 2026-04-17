@@ -1,0 +1,16 @@
+id: ffuf
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.008
+platforms:
+  linux-x86_64: https://github.com/ffuf/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz
+  linux-arm64: https://github.com/ffuf/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_arm64.tar.gz
+  macos-arm64: https://github.com/ffuf/ffuf/releases/download/v2.1.0/ffuf_2.1.0_macOS_arm64.tar.gz
+  macos-x86_64: https://github.com/ffuf/ffuf/releases/download/v2.1.0/ffuf_2.1.0_macOS_amd64.tar.gz
+description: Fast web fuzzer (Fuzz Faster U Fool)
+license:
+  id: MIT
+  attribution: Joona Hoikkala

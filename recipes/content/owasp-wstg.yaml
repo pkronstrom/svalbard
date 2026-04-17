@@ -1,0 +1,17 @@
+id: owasp-wstg
+type: zim
+display_group: reference
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.01
+description: OWASP Web Security Testing Guide
+strategy: build
+build:
+  family: custom
+  builder: zimit-scrape.py
+  source_url: https://owasp.org/www-project-web-security-testing-guide/
+  output: owasp-wstg.zim
+license:
+  id: CC-BY-SA-4.0
+  attribution: OWASP Foundation

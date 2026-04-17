@@ -1,0 +1,12 @@
+id: svalbard-python
+type: python-venv
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.03
+python: ">=3.11"
+description: Shared Python runtime for drive tools (managed by uv)
+license:
+  id: PSF-2.0
+  attribution: Python Software Foundation

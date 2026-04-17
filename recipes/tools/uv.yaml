@@ -1,0 +1,16 @@
+id: uv
+type: binary
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.03
+platforms:
+  linux-x86_64: https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-unknown-linux-gnu.tar.gz
+  linux-arm64: https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-unknown-linux-gnu.tar.gz
+  macos-arm64: https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-apple-darwin.tar.gz
+  macos-x86_64: https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-apple-darwin.tar.gz
+description: Fast Python package manager for building drive venvs
+license:
+  id: Apache-2.0
+  attribution: Astral

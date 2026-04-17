@@ -1,0 +1,17 @@
+id: caido
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.08
+platforms:
+  linux-x86_64: https://caido.download/releases/v0.56.0/caido-cli-v0.56.0-linux-x86_64.tar.gz
+  linux-arm64: https://caido.download/releases/v0.56.0/caido-cli-v0.56.0-linux-aarch64.tar.gz
+  macos-arm64: https://caido.download/releases/v0.56.0/caido-cli-v0.56.0-mac-aarch64.zip
+  macos-x86_64: https://caido.download/releases/v0.56.0/caido-cli-v0.56.0-mac-x86_64.zip
+description: Lightweight web proxy with browser UI (Burp Suite alternative)
+license:
+  id: LicenseRef-Caido-Proprietary
+  attribution: Caido Labs Inc.
+  note: Free community tier available; proprietary license

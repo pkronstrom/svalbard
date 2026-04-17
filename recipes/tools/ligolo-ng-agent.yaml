@@ -1,0 +1,16 @@
+id: ligolo-ng-agent
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.015
+platforms:
+  linux-x86_64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.8.3/ligolo-ng_agent_0.8.3_linux_amd64.tar.gz
+  linux-arm64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.8.3/ligolo-ng_agent_0.8.3_linux_arm64.tar.gz
+  macos-arm64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.8.3/ligolo-ng_agent_0.8.3_darwin_arm64.tar.gz
+  macos-x86_64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.8.3/ligolo-ng_agent_0.8.3_darwin_amd64.tar.gz
+description: ligolo-ng agent — deploy on target for network pivoting
+license:
+  id: GPL-3.0-only
+  attribution: Nicolas Music (nicocha30)

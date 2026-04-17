@@ -1,0 +1,17 @@
+id: chisel
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.01
+platforms:
+  linux-x86_64: https://github.com/jpillora/chisel/releases/download/v1.11.5/chisel_1.11.5_linux_amd64.gz
+  linux-arm64: https://github.com/jpillora/chisel/releases/download/v1.11.5/chisel_1.11.5_linux_arm64.gz
+  macos-arm64: https://github.com/jpillora/chisel/releases/download/v1.11.5/chisel_1.11.5_darwin_arm64.gz
+  macos-x86_64: https://github.com/jpillora/chisel/releases/download/v1.11.5/chisel_1.11.5_darwin_amd64.gz
+# NOTE: bare .gz format — runtime resolver needs gunzip support (not yet implemented)
+description: TCP/UDP tunnel over HTTP secured via SSH
+license:
+  id: MIT
+  attribution: Jaime Pillora

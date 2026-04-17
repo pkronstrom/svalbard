@@ -1,0 +1,16 @@
+id: naabu
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.015
+platforms:
+  linux-x86_64: https://github.com/projectdiscovery/naabu/releases/download/v2.5.0/naabu_2.5.0_linux_amd64.zip
+  linux-arm64: https://github.com/projectdiscovery/naabu/releases/download/v2.5.0/naabu_2.5.0_linux_arm64.zip
+  macos-arm64: https://github.com/projectdiscovery/naabu/releases/download/v2.5.0/naabu_2.5.0_macOS_arm64.zip
+  macos-x86_64: https://github.com/projectdiscovery/naabu/releases/download/v2.5.0/naabu_2.5.0_macOS_amd64.zip
+description: Fast port scanner (ProjectDiscovery)
+license:
+  id: MIT
+  attribution: ProjectDiscovery

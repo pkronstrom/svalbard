@@ -1,0 +1,15 @@
+id: nmap-static
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.006
+platforms:
+  linux-x86_64: https://github.com/ernw/static-toolbox/releases/download/nmap-v7.94SVN/nmap-7.94SVN-x86_64-portable.tar.gz
+  linux-arm64: https://github.com/ernw/static-toolbox/releases/download/nmap-v7.94SVN/nmap-7.94SVN-aarch64-portable.tar.gz
+  # macOS: no static binary available — install via Homebrew on host
+description: Network scanner (static Linux binary from ernw/static-toolbox)
+license:
+  id: GPL-2.0-only
+  attribution: Fyodor (nmap.org)

@@ -19,3 +19,5 @@ sources:
 - fzf
 - toybox
 - dufs
+- uv
+- svalbard-python

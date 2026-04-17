@@ -1,0 +1,13 @@
+id: rockyou
+type: dataset
+display_group: tools
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.133
+description: rockyou.txt — classic leaked password wordlist (14M+ entries)
+url: https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt
+license:
+  id: Unlicense
+  attribution: Public domain (leaked dataset)
+  note: Redistributed for authorized security testing and CTF use only

@@ -1,0 +1,12 @@
+id: winpeas
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.005
+url: https://github.com/peass-ng/PEASS-ng/releases/download/20260412-090b08ae/winPEASx64.exe
+description: Windows privilege escalation enumeration tool (x64 exe, deploy on targets)
+license:
+  id: GPL-3.0-only
+  attribution: Carlos Polop (PEASS-ng)

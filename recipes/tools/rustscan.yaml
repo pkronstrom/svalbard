@@ -1,0 +1,16 @@
+id: rustscan
+type: binary
+display_group: tools
+tags:
+- cybersec
+depth: reference-only
+size_gb: 0.005
+platforms:
+  linux-x86_64: https://github.com/bee-san/RustScan/releases/download/2.4.1/x86_64-linux-rustscan.tar.gz.zip
+  linux-arm64: https://github.com/bee-san/RustScan/releases/download/2.4.1/aarch64-linux-rustscan.zip
+  macos-arm64: https://github.com/bee-san/RustScan/releases/download/2.4.1/aarch64-macos-rustscan.tar.gz.zip
+  macos-x86_64: https://github.com/bee-san/RustScan/releases/download/2.4.1/x86_64-macos-rustscan.tar.gz.zip
+description: Fast port scanner — scans all 65535 ports in seconds, feeds nmap
+license:
+  id: GPL-3.0-only
+  attribution: Bee-san and RustScan contributors

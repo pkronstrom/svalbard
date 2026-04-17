@@ -1,0 +1,17 @@
+id: gtfobins
+type: zim
+display_group: reference
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.005
+description: GTFOBins — Unix binaries that can be exploited for privilege escalation
+strategy: build
+build:
+  family: custom
+  builder: zimit-scrape.py
+  source_url: https://gtfobins.github.io
+  output: gtfobins.zim
+license:
+  id: GPL-3.0-only
+  attribution: GTFOBins contributors
