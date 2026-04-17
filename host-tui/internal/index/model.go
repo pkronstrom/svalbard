@@ -247,8 +247,8 @@ func (m Model) View() string {
 func (m Model) viewNormal() string {
 	// Left pane: navigation list.
 	navItems := []tui.NavItem{
-		{ID: "keyword", Label: "Keyword search", Description: "SQLite FTS5 full-text"},
-		{ID: "semantic", Label: "Semantic search", Description: "embedding-based similarity"},
+		{ID: "keyword", Label: "Keyword search"},
+		{ID: "semantic", Label: "Semantic search"},
 	}
 	nav := tui.NavList{
 		Items:    navItems,
