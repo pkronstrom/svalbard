@@ -577,7 +577,7 @@ func typeSymbol(t string) string {
 	switch t {
 	case "zim", "pdf", "epub", "html":
 		return "✦"
-	case "binary", "toolchain", "app", "sqlite":
+	case "binary", "toolchain", "app", "sqlite", "python-package", "python-venv":
 		return "⚙"
 	case "pmtiles", "gpkg":
 		return "⊞"
