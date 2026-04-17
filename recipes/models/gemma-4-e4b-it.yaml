@@ -7,7 +7,7 @@ tags:
 - tool-calling
 depth: overview
 size_gb: 5.34
-url: https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-e4b-it-Q4_K_M.gguf
+url: https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf
 description: Gemma 4 E4B IT (Q4_K_M) — mainstream general/tool-call model for 16-24 GB RAM hosts
 license:
   id: Apache-2.0

@@ -10,9 +10,18 @@ strategy: build
 build:
   source_url: https://lolbas-project.github.io
   steps:
-    - exec: zimit
-      args: ["--url", "{source_url}", "--output", "/vault/zim/{id}.zim", "--name", "{id}"]
-      docker_image: openzim/zimit
+    - exec: wget
+      args: ["--mirror", "--warc-file={workdir}/{id}", "--warc-cdx",
+             "--page-requisites", "--adjust-extension", "--convert-links",
+             "--no-parent", "--tries=3", "--timeout=30",
+             "--reject", "*.mp4,*.webm",
+             "-P", "{workdir}/site",
+             "{source_url}"]
+    - exec: warc2zim
+      args: ["--output", "{output}", "--name", "{id}",
+             "--title", "LOLBAS",
+             "--description", "Windows living-off-the-land binaries and scripts",
+             "{workdir}/{id}.warc.gz"]
     - verify: "{output}"
       min_size: 10240
 license:
