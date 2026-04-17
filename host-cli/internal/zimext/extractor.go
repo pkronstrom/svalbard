@@ -28,8 +28,15 @@ func ExtractArticles(path string) ([]searchdb.Article, string, error) {
 		archiveTitle = strings.TrimSpace(metaTitle)
 	}
 
-	articles := make([]searchdb.Article, 0, archive.EntryCountByNamespace('C'))
-	for entry, iterErr := range archive.AllEntriesByNamespace('C') {
+	// Newer ZIM files (new namespace scheme) store content in 'C'; older ones
+	// use 'A' for articles.  Try 'C' first, fall back to 'A'.
+	ns := byte('C')
+	if archive.EntryCountByNamespace('C') == 0 {
+		ns = 'A'
+	}
+
+	articles := make([]searchdb.Article, 0, archive.EntryCountByNamespace(ns))
+	for entry, iterErr := range archive.AllEntriesByNamespace(ns) {
 		if iterErr != nil {
 			return nil, "", fmt.Errorf("iterate content entries: %w", iterErr)
 		}

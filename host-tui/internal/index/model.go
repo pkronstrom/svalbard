@@ -177,7 +177,7 @@ func (m Model) updateRebuilding(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case m.keys.Back.Matches(msg):
+	case m.keys.Back.Matches(msg), m.keys.Quit.Matches(msg):
 		if m.rebuildDone {
 			m.rebuilding = false
 			return m, nil

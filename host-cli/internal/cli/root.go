@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -518,6 +519,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			onProgress(hosttui.ApplyEvent{
 				ID:         ev.ID,
 				Status:     ev.Status,
+				Step:       ev.Step,
 				Downloaded: ev.Downloaded,
 				Total:      ev.Total,
 				Error:      ev.Error,
@@ -595,7 +597,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		for _, zf := range zimFiles {
 			onProgress(hosttui.IndexEvent{File: zf, Status: tui.StatusIndexing})
 		}
-		err = commands.IndexVault(root, os.Stderr)
+		err = commands.IndexVault(root, io.Discard)
 		if err != nil {
 			for _, zf := range zimFiles {
 				onProgress(hosttui.IndexEvent{File: zf, Status: tui.StatusFailed})

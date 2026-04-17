@@ -140,9 +140,15 @@ func run(srcPath, outDir, redirectsPath string, maxWidth uint, jpegQuality, numW
 	var contents []contentEntry
 	var redirects []redirectEntry
 
-	log.Printf("reading entries from %s (%d total)", srcPath, a.EntryCount())
+	// Newer ZIM files use namespace 'C'; older ones use 'A' for articles.
+	ns := byte('C')
+	if a.EntryCountByNamespace('C') == 0 {
+		ns = 'A'
+	}
 
-	for e := range a.EntriesByNamespace('C') {
+	log.Printf("reading entries from %s (%d total, namespace %c)", srcPath, a.EntryCount(), ns)
+
+	for e := range a.EntriesByNamespace(ns) {
 		if e.IsRedirect() {
 			target, err := e.Resolve()
 			if err != nil {
