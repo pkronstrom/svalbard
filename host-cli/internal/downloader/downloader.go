@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	chunkSize    = 64 * 1024      // 64KB for download streaming
-	hashChunkSz  = 1024 * 1024    // 1MB for SHA256 computation
+	chunkSize    = 64 * 1024   // 64KB for download streaming
+	hashChunkSz  = 1024 * 1024 // 1MB for SHA256 computation
 )
 
 // Result describes the outcome of a Download call.
@@ -26,6 +26,11 @@ type Result struct {
 	Cached bool
 }
 
+// ProgressFunc reports download progress. Called approximately every 64KB.
+// downloaded is bytes written so far (including resumed bytes); total is the
+// full file size (-1 if unknown).
+type ProgressFunc func(downloaded, total int64)
+
 // httpClient has no overall timeout — cancellation is handled via context.
 var httpClient = &http.Client{}
 
@@ -34,13 +39,21 @@ var httpClient = &http.Client{}
 // Partial files are resumed using the HTTP Range header. After a successful
 // download the file's SHA256 is verified against expectedSHA256 (if set).
 // The provided context controls cancellation of the HTTP request.
-func Download(ctx context.Context, url, destPath, expectedSHA256 string) (Result, error) {
+func Download(ctx context.Context, url, destPath, expectedSHA256 string, onProgress ...ProgressFunc) (Result, error) {
+	var progress ProgressFunc
+	if len(onProgress) > 0 {
+		progress = onProgress[0]
+	}
+
 	// 1. Cache check
 	if expectedSHA256 != "" {
 		if info, err := os.Stat(destPath); err == nil && info.Size() > 0 {
 			hash, err := ComputeSHA256(destPath)
 			if err == nil && hash == expectedSHA256 {
 				slog.Debug("cache hit", "path", destPath, "sha256", expectedSHA256)
+				if progress != nil {
+					progress(info.Size(), info.Size())
+				}
 				return Result{Path: destPath, SHA256: expectedSHA256, Cached: true}, nil
 			}
 			// Hash mismatch — remove and redownload.
@@ -78,11 +91,12 @@ func Download(ctx context.Context, url, destPath, expectedSHA256 string) (Result
 	switch resp.StatusCode {
 	case http.StatusOK:
 		// Server ignores Range or sends full content — start fresh.
+		total := resp.ContentLength // -1 if unknown
 		f, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			return Result{}, fmt.Errorf("open file (fresh): %w", err)
 		}
-		if err := streamToFile(f, resp.Body); err != nil {
+		if err := streamToFile(f, resp.Body, 0, total, progress); err != nil {
 			f.Close()
 			return Result{}, err
 		}
@@ -90,11 +104,15 @@ func Download(ctx context.Context, url, destPath, expectedSHA256 string) (Result
 
 	case http.StatusPartialContent:
 		// Append remaining bytes.
+		total := int64(-1)
+		if resp.ContentLength > 0 {
+			total = existingSize + resp.ContentLength
+		}
 		f, err := os.OpenFile(destPath, os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			return Result{}, fmt.Errorf("open file (append): %w", err)
 		}
-		if err := streamToFile(f, resp.Body); err != nil {
+		if err := streamToFile(f, resp.Body, existingSize, total, progress); err != nil {
 			f.Close()
 			return Result{}, err
 		}
@@ -102,6 +120,9 @@ func Download(ctx context.Context, url, destPath, expectedSHA256 string) (Result
 
 	case http.StatusRequestedRangeNotSatisfiable:
 		// File is already complete — nothing to do.
+		if progress != nil {
+			progress(existingSize, existingSize)
+		}
 
 	default:
 		return Result{}, fmt.Errorf("unexpected HTTP status %d", resp.StatusCode)
@@ -139,12 +160,27 @@ func ComputeSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// streamToFile copies from r to f in 64KB chunks.
-func streamToFile(f *os.File, r io.Reader) error {
+// streamToFile copies from r to f in 64KB chunks, reporting progress.
+func streamToFile(f *os.File, r io.Reader, baseBytes, totalBytes int64, progress ProgressFunc) error {
 	buf := make([]byte, chunkSize)
-	_, err := io.CopyBuffer(f, r, buf)
-	if err != nil {
-		return fmt.Errorf("stream to file: %w", err)
+	downloaded := baseBytes
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			if _, wErr := f.Write(buf[:n]); wErr != nil {
+				return fmt.Errorf("stream to file: %w", wErr)
+			}
+			downloaded += int64(n)
+			if progress != nil {
+				progress(downloaded, totalBytes)
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("stream to file: %w", err)
+		}
 	}
 	return nil
 }

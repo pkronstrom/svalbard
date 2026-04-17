@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -10,10 +11,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/builder"
-	"github.com/pkronstrom/svalbard/tui"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
@@ -21,16 +22,41 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
 	"github.com/pkronstrom/svalbard/host-cli/internal/resolver"
 	"github.com/pkronstrom/svalbard/host-cli/internal/toolkit"
+	"github.com/pkronstrom/svalbard/tui"
 )
 
-// ProgressFunc reports per-item progress during apply. May be nil.
-type ProgressFunc func(id, status string)
+const maxWorkers = 4
+
+// ProgressEvent reports per-item progress during apply.
+type ProgressEvent struct {
+	ID         string
+	Status     string // tui.Status* constants
+	Downloaded int64  // bytes so far (only meaningful during StatusActive)
+	Total      int64  // total bytes (-1 if unknown)
+	Error      string
+}
+
+// ProgressFunc reports per-item progress during apply.
+type ProgressFunc func(ProgressEvent)
+
+// downloadJob is a unit of work for the parallel download pool.
+type downloadJob struct {
+	id     string
+	recipe catalog.Item
+}
+
+// downloadResult collects the outcome of a single download job.
+type downloadResult struct {
+	id      string
+	entries []manifest.RealizedEntry
+	err     error
+}
 
 // Run executes a reconciliation plan against the vault at root, mutating the
 // manifest's realized state to reflect what was applied.
-// The optional onProgress callback reports per-item status using tui.Status* constants.
+// The optional onProgress callback reports per-item status.
 func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Catalog, onProgress ...ProgressFunc) error {
-	progress := func(id, status string) {}
+	progress := func(ev ProgressEvent) {}
 	if len(onProgress) > 0 && onProgress[0] != nil {
 		progress = onProgress[0]
 	}
@@ -41,11 +67,10 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	removeSet := make(map[string]struct{}, len(plan.ToRemove))
 	for _, id := range plan.ToRemove {
 		removeSet[id] = struct{}{}
-		progress(id, tui.StatusActive)
+		progress(ProgressEvent{ID: id, Status: tui.StatusActive})
 	}
 	for _, e := range m.Realized.Entries {
 		if _, ok := removeSet[e.ID]; ok {
-			// RemoveAll handles both files and directories (app-bundle, python-venv).
 			os.RemoveAll(filepath.Join(root, e.RelativePath))
 		}
 	}
@@ -57,7 +82,7 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	}
 	m.Realized.Entries = filtered
 	for _, id := range plan.ToRemove {
-		progress(id, tui.StatusDone)
+		progress(ProgressEvent{ID: id, Status: tui.StatusDone})
 	}
 
 	// Build the desired ID set for native builders to filter against.
@@ -66,69 +91,128 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 		desiredIDs[id] = true
 	}
 
-	// Process downloads: resolve URLs, download files, add realized entries.
+	// Partition downloads into parallel-safe (HTTP) and sequential (build) jobs.
+	var httpJobs []downloadJob
+	var buildJobs []downloadJob
+
 	for _, id := range plan.ToDownload {
 		recipe, ok := cat.RecipeByID(id)
 		if !ok {
-			return fmt.Errorf("recipe %q not found in catalog", id)
-		}
-
-		// python-package items are installed by the python-venv builder, not individually.
-		if recipe.Type == "python-package" {
+			progress(ProgressEvent{ID: id, Status: tui.StatusFailed, Error: fmt.Sprintf("recipe %q not found", id)})
 			continue
 		}
+		if recipe.Type == "python-package" {
+			continue // installed by python-venv builder
+		}
 
-		progress(id, tui.StatusActive)
-
-		// Route by acquisition strategy.
 		switch {
-		case recipe.URL != "" || recipe.URLPattern != "":
-			entry, err := downloadItem(root, id, recipe)
-			if err != nil {
-				progress(id, tui.StatusFailed)
-				return err
-			}
-			m.Realized.Entries = append(m.Realized.Entries, entry)
-			progress(id, tui.StatusDone)
+		case recipe.URL != "" || recipe.URLPattern != "" || len(recipe.Platforms) > 0:
+			httpJobs = append(httpJobs, downloadJob{id: id, recipe: recipe})
+		case recipe.Strategy == "build" && recipe.Build != nil:
+			buildJobs = append(buildJobs, downloadJob{id: id, recipe: recipe})
+		default:
+			progress(ProgressEvent{ID: id, Status: tui.StatusFailed, Error: "no acquisition strategy"})
+			slog.Warn("no acquisition strategy", "id", id)
+		}
+	}
 
-		case len(recipe.Platforms) > 0:
-			entries, err := downloadPlatformItems(root, id, recipe, m.Desired.Options.HostPlatforms)
+	// Run HTTP downloads in parallel.
+	var mu sync.Mutex
+	var downloadErrors []string
+
+	results := make(chan downloadResult, len(httpJobs))
+	jobs := make(chan downloadJob, len(httpJobs))
+
+	// Start workers.
+	var wg sync.WaitGroup
+	for i := 0; i < maxWorkers && i < len(httpJobs); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				progress(ProgressEvent{ID: job.id, Status: tui.StatusActive})
+
+				dlProgress := func(downloaded, total int64) {
+					progress(ProgressEvent{
+						ID:         job.id,
+						Status:     tui.StatusActive,
+						Downloaded: downloaded,
+						Total:      total,
+					})
+				}
+
+				var entries []manifest.RealizedEntry
+				var err error
+
+				if job.recipe.URL != "" || job.recipe.URLPattern != "" {
+					var entry manifest.RealizedEntry
+					entry, err = downloadItem(root, job.id, job.recipe, dlProgress)
+					if err == nil {
+						entries = []manifest.RealizedEntry{entry}
+					}
+				} else if len(job.recipe.Platforms) > 0 {
+					entries, err = downloadPlatformItems(root, job.id, job.recipe, m.Desired.Options.HostPlatforms, dlProgress)
+				}
+
+				results <- downloadResult{id: job.id, entries: entries, err: err}
+			}
+		}()
+	}
+
+	// Feed jobs.
+	for _, job := range httpJobs {
+		jobs <- job
+	}
+	close(jobs)
+
+	// Collect results.
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for res := range results {
+		if res.err != nil {
+			progress(ProgressEvent{ID: res.id, Status: tui.StatusFailed, Error: res.err.Error()})
+			slog.Warn("download failed", "id", res.id, "error", res.err)
+			mu.Lock()
+			downloadErrors = append(downloadErrors, fmt.Sprintf("%s: %s", res.id, res.err))
+			mu.Unlock()
+			continue
+		}
+		mu.Lock()
+		m.Realized.Entries = append(m.Realized.Entries, res.entries...)
+		mu.Unlock()
+		progress(ProgressEvent{ID: res.id, Status: tui.StatusDone})
+	}
+
+	// Run build jobs sequentially (they may need Docker / heavy resources).
+	for _, job := range buildJobs {
+		progress(ProgressEvent{ID: job.id, Status: tui.StatusActive})
+
+		if nativeFn, ok := builder.Dispatch(job.recipe); ok {
+			entries, err := nativeFn(root, job.recipe, cat, builder.Options{
+				Platforms:  m.Desired.Options.HostPlatforms,
+				DesiredIDs: desiredIDs,
+			})
 			if err != nil {
-				progress(id, tui.StatusFailed)
-				slog.Warn("skipping item", "id", id, "reason", err.Error())
+				progress(ProgressEvent{ID: job.id, Status: tui.StatusFailed, Error: err.Error()})
+				slog.Warn("native build failed", "id", job.id, "error", err)
+				downloadErrors = append(downloadErrors, fmt.Sprintf("%s: %s", job.id, err))
 				continue
 			}
 			m.Realized.Entries = append(m.Realized.Entries, entries...)
-			progress(id, tui.StatusDone)
-
-		case recipe.Strategy == "build" && recipe.Build != nil:
-			// Try Go-native builder first, fall through to Docker.
-			if nativeFn, ok := builder.Dispatch(recipe); ok {
-				entries, err := nativeFn(root, recipe, cat, builder.Options{
-					Platforms:  m.Desired.Options.HostPlatforms,
-					DesiredIDs: desiredIDs,
-				})
-				if err != nil {
-					progress(id, tui.StatusFailed)
-					slog.Warn("native build failed, skipping", "id", id, "error", err)
-					continue
-				}
-				m.Realized.Entries = append(m.Realized.Entries, entries...)
-			} else {
-				entry, err := buildItem(root, id, recipe)
-				if err != nil {
-					progress(id, tui.StatusFailed)
-					slog.Warn("docker build failed, skipping", "id", id, "error", err)
-					continue
-				}
-				m.Realized.Entries = append(m.Realized.Entries, entry)
+		} else {
+			entry, err := buildItem(root, job.id, job.recipe)
+			if err != nil {
+				progress(ProgressEvent{ID: job.id, Status: tui.StatusFailed, Error: err.Error()})
+				slog.Warn("docker build failed", "id", job.id, "error", err)
+				downloadErrors = append(downloadErrors, fmt.Sprintf("%s: %s", job.id, err))
+				continue
 			}
-			progress(id, tui.StatusDone)
-
-		default:
-			progress(id, tui.StatusFailed)
-			slog.Warn("no acquisition strategy", "id", id)
+			m.Realized.Entries = append(m.Realized.Entries, entry)
 		}
+		progress(ProgressEvent{ID: job.id, Status: tui.StatusDone})
 	}
 
 	// Collect env vars from all realized recipes.
@@ -153,11 +237,14 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 		return fmt.Errorf("generating map viewer: %w", err)
 	}
 
-	// Update applied timestamp only after all runtime assets have been regenerated.
 	m.Realized.AppliedAt = time.Now().UTC().Format(time.RFC3339)
 
-	slog.Info("apply completed", "realized", len(m.Realized.Entries))
+	if len(downloadErrors) > 0 {
+		slog.Warn("apply completed with errors", "errors", len(downloadErrors), "realized", len(m.Realized.Entries))
+		return fmt.Errorf("%d item(s) failed", len(downloadErrors))
+	}
 
+	slog.Info("apply completed", "realized", len(m.Realized.Entries))
 	return nil
 }
 
@@ -188,10 +275,9 @@ func pmtilesLayers(entries []manifest.RealizedEntry) []mapview.Layer {
 	return layers
 }
 
-// hostPlatform returns the svalbard platform string for the current machine.
 func hostPlatform() string {
-	os := runtime.GOOS   // "darwin", "linux"
-	arch := runtime.GOARCH // "arm64", "amd64"
+	os := runtime.GOOS
+	arch := runtime.GOARCH
 	osName := os
 	if os == "darwin" {
 		osName = "macos"
@@ -204,18 +290,17 @@ func hostPlatform() string {
 }
 
 // downloadItem handles url/url_pattern recipes.
-func downloadItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry, error) {
+func downloadItem(root, id string, recipe catalog.Item, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
 	resolvedURL, err := resolver.Resolve(recipe.URL, recipe.URLPattern)
 	if err != nil {
 		return manifest.RealizedEntry{}, fmt.Errorf("resolving URL for %s: %w", id, err)
 	}
 	slog.Debug("resolved URL", "id", id, "url", resolvedURL)
-	return fetchAndRecord(root, id, recipe, resolvedURL)
+	return fetchAndRecord(root, id, recipe, resolvedURL, onProgress)
 }
 
 // downloadPlatformItems downloads platform-specific binaries for all target platforms.
-// If targetPlatforms is empty, falls back to the current host platform only.
-func downloadPlatformItems(root, id string, recipe catalog.Item, targetPlatforms []string) ([]manifest.RealizedEntry, error) {
+func downloadPlatformItems(root, id string, recipe catalog.Item, targetPlatforms []string, onProgress downloader.ProgressFunc) ([]manifest.RealizedEntry, error) {
 	targets := targetPlatforms
 	if len(targets) == 0 {
 		targets = hostPlatformCandidates()
@@ -223,12 +308,11 @@ func downloadPlatformItems(root, id string, recipe catalog.Item, targetPlatforms
 
 	var entries []manifest.RealizedEntry
 	for _, platform := range targets {
-		// Try the platform key directly, then alias conventions
 		candidates := platformCandidates(platform)
 		var downloaded bool
 		for _, candidate := range candidates {
 			if platformURL, ok := recipe.Platforms[candidate]; ok {
-				entry, err := fetchAndRecord(root, id, recipe, platformURL)
+				entry, err := fetchAndRecord(root, id, recipe, platformURL, onProgress)
 				if err != nil {
 					return nil, err
 				}
@@ -248,8 +332,6 @@ func downloadPlatformItems(root, id string, recipe catalog.Item, targetPlatforms
 	return entries, nil
 }
 
-// platformCandidates returns platform keys to try for a given target platform,
-// handling naming convention aliases (macos↔darwin, arm64↔aarch64).
 func platformCandidates(platform string) []string {
 	candidates := []string{platform}
 	parts := strings.SplitN(platform, "-", 2)
@@ -258,14 +340,12 @@ func platformCandidates(platform string) []string {
 	}
 	osName, archName := parts[0], parts[1]
 
-	// OS aliases
 	switch osName {
 	case "macos":
 		candidates = append(candidates, "darwin-"+archName)
 	case "darwin":
 		candidates = append(candidates, "macos-"+archName)
 	}
-	// Arch aliases
 	if archName == "arm64" {
 		candidates = append(candidates, osName+"-aarch64")
 	}
@@ -275,8 +355,6 @@ func platformCandidates(platform string) []string {
 	return candidates
 }
 
-// hostPlatformCandidates returns platform keys to try, in preference order.
-// Handles both naming conventions: "macos-arm64" and "darwin-arm64".
 func hostPlatformCandidates() []string {
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
@@ -289,7 +367,6 @@ func hostPlatformCandidates() []string {
 	if goos == "darwin" {
 		candidates = append(candidates, "macos-"+archName)
 	} else if goos == "linux" {
-		// Also try aarch64 alias for arm64
 		if goarch == "arm64" {
 			candidates = append(candidates, goos+"-aarch64")
 		}
@@ -306,7 +383,7 @@ func platformKeys(m map[string]string) []string {
 }
 
 // fetchAndRecord downloads a file and returns a RealizedEntry.
-func fetchAndRecord(root, id string, recipe catalog.Item, dlURL string) (manifest.RealizedEntry, error) {
+func fetchAndRecord(root, id string, recipe catalog.Item, dlURL string, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
 	typeDir := toolkit.TypeDirs[recipe.Type]
 	filename := recipe.Filename
 	if filename == "" {
@@ -314,7 +391,7 @@ func fetchAndRecord(root, id string, recipe catalog.Item, dlURL string) (manifes
 	}
 	destPath := filepath.Join(root, typeDir, filename)
 
-	result, err := downloader.Download(context.Background(), dlURL, destPath, "")
+	result, err := downloader.Download(context.Background(), dlURL, destPath, "", onProgress)
 	if err != nil {
 		return manifest.RealizedEntry{}, fmt.Errorf("downloading %s: %w", id, err)
 	}
@@ -352,11 +429,8 @@ func buildItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry, er
 
 	slog.Info("building via docker", "id", id, "family", family)
 
-	// Find the builder script path — embedded recipes include builders/
 	builderScript := fmt.Sprintf("recipes/builders/%s.py", strings.ReplaceAll(family, "-", "_"))
 
-	// Run the builder in the svalbard-tools container.
-	// Mount the vault root and the recipe builders.
 	args := []string{
 		"docker", "run", "--rm",
 		"-v", root + ":/vault",
@@ -366,15 +440,17 @@ func buildItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry, er
 		"--output", "/vault/" + filepath.Join(typeDir, filename),
 	}
 
-	// Pass build-specific args from the recipe.
-	// This is builder-family specific — for now pass the recipe ID.
-	// Individual builders parse their own args.
-
 	cmd := execCommand(args[0], args[1:]...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stderr
+	var outputBuf bytes.Buffer
+	cmd.Stderr = &outputBuf
+	cmd.Stdout = &outputBuf
 	if err := cmd.Run(); err != nil {
-		return manifest.RealizedEntry{}, fmt.Errorf("building %s: %w", id, err)
+		// Include first 200 chars of output for context.
+		detail := outputBuf.String()
+		if len(detail) > 200 {
+			detail = detail[:200] + "..."
+		}
+		return manifest.RealizedEntry{}, fmt.Errorf("building %s: %w\n%s", id, err, strings.TrimSpace(detail))
 	}
 
 	fileInfo, err := os.Stat(destPath)
@@ -395,15 +471,11 @@ func buildItem(root, id string, recipe catalog.Item) (manifest.RealizedEntry, er
 	}, nil
 }
 
-// execCommand is a variable for testing — defaults to exec.Command.
 var execCommand = exec.Command
 
-// filenameFromURL extracts the last path segment from a URL, stripping any
-// query string or fragment.
 func filenameFromURL(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		// Fallback: split on "/" and take the last segment.
 		parts := strings.Split(rawURL, "/")
 		return parts[len(parts)-1]
 	}

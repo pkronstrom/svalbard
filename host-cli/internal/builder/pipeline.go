@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -149,9 +150,14 @@ func stepExec(root, tool string, args []string, dockerImage string) error {
 
 	if toolPath != "" {
 		cmd := exec.Command(toolPath, args...)
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stderr
-		return cmd.Run()
+		var buf bytes.Buffer
+		cmd.Stderr = &buf
+		cmd.Stdout = &buf
+		if err := cmd.Run(); err != nil {
+			slog.Warn("exec failed", "tool", tool, "output", truncate(buf.String(), 200))
+			return err
+		}
+		return nil
 	}
 
 	// Docker fallback.
@@ -179,9 +185,14 @@ func stepExec(root, tool string, args []string, dockerImage string) error {
 	}
 	dockerArgs = append(dockerArgs, translated...)
 	cmd := exec.Command("docker", dockerArgs...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stderr
-	return cmd.Run()
+	var buf bytes.Buffer
+	cmd.Stderr = &buf
+	cmd.Stdout = &buf
+	if err := cmd.Run(); err != nil {
+		slog.Warn("docker exec failed", "tool", tool, "image", image, "output", truncate(buf.String(), 200))
+		return err
+	}
+	return nil
 }
 
 // stepVerify checks that a path exists and optionally validates size/contents.
@@ -258,4 +269,11 @@ func recordOutput(root string, recipe catalog.Item, typeDir, outputDir, outputFi
 	}
 
 	return manifest.RealizedEntry{}, fmt.Errorf("pipeline %s: no output produced at %s or %s", recipe.ID, outputDir, outputFile)
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

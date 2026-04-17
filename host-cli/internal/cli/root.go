@@ -514,9 +514,14 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return err
 		}
-		// Bridge apply.ProgressFunc to hosttui.ApplyEvent
-		progress := apply.ProgressFunc(func(id, status string) {
-			onProgress(hosttui.ApplyEvent{ID: id, Status: status})
+		progress := apply.ProgressFunc(func(ev apply.ProgressEvent) {
+			onProgress(hosttui.ApplyEvent{
+				ID:         ev.ID,
+				Status:     ev.Status,
+				Downloaded: ev.Downloaded,
+				Total:      ev.Total,
+				Error:      ev.Error,
+			})
 		})
 		return commands.ApplyVault(root, cat, progress)
 	}

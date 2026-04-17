@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
 	"os"
@@ -246,9 +247,11 @@ func (u uvRunner) run(args ...string) error {
 		dockerArgs = append(dockerArgs, translated...)
 		cmd = exec.Command("docker", dockerArgs...)
 	}
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stderr
+	var buf bytes.Buffer
+	cmd.Stderr = &buf
+	cmd.Stdout = &buf
 	if err := cmd.Run(); err != nil {
+		slog.Warn("uv exec failed", "args", args[:min(len(args), 3)], "output", truncate(buf.String(), 200))
 		return fmt.Errorf("uv %s: %w", strings.Join(args[:min(len(args), 3)], " "), err)
 	}
 	return nil
