@@ -55,6 +55,7 @@ var TypeDirs = map[string]string{
 	"pdf":            "books",
 	"epub":           "books",
 	"gguf":           "models",
+	"gguf-embed":     "models/embed",
 	"binary":         "bin",
 	"app":            "apps",
 	"dataset":        "data",
@@ -199,12 +200,6 @@ var typeDefaults = map[string]typeDefault{
 	"binary":  {Group: "tools", Subheader: "Tools"},
 }
 
-func isEmbeddingModel(filename string) bool {
-	base := strings.ToLower(filename)
-	return strings.Contains(base, "embed") || strings.Contains(base, "bge-") ||
-		strings.Contains(base, "e5-") || strings.Contains(base, "arctic-embed")
-}
-
 // driveState captures what content is on the drive for capability conditions.
 type driveState struct {
 	HasLibrary   bool
@@ -276,20 +271,13 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			state.HasMaps = true
 		case "gguf":
 			state.HasChat = true
-			if !isEmbeddingModel(e.Filename) {
-				hasChatModels = true
-			}
+			hasChatModels = true
 		case "toolchain":
 			state.HasToolchain = true
 		}
 
 		td, ok := typeDefaults[e.Type]
 		if !ok {
-			continue
-		}
-
-		// Filter embedding models.
-		if e.Type == "gguf" && isEmbeddingModel(e.Filename) {
 			continue
 		}
 

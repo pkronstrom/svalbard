@@ -1,5 +1,5 @@
 id: nomic-embed-text-v1.5
-type: gguf
+type: gguf-embed
 display_group: models
 tags: [embedding, search]
 depth: reference-only
