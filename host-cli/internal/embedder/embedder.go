@@ -12,7 +12,6 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -200,33 +199,17 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// FindEmbeddingModel looks for a nomic-embed model file in the models directory.
-func FindEmbeddingModel(root string) (string, error) {
-	modelDir := filepath.Join(root, "models")
-	entries, err := os.ReadDir(modelDir)
+// FindEmbeddingModel returns the path to the first .gguf file in models/embed/.
+func FindEmbeddingModel(driveRoot string) (string, error) {
+	embedDir := filepath.Join(driveRoot, "models", "embed")
+	matches, err := filepath.Glob(filepath.Join(embedDir, "*.gguf"))
 	if err != nil {
-		return "", fmt.Errorf("embedder: read models dir: %w", err)
+		return "", fmt.Errorf("embedder: glob models/embed: %w", err)
 	}
-
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := strings.ToLower(e.Name())
-		if strings.Contains(name, "nomic") && strings.Contains(name, "embed") {
-			return filepath.Join(modelDir, e.Name()), nil
+	for _, m := range matches {
+		if !strings.HasPrefix(filepath.Base(m), "._") {
+			return m, nil
 		}
 	}
-
-	// Fallback: any file with "embed" in the name
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		if strings.Contains(strings.ToLower(e.Name()), "embed") {
-			return filepath.Join(modelDir, e.Name()), nil
-		}
-	}
-
-	return "", fmt.Errorf("embedder: no embedding model found in %s", modelDir)
+	return "", fmt.Errorf("embedder: no embedding model found in %s", embedDir)
 }

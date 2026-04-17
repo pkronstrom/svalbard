@@ -259,18 +259,10 @@ func detectCapabilities(driveRoot, dbPath, sqliteBin string) (Capabilities, int,
 }
 
 func findEmbeddingModel(driveRoot string) string {
-	patterns := []string{
-		filepath.Join(driveRoot, "models", "*nomic*embed*"),
-		filepath.Join(driveRoot, "models", "*embed*"),
-		filepath.Join(driveRoot, "models", "*bge*"),
-	}
-	for _, pattern := range patterns {
-		matches, _ := filepath.Glob(pattern)
-		sort.Strings(matches)
-		for _, match := range matches {
-			if info, err := os.Stat(match); err == nil && !info.IsDir() {
-				return match
-			}
+	matches, _ := filepath.Glob(filepath.Join(driveRoot, "models", "embed", "*.gguf"))
+	for _, m := range matches {
+		if !strings.HasPrefix(filepath.Base(m), "._") {
+			return m
 		}
 	}
 	return ""

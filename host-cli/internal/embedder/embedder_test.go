@@ -2,6 +2,8 @@ package embedder
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -57,5 +59,39 @@ func TestParseEmbeddingNested(t *testing.T) {
 	}
 	if len(vec) != 2 {
 		t.Fatalf("len = %d", len(vec))
+	}
+}
+
+func TestFindEmbeddingModel(t *testing.T) {
+	dir := t.TempDir()
+	embedDir := filepath.Join(dir, "models", "embed")
+	os.MkdirAll(embedDir, 0o755)
+
+	// No model — should error.
+	_, err := FindEmbeddingModel(dir)
+	if err == nil {
+		t.Fatal("expected error when no model present")
+	}
+
+	// Add a model.
+	modelPath := filepath.Join(embedDir, "all-MiniLM-L6-v2-Q8_0.gguf")
+	os.WriteFile(modelPath, []byte("fake"), 0o644)
+
+	found, err := FindEmbeddingModel(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if found != modelPath {
+		t.Errorf("found = %q, want %q", found, modelPath)
+	}
+
+	// macOS resource fork files should be skipped.
+	dotPath := filepath.Join(embedDir, "._all-MiniLM-L6-v2-Q8_0.gguf")
+	os.WriteFile(dotPath, []byte("fake"), 0o644)
+	os.Remove(modelPath)
+
+	_, err = FindEmbeddingModel(dir)
+	if err == nil {
+		t.Fatal("expected error when only ._ file present")
 	}
 }
