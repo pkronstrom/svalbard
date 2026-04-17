@@ -591,7 +591,7 @@ func buildDriveRuntimeBinaries() (map[string]string, error) {
 			return nil, err
 		}
 
-		cmd := exec.Command("go", "build", "-o", outputPath, "./cmd/svalbard-drive")
+		cmd := exec.Command("go", "build", "-trimpath", "-o", outputPath, "./cmd/svalbard-drive")
 		cmd.Dir = driveRuntimeDir
 		cmd.Env = append(os.Environ(),
 			"GOOS="+target.goos,
