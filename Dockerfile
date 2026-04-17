@@ -70,10 +70,13 @@ COPY --from=go-builder /usr/local/bin/zim-compact /usr/local/bin/
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-RUN pip install --no-cache-dir \
+RUN apk add --no-cache --virtual .build-deps gcc g++ musl-dev python3-dev \
+    && pip install --no-cache-dir \
     libzim \
     nautiluszim \
+    warc2zim \
     yle-dl \
-    yt-dlp
+    yt-dlp \
+    && apk del .build-deps
 
 COPY recipes/builders/media-zim.py /usr/local/bin/build-media-zim.py
