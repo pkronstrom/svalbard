@@ -238,6 +238,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !ok {
 					return m, nil
 				}
+				if group.AutoActivate && len(group.Items) > 0 {
+					return m.activateItem(group.Items[0])
+				}
 				m.inGroup = true
 				m.activeGroup = group.ID
 				m.itemSelected = 0
@@ -248,39 +251,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
-			if builtin, err := item.Action.DecodeBuiltin(); err == nil && item.Action.Type == "builtin" && builtin.Name == "search" {
-				if err := m.openSearchSession(); err != nil {
-					m.lastErr = err
-					m.status = "Action failed"
-				}
-				return m, nil
-			}
-			resolved, err := m.runner.Resolve(item.Action)
-			if err != nil {
-				m.lastErr = err
-				m.status = "Action failed"
-				return m, nil
-			}
-			if resolved.Mode == actions.ModeCaptureOutput {
-				return m, func() tea.Msg {
-					err := resolved.Cmd.Run()
-					output := ""
-					if resolved.Cmd.Stdout != nil {
-						if buf, ok := resolved.Cmd.Stdout.(interface{ String() string }); ok {
-							output = buf.String()
-						}
-					}
-					if resolved.Cmd.Stderr != nil {
-						if buf, ok := resolved.Cmd.Stderr.(interface{ String() string }); ok {
-							output += buf.String()
-						}
-					}
-					return actionOutputMsg{output: output, err: err}
-				}
-			}
-			return m, tea.ExecProcess(resolved.Cmd, func(err error) tea.Msg {
-				return actionFinishedMsg{err: err}
-			})
+			return m.activateItem(item)
 		}
 	}
 
@@ -441,6 +412,44 @@ func limitSearchResults(results []search.Result) []search.Result {
 		return append([]search.Result(nil), results...)
 	}
 	return append([]search.Result(nil), results[:maxResults]...)
+}
+
+func (m Model) activateItem(item config.MenuItem) (tea.Model, tea.Cmd) {
+	if item.Action.Type == "builtin" {
+		if builtin, err := item.Action.DecodeBuiltin(); err == nil && builtin.Name == "search" {
+			if err := m.openSearchSession(); err != nil {
+				m.lastErr = err
+				m.status = "Action failed"
+			}
+			return m, nil
+		}
+	}
+	resolved, err := m.runner.Resolve(item.Action)
+	if err != nil {
+		m.lastErr = err
+		m.status = "Action failed"
+		return m, nil
+	}
+	if resolved.Mode == actions.ModeCaptureOutput {
+		return m, func() tea.Msg {
+			err := resolved.Cmd.Run()
+			output := ""
+			if resolved.Cmd.Stdout != nil {
+				if buf, ok := resolved.Cmd.Stdout.(interface{ String() string }); ok {
+					output = buf.String()
+				}
+			}
+			if resolved.Cmd.Stderr != nil {
+				if buf, ok := resolved.Cmd.Stderr.(interface{ String() string }); ok {
+					output += buf.String()
+				}
+			}
+			return actionOutputMsg{output: output, err: err}
+		}
+	}
+	return m, tea.ExecProcess(resolved.Cmd, func(err error) tea.Msg {
+		return actionFinishedMsg{err: err}
+	})
 }
 
 func (m Model) buildPaletteEntries() []tui.PaletteEntry {

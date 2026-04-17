@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
@@ -61,7 +62,9 @@ var TypeDirs = map[string]string{
 	"python-package": "runtime/python",
 }
 
-// runtimeConfig matches the drive-runtime RuntimeConfig JSON structure.
+// runtimeConfig mirrors drive-runtime/internal/config.RuntimeConfig.
+// These types are duplicated because host-cli and drive-runtime are separate
+// Go modules. Keep in sync with drive-runtime/internal/config/config.go.
 type runtimeConfig struct {
 	Version int         `json:"version"`
 	Preset  string      `json:"preset"`
@@ -69,11 +72,12 @@ type runtimeConfig struct {
 }
 
 type menuGroup struct {
-	ID          string     `json:"id"`
-	Label       string     `json:"label"`
-	Description string     `json:"description"`
-	Order       int        `json:"order"`
-	Items       []menuItem `json:"items"`
+	ID           string     `json:"id"`
+	Label        string     `json:"label"`
+	Description  string     `json:"description"`
+	Order        int        `json:"order"`
+	AutoActivate bool       `json:"auto_activate,omitempty"`
+	Items        []menuItem `json:"items"`
 }
 
 type menuItem struct {
@@ -121,23 +125,14 @@ func humanize(id string) string {
 	return strings.Join(words, " ")
 }
 
-// MenuMeta carries recipe menu metadata for a single manifest entry.
-type MenuMeta struct {
-	Group       string
-	Subheader   string
-	Label       string
-	Description string
-	Order       int
-}
-
 // GenerateOpts holds optional parameters for toolkit generation.
 type GenerateOpts struct {
 	// EnvVars maps environment variable names to drive-relative paths.
 	// Collected from recipe env fields and written into the activate script.
 	EnvVars map[string]string
 
-	// Menus maps entry IDs to menu metadata from the catalog.
-	Menus map[string]MenuMeta
+	// Menus maps entry IDs to recipe menu specs from the catalog.
+	Menus map[string]catalog.MenuSpec
 }
 
 // Generate creates the .svalbard/actions.json runtime config under root.
@@ -147,7 +142,7 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	if err := os.MkdirAll(filepath.Join(root, svalbardDir), 0o755); err != nil {
 		return err
 	}
-	var menus map[string]MenuMeta
+	var menus map[string]catalog.MenuSpec
 	if len(opts) > 0 && opts[0].Menus != nil {
 		menus = opts[0].Menus
 	}
@@ -172,17 +167,19 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 // ---------------------------------------------------------------------------
 
 type groupInfo struct {
-	Label       string
-	Description string
-	Order       int
+	Label        string
+	Description  string
+	Order        int
+	AutoActivate bool
 }
 
 var groupRegistry = map[string]groupInfo{
-	"library":  {"Library", "Browse offline archives and documents.", 200},
-	"maps":     {"Maps", "View offline map layers.", 300},
-	"local-ai": {"Local AI", "Chat with local models and launch AI clients.", 400},
-	"apps":     {"Apps", "Interactive offline applications.", 450},
-	"tools":    {"Tools", "Inspect the drive and launch bundled utilities.", 500},
+	"search":   {Label: "Search", Description: "Search across indexed archives and documents.", Order: 100, AutoActivate: true},
+	"library":  {Label: "Library", Description: "Browse offline archives and documents.", Order: 200},
+	"maps":     {Label: "Maps", Description: "View offline map layers.", Order: 300},
+	"local-ai": {Label: "Local AI", Description: "Chat with local models and launch AI clients.", Order: 400},
+	"apps":     {Label: "Apps", Description: "Interactive offline applications.", Order: 450},
+	"tools":    {Label: "Tools", Description: "Inspect the drive and launch bundled utilities.", Order: 500},
 }
 
 type typeDefault struct {
@@ -230,6 +227,10 @@ type builtinCapability struct {
 }
 
 var builtinCapabilities = []builtinCapability{
+	// Search
+	{ID: "search-all", Group: "search", Label: "Search all content",
+		Description: "Query the on-drive search index.", Order: 100, ActionID: "search",
+		Condition: func(s driveState) bool { return s.HasLibrary }},
 	// Sharing
 	{ID: "serve-all", Group: "tools", Subheader: "Sharing", Label: "Serve Everything",
 		Description: "Start all services at once.", Order: 300, ActionID: "serve-all",
@@ -257,13 +258,31 @@ var builtinCapabilities = []builtinCapability{
 // writeActionsConfig — spec-driven menu generation
 // ---------------------------------------------------------------------------
 
-func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string, menus map[string]MenuMeta) error {
+func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string, menus map[string]catalog.MenuSpec) error {
 	// Collect items per group.
 	grouped := make(map[string][]menuItem)
 	var state driveState
 	hasChatModels := false
 
 	for i, e := range entries {
+		// Track drive state before any continue — all entries contribute.
+		if e.ChecksumSHA256 != "" {
+			state.HasChecksums = true
+		}
+		switch e.Type {
+		case "zim":
+			state.HasLibrary = true
+		case "pmtiles":
+			state.HasMaps = true
+		case "gguf":
+			state.HasChat = true
+			if !isEmbeddingModel(e.Filename) {
+				hasChatModels = true
+			}
+		case "toolchain":
+			state.HasToolchain = true
+		}
+
 		td, ok := typeDefaults[e.Type]
 		if !ok {
 			continue
@@ -272,22 +291,6 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 		// Filter embedding models.
 		if e.Type == "gguf" && isEmbeddingModel(e.Filename) {
 			continue
-		}
-
-		// Track drive state for capability conditions.
-		switch e.Type {
-		case "zim":
-			state.HasLibrary = true
-		case "pmtiles":
-			state.HasMaps = true
-		case "gguf":
-			state.HasChat = true
-			hasChatModels = true
-		case "toolchain":
-			state.HasToolchain = true
-		}
-		if e.ChecksumSHA256 != "" {
-			state.HasChecksums = true
 		}
 
 		// Resolve menu metadata: recipe spec → type defaults → humanize.
@@ -355,16 +358,6 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 		})
 	}
 
-	// Also track checksums/toolchain from entries we skipped above (embedding models, etc.).
-	for _, e := range entries {
-		if e.ChecksumSHA256 != "" {
-			state.HasChecksums = true
-		}
-		if e.Type == "toolchain" {
-			state.HasToolchain = true
-		}
-	}
-
 	// Add default "Chat" item (no model arg, auto-selects) when chat models exist.
 	if hasChatModels {
 		grouped["local-ai"] = append([]menuItem{{
@@ -401,11 +394,12 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			info = groupInfo{Label: humanize(id), Description: "", Order: 999}
 		}
 		groups = append(groups, menuGroup{
-			ID:          id,
-			Label:       info.Label,
-			Description: info.Description,
-			Order:       info.Order,
-			Items:       items,
+			ID:           id,
+			Label:        info.Label,
+			Description:  info.Description,
+			Order:        info.Order,
+			AutoActivate: info.AutoActivate,
+			Items:        items,
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].Order < groups[j].Order })

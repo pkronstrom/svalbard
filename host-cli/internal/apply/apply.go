@@ -216,36 +216,24 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 		progress(ProgressEvent{ID: res.id, Status: tui.StatusDone})
 	}
 
-	// Collect env vars and menu metadata from all realized recipes.
+	// Collect env vars and menu specs from all realized recipes.
 	envVars := make(map[string]string)
-	menus := make(map[string]toolkit.MenuMeta)
+	menus := make(map[string]catalog.MenuSpec)
 	for _, e := range m.Realized.Entries {
 		if recipe, ok := cat.RecipeByID(e.ID); ok {
 			for k, v := range recipe.Env {
 				envVars[k] = v
 			}
-			meta := toolkit.MenuMeta{}
-			if recipe.Description != "" {
-				meta.Label = recipe.Description
-			}
 			if recipe.Menu != nil {
-				if recipe.Menu.Group != "" {
-					meta.Group = recipe.Menu.Group
+				spec := *recipe.Menu
+				// Use recipe description as label fallback when menu has no label.
+				if spec.Label == "" && recipe.Description != "" {
+					spec.Label = recipe.Description
 				}
-				if recipe.Menu.Subheader != "" {
-					meta.Subheader = recipe.Menu.Subheader
-				}
-				if recipe.Menu.Label != "" {
-					meta.Label = recipe.Menu.Label
-				}
-				if recipe.Menu.Description != "" {
-					meta.Description = recipe.Menu.Description
-				}
-				if recipe.Menu.Order != 0 {
-					meta.Order = recipe.Menu.Order
-				}
+				menus[e.ID] = spec
+			} else if recipe.Description != "" {
+				menus[e.ID] = catalog.MenuSpec{Label: recipe.Description}
 			}
-			menus[e.ID] = meta
 		}
 	}
 

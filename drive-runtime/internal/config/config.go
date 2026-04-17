@@ -13,11 +13,12 @@ type RuntimeConfig struct {
 }
 
 type MenuGroup struct {
-	ID          string     `json:"id"`
-	Label       string     `json:"label"`
-	Description string     `json:"description"`
-	Order       int        `json:"order"`
-	Items       []MenuItem `json:"items"`
+	ID           string     `json:"id"`
+	Label        string     `json:"label"`
+	Description  string     `json:"description"`
+	Order        int        `json:"order"`
+	AutoActivate bool       `json:"auto_activate,omitempty"`
+	Items        []MenuItem `json:"items"`
 }
 
 type MenuItem struct {
