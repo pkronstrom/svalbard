@@ -195,6 +195,23 @@ type uvRunner struct {
 	root  string // vault root (for Docker volume mount)
 }
 
+// toContainerPath translates a host absolute path under the vault root
+// to the corresponding /vault/... path inside the Docker container.
+// Non-vault paths are returned unchanged.
+func (u uvRunner) toContainerPath(hostPath string) string {
+	if strings.HasPrefix(hostPath, u.root+string(filepath.Separator)) {
+		rel, err := filepath.Rel(u.root, hostPath)
+		if err == nil {
+			return "/vault/" + filepath.ToSlash(rel)
+		}
+	}
+	// Also handle exact match (root itself).
+	if hostPath == u.root {
+		return "/vault"
+	}
+	return hostPath
+}
+
 // findUV locates uv: drive → PATH → Docker fallback.
 func findUV(root string) uvRunner {
 	platform := hostPlatformStr()
@@ -215,13 +232,18 @@ func (u uvRunner) run(args ...string) error {
 	if u.local != "" {
 		cmd = exec.Command(u.local, args...)
 	} else {
+		// Translate host paths under vault root to /vault/... for the container.
+		translated := make([]string, len(args))
+		for i, arg := range args {
+			translated[i] = u.toContainerPath(arg)
+		}
 		dockerArgs := []string{
 			"run", "--rm",
 			"-v", u.root + ":/vault",
 			DefaultDockerImage,
 			"uv",
 		}
-		dockerArgs = append(dockerArgs, args...)
+		dockerArgs = append(dockerArgs, translated...)
 		cmd = exec.Command("docker", dockerArgs...)
 	}
 	cmd.Stderr = os.Stderr

@@ -159,6 +159,17 @@ func stepExec(root, tool string, args []string, dockerImage string) error {
 	if dockerImage != "" {
 		image = dockerImage
 	}
+	// Translate host paths under vault root to /vault/... for the container.
+	translated := make([]string, len(args))
+	for i, arg := range args {
+		if strings.HasPrefix(arg, root+string(filepath.Separator)) {
+			if rel, err := filepath.Rel(root, arg); err == nil {
+				translated[i] = "/vault/" + filepath.ToSlash(rel)
+				continue
+			}
+		}
+		translated[i] = arg
+	}
 	slog.Info("exec via docker", "tool", tool, "image", image)
 	dockerArgs := []string{
 		"run", "--rm",
@@ -166,7 +177,7 @@ func stepExec(root, tool string, args []string, dockerImage string) error {
 		image,
 		tool,
 	}
-	dockerArgs = append(dockerArgs, args...)
+	dockerArgs = append(dockerArgs, translated...)
 	cmd := exec.Command("docker", dockerArgs...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stderr
