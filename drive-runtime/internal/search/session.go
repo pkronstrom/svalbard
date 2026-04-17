@@ -16,10 +16,11 @@ import (
 )
 
 type SessionInfo struct {
-	SourceCount     int
-	ArticleCount    int
-	BestMode        Mode
-	SemanticEnabled bool
+	SourceCount      int
+	ArticleCount     int
+	BestMode         Mode
+	SemanticEnabled  bool
+	EmbeddingModelID string
 }
 
 type SearchResponse struct {
@@ -63,6 +64,11 @@ func NewSession(driveRoot string, opener func(string) error) (*Session, error) {
 		return nil, err
 	}
 
+	// If embeddings were created with a specific model but that model isn't on the drive, disable semantic.
+	if caps.EmbeddingModelID != "" && caps.EmbeddingModel == "" {
+		caps.HasEmbeddingData = false
+	}
+
 	bestMode := BestMode(caps)
 	return &Session{
 		driveRoot: driveRoot,
@@ -70,10 +76,11 @@ func NewSession(driveRoot string, opener func(string) error) (*Session, error) {
 		sqliteBin: sqliteBin,
 		caps:      caps,
 		info: SessionInfo{
-			SourceCount:     sourceCount,
-			ArticleCount:    articleCount,
-			BestMode:        bestMode,
-			SemanticEnabled: bestMode == ModeSemantic,
+			SourceCount:      sourceCount,
+			ArticleCount:     articleCount,
+			BestMode:         bestMode,
+			SemanticEnabled:  bestMode == ModeSemantic,
+			EmbeddingModelID: caps.EmbeddingModelID,
 		},
 		opener:    opener,
 		embedPort: 8085,

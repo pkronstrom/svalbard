@@ -35,7 +35,8 @@ type Capabilities struct {
 	HasEmbeddings    bool
 	HasEmbeddingData bool
 	HasLlamaServer   bool
-	EmbeddingModel   string
+	EmbeddingModel   string // file path from models/embed/
+	EmbeddingModelID string // model ID from search.db meta
 }
 
 type Result struct {
@@ -233,13 +234,14 @@ func detectCapabilities(driveRoot, dbPath, sqliteBin string) (Capabilities, int,
 	sql := "SELECT count(*) FROM sources;" +
 		"SELECT count(*) FROM articles;" +
 		"SELECT count(*) FROM sqlite_master WHERE name='embeddings';" +
-		"SELECT CASE WHEN (SELECT count(*) FROM sqlite_master WHERE name='embeddings') > 0 THEN (SELECT count(*) FROM embeddings) ELSE 0 END;"
+		"SELECT CASE WHEN (SELECT count(*) FROM sqlite_master WHERE name='embeddings') > 0 THEN (SELECT count(*) FROM embeddings) ELSE 0 END;" +
+		"SELECT COALESCE((SELECT value FROM meta WHERE key='embedding_model'), '');"
 	out, err := runSQLite(sqliteBin, dbPath, sql)
 	if err != nil {
 		return caps, 0, 0, err
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) < 4 {
+	if len(lines) < 5 {
 		return caps, 0, 0, fmt.Errorf("unexpected sqlite output: %q", string(out))
 	}
 	sourceCount, _ := strconv.Atoi(strings.TrimSpace(lines[0]))
@@ -250,6 +252,7 @@ func detectCapabilities(driveRoot, dbPath, sqliteBin string) (Capabilities, int,
 		caps.HasEmbeddings = true
 		caps.HasEmbeddingData = embedCount > 0
 	}
+	caps.EmbeddingModelID = strings.TrimSpace(lines[4])
 
 	if _, err := drivebinary.Resolve("llama-server", driveRoot, platform.Detect); err == nil {
 		caps.HasLlamaServer = true
