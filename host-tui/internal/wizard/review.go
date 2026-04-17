@@ -28,6 +28,7 @@ type reviewModel struct {
 	vaultPath    string
 	items        []ReviewItem
 	freeGB       float64
+	cursor       int
 	scrollOffset int
 	width        int
 	height       int
@@ -35,24 +36,26 @@ type reviewModel struct {
 	keys         tui.KeyMap
 }
 
-// newReviewModel creates a reviewModel with the given vault path, items, and free space.
 func newReviewModel(vaultPath string, items []ReviewItem, freeGB float64) reviewModel {
+	// Sort items by type then ID for consistent display
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Type != items[j].Type {
+			return items[i].Type < items[j].Type
+		}
+		return items[i].ID < items[j].ID
+	})
+
 	return reviewModel{
-		vaultPath:    vaultPath,
-		items:        items,
-		freeGB:       freeGB,
-		scrollOffset: 0,
-		theme:        tui.DefaultTheme(),
-		keys:         tui.DefaultKeyMap(),
+		vaultPath: vaultPath,
+		items:     items,
+		freeGB:    freeGB,
+		theme:     tui.DefaultTheme(),
+		keys:      tui.DefaultKeyMap(),
 	}
 }
 
-// Init satisfies tea.Model. No initial command is needed.
-func (m reviewModel) Init() tea.Cmd {
-	return nil
-}
+func (m reviewModel) Init() tea.Cmd { return nil }
 
-// Update handles messages for the review model.
 func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -64,88 +67,118 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case m.keys.ForceQuit.Matches(msg):
 			return m, tea.Quit
-
 		case m.keys.Enter.Matches(msg):
 			return m, func() tea.Msg { return reviewConfirmMsg{} }
-
 		case m.keys.Back.Matches(msg):
 			return m, func() tea.Msg { return reviewBackMsg{} }
-
 		case m.keys.MoveDown.Matches(msg):
-			maxOffset := m.maxScrollOffset()
-			if m.scrollOffset < maxOffset {
-				m.scrollOffset++
+			if m.cursor < len(m.items)-1 {
+				m.cursor++
+				m.ensureVisible()
 			}
 			return m, nil
-
 		case m.keys.MoveUp.Matches(msg):
-			if m.scrollOffset > 0 {
-				m.scrollOffset--
+			if m.cursor > 0 {
+				m.cursor--
+				m.ensureVisible()
 			}
 			return m, nil
 		}
 	}
-
 	return m, nil
 }
 
-// View renders the review screen.
+func (m reviewModel) maxVisible() int {
+	// Shell chrome(4) + header(3) + detail(4) + footer(2) = 13
+	avail := m.height - 13
+	if avail < 3 {
+		avail = 3
+	}
+	return avail
+}
+
+func (m *reviewModel) ensureVisible() {
+	maxVis := m.maxVisible()
+	if m.cursor < m.scrollOffset {
+		m.scrollOffset = m.cursor
+	}
+	if m.cursor >= m.scrollOffset+maxVis {
+		m.scrollOffset = m.cursor - maxVis + 1
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+}
+
 func (m reviewModel) View() string {
 	var b strings.Builder
 
-	// Header: target and summary
+	// Header
 	totalGB := m.totalSizeGB()
 	b.WriteString(fmt.Sprintf("  Target: %s\n", m.vaultPath))
-	b.WriteString(fmt.Sprintf("  Items:  %d sources, %.1f GB / %.0f GB free\n", len(m.items), totalGB, m.freeGB))
+	b.WriteString(fmt.Sprintf("  Items:  %d sources, %s", len(m.items), formatSizeGB(totalGB)))
+	if m.freeGB > 0 {
+		b.WriteString(fmt.Sprintf(" / %s free", formatSizeGB(m.freeGB)))
+	}
+	b.WriteString("\n\n")
+
+	// Scrollable item list — one line per item: symbol + ID + size
+	maxVis := m.maxVisible()
+	endIdx := m.scrollOffset + maxVis
+	if endIdx > len(m.items) {
+		endIdx = len(m.items)
+	}
+
+	if m.scrollOffset > 0 {
+		b.WriteString(m.theme.Muted.Render("  ↑ more"))
+		b.WriteString("\n")
+	}
+
+	for i := m.scrollOffset; i < endIdx; i++ {
+		item := m.items[i]
+		isCursor := i == m.cursor
+
+		prefix := "  "
+		if isCursor {
+			prefix = "> "
+		}
+
+		sym := typeSymbol(item.Type)
+		line := fmt.Sprintf("  %s%s %s  %s", prefix, sym, item.ID, formatSizeGB(item.SizeGB))
+
+		if isCursor {
+			b.WriteString(m.theme.Selected.Render(line))
+		} else {
+			b.WriteString(m.theme.Base.Render(line))
+		}
+		b.WriteString("\n")
+	}
+
+	if endIdx < len(m.items) {
+		b.WriteString(m.theme.Muted.Render("  ↓ more"))
+		b.WriteString("\n")
+	}
+
+	// Detail area for selected item
 	b.WriteString("\n")
-
-	// Group items by type
-	groups := m.groupByType()
-	keys := sortedKeys(groups)
-
-	// Build all item lines
-	var lines []string
-	for _, key := range keys {
-		for _, item := range groups[key] {
-			line := fmt.Sprintf("  %-20s %-10s %8s  %s",
-				item.ID,
-				strings.ToUpper(item.Type),
-				formatSizeGB(item.SizeGB),
-				item.Description,
-			)
-			lines = append(lines, line)
+	b.WriteString(m.theme.Muted.Render("  ─────────────────────────────────"))
+	b.WriteString("\n")
+	if m.cursor >= 0 && m.cursor < len(m.items) {
+		item := m.items[m.cursor]
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s %s · %s · %s", typeSymbol(item.Type), item.ID, item.Type, formatSizeGB(item.SizeGB))))
+		if item.Description != "" {
+			b.WriteString("\n")
+			b.WriteString(m.theme.Muted.Render("  " + item.Description))
 		}
 	}
-
-	// Apply scrolling
-	visibleLines := m.visibleLineCount()
-	start := m.scrollOffset
-	if start > len(lines) {
-		start = len(lines)
-	}
-	end := start + visibleLines
-	if end > len(lines) {
-		end = len(lines)
-	}
-
-	for _, line := range lines[start:end] {
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-
-	if len(lines) > visibleLines && m.scrollOffset < m.maxScrollOffset() {
-		b.WriteString(m.theme.Muted.Render("  ... scroll for more"))
-		b.WriteString("\n")
-	}
+	b.WriteString("\n\n")
 
 	// Footer
-	b.WriteString("\n")
-	b.WriteString(m.theme.Muted.Render("  Enter to confirm  |  Esc to go back"))
+	b.WriteString(m.theme.Help.Render("  Enter: confirm  |  Esc: go back  |  j/k: scroll"))
 
 	return b.String()
 }
 
-// totalSizeGB returns the sum of all item sizes.
 func (m reviewModel) totalSizeGB() float64 {
 	var total float64
 	for _, item := range m.items {
@@ -153,63 +186,3 @@ func (m reviewModel) totalSizeGB() float64 {
 	}
 	return total
 }
-
-// groupByType groups items by their Type field.
-func (m reviewModel) groupByType() map[string][]ReviewItem {
-	groups := make(map[string][]ReviewItem)
-	for _, item := range m.items {
-		groups[item.Type] = append(groups[item.Type], item)
-	}
-	// Sort items within each group alphabetically by ID
-	for key := range groups {
-		sort.Slice(groups[key], func(i, j int) bool {
-			return groups[key][i].ID < groups[key][j].ID
-		})
-	}
-	return groups
-}
-
-// visibleLineCount returns the number of item lines that fit in the viewport.
-// Reserves space for header (3 lines), footer (2 lines), and scroll hint (1 line).
-func (m reviewModel) visibleLineCount() int {
-	if m.height <= 0 {
-		return 20 // sensible default when height is unknown
-	}
-	available := m.height - 6 // 3 header + 2 footer + 1 buffer
-	if available < 1 {
-		return 1
-	}
-	return available
-}
-
-// maxScrollOffset returns the maximum scroll offset based on item count and visible lines.
-func (m reviewModel) maxScrollOffset() int {
-	totalLines := m.totalItemLines()
-	visible := m.visibleLineCount()
-	if totalLines <= visible {
-		return 0
-	}
-	return totalLines - visible
-}
-
-// totalItemLines returns the total number of rendered item lines.
-func (m reviewModel) totalItemLines() int {
-	groups := m.groupByType()
-	count := 0
-	for _, items := range groups {
-		count += len(items)
-	}
-	return count
-}
-
-// sortedKeys returns the sorted keys of a map[string][]ReviewItem.
-func sortedKeys(m map[string][]ReviewItem) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// formatSizeGB is defined in presetpicker.go

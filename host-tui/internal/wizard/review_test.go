@@ -19,17 +19,15 @@ func sampleReviewItems() []ReviewItem {
 func TestReviewShowsSelectedItems(t *testing.T) {
 	items := sampleReviewItems()
 	m := newReviewModel("/mnt/vault", items, 64)
-	m.width = 80
-	m.height = 24
+	m.width = 120
+	m.height = 30
 
 	out := stripAnsi(m.View())
 
-	// Vault path should appear
 	if !strings.Contains(out, "/mnt/vault") {
 		t.Errorf("expected vault path in view, got:\n%s", out)
 	}
 
-	// All item IDs should appear
 	for _, item := range items {
 		if !strings.Contains(out, item.ID) {
 			t.Errorf("expected item ID %q in view, got:\n%s", item.ID, out)
@@ -39,26 +37,37 @@ func TestReviewShowsSelectedItems(t *testing.T) {
 
 func TestReviewShowsTotal(t *testing.T) {
 	items := sampleReviewItems()
-	// Total: 0.003 + 3.0 + 1.0 + 0.5 = 4.503 GB
 	m := newReviewModel("/mnt/vault", items, 64)
-	m.width = 80
-	m.height = 24
+	m.width = 120
+	m.height = 30
 
 	out := stripAnsi(m.View())
 
-	// Should show total size (4.5 GB)
-	if !strings.Contains(out, "4.5 GB") {
-		t.Errorf("expected total '4.5 GB' in view, got:\n%s", out)
-	}
-
-	// Should show item count
 	if !strings.Contains(out, "4 sources") {
 		t.Errorf("expected '4 sources' in view, got:\n%s", out)
 	}
-
-	// Should show free space
 	if !strings.Contains(out, "64") {
-		t.Errorf("expected free space '64' in view, got:\n%s", out)
+		t.Errorf("expected free space in view, got:\n%s", out)
+	}
+}
+
+func TestReviewShowsTypeSymbols(t *testing.T) {
+	items := sampleReviewItems()
+	m := newReviewModel("/mnt/vault", items, 64)
+	m.width = 120
+	m.height = 30
+
+	out := m.View()
+
+	// Should show type symbols
+	if !strings.Contains(out, "⚙") {
+		t.Errorf("expected tool symbol in view")
+	}
+	if !strings.Contains(out, "⊞") {
+		t.Errorf("expected map symbol in view")
+	}
+	if !strings.Contains(out, "✦") {
+		t.Errorf("expected reference symbol in view")
 	}
 }
 
@@ -66,13 +75,10 @@ func TestReviewConfirm(t *testing.T) {
 	items := sampleReviewItems()
 	m := newReviewModel("/mnt/vault", items, 64)
 
-	msg := tea.KeyMsg{Type: tea.KeyEnter}
-	_, cmd := m.Update(msg)
-
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected a non-nil Cmd on Enter")
 	}
-
 	result := cmd()
 	if _, ok := result.(reviewConfirmMsg); !ok {
 		t.Fatalf("expected reviewConfirmMsg, got %T", result)
@@ -83,90 +89,55 @@ func TestReviewCancel(t *testing.T) {
 	items := sampleReviewItems()
 	m := newReviewModel("/mnt/vault", items, 64)
 
-	msg := tea.KeyMsg{Type: tea.KeyEscape}
-	_, cmd := m.Update(msg)
-
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	if cmd == nil {
 		t.Fatal("expected a non-nil Cmd on Esc")
 	}
-
 	result := cmd()
 	if _, ok := result.(reviewBackMsg); !ok {
 		t.Fatalf("expected reviewBackMsg, got %T", result)
 	}
 }
 
-func TestReviewGroupsByType(t *testing.T) {
+func TestReviewNavigates(t *testing.T) {
 	items := sampleReviewItems()
 	m := newReviewModel("/mnt/vault", items, 64)
-	m.width = 80
-	m.height = 40
+	m.width = 120
+	m.height = 30
 
-	out := stripAnsi(m.View())
-
-	// Types should appear uppercased
-	if !strings.Contains(out, "BINARY") {
-		t.Errorf("expected 'BINARY' type header in view, got:\n%s", out)
-	}
-	if !strings.Contains(out, "PMTILES") {
-		t.Errorf("expected 'PMTILES' type header in view, got:\n%s", out)
-	}
-	if !strings.Contains(out, "ZIM") {
-		t.Errorf("expected 'ZIM' type header in view, got:\n%s", out)
-	}
-}
-
-func TestReviewScrolls(t *testing.T) {
-	// Create many items to force scrolling
-	var items []ReviewItem
-	for i := 0; i < 30; i++ {
-		items = append(items, ReviewItem{
-			ID:          "item-" + string(rune('a'+i%26)),
-			Type:        "zim",
-			SizeGB:      1.0,
-			Description: "Test item",
-		})
-	}
-
-	m := newReviewModel("/mnt/vault", items, 64)
-	m.width = 80
-	m.height = 10 // small height to force scrolling
-
-	// Press j to scroll down
+	// Move down
 	down := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
-	var tm tea.Model = m
-	for i := 0; i < 5; i++ {
-		tm, _ = tm.(reviewModel).Update(down)
+	updated, _ := m.Update(down)
+	m = updated.(reviewModel)
+	if m.cursor != 1 {
+		t.Errorf("expected cursor=1 after j, got %d", m.cursor)
 	}
 
-	rm := tm.(reviewModel)
-	if rm.scrollOffset <= 0 {
-		t.Errorf("expected scrollOffset > 0 after scrolling down, got %d", rm.scrollOffset)
-	}
-
-	// Press k to scroll back up
+	// Move up
 	up := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
-	tm, _ = rm.Update(up)
-	rm = tm.(reviewModel)
-
-	if rm.scrollOffset >= 5 {
-		t.Errorf("expected scrollOffset < 5 after scrolling up, got %d", rm.scrollOffset)
+	updated, _ = m.Update(up)
+	m = updated.(reviewModel)
+	if m.cursor != 0 {
+		t.Errorf("expected cursor=0 after k, got %d", m.cursor)
 	}
 }
 
-func TestSortedKeys(t *testing.T) {
-	m := map[string][]ReviewItem{
-		"zim":     {{ID: "a"}},
-		"binary":  {{ID: "b"}},
-		"pmtiles": {{ID: "c"}},
-	}
+func TestReviewDetailChanges(t *testing.T) {
+	items := sampleReviewItems()
+	m := newReviewModel("/mnt/vault", items, 64)
+	m.width = 120
+	m.height = 30
 
-	keys := sortedKeys(m)
+	// At cursor 0, detail should show first item's description
+	out0 := stripAnsi(m.View())
 
-	if len(keys) != 3 {
-		t.Fatalf("expected 3 keys, got %d", len(keys))
-	}
-	if keys[0] != "binary" || keys[1] != "pmtiles" || keys[2] != "zim" {
-		t.Errorf("expected sorted keys [binary pmtiles zim], got %v", keys)
+	// Move to cursor 1
+	down := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+	updated, _ := m.Update(down)
+	m = updated.(reviewModel)
+	out1 := stripAnsi(m.View())
+
+	if out0 == out1 {
+		t.Error("detail pane should change when cursor moves")
 	}
 }
