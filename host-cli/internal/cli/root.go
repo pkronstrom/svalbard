@@ -180,32 +180,38 @@ func NewRootCommand() *cobra.Command {
 }
 
 func newInitCommand() *cobra.Command {
-	var preset string
-
 	cmd := &cobra.Command{
 		Use:   "init [path]",
-		Short: "Initialize a new vault from a preset",
+		Short: "Open the guided vault setup wizard",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target := "."
+			prefill := ""
 			if len(args) > 0 {
-				target = args[0]
-			}
-			target, err := filepath.Abs(target)
-			if err != nil {
-				return fmt.Errorf("resolving path: %w", err)
-			}
-
-			cat, err := catalog.LoadCatalog()
-			if err != nil {
-				return fmt.Errorf("loading catalog: %w", err)
+				abs, err := filepath.Abs(args[0])
+				if err != nil {
+					return fmt.Errorf("resolving path: %w", err)
+				}
+				prefill = abs
 			}
 
-			return commands.InitVault(target, preset, cat)
+			config, err := buildWizardConfig(prefill)
+			if err != nil {
+				return fmt.Errorf("preparing wizard: %w", err)
+			}
+			deps := buildDashboardDeps("", &config)
+			config.InitVault = deps.InitVault
+			if deps.RunApply != nil && deps.RebuildForVault != nil {
+				rebuildForVault := deps.RebuildForVault
+				config.RunApply = func(vaultPath string, onProgress func(hosttui.WizardApplyEvent)) error {
+					newDeps := rebuildForVault(vaultPath)
+					return newDeps.RunApply(context.Background(), func(ev hosttui.ApplyEvent) {
+						onProgress(hosttui.WizardApplyEvent{ID: ev.ID, Status: ev.Status, Error: ev.Error})
+					})
+				}
+			}
+			return hosttui.RunInitWizard(config)
 		},
 	}
-
-	cmd.Flags().StringVar(&preset, "preset", "default-32", "preset to seed the vault with")
 
 	return cmd
 }

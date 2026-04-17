@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
+	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
@@ -32,10 +34,12 @@ func TestFullCLIContractEndToEnd(t *testing.T) {
 
 	root := t.TempDir()
 
-	// 1. INIT -- creates vault with preset
-	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"init", root, "--preset", "default-32"})
-	if err := cmd.Execute(); err != nil {
+	// 1. INIT -- creates vault with preset (direct call; CLI init is now the TUI wizard)
+	cat, err := catalog.LoadCatalog()
+	if err != nil {
+		t.Fatalf("loading catalog: %v", err)
+	}
+	if err := commands.InitVault(root, "default-32", cat); err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
 	// Verify manifest.yaml exists
@@ -45,7 +49,7 @@ func TestFullCLIContractEndToEnd(t *testing.T) {
 	}
 
 	// 2. ADD -- add an item to desired state
-	cmd = NewRootCommand()
+	cmd := NewRootCommand()
 	cmd.SetArgs([]string{"add", "extra-item", "--vault", root})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("add failed: %v", err)
