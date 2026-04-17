@@ -28,12 +28,11 @@ type SelectMsg struct {
 
 // Model is the Bubble Tea model for the welcome / no-vault-found screen.
 type Model struct {
-	selected  int
-	width     int
-	height    int
-	theme     tui.Theme
-	keys      tui.KeyMap
-	statusMsg string // transient feedback message
+	selected int
+	width    int
+	height   int
+	theme    tui.Theme
+	keys     tui.KeyMap
 }
 
 // New creates a welcome Model with the default theme and key map.
@@ -68,24 +67,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.keys.MoveDown.Matches(msg):
 			if m.selected < len(welcomeDestinations)-1 {
 				m.selected++
-				m.statusMsg = ""
-			}
+				}
 			return m, nil
 		case m.keys.MoveUp.Matches(msg):
 			if m.selected > 0 {
 				m.selected--
-				m.statusMsg = ""
-			}
+				}
 			return m, nil
 		case m.keys.Enter.Matches(msg):
 			dest := welcomeDestinations[m.selected]
-			switch dest.id {
-			case "new-vault":
-				return m, func() tea.Msg { return SelectMsg{ID: dest.id} }
-			default:
-				m.statusMsg = dest.label + ": not yet implemented"
-				return m, nil
-			}
+			return m, func() tea.Msg { return SelectMsg{ID: dest.id} }
 		default:
 			if idx, ok := tui.NumberKeyIndex(msg, len(welcomeDestinations)); ok {
 				m.selected = idx
@@ -116,14 +107,10 @@ func (m Model) View() string {
 		ShowNumbers: true,
 	}
 
-	body := "No vault found in the current directory.\nCreate a new vault or open an existing one to get started."
-	if m.statusMsg != "" {
-		body = m.statusMsg
-	}
 	detail := tui.DetailPane{
 		Theme: m.theme,
 		Title: "Welcome",
-		Body:  body,
+		Body:  "No vault found in the current directory.\nCreate a new vault or open an existing one to get started.",
 	}
 
 	footer := tui.FooterHints(

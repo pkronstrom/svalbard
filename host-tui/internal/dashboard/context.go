@@ -37,9 +37,5 @@ func contextForDestination(id string, m Model) tui.DetailPane {
 		base.Body = "Launch the init wizard to create a new vault.\nChoose a path, pick a preset, customize content,\nand confirm."
 	}
 
-	if m.statusMsg != "" {
-		base.Body = m.statusMsg
-	}
-
 	return base
 }

@@ -2,20 +2,25 @@
 package hosttui
 
 import (
+	"context"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/pkronstrom/svalbard/host-tui/internal/browse"
 	"github.com/pkronstrom/svalbard/host-tui/internal/dashboard"
+	"github.com/pkronstrom/svalbard/host-tui/internal/importscreen"
+	"github.com/pkronstrom/svalbard/host-tui/internal/index"
+	"github.com/pkronstrom/svalbard/host-tui/internal/openvault"
+	"github.com/pkronstrom/svalbard/host-tui/internal/plan"
 	"github.com/pkronstrom/svalbard/host-tui/internal/vault"
 	"github.com/pkronstrom/svalbard/host-tui/internal/welcome"
 	"github.com/pkronstrom/svalbard/host-tui/internal/wizard"
 )
 
 // RunInteractive launches the appropriate TUI screen based on vault resolution:
-// vault found → dashboard, no vault → welcome screen (which can transition to wizard).
-// The wizardConfig is used when the user triggers the init wizard from the welcome screen.
-func RunInteractive(wizardConfig *WizardConfig) error {
+// vault found → dashboard, no vault → welcome screen.
+func RunInteractive(wizardConfig *WizardConfig, deps *DashboardDeps) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -23,9 +28,9 @@ func RunInteractive(wizardConfig *WizardConfig) error {
 
 	vaultPath, err := vault.Resolve(cwd)
 	if err != nil {
-		return runApp(newAppModel(nil, wizardConfig))
+		return runApp(newAppModel(nil, wizardConfig, deps))
 	}
-	return runApp(newAppModel(&vaultPath, wizardConfig))
+	return runApp(newAppModel(&vaultPath, wizardConfig, deps))
 }
 
 // RunInitWizard launches the init wizard TUI with the given config.
@@ -46,31 +51,45 @@ const (
 	screenWelcome screen = iota
 	screenDashboard
 	screenWizard
+	screenBrowse
+	screenPlan
+	screenImport
+	screenIndex
+	screenOpenVault
 )
 
 // appModel is a top-level Bubble Tea model that manages screen transitions.
 type appModel struct {
 	screen       screen
-	prevScreen   screen // where to return when wizard emits BackMsg
-	welcome      welcome.Model
-	dashboard    dashboard.Model
-	wizard       wizard.Model
-	wizardConfig *WizardConfig // stored for welcome→wizard transition
+	prevScreen   screen // where to return when wizard/sub-screen emits BackMsg
+	vaultPath    string
+	deps         *DashboardDeps
+	wizardConfig *WizardConfig
+
+	welcome   welcome.Model
+	dashboard dashboard.Model
+	wizard    wizard.Model
+	browse    browse.Model
+	planScr   plan.Model
+	importScr importscreen.Model
+	indexScr  index.Model
+	openVault openvault.Model
 }
 
-func newAppModel(vaultPath *string, wizardConfig *WizardConfig) *appModel {
-	if vaultPath != nil {
-		return &appModel{
-			screen:       screenDashboard,
-			dashboard:    dashboard.New(*vaultPath),
-			wizardConfig: wizardConfig,
-		}
-	}
-	return &appModel{
-		screen:       screenWelcome,
-		welcome:      welcome.New(),
+func newAppModel(vaultPath *string, wizardConfig *WizardConfig, deps *DashboardDeps) *appModel {
+	m := &appModel{
 		wizardConfig: wizardConfig,
+		deps:         deps,
 	}
+	if vaultPath != nil {
+		m.screen = screenDashboard
+		m.vaultPath = *vaultPath
+		m.dashboard = dashboard.New(*vaultPath)
+	} else {
+		m.screen = screenWelcome
+		m.welcome = welcome.New()
+	}
+	return m
 }
 
 func (m *appModel) Init() tea.Cmd {
@@ -87,45 +106,107 @@ func (m *appModel) Init() tea.Cmd {
 
 func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	// --- Welcome screen messages ---
 	case welcome.SelectMsg:
-		config := m.defaultWizardConfig()
 		switch msg.ID {
 		case "new-vault":
 			m.prevScreen = screenWelcome
 			m.screen = screenWizard
-			m.wizard = wizard.New(config)
+			m.wizard = wizard.New(m.defaultWizardConfig())
 			return m, nil
 		case "open-vault":
-			// TODO: implement open vault screen
+			m.screen = screenOpenVault
+			m.openVault = openvault.New()
 			return m, nil
 		case "browse":
-			// TODO: implement read-only catalog browse
+			m.screen = screenBrowse
+			m.browse = m.newBrowse(true) // read-only
 			return m, nil
 		}
 
+	// --- Dashboard messages ---
 	case dashboard.NewVaultMsg:
-		config := m.defaultWizardConfig()
 		m.prevScreen = screenDashboard
 		m.screen = screenWizard
-		m.wizard = wizard.New(config)
+		m.wizard = wizard.New(m.defaultWizardConfig())
 		return m, nil
 
+	case dashboard.SelectMsg:
+		switch msg.ID {
+		case "browse":
+			m.screen = screenBrowse
+			m.browse = m.newBrowse(false)
+			return m, nil
+		case "plan":
+			m.screen = screenPlan
+			m.planScr = m.newPlan()
+			return m, m.planScr.Init()
+		case "import":
+			m.screen = screenImport
+			m.importScr = m.newImport()
+			return m, nil
+		case "index":
+			m.screen = screenIndex
+			m.indexScr = m.newIndex()
+			return m, nil
+		}
+
+	// --- Wizard messages ---
 	case wizard.BackMsg:
 		m.screen = m.prevScreen
-		switch m.prevScreen {
-		case screenDashboard:
-			// dashboard is already initialized, just return to it
-		default:
+		if m.prevScreen != screenDashboard {
 			m.screen = screenWelcome
 			m.welcome = welcome.New()
 		}
 		return m, nil
 
 	case wizard.DoneMsg:
-		// Wizard completed — exit TUI. Caller handles init + apply.
 		return m, tea.Quit
+
+	// --- Browse messages ---
+	case browse.BackMsg:
+		m.screen = screenDashboard
+		return m, nil
+
+	case browse.SavedMsg:
+		m.screen = screenDashboard
+		return m, nil
+
+	// --- Plan messages ---
+	case plan.BackMsg:
+		m.screen = screenDashboard
+		return m, nil
+
+	case plan.BrowseMsg:
+		m.screen = screenBrowse
+		m.browse = m.newBrowse(false)
+		return m, nil
+
+	// --- Import messages ---
+	case importscreen.BackMsg:
+		m.screen = screenDashboard
+		return m, nil
+
+	// --- Index messages ---
+	case index.BackMsg:
+		m.screen = screenDashboard
+		return m, nil
+
+	// --- Open Vault messages ---
+	case openvault.DoneMsg:
+		m.vaultPath = msg.Path
+		m.screen = screenDashboard
+		m.dashboard = dashboard.New(msg.Path)
+		return m, nil
+
+	case openvault.BackMsg:
+		m.screen = screenWelcome
+		m.welcome = welcome.New()
+		return m, nil
 	}
 
+	// Forward to active screen
 	switch m.screen {
 	case screenWelcome:
 		updated, cmd := m.welcome.Update(msg)
@@ -139,6 +220,26 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated, cmd := m.wizard.Update(msg)
 		m.wizard = updated.(wizard.Model)
 		return m, cmd
+	case screenBrowse:
+		updated, cmd := m.browse.Update(msg)
+		m.browse = updated.(browse.Model)
+		return m, cmd
+	case screenPlan:
+		updated, cmd := m.planScr.Update(msg)
+		m.planScr = updated.(plan.Model)
+		return m, cmd
+	case screenImport:
+		updated, cmd := m.importScr.Update(msg)
+		m.importScr = updated.(importscreen.Model)
+		return m, cmd
+	case screenIndex:
+		updated, cmd := m.indexScr.Update(msg)
+		m.indexScr = updated.(index.Model)
+		return m, cmd
+	case screenOpenVault:
+		updated, cmd := m.openVault.Update(msg)
+		m.openVault = updated.(openvault.Model)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -151,6 +252,16 @@ func (m *appModel) View() string {
 		return m.dashboard.View()
 	case screenWizard:
 		return m.wizard.View()
+	case screenBrowse:
+		return m.browse.View()
+	case screenPlan:
+		return m.planScr.View()
+	case screenImport:
+		return m.importScr.View()
+	case screenIndex:
+		return m.indexScr.View()
+	case screenOpenVault:
+		return m.openVault.View()
 	}
 	return ""
 }
@@ -160,4 +271,104 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 		return *m.wizardConfig
 	}
 	return WizardConfig{}
+}
+
+// newBrowse creates a browse.Model from the current deps and vault state.
+func (m *appModel) newBrowse(readOnly bool) browse.Model {
+	cfg := browse.Config{}
+	if m.deps != nil {
+		cfg.PackGroups = m.deps.PackGroups
+		cfg.Presets = m.deps.Presets
+		if !readOnly && m.deps.LoadStatus != nil {
+			if status, err := m.deps.LoadStatus(); err == nil {
+				cfg.FreeGB = status.DiskFreeGB
+			}
+		}
+		if !readOnly && m.deps.LoadStatus != nil {
+			if status, err := m.deps.LoadStatus(); err == nil {
+				cfg.DesiredItems = make([]string, 0, status.DesiredCount)
+			}
+		}
+		// Load actual desired item IDs from the save callback's inverse
+		// The actual desired items need to come from LoadStatus or a separate call.
+		// For now, use what we have.
+		if !readOnly {
+			cfg.SaveDesired = m.deps.SaveDesiredItems
+		}
+	}
+	return browse.New(cfg)
+}
+
+// newPlan creates a plan.Model from the current deps.
+func (m *appModel) newPlan() plan.Model {
+	cfg := plan.Config{}
+	if m.deps != nil && m.deps.LoadPlan != nil {
+		if summary, err := m.deps.LoadPlan(); err == nil {
+			cfg.DownloadGB = summary.DownloadGB
+			cfg.RemoveGB = summary.RemoveGB
+			cfg.FreeAfterGB = summary.FreeAfterGB
+			for _, item := range summary.ToDownload {
+				cfg.Items = append(cfg.Items, plan.PlanItem{
+					ID: item.ID, Type: item.Type, SizeGB: item.SizeGB,
+					Description: item.Description, Action: item.Action,
+				})
+			}
+			for _, item := range summary.ToRemove {
+				cfg.Items = append(cfg.Items, plan.PlanItem{
+					ID: item.ID, Type: item.Type, SizeGB: item.SizeGB,
+					Description: item.Description, Action: item.Action,
+				})
+			}
+		}
+		if m.deps.RunApply != nil {
+			cfg.RunApply = func(ctx context.Context, onProgress func(plan.ApplyEvent)) error {
+				return m.deps.RunApply(ctx, func(ev ApplyEvent) {
+					onProgress(plan.ApplyEvent{ID: ev.ID, Status: ev.Status, Error: ev.Error})
+				})
+			}
+		}
+	}
+	return plan.New(cfg)
+}
+
+// newImport creates an importscreen.Model from the current deps.
+func (m *appModel) newImport() importscreen.Model {
+	cfg := importscreen.Config{}
+	if m.deps != nil && m.deps.RunImport != nil {
+		cfg.RunImport = func(ctx context.Context, source string) (importscreen.ImportResult, error) {
+			result, err := m.deps.RunImport(ctx, source)
+			if err != nil {
+				return importscreen.ImportResult{}, err
+			}
+			return importscreen.ImportResult{ID: result.ID, SizeGB: result.SizeGB}, nil
+		}
+	}
+	return importscreen.New(cfg)
+}
+
+// newIndex creates an index.Model from the current deps.
+func (m *appModel) newIndex() index.Model {
+	cfg := index.Config{}
+	if m.deps != nil {
+		if m.deps.LoadIndexStatus != nil {
+			if status, err := m.deps.LoadIndexStatus(); err == nil {
+				cfg.Status = index.IndexStatus{
+					KeywordEnabled:   status.KeywordEnabled,
+					KeywordSources:   status.KeywordSources,
+					KeywordArticles:  status.KeywordArticles,
+					KeywordLastBuilt: status.KeywordLastBuilt,
+					SemanticEnabled:  status.SemanticEnabled,
+					SemanticStatus:   status.SemanticStatus,
+				}
+			}
+		}
+		if m.deps.RunIndex != nil {
+			cfg.RunIndex = func(ctx context.Context, indexType string, onProgress func(index.IndexEvent)) error {
+				return m.deps.RunIndex(ctx, indexType, func(ev IndexEvent) {
+					onProgress(index.IndexEvent{File: ev.File, Status: ev.Status})
+				})
+			}
+		}
+	}
+	return index.New(cfg)
 }

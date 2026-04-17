@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 
@@ -25,9 +27,11 @@ func NewRootCommand() *cobra.Command {
 			config, err := buildWizardConfig("")
 			if err != nil {
 				// Degrade gracefully — launch TUI without wizard data
-				return hosttui.RunInteractive(nil)
+				return hosttui.RunInteractive(nil, nil)
 			}
-			return hosttui.RunInteractive(&config)
+			vaultFlag, _ := cmd.Flags().GetString("vault")
+			deps := buildDashboardDeps(vaultFlag, &config)
+			return hosttui.RunInteractive(&config, deps)
 		},
 	}
 
@@ -365,4 +369,146 @@ func buildWizardConfig(prefillPath string) (hosttui.WizardConfig, error) {
 		PackGroups:  packGroups,
 		PrefillPath: prefillPath,
 	}, nil
+}
+
+// buildDashboardDeps constructs callback closures that bridge host-cli
+// business logic into the TUI screens without the TUI importing host-cli.
+func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *hosttui.DashboardDeps {
+	deps := &hosttui.DashboardDeps{}
+
+	if wizConfig != nil {
+		deps.PackGroups = wizConfig.PackGroups
+		deps.Presets = wizConfig.Presets
+	}
+
+	deps.LoadStatus = func() (hosttui.VaultStatus, error) {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return hosttui.VaultStatus{}, err
+		}
+		mPath := filepath.Join(root, "manifest.yaml")
+		m, err := manifest.Load(mPath)
+		if err != nil {
+			return hosttui.VaultStatus{}, err
+		}
+
+		realizedByID := make(map[string]bool, len(m.Realized.Entries))
+		for _, e := range m.Realized.Entries {
+			realizedByID[e.ID] = true
+		}
+		realized := 0
+		for _, id := range m.Desired.Items {
+			if realizedByID[id] {
+				realized++
+			}
+		}
+
+		presetName := ""
+		if len(m.Desired.Presets) > 0 {
+			presetName = m.Desired.Presets[0]
+		}
+
+		return hosttui.VaultStatus{
+			VaultPath:     root,
+			VaultName:     m.Vault.Name,
+			PresetName:    presetName,
+			DesiredCount:  len(m.Desired.Items),
+			RealizedCount: realized,
+			PendingCount:  len(m.Desired.Items) - realized,
+			LastApplied:   m.Realized.AppliedAt,
+		}, nil
+	}
+
+	deps.LoadPlan = func() (hosttui.PlanSummary, error) {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return hosttui.PlanSummary{}, err
+		}
+		mPath := filepath.Join(root, "manifest.yaml")
+		m, err := manifest.Load(mPath)
+		if err != nil {
+			return hosttui.PlanSummary{}, err
+		}
+		p := planner.Build(m)
+
+		cat, err := catalog.LoadCatalog()
+		if err != nil {
+			return hosttui.PlanSummary{}, err
+		}
+
+		var summary hosttui.PlanSummary
+		for _, id := range p.ToDownload {
+			item := hosttui.PlanItem{ID: id, Action: "download"}
+			if recipe, ok := cat.RecipeByID(id); ok {
+				item.Type = recipe.Type
+				item.SizeGB = recipe.SizeGB
+				item.Description = recipe.Description
+			}
+			summary.ToDownload = append(summary.ToDownload, item)
+			summary.DownloadGB += item.SizeGB
+		}
+		for _, id := range p.ToRemove {
+			item := hosttui.PlanItem{ID: id, Action: "remove"}
+			if recipe, ok := cat.RecipeByID(id); ok {
+				item.Type = recipe.Type
+				item.SizeGB = recipe.SizeGB
+				item.Description = recipe.Description
+			}
+			summary.ToRemove = append(summary.ToRemove, item)
+			summary.RemoveGB += item.SizeGB
+		}
+		return summary, nil
+	}
+
+	deps.SaveDesiredItems = func(ids []string) error {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return err
+		}
+		mPath := filepath.Join(root, "manifest.yaml")
+		m, err := manifest.Load(mPath)
+		if err != nil {
+			return err
+		}
+		m.Desired.Items = ids
+		return manifest.Save(mPath, m)
+	}
+
+	deps.RunApply = func(_ context.Context, onProgress func(hosttui.ApplyEvent)) error {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return err
+		}
+		cat, err := catalog.LoadCatalog()
+		if err != nil {
+			return err
+		}
+		return commands.ApplyVault(root, cat)
+	}
+
+	deps.RunImport = func(_ context.Context, source string) (hosttui.ImportResult, error) {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return hosttui.ImportResult{}, err
+		}
+		abs, err := filepath.Abs(source)
+		if err != nil {
+			return hosttui.ImportResult{}, err
+		}
+		id, err := commands.ImportAndMaybeAdd(root, abs, "", true, root)
+		if err != nil {
+			return hosttui.ImportResult{}, err
+		}
+		return hosttui.ImportResult{ID: id}, nil
+	}
+
+	deps.RunIndex = func(_ context.Context, indexType string, onProgress func(hosttui.IndexEvent)) error {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return err
+		}
+		return commands.IndexVault(root, os.Stderr)
+	}
+
+	return deps
 }

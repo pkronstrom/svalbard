@@ -42,13 +42,12 @@ type SelectMsg struct {
 // svalbard resolves a vault. It uses the shared tui/ components for a
 // two-pane layout.
 type Model struct {
-	vaultPath  string
-	selected   int
-	width      int
-	height     int
-	theme      tui.Theme
-	keys       tui.KeyMap
-	statusMsg  string // transient status message shown in detail pane
+	vaultPath string
+	selected  int
+	width     int
+	height    int
+	theme     tui.Theme
+	keys      tui.KeyMap
 }
 
 // New creates a new dashboard Model for the given vault path.
@@ -68,10 +67,6 @@ func (m Model) Init() tea.Cmd {
 // Update handles incoming messages and returns the updated model and any command.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case SelectMsg:
-		m.statusMsg = msg.ID + ": not yet implemented"
-		return m, nil
-
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -88,14 +83,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.keys.MoveDown.Matches(msg):
 			if m.selected < len(hostDestinations)-1 {
 				m.selected++
-				m.statusMsg = ""
-			}
+				}
 			return m, nil
 		case m.keys.MoveUp.Matches(msg):
 			if m.selected > 0 {
 				m.selected--
-				m.statusMsg = ""
-			}
+				}
 			return m, nil
 		case m.keys.Enter.Matches(msg):
 			return m, m.selectCurrent()
