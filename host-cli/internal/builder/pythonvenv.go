@@ -18,17 +18,22 @@ import (
 //  2. Installs a standalone Python interpreter
 //  3. Creates per-tool isolated venvs from the cache
 //  4. Generates wrapper scripts in bin/<platform>/
-func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, platforms []string) ([]manifest.RealizedEntry, error) {
+func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
 	uv, err := findUV(root)
 	if err != nil {
 		return nil, err
 	}
 
-	// Collect all python-package recipes that reference this venv.
+	// Collect python-package recipes that reference this venv AND are in the
+	// user's desired set. This prevents installing packages the user didn't select.
 	var pkgItems []catalog.Item
 	var allPackages []string
 	for _, item := range cat.AllRecipes() {
 		if item.Type == "python-package" && item.Venv == recipe.ID {
+			// Only include if user selected this package (or no filter provided).
+			if len(opts.DesiredIDs) > 0 && !opts.DesiredIDs[item.ID] {
+				continue
+			}
 			pkgItems = append(pkgItems, item)
 			allPackages = append(allPackages, item.Packages...)
 		}
@@ -50,7 +55,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, pla
 		pythonSpec = ">=3.11"
 	}
 
-	targets := platforms
+	targets := opts.Platforms
 	if len(targets) == 0 {
 		targets = []string{hostPlatformStr()}
 	}
@@ -260,10 +265,12 @@ func toUVPlatformArgs(platform string) (string, string) {
 	}
 
 	var uvArch string
-	switch arch {
-	case "arm64":
-		uvArch = "aarch64"
-	case "x86_64":
+	switch {
+	case arch == "arm64" && osName == "linux":
+		uvArch = "aarch64" // Linux wheel tags use aarch64
+	case arch == "arm64" && osName == "macos":
+		uvArch = "arm64" // macOS wheel tags use arm64
+	case arch == "x86_64":
 		uvArch = "x86_64"
 	default:
 		uvArch = arch

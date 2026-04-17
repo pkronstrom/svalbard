@@ -41,7 +41,8 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	}
 	for _, e := range m.Realized.Entries {
 		if _, ok := removeSet[e.ID]; ok {
-			os.Remove(filepath.Join(root, e.RelativePath))
+			// RemoveAll handles both files and directories (app-bundle, python-venv).
+			os.RemoveAll(filepath.Join(root, e.RelativePath))
 		}
 	}
 	var filtered []manifest.RealizedEntry
@@ -53,6 +54,12 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 	m.Realized.Entries = filtered
 	for _, id := range plan.ToRemove {
 		progress(id, "done")
+	}
+
+	// Build the desired ID set for native builders to filter against.
+	desiredIDs := make(map[string]bool, len(plan.ToDownload))
+	for _, id := range plan.ToDownload {
+		desiredIDs[id] = true
 	}
 
 	// Process downloads: resolve URLs, download files, add realized entries.
@@ -93,7 +100,10 @@ func Run(root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Cata
 		case recipe.Strategy == "build" && recipe.Build != nil:
 			// Try Go-native builder first, fall through to Docker.
 			if nativeFn, ok := builder.Dispatch(recipe); ok {
-				entries, err := nativeFn(root, recipe, cat, m.Desired.Options.HostPlatforms)
+				entries, err := nativeFn(root, recipe, cat, builder.Options{
+					Platforms:  m.Desired.Options.HostPlatforms,
+					DesiredIDs: desiredIDs,
+				})
 				if err != nil {
 					progress(id, "failed")
 					fmt.Fprintf(os.Stderr, "skip %s: native build failed: %v\n", id, err)

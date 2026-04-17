@@ -14,10 +14,14 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
-// Func is the signature for a native builder. It receives the vault root,
-// the recipe to build, the full catalog (for cross-recipe lookups like
-// python-package collection), and the target platforms to build for.
-type Func func(root string, recipe catalog.Item, cat *catalog.Catalog, platforms []string) ([]manifest.RealizedEntry, error)
+// Options provides context from the apply layer to builders.
+type Options struct {
+	Platforms  []string          // target platforms (from manifest HostPlatforms)
+	DesiredIDs map[string]bool   // item IDs the user selected (from plan.ToDownload)
+}
+
+// Func is the signature for a native builder.
+type Func func(root string, recipe catalog.Item, cat *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error)
 
 // special maps build family names to handlers that need custom orchestration
 // beyond the generic pipeline (e.g. python-venv collects sibling recipes).
@@ -42,8 +46,9 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 		return fn, ok
 	}
 
-	// 3. App-bundle: convert to pipeline internally.
-	if recipe.Build.Family == "app-bundle" {
+	// 3. App-bundle with source_url: convert to pipeline internally.
+	//    Asset-based app-bundles (no source_url) fall through to Docker.
+	if recipe.Build.Family == "app-bundle" && recipe.Build.SourceURL != "" {
 		return buildAppBundleAsPipeline, true
 	}
 
@@ -53,7 +58,7 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 // buildAppBundleAsPipeline converts an app-bundle recipe into pipeline steps
 // and executes it. This provides backward compatibility for existing recipes
 // that use family: app-bundle with source_url or assets.
-func buildAppBundleAsPipeline(root string, recipe catalog.Item, cat *catalog.Catalog, platforms []string) ([]manifest.RealizedEntry, error) {
+func buildAppBundleAsPipeline(root string, recipe catalog.Item, cat *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
 	if recipe.Build.SourceURL != "" {
 		recipe.Build.Steps = []catalog.BuildStep{
 			{Download: "{source_url}", Dest: "{workdir}/archive"},
@@ -61,5 +66,5 @@ func buildAppBundleAsPipeline(root string, recipe catalog.Item, cat *catalog.Cat
 			{Verify: "{output_dir}", NotEmpty: true},
 		}
 	}
-	return buildPipeline(root, recipe, cat, platforms)
+	return buildPipeline(root, recipe, cat, opts)
 }

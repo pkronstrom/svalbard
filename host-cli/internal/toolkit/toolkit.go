@@ -307,6 +307,26 @@ exec "$DRIVE_ROOT/.svalbard/runtime/$platform/svalbard-drive" "$@"
 `
 }
 
+// isValidEnvName checks that a name contains only [A-Z0-9_] characters.
+func isValidEnvName(name string) bool {
+	for _, r := range name {
+		if !unicode.IsUpper(r) && !unicode.IsDigit(r) && r != '_' {
+			return false
+		}
+	}
+	return len(name) > 0
+}
+
+// isValidEnvValue checks that a value contains no shell metacharacters.
+func isValidEnvValue(value string) bool {
+	for _, r := range value {
+		if r == '$' || r == '`' || r == '"' || r == '\'' || r == '\\' || r == ';' || r == '|' || r == '&' || r == '\n' {
+			return false
+		}
+	}
+	return true
+}
+
 func activateScriptContents(envVars map[string]string) string {
 	var envLines string
 	if len(envVars) > 0 {
@@ -317,6 +337,9 @@ func activateScriptContents(envVars map[string]string) string {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
+			if !isValidEnvName(k) || !isValidEnvValue(envVars[k]) {
+				continue // skip unsafe env vars
+			}
 			envLines += fmt.Sprintf("export %s=\"$DRIVE_ROOT/%s\"\n", k, envVars[k])
 		}
 	}

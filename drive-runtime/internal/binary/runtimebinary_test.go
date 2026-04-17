@@ -295,6 +295,40 @@ func TestResolveBareGzExtraction(t *testing.T) {
 	if info.Mode()&0o111 == 0 {
 		t.Errorf("extracted file is not executable")
 	}
+
+	// Verify output is named after the tool, not the archive.
+	if filepath.Base(got) != "chisel" {
+		t.Errorf("extracted filename = %q, want %q", filepath.Base(got), "chisel")
+	}
+}
+
+func TestResolveBareGzInPlatformDir(t *testing.T) {
+	// Test .gz directly in bin/<platform>/ (no tool-specific subdir).
+	driveRoot := t.TempDir()
+	binDir := filepath.Join(driveRoot, "bin", "linux-x86_64")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := []byte("#!/bin/sh\necho mytool")
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	gz.Write(content)
+	gz.Close()
+
+	if err := os.WriteFile(filepath.Join(binDir, "mytool_2.0_linux_amd64.gz"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := binary.Resolve("mytool", driveRoot, func() (string, error) {
+		return "linux-x86_64", nil
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if filepath.Base(got) != "mytool" {
+		t.Errorf("extracted filename = %q, want %q", filepath.Base(got), "mytool")
+	}
 }
 
 func buildTar(t *testing.T, files map[string]string) []byte {

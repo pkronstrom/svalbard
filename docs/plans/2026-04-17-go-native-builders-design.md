@@ -106,9 +106,14 @@ runtime/python/
 ### Platform Awareness
 
 The builder reads `manifest.Desired.Options.HostPlatforms` to know which
-platforms to provision. If the manifest says `[macos-arm64, linux-x86_64]`,
-the builder creates venvs for both — same as binary recipes download all
-specified platform variants.
+platforms to provision. Wheel downloads are parameterized per target platform
+so the cache contains the right native wheels.
+
+**Limitation:** Python interpreter installation and venv creation run on the
+host machine via `uv python install` and `uv venv`. These produce host-native
+artifacts — uv cannot cross-compile Python interpreters. To provision a drive
+for both macOS and Linux, run `svalbard apply` once from each platform. Each
+run adds its platform's interpreter and venvs without clobbering the other.
 
 ### Build Flow
 

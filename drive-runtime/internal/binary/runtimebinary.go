@@ -73,7 +73,7 @@ func resolveFromDir(name, dir string) (string, error) {
 			}
 			extracted = true
 		case strings.HasSuffix(entry.Name(), ".gz"):
-			if err := extractBareGz(path, dir); err != nil {
+			if err := extractBareGz(path, dir, name); err != nil {
 				return "", err
 			}
 			extracted = true
@@ -172,7 +172,7 @@ func extractTarReader(tr *tar.Reader, destDir string) error {
 	}
 }
 
-func extractBareGz(archivePath, destDir string) error {
+func extractBareGz(archivePath, destDir, toolName string) error {
 	file, err := os.Open(archivePath)
 	if err != nil {
 		return err
@@ -185,14 +185,8 @@ func extractBareGz(archivePath, destDir string) error {
 	}
 	defer gzr.Close()
 
-	// Use the containing directory name as the output filename, since that
-	// matches the tool name (e.g. bin/<platform>/chisel/chisel_1.0.gz → chisel).
-	// Fall back to stripping .gz if the dir name doesn't work.
-	outName := filepath.Base(destDir)
-	if outName == "." || outName == "/" {
-		outName = strings.TrimSuffix(filepath.Base(archivePath), ".gz")
-	}
-	outPath := filepath.Join(destDir, outName)
+	// Use the tool name so findMatchingBinary can locate it.
+	outPath := filepath.Join(destDir, toolName)
 
 	out, err := os.OpenFile(outPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o755)
 	if err != nil {
