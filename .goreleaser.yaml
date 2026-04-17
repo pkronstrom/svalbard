@@ -1,0 +1,46 @@
+version: 2
+
+before:
+  hooks:
+    - scripts/build-drive-runtime.sh
+
+builds:
+  - id: svalbard
+    main: ./cmd/svalbard
+    dir: host-cli
+    binary: svalbard
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: svalbard
+    format: tar.gz
+    name_template: "svalbard_{{ .Os }}_{{ .Arch }}"
+    files:
+      - none*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^style:"
+
+release:
+  github:
+    owner: pkronstrom
+    name: svalbard
+  draft: true
