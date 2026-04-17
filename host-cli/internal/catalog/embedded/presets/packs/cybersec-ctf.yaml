@@ -10,7 +10,6 @@ target_size_gb: 3
 sources:
 # ── Reverse engineering ──
 - ghidra
-- radare2
 # ── Password cracking ──
 - hashcat
 # ── Exploit development (python-package → svalbard-python) ──
