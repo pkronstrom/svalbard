@@ -143,7 +143,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.config.RunApply != nil {
 			m.stage = stageApply
 			m.applyModel = newWizardApply(m.vaultPath, ids, m.config.RunApply)
-			return m.sizeActiveModel()
+			sized, sizeCmd := m.sizeActiveModel()
+			m = sized.(Model)
+			return m, tea.Batch(m.applyModel.Init(), sizeCmd)
 		}
 		// No apply callback — just exit with result
 		return m, m.doneCmd()
