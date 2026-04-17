@@ -560,28 +560,10 @@ func (m Model) CurrentGroup() (config.MenuGroup, bool) {
 	return config.MenuGroup{}, false
 }
 
-// coreSections are always visible in the menu, even when they have no items.
-var coreSections = map[string]bool{
-	"search":  true,
-	"browse":  true,
-	"verify":  true,
-	"library": true,
-}
-
-// capabilitySections are hidden entirely when they have no items.
-var capabilitySections = map[string]bool{
-	"maps":     true,
-	"chat":     true,
-	"apps":     true,
-	"share":    true,
-	"embedded": true,
-	"tools":    true,
-}
-
 func (m Model) VisibleGroups() []config.MenuGroup {
 	result := make([]config.MenuGroup, 0, len(m.cfg.Groups))
 	for _, g := range m.cfg.Groups {
-		if capabilitySections[g.ID] && len(g.Items) == 0 {
+		if len(g.Items) == 0 {
 			continue
 		}
 		result = append(result, g)

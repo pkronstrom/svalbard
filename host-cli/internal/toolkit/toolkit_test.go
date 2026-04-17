@@ -135,7 +135,7 @@ func TestGenerateCreatesActionsJSON(t *testing.T) {
 
 	// Verify first library item (ordered by order field).
 	item0 := library.Items[0]
-	if item0.ID != "browse-wikipedia-en-nopic" {
+	if item0.ID != "wikipedia-en-nopic" {
 		t.Errorf("item[0].ID = %q", item0.ID)
 	}
 	if item0.Action.Type != "builtin" {
@@ -271,8 +271,14 @@ func TestGenerateToolsAlwaysPresent(t *testing.T) {
 	if cfg.Groups[0].ID != "tools" {
 		t.Errorf("expected tools group, got %q", cfg.Groups[0].ID)
 	}
-	if len(cfg.Groups[0].Items) != 2 {
-		t.Errorf("tools items = %d, want 2", len(cfg.Groups[0].Items))
+	// With no entries: activate-shell, mcp-serve, inspect are always present.
+	// verify-checksums is conditional (needs checksums), serve/share conditional (needs services).
+	if len(cfg.Groups[0].Items) != 3 {
+		var ids []string
+		for _, it := range cfg.Groups[0].Items {
+			ids = append(ids, it.ID)
+		}
+		t.Errorf("tools items = %d (%v), want 3", len(cfg.Groups[0].Items), ids)
 	}
 }
 
@@ -292,21 +298,18 @@ func TestGenerateGroupsOrderedCorrectly(t *testing.T) {
 	var cfg testRuntimeConfig
 	json.Unmarshal(raw, &cfg)
 
-	if len(cfg.Groups) != 4 {
-		t.Fatalf("expected 4 groups, got %d", len(cfg.Groups))
+	if len(cfg.Groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d", len(cfg.Groups))
 	}
-	// Should be ordered: library (200), maps (300), share (800), tools (900).
+	// Should be ordered: library (200), maps (300), tools (500).
 	if cfg.Groups[0].ID != "library" {
 		t.Errorf("groups[0] = %q, want library", cfg.Groups[0].ID)
 	}
 	if cfg.Groups[1].ID != "maps" {
 		t.Errorf("groups[1] = %q, want maps", cfg.Groups[1].ID)
 	}
-	if cfg.Groups[2].ID != "share" {
-		t.Errorf("groups[2] = %q, want share", cfg.Groups[2].ID)
-	}
-	if cfg.Groups[3].ID != "tools" {
-		t.Errorf("groups[3] = %q, want tools", cfg.Groups[3].ID)
+	if cfg.Groups[2].ID != "tools" {
+		t.Errorf("groups[2] = %q, want tools", cfg.Groups[2].ID)
 	}
 }
 

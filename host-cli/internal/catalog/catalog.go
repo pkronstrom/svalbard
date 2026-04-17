@@ -112,8 +112,10 @@ type LicenseSpec struct {
 // MenuSpec defines how a recipe appears in the user-facing menu.
 type MenuSpec struct {
 	Group       string `yaml:"group"`
+	Subheader   string `yaml:"subheader"`
 	Label       string `yaml:"label"`
 	Description string `yaml:"description"`
+	Order       int    `yaml:"order"`
 }
 
 // Preset represents a named collection of source references.

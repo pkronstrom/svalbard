@@ -216,17 +216,36 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 		progress(ProgressEvent{ID: res.id, Status: tui.StatusDone})
 	}
 
-	// Collect env vars and descriptions from all realized recipes.
+	// Collect env vars and menu metadata from all realized recipes.
 	envVars := make(map[string]string)
-	descriptions := make(map[string]string)
+	menus := make(map[string]toolkit.MenuMeta)
 	for _, e := range m.Realized.Entries {
 		if recipe, ok := cat.RecipeByID(e.ID); ok {
 			for k, v := range recipe.Env {
 				envVars[k] = v
 			}
+			meta := toolkit.MenuMeta{}
 			if recipe.Description != "" {
-				descriptions[e.ID] = recipe.Description
+				meta.Label = recipe.Description
 			}
+			if recipe.Menu != nil {
+				if recipe.Menu.Group != "" {
+					meta.Group = recipe.Menu.Group
+				}
+				if recipe.Menu.Subheader != "" {
+					meta.Subheader = recipe.Menu.Subheader
+				}
+				if recipe.Menu.Label != "" {
+					meta.Label = recipe.Menu.Label
+				}
+				if recipe.Menu.Description != "" {
+					meta.Description = recipe.Menu.Description
+				}
+				if recipe.Menu.Order != 0 {
+					meta.Order = recipe.Menu.Order
+				}
+			}
+			menus[e.ID] = meta
 		}
 	}
 
@@ -235,7 +254,7 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 	if len(m.Desired.Presets) > 0 {
 		presetName = m.Desired.Presets[0]
 	}
-	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars, Descriptions: descriptions}); err != nil {
+	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars, Menus: menus}); err != nil {
 		return fmt.Errorf("generating toolkit: %w", err)
 	}
 	if err := syncMapViewer(root, m.Realized.Entries); err != nil {

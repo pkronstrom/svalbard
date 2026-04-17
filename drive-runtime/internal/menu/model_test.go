@@ -403,7 +403,7 @@ func TestDriveSectionsHideWhenCapabilityAbsent(t *testing.T) {
 	}
 }
 
-func TestDriveCoreSectionsAlwaysVisible(t *testing.T) {
+func TestEmptyGroupsAreHidden(t *testing.T) {
 	cfg := config.RuntimeConfig{
 		Version: 2,
 		Preset:  "default-32",
@@ -414,27 +414,22 @@ func TestDriveCoreSectionsAlwaysVisible(t *testing.T) {
 				Items: []config.MenuItem{},
 			},
 			{
-				ID:    "browse",
-				Label: "Browse",
-				Items: []config.MenuItem{},
+				ID:    "library",
+				Label: "Library",
+				Items: []config.MenuItem{
+					{ID: "wiki", Label: "Wikipedia", Action: config.BuiltinAction("browse", nil)},
+				},
 			},
 		},
 	}
 	m := NewModel(cfg, "/tmp/drive")
 	visible := m.VisibleGroups()
 
-	if len(visible) != 2 {
-		t.Fatalf("len(VisibleGroups()) = %d, want 2", len(visible))
+	if len(visible) != 1 {
+		t.Fatalf("len(VisibleGroups()) = %d, want 1", len(visible))
 	}
-	ids := make(map[string]bool)
-	for _, g := range visible {
-		ids[g.ID] = true
-	}
-	if !ids["search"] {
-		t.Fatal("search should be visible even when empty")
-	}
-	if !ids["browse"] {
-		t.Fatal("browse should be visible even when empty")
+	if visible[0].ID != "library" {
+		t.Fatalf("visible[0].ID = %q, want library", visible[0].ID)
 	}
 }
 

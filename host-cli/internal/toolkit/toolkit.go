@@ -80,6 +80,7 @@ type menuItem struct {
 	ID          string     `json:"id"`
 	Label       string     `json:"label"`
 	Description string     `json:"description"`
+	Subheader   string     `json:"subheader,omitempty"`
 	Order       int        `json:"order"`
 	Action      actionSpec `json:"action"`
 }
@@ -120,15 +121,23 @@ func humanize(id string) string {
 	return strings.Join(words, " ")
 }
 
+// MenuMeta carries recipe menu metadata for a single manifest entry.
+type MenuMeta struct {
+	Group       string
+	Subheader   string
+	Label       string
+	Description string
+	Order       int
+}
+
 // GenerateOpts holds optional parameters for toolkit generation.
 type GenerateOpts struct {
 	// EnvVars maps environment variable names to drive-relative paths.
 	// Collected from recipe env fields and written into the activate script.
 	EnvVars map[string]string
 
-	// Descriptions maps entry IDs to human-readable descriptions from the
-	// catalog. Used for menu item labels when available.
-	Descriptions map[string]string
+	// Menus maps entry IDs to menu metadata from the catalog.
+	Menus map[string]MenuMeta
 }
 
 // Generate creates the .svalbard/actions.json runtime config under root.
@@ -138,11 +147,11 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	if err := os.MkdirAll(filepath.Join(root, svalbardDir), 0o755); err != nil {
 		return err
 	}
-	var descriptions map[string]string
-	if len(opts) > 0 && opts[0].Descriptions != nil {
-		descriptions = opts[0].Descriptions
+	var menus map[string]MenuMeta
+	if len(opts) > 0 && opts[0].Menus != nil {
+		menus = opts[0].Menus
 	}
-	if err := writeActionsConfig(root, entries, presetName, descriptions); err != nil {
+	if err := writeActionsConfig(root, entries, presetName, menus); err != nil {
 		return err
 	}
 	if err := installRuntimeBinaries(root); err != nil {
@@ -158,183 +167,248 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// Menu spec: group registry, type defaults, built-in capabilities
+// ---------------------------------------------------------------------------
+
+type groupInfo struct {
+	Label       string
+	Description string
+	Order       int
+}
+
+var groupRegistry = map[string]groupInfo{
+	"library":  {"Library", "Browse offline archives and documents.", 200},
+	"maps":     {"Maps", "View offline map layers.", 300},
+	"local-ai": {"Local AI", "Chat with local models and launch AI clients.", 400},
+	"apps":     {"Apps", "Interactive offline applications.", 450},
+	"tools":    {"Tools", "Inspect the drive and launch bundled utilities.", 500},
+}
+
+type typeDefault struct {
+	Group     string
+	Subheader string
+	ActionID  string
+	// ArgsFunc builds action args from an entry. Nil means no args.
+	ArgsFunc func(e manifest.RealizedEntry) map[string]string
+}
+
+var typeDefaults = map[string]typeDefault{
+	"zim":     {Group: "library", Subheader: "Archives", ActionID: "browse", ArgsFunc: func(e manifest.RealizedEntry) map[string]string { return map[string]string{"zim": e.Filename} }},
+	"pmtiles": {Group: "maps", Subheader: "Maps", ActionID: "maps"},
+	"gguf":    {Group: "local-ai", Subheader: "Chat Models", ActionID: "chat", ArgsFunc: func(e manifest.RealizedEntry) map[string]string { return map[string]string{"model": e.Filename} }},
+	"app":     {Group: "apps", Subheader: "Apps", ActionID: "apps", ArgsFunc: func(e manifest.RealizedEntry) map[string]string { return map[string]string{"app": e.ID} }},
+	"sqlite":  {Group: "tools", Subheader: "Data", ActionID: "apps", ArgsFunc: func(e manifest.RealizedEntry) map[string]string { return map[string]string{"app": "sqliteviz"} }},
+	"binary":  {Group: "tools", Subheader: "Tools"},
+}
+
 func isEmbeddingModel(filename string) bool {
 	base := strings.ToLower(filename)
 	return strings.Contains(base, "embed") || strings.Contains(base, "bge-") ||
 		strings.Contains(base, "e5-") || strings.Contains(base, "arctic-embed")
 }
 
-func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string, descriptions map[string]string) error {
-	descFor := func(id, fallback string) string {
-		if d, ok := descriptions[id]; ok && d != "" {
-			return d
-		}
-		return fallback
-	}
+// driveState captures what content is on the drive for capability conditions.
+type driveState struct {
+	HasLibrary   bool
+	HasMaps      bool
+	HasChat      bool
+	HasToolchain bool
+	HasChecksums bool
+}
 
-	var libraryItems []menuItem
-	var mapsItems []menuItem
-	var chatItems []menuItem
-	var appsItems []menuItem
-	var dataItems []menuItem
+type builtinCapability struct {
+	ID          string
+	Group       string
+	Subheader   string
+	Label       string
+	Description string
+	Order       int
+	ActionID    string
+	Args        map[string]string
+	Condition   func(driveState) bool
+}
+
+var builtinCapabilities = []builtinCapability{
+	// Sharing
+	{ID: "serve-all", Group: "tools", Subheader: "Sharing", Label: "Serve Everything",
+		Description: "Start all services at once.", Order: 300, ActionID: "serve-all",
+		Condition: func(s driveState) bool { return s.HasLibrary || s.HasMaps || s.HasChat }},
+	{ID: "share-files", Group: "tools", Subheader: "Sharing", Label: "Share on Local Network",
+		Description: "Share drive files on the local network.", Order: 310, ActionID: "share",
+		Condition: func(s driveState) bool { return s.HasLibrary || s.HasMaps || s.HasChat }},
+	{ID: "mcp-serve", Group: "tools", Subheader: "Sharing", Label: "Serve MCP",
+		Description: "Start the MCP server so AI tools can access the vault.", Order: 320, ActionID: "mcp-serve"},
+	// Development
+	{ID: "activate-shell", Group: "tools", Subheader: "Development", Label: "Activate sb Shell",
+		Description: "Open a temporary shell with drive commands available.", Order: 690, ActionID: "activate-shell"},
+	{ID: "embedded-shell", Group: "tools", Subheader: "Development", Label: "Embedded Dev Shell",
+		Description: "Drop into the bundled embedded development shell.", Order: 700, ActionID: "embedded-shell",
+		Condition: func(s driveState) bool { return s.HasToolchain }},
+	// Drive
+	{ID: "inspect-drive", Group: "tools", Subheader: "Drive", Label: "Inspect Drive",
+		Description: "Show a terminal summary of the drive contents.", Order: 500, ActionID: "inspect"},
+	{ID: "verify-checksums", Group: "tools", Subheader: "Drive", Label: "Verify Checksums",
+		Description: "Verify file integrity using checksums.", Order: 510, ActionID: "verify",
+		Condition: func(s driveState) bool { return s.HasChecksums }},
+}
+
+// ---------------------------------------------------------------------------
+// writeActionsConfig — spec-driven menu generation
+// ---------------------------------------------------------------------------
+
+func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string, menus map[string]MenuMeta) error {
+	// Collect items per group.
+	grouped := make(map[string][]menuItem)
+	var state driveState
+	hasChatModels := false
 
 	for i, e := range entries {
-		order := (i + 1) * 100
-		label := descFor(e.ID, humanize(e.ID))
+		td, ok := typeDefaults[e.Type]
+		if !ok {
+			continue
+		}
+
+		// Filter embedding models.
+		if e.Type == "gguf" && isEmbeddingModel(e.Filename) {
+			continue
+		}
+
+		// Track drive state for capability conditions.
 		switch e.Type {
 		case "zim":
-			libraryItems = append(libraryItems, menuItem{
-				ID:          "browse-" + e.ID,
-				Label:       label,
-				Description: "Browse the " + label + " archive.",
-				Order:       order,
-				Action:      builtinAction("browse", map[string]string{"zim": e.Filename}),
-			})
+			state.HasLibrary = true
 		case "pmtiles":
-			mapsItems = append(mapsItems, menuItem{
-				ID:          "map-" + e.ID,
-				Label:       label,
-				Description: "View the " + label + " map.",
-				Order:       order,
-				Action:      builtinAction("maps", nil),
-			})
+			state.HasMaps = true
 		case "gguf":
-			if isEmbeddingModel(e.Filename) {
-				continue
+			state.HasChat = true
+			hasChatModels = true
+		case "toolchain":
+			state.HasToolchain = true
+		}
+		if e.ChecksumSHA256 != "" {
+			state.HasChecksums = true
+		}
+
+		// Resolve menu metadata: recipe spec → type defaults → humanize.
+		group := td.Group
+		subheader := td.Subheader
+		label := humanize(e.ID)
+		desc := ""
+		order := (i + 1) * 100
+		actionID := td.ActionID
+
+		if m, ok := menus[e.ID]; ok {
+			if m.Group != "" {
+				group = m.Group
 			}
-			chatItems = append(chatItems, menuItem{
-				ID:          "chat-" + e.ID,
-				Label:       label,
-				Description: "Chat with " + label + " locally.",
-				Order:       order,
-				Action:      builtinAction("chat", map[string]string{"model": e.Filename}),
-			})
-		case "app":
-			appsItems = append(appsItems, menuItem{
-				ID:          "app-" + e.ID,
-				Label:       label,
-				Description: "Open " + label + ".",
-				Order:       order,
-				Action:      builtinAction("apps", map[string]string{"app": e.ID}),
-			})
-		case "sqlite":
-			dataItems = append(dataItems, menuItem{
-				ID:          "data-" + e.ID,
-				Label:       label,
-				Description: "Query " + label + ".",
-				Order:       order,
-				Action:      builtinAction("apps", map[string]string{"app": "sqliteviz"}),
-			})
+			if m.Subheader != "" {
+				subheader = m.Subheader
+			}
+			if m.Label != "" {
+				label = m.Label
+			}
+			if m.Description != "" {
+				desc = m.Description
+			}
+			if m.Order != 0 {
+				order = m.Order
+			}
+		}
+
+		// For binary entries in local-ai group, use agent action.
+		if e.Type == "binary" && group == "local-ai" {
+			actionID = "agent"
+		}
+
+		// Build default description if not provided by recipe.
+		if desc == "" {
+			switch actionID {
+			case "browse":
+				desc = "Browse the " + label + " archive."
+			case "chat":
+				desc = "Chat with " + label + " locally."
+			case "apps":
+				desc = "Open " + label + "."
+			case "agent":
+				desc = "Launch " + label + " against local models."
+			default:
+				desc = label + "."
+			}
+		}
+
+		// Build action args.
+		var args map[string]string
+		if actionID == "agent" {
+			args = map[string]string{"client": e.ID}
+		} else if td.ArgsFunc != nil {
+			args = td.ArgsFunc(e)
+		}
+
+		grouped[group] = append(grouped[group], menuItem{
+			ID:          e.ID,
+			Label:       label,
+			Description: desc,
+			Subheader:   subheader,
+			Order:       order,
+			Action:      builtinAction(actionID, args),
+		})
+	}
+
+	// Also track checksums/toolchain from entries we skipped above (embedding models, etc.).
+	for _, e := range entries {
+		if e.ChecksumSHA256 != "" {
+			state.HasChecksums = true
+		}
+		if e.Type == "toolchain" {
+			state.HasToolchain = true
 		}
 	}
 
+	// Add default "Chat" item (no model arg, auto-selects) when chat models exist.
+	if hasChatModels {
+		grouped["local-ai"] = append([]menuItem{{
+			ID:          "chat-default",
+			Label:       "Chat",
+			Description: "Start chat with the default local model.",
+			Subheader:   "Chat Models",
+			Order:       50,
+			Action:      builtinAction("chat", nil),
+		}}, grouped["local-ai"]...)
+	}
+
+	// Add built-in capabilities.
+	for _, cap := range builtinCapabilities {
+		if cap.Condition != nil && !cap.Condition(state) {
+			continue
+		}
+		grouped[cap.Group] = append(grouped[cap.Group], menuItem{
+			ID:          cap.ID,
+			Label:       cap.Label,
+			Description: cap.Description,
+			Subheader:   cap.Subheader,
+			Order:       cap.Order,
+			Action:      builtinAction(cap.ActionID, cap.Args),
+		})
+	}
+
+	// Assemble groups, sort items within each, then sort groups.
 	var groups []menuGroup
-
-	if len(libraryItems) > 0 {
+	for id, items := range grouped {
+		sort.Slice(items, func(i, j int) bool { return items[i].Order < items[j].Order })
+		info, ok := groupRegistry[id]
+		if !ok {
+			info = groupInfo{Label: humanize(id), Description: "", Order: 999}
+		}
 		groups = append(groups, menuGroup{
-			ID:          "library",
-			Label:       "Library",
-			Description: "Browse packaged offline archives and documents.",
-			Order:       200,
-			Items:       libraryItems,
+			ID:          id,
+			Label:       info.Label,
+			Description: info.Description,
+			Order:       info.Order,
+			Items:       items,
 		})
 	}
-
-	if len(mapsItems) > 0 {
-		groups = append(groups, menuGroup{
-			ID:          "maps",
-			Label:       "Maps",
-			Description: "View offline map layers.",
-			Order:       300,
-			Items:       mapsItems,
-		})
-	}
-
-	if len(chatItems) > 0 {
-		groups = append(groups, menuGroup{
-			ID:          "chat",
-			Label:       "AI Chat",
-			Description: "Chat with local AI models.",
-			Order:       400,
-			Items:       chatItems,
-		})
-	}
-
-	if len(appsItems) > 0 {
-		groups = append(groups, menuGroup{
-			ID:          "apps",
-			Label:       "Apps",
-			Description: "Interactive offline applications.",
-			Order:       500,
-			Items:       appsItems,
-		})
-	}
-
-	if len(dataItems) > 0 {
-		groups = append(groups, menuGroup{
-			ID:          "data",
-			Label:       "Data",
-			Description: "Query offline datasets.",
-			Order:       600,
-			Items:       dataItems,
-		})
-	}
-
-	// Serve group — shown when there are any browseable/serveable services.
-	hasServices := len(libraryItems) > 0 || len(mapsItems) > 0 || len(chatItems) > 0
-	if hasServices {
-		groups = append(groups, menuGroup{
-			ID:          "share",
-			Label:       "Serve",
-			Description: "Serve content on the local network.",
-			Order:       800,
-			Items: []menuItem{
-				{
-					ID:          "serve-all",
-					Label:       "Serve Everything",
-					Description: "Start all services at once.",
-					Order:       100,
-					Action:      builtinAction("serve-all", nil),
-				},
-				{
-					ID:          "share-files",
-					Label:       "Share on Local Network",
-					Description: "Share drive files on the local network.",
-					Order:       200,
-					Action:      builtinAction("share", nil),
-				},
-			},
-		})
-	}
-
-	// Tools group is always present.
-	groups = append(groups, menuGroup{
-		ID:          "tools",
-		Label:       "Tools",
-		Description: "System utilities and diagnostics.",
-		Order:       900,
-		Items: []menuItem{
-			{
-				ID:          "inspect-drive",
-				Label:       "Inspect Drive",
-				Description: "Inspect the drive contents and configuration.",
-				Order:       100,
-				Action:      builtinAction("inspect", nil),
-			},
-			{
-				ID:          "verify-checksums",
-				Label:       "Verify Checksums",
-				Description: "Verify file integrity using checksums.",
-				Order:       200,
-				Action:      builtinAction("verify", nil),
-			},
-		},
-	})
-
-	// Sort groups by order.
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].Order < groups[j].Order
-	})
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Order < groups[j].Order })
 
 	cfg := runtimeConfig{
 		Version: 2,
