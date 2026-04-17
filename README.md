@@ -36,19 +36,60 @@ A svalbard drive is not a bootable image or a compressed archive — it's a plai
 
 **On a phone or tablet** — carry a USB-C stick, plug it into your phone, and open the files directly with apps like Kiwix (encyclopedias), OsmAnd (maps), or any PDF/EPUB reader. Or just copy the directory (or a zip of it) to your phone's filesystem — the files are standard formats that any compatible app can open. See `provisioning/` for recommended apps on iOS and Android.
 
-## Current Architecture
+## Install
 
-The current core is Go:
+### Pre-built binary (recommended)
 
-- `host-cli/` contains the host-side CLI for vault init, desired-state changes, apply, status, import, presets, and indexing.
-- `drive-runtime/` contains the on-drive launcher and native runtime actions.
-- `recipes/` and `presets/` remain the catalog inputs consumed by the Go host binary.
+Download the latest release for your platform from [GitHub Releases](https://github.com/pkronstrom/svalbard/releases). The binary is self-contained — no Go toolchain or runtime dependencies required.
 
-Python still exists, but only as build-worker implementation detail:
+```bash
+# macOS (Apple Silicon)
+tar xzf svalbard_darwin_arm64.tar.gz
+sudo mv svalbard /usr/local/bin/
 
-- `recipes/builders/*.py` contains specialized builder scripts.
-- Those scripts are intended to run inside the `svalbard-tools` container.
-- The old Python host CLI and provisioner are not the active control plane on this branch.
+# Linux (x86_64)
+tar xzf svalbard_linux_amd64.tar.gz
+sudo mv svalbard /usr/local/bin/
+```
+
+### Build from source
+
+Requires Go 1.25+.
+
+```bash
+git clone https://github.com/pkronstrom/svalbard.git
+cd svalbard
+
+# Full build — embeds drive-runtime binaries for all platforms (~71 MB)
+make build
+
+# Dev build — smaller binary, compiles drive-runtime on-demand at apply-time
+make build-dev
+```
+
+The built binary is at `bin/svalbard`.
+
+| Make target | What it does |
+|-------------|-------------|
+| `make build` | Cross-compile drive-runtime for 4 platforms, embed into svalbard binary |
+| `make build-dev` | Quick build without embedding (requires Go at apply-time) |
+| `make build-drive-runtime` | Only cross-compile drive-runtime binaries |
+| `make test` | Run all tests |
+| `make clean` | Remove build artifacts |
+
+## Architecture
+
+The core is Go:
+
+- `host-cli/` — host-side CLI and TUI for vault init, desired-state changes, apply, status, import, presets, and indexing
+- `host-tui/` — shared TUI components (Bubble Tea)
+- `drive-runtime/` — on-drive launcher and native runtime actions, embedded into the host binary at build time
+- `recipes/` and `presets/` — catalog inputs, embedded into the host binary via `//go:embed`
+
+Python exists only as a build-worker detail:
+
+- `recipes/builders/*.py` — specialized builder scripts for Docker-based builds (ZIM scraping, geodata processing)
+- These run inside the `svalbard-tools` container and are not needed for standard download-based provisioning
 
 ## Presets
 
@@ -71,34 +112,31 @@ Finnish presets (`finland-*`) add Finnish-language Wikipedia, Wiktionary, Finnis
 <img src="docs/demo.gif" alt="svalbard wizard demo" width="100%">
 
 ```bash
-# 1. Run the Go host CLI from host-cli/
-cd host-cli
+# 1. Create a vault from a preset
+svalbard init /Volumes/MyStick --preset default-32
 
-# 2. Create a vault from a preset
-go run ./cmd/svalbard init /Volumes/MyStick --preset default-32
+# 2. Review and materialize the plan
+svalbard plan --vault /Volumes/MyStick
+svalbard apply --vault /Volumes/MyStick
 
-# 3. Review and materialize the plan
-go run ./cmd/svalbard plan --vault /Volumes/MyStick
-go run ./cmd/svalbard apply --vault /Volumes/MyStick
+# 3. Build the search index
+svalbard index --vault /Volumes/MyStick
 
-# 4. Build the search index
-go run ./cmd/svalbard index --vault /Volumes/MyStick
-
-# 5. Done — unplug and go
+# 4. Done — unplug and go
 cd /Volumes/MyStick && ./run
 ```
 
-### Add your own content
+Or just run `svalbard` with no arguments to launch the interactive TUI wizard.
 
-The current Go CLI imports local files into the vault library. You can optionally add the imported item to the desired state in the same step.
+### Add your own content
 
 ```bash
 # Import a local file into the vault library and desired state
-go run ./cmd/svalbard import ../manual.pdf --vault /Volumes/MyStick --add --name field-manual
+svalbard import ../manual.pdf --vault /Volumes/MyStick --add --name field-manual
 
 # Or add an existing item id, then apply again
-go run ./cmd/svalbard add local:field-manual --vault /Volumes/MyStick
-go run ./cmd/svalbard apply --vault /Volumes/MyStick
+svalbard add local:field-manual --vault /Volumes/MyStick
+svalbard apply --vault /Volumes/MyStick
 ```
 
 `preset copy` is available for exporting built-in preset YAML as a starting point, but local custom preset loading is not yet wired into the Go CLI on this branch.
@@ -107,6 +145,7 @@ go run ./cmd/svalbard apply --vault /Volumes/MyStick
 
 | Command | Description |
 |---------|-------------|
+| `svalbard` | Launch the interactive TUI (dashboard or wizard) |
 | `svalbard init [path] --preset <name>` | Initialize a new vault from a preset |
 | `svalbard add <item...> --vault <path>` | Add catalog or local item ids to desired state |
 | `svalbard remove <item...> --vault <path>` | Remove item ids from desired state |
@@ -118,6 +157,8 @@ go run ./cmd/svalbard apply --vault /Volumes/MyStick
 | `svalbard preset copy <source> <target>` | Export a built-in preset YAML file |
 | `svalbard index --vault <path>` | Build the full-text search index from vault ZIM files |
 
+Set `SVALBARD_DEBUG=1` for verbose structured logging (written to `$TMPDIR/svalbard.log`).
+
 ## Roadmap
 
 - [x] Go host CLI for vault init, desired-state edits, apply, status, import, preset listing, and indexing
@@ -125,7 +166,8 @@ go run ./cmd/svalbard apply --vault /Volumes/MyStick
 - [x] Composable presets with inheritance and regional packs
 - [x] Full-text and semantic search across all ZIM content
 - [x] Drive toolkit — Go launcher, embedded runtime binaries, local map viewer, bundled tools
-- [ ] Interactive picker / wizard replacement on top of the Go CLI
+- [x] Interactive TUI wizard for guided vault setup
+- [x] Self-contained release binary with embedded drive-runtime and catalog
 - [ ] Local custom preset loading from exported YAML
 - [ ] Expanded Go-side import flows beyond local-file ingestion
 - [ ] Fully curated and verified presets — every source checked, sized, and tested across tiers
