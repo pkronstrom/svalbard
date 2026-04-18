@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +18,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 )
 
 // SearchCapability exposes search and read functionality via the MCP "search" tool.
@@ -26,8 +29,15 @@ type SearchCapability struct {
 	meta      DriveMetadata
 
 	dbOnce sync.Once
-	db     *searchDB
+	db     *sql.DB
 	dbErr  error
+	eng    *engine.Engine
+
+	embedOnce sync.Once
+	embedCmd  *exec.Cmd
+	embedPort int
+	embedErr  error
+	queryPfx  string
 
 	kiwixOnce sync.Once
 	kiwixCmd  *exec.Cmd
@@ -83,6 +93,10 @@ func (c *SearchCapability) Close() error {
 	if c.db != nil {
 		c.db.Close()
 	}
+	if c.embedCmd != nil && c.embedCmd.Process != nil {
+		_ = c.embedCmd.Process.Kill()
+		_, _ = c.embedCmd.Process.Wait()
+	}
 	if c.kiwixCmd != nil && c.kiwixCmd.Process != nil {
 		_ = c.kiwixCmd.Process.Kill()
 		_, _ = c.kiwixCmd.Process.Wait()
@@ -101,11 +115,14 @@ type searchResultItem struct {
 	Links    []search.PageLink `json:"links,omitempty"`
 }
 
-func (c *SearchCapability) getDB() (*searchDB, error) {
+func (c *SearchCapability) getDB() (*sql.DB, *engine.Engine, error) {
 	c.dbOnce.Do(func() {
 		c.db, c.dbErr = openSearchDB(c.driveRoot)
+		if c.dbErr == nil {
+			c.eng = engine.New(c.db)
+		}
 	})
-	return c.db, c.dbErr
+	return c.db, c.eng, c.dbErr
 }
 
 func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any) (ActionResult, error) {
@@ -136,7 +153,7 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 		limit = 5
 	}
 
-	db, err := c.getDB()
+	_, eng, err := c.getDB()
 	if err != nil {
 		return ActionResult{}, err
 	}
@@ -147,13 +164,25 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 		fetchLimit = 50
 	}
 
-	results, err := db.keywordSearch(query, fetchLimit)
-	if err != nil {
-		return ActionResult{}, fmt.Errorf("search failed: %w", err)
+	// Try hybrid search if embedding server is available.
+	var results []engine.Result
+	if c.ensureEmbedServer() == nil {
+		queryVec, embedErr := embedQuery(c.queryPfx+query, c.embedPort)
+		if embedErr == nil {
+			results, _ = eng.Hybrid(query, queryVec, fetchLimit)
+		}
+	}
+
+	// Fallback to keyword search.
+	if results == nil {
+		results, err = eng.Keyword(query, fetchLimit)
+		if err != nil {
+			return ActionResult{}, fmt.Errorf("search failed: %w", err)
+		}
 	}
 
 	if sourceFilter != "" {
-		filtered := make([]search.Result, 0, len(results))
+		filtered := make([]engine.Result, 0, len(results))
 		for _, r := range results {
 			if normalizeSourceName(r.Filename) == sourceFilter {
 				filtered = append(filtered, r)
@@ -179,7 +208,7 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 			item.Snippet = r.Snippet
 			// If FTS snippet is empty, try article body from DB
 			if item.Snippet == "" {
-				if body, err := db.readArticle(r.Filename, r.Path); err == nil && body != "" {
+				if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
 					if len(body) > 200 {
 						body = body[:200] + "..."
 					}
@@ -188,7 +217,7 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 			}
 		case "full":
 			// Try reading from search.db first (fast, no kiwix needed)
-			if body, err := db.readArticle(r.Filename, r.Path); err == nil && body != "" {
+			if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
 				item.Body = body
 			} else {
 				// Fallback to kiwix for full HTML content
@@ -225,11 +254,11 @@ func (c *SearchCapability) handleRead(_ context.Context, params map[string]any) 
 		}}, nil
 	}
 
-	// Fallback to search.db (partial body, no links, but no Kiwix needed)
+	// Fallback to search.db via engine (partial body, no links, but no Kiwix needed)
 	if path != "" {
-		db, err := c.getDB()
+		_, eng, err := c.getDB()
 		if err == nil {
-			if body, err := db.readArticle(source, path); err == nil && body != "" {
+			if body, err := eng.ReadArticle(source, path); err == nil && body != "" {
 				return ActionResult{Data: searchResultItem{
 					Source: source,
 					Path:   path,
@@ -250,6 +279,105 @@ func getString(params map[string]any, key string) string {
 
 func normalizeSourceName(source string) string {
 	return strings.TrimSuffix(source, ".zim")
+}
+
+// ensureEmbedServer starts llama-server for query embedding lazily on first
+// hybrid search request. Uses the same sync.Once pattern as ensureKiwix.
+func (c *SearchCapability) ensureEmbedServer() error {
+	c.embedOnce.Do(func() {
+		llamaBin, err := binary.Resolve("llama-server", c.driveRoot, platform.Detect)
+		if err != nil {
+			c.embedErr = fmt.Errorf("llama-server not found: %w", err)
+			return
+		}
+
+		modelPath := findEmbeddingModel(c.driveRoot)
+		if modelPath == "" {
+			c.embedErr = fmt.Errorf("no embedding model found")
+			return
+		}
+
+		// Read query prefix from DB meta.
+		if db, _, err := c.getDB(); err == nil {
+			_ = db.QueryRow("SELECT COALESCE((SELECT value FROM meta WHERE key='embedding_query_prefix'), '')").Scan(&c.queryPfx)
+		}
+
+		port, err := netutil.FindAvailablePort("127.0.0.1", 8085)
+		if err != nil {
+			c.embedErr = err
+			return
+		}
+
+		cmd := exec.Command(llamaBin, "--model", modelPath, "--port", fmt.Sprintf("%d", port), "--host", "127.0.0.1", "--embedding")
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		if err := cmd.Start(); err != nil {
+			c.embedErr = fmt.Errorf("starting llama-server: %w", err)
+			return
+		}
+
+		healthURL := fmt.Sprintf("http://127.0.0.1:%d/health", port)
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			resp, err := http.Get(healthURL)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				resp.Body.Close()
+				c.embedCmd = cmd
+				c.embedPort = port
+				return
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		c.embedErr = fmt.Errorf("llama-server did not become healthy on port %d", port)
+	})
+	return c.embedErr
+}
+
+func findEmbeddingModel(driveRoot string) string {
+	matches, _ := filepath.Glob(filepath.Join(driveRoot, "models", "embed", "*.gguf"))
+	for _, m := range matches {
+		if !strings.HasPrefix(filepath.Base(m), "._") {
+			return m
+		}
+	}
+	return ""
+}
+
+func embedQuery(query string, port int) ([]float32, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/embedding", port)
+	payload := map[string][]string{"content": {query}}
+	body, _ := json.Marshal(payload)
+	resp, err := http.Post(url, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var data []struct {
+		Embedding json.RawMessage `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty embedding response")
+	}
+	// Handle both nested [[...]] and flat [...] response formats.
+	var nested [][]float32
+	if err := json.Unmarshal(data[0].Embedding, &nested); err == nil && len(nested) > 0 {
+		return nested[0], nil
+	}
+	var vec []float32
+	if err := json.Unmarshal(data[0].Embedding, &vec); err != nil {
+		return nil, err
+	}
+	return vec, nil
 }
 
 // ensureKiwix starts kiwix-serve lazily. Handles the case where the binary
