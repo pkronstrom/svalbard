@@ -52,15 +52,22 @@ func NewEmbeddedCatalog() (*Catalog, error) {
 // should use NewEmbeddedCatalog or provide catalog paths via flags.
 // It locates the repo root relative to this source file using runtime.Caller,
 // which will fail in compiled binaries.
-func NewDefaultCatalog() (*Catalog, error) {
+// devRepoRoot returns the repository root by walking up from this source file.
+// Only works during development (go run/go test), not in compiled binaries.
+func devRepoRoot() (string, error) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
-		return nil, fmt.Errorf("cannot determine source file path")
+		return "", fmt.Errorf("cannot determine source file path")
 	}
+	// thisFile is .../host-cli/internal/catalog/*.go — repo root is three dirs up.
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", ".."), nil
+}
 
-	// thisFile is .../host-cli/internal/catalog/embed.go
-	// repo root is three directories up.
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
+func NewDefaultCatalog() (*Catalog, error) {
+	repoRoot, err := devRepoRoot()
+	if err != nil {
+		return nil, err
+	}
 
 	recipesFS := os.DirFS(filepath.Join(repoRoot, "recipes"))
 	presetsFS := os.DirFS(filepath.Join(repoRoot, "presets"))
@@ -110,11 +117,10 @@ func LoadDepDefaultsAuto() (DepDefaults, error) {
 	}
 
 	// Fallback: read from repo root (development mode).
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		return nil, fmt.Errorf("embedded dep-defaults: %w; cannot determine source file path for fallback", err)
+	repoRoot, rootErr := devRepoRoot()
+	if rootErr != nil {
+		return nil, fmt.Errorf("embedded dep-defaults: %w; %v", err, rootErr)
 	}
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
 	dd, fallbackErr := LoadDepDefaults(filepath.Join(repoRoot, "recipes", "dep-defaults.yaml"))
 	if fallbackErr == nil {
 		return dd, nil

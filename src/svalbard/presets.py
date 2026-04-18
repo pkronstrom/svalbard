@@ -59,10 +59,10 @@ def _get_deps_for_recipe(recipe: dict, defaults: dict[str, list[str]]) -> list[s
 
 
 def _resolve_deps(
-    sources: list,  # list[Source]
+    sources: list[Source],
     recipe_index: dict[str, dict],
     defaults: dict[str, list[str]],
-) -> list:  # list[Source]
+) -> list[Source]:
     """Resolve deps transitively, preserving existing Source objects.
 
     Sources already in the list are kept as-is (preserving any overrides).
@@ -71,7 +71,7 @@ def _resolve_deps(
     """
     existing = {s.id: s for s in sources}
     resolved_ids: set[str] = set()
-    result: list = []
+    result: list[Source] = []
 
     def _visit(source_id: str, is_auto: bool) -> None:
         if source_id in resolved_ids:

@@ -209,6 +209,12 @@ func (tp *TreePicker) UpdateWithResult(msg tea.KeyMsg) UpdateResult {
 	return UpdateNone
 }
 
+// IsAutoDep returns true if the given ID is an auto-included dep that was not
+// manually selected by the user.
+func (tp *TreePicker) IsAutoDep(id string) bool {
+	return tp.AutoDepIDs[id] && !tp.UserCheckedIDs[id]
+}
+
 // CursorRow returns the row at the current cursor, or nil.
 func (tp *TreePicker) CursorRow() *PickerRow {
 	if tp.Cursor >= 0 && tp.Cursor < len(tp.Rows) {
@@ -266,8 +272,7 @@ func (tp *TreePicker) ToggleAtCursor() {
 
 	case RowItem:
 		src := row.Source
-		// Can't uncheck a pure auto-dep (not manually selected by user)
-		if tp.AutoDepIDs[src.ID] && !tp.UserCheckedIDs[src.ID] {
+		if tp.IsAutoDep(src.ID) {
 			return
 		}
 		if tp.CheckedIDs[src.ID] {
@@ -557,7 +562,7 @@ func (tp *TreePicker) RenderTree() string {
 
 		case RowItem:
 			src := row.Source
-			isAutoDep := tp.AutoDepIDs[src.ID] && !tp.UserCheckedIDs[src.ID]
+			isAutoDep := tp.IsAutoDep(src.ID)
 			mark := "·"
 			if tp.CheckedIDs[src.ID] {
 				mark = "✓"
@@ -639,7 +644,7 @@ func (tp *TreePicker) RenderDetail() string {
 			stratLabel = "build ⚒"
 		}
 		info := tp.Theme.Muted.Render(fmt.Sprintf("  %s · %s · %s", src.Type, stratLabel, FormatSizeGB(src.SizeGB)))
-		if tp.AutoDepIDs[src.ID] && !tp.UserCheckedIDs[src.ID] {
+		if tp.IsAutoDep(src.ID) {
 			info += "\n" + tp.Theme.Muted.Render("  auto-included — needed by another recipe")
 		}
 		if src.Description != "" {
