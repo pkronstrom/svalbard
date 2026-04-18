@@ -31,6 +31,7 @@ class Source:
     build: dict = field(default_factory=dict)  # opaque config for builder
     path: str = ""
     size_bytes: int = 0
+    auto_dep: bool = False
 
     def __post_init__(self) -> None:
         if self.size_bytes and not self.size_gb:

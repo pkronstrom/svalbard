@@ -1,0 +1,7 @@
+# Type-level dependency defaults.
+# When a recipe has no explicit `deps:` field, these apply based on its `type:`.
+# Recipe-level `deps:` overrides (replaces) the type default entirely.
+# Explicit `deps: []` means "no deps despite my type."
+gguf: [llama-server]
+pmtiles: [go-pmtiles, maplibre-vendor, dufs]
+zim: [kiwix-serve]
