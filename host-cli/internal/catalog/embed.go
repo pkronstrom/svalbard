@@ -90,3 +90,34 @@ func LoadCatalog() (*Catalog, error) {
 	}
 	return nil, fmt.Errorf("embedded catalog: %w; default catalog: %v", err, fallbackErr)
 }
+
+// loadDepDefaultsFromFS reads dep-defaults.yaml from an fs.FS.
+func loadDepDefaultsFromFS(fsys fs.FS, path string) (DepDefaults, error) {
+	data, err := fs.ReadFile(fsys, path)
+	if err != nil {
+		return nil, err
+	}
+	return parseDepDefaults(data)
+}
+
+// LoadDepDefaultsAuto loads dep-defaults.yaml using the same dual-mode
+// strategy as LoadCatalog: try embedded data first, then fall back to the
+// repo root for development builds.
+func LoadDepDefaultsAuto() (DepDefaults, error) {
+	dd, err := loadDepDefaultsFromFS(embeddedData, "embedded/recipes/dep-defaults.yaml")
+	if err == nil {
+		return dd, nil
+	}
+
+	// Fallback: read from repo root (development mode).
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return nil, fmt.Errorf("embedded dep-defaults: %w; cannot determine source file path for fallback", err)
+	}
+	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
+	dd, fallbackErr := LoadDepDefaults(filepath.Join(repoRoot, "recipes", "dep-defaults.yaml"))
+	if fallbackErr == nil {
+		return dd, nil
+	}
+	return nil, fmt.Errorf("embedded dep-defaults: %w; fallback: %v", err, fallbackErr)
+}

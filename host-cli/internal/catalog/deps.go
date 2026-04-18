@@ -12,6 +12,15 @@ import (
 // DepDefaults maps recipe type to default dep IDs.
 type DepDefaults map[string][]string
 
+// parseDepDefaults unmarshals dep-defaults YAML bytes into DepDefaults.
+func parseDepDefaults(data []byte) (DepDefaults, error) {
+	var defaults DepDefaults
+	if err := yaml.Unmarshal(data, &defaults); err != nil {
+		return nil, err
+	}
+	return defaults, nil
+}
+
 // LoadDepDefaults reads dep-defaults.yaml from the given path.
 func LoadDepDefaults(path string) (DepDefaults, error) {
 	data, err := os.ReadFile(path)
@@ -21,11 +30,7 @@ func LoadDepDefaults(path string) (DepDefaults, error) {
 		}
 		return nil, err
 	}
-	var defaults DepDefaults
-	if err := yaml.Unmarshal(data, &defaults); err != nil {
-		return nil, err
-	}
-	return defaults, nil
+	return parseDepDefaults(data)
 }
 
 // depsForItem returns the dep IDs for an item.

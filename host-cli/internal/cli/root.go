@@ -297,6 +297,11 @@ func buildWizardConfig(prefillPath string) (hosttui.WizardConfig, error) {
 		return hosttui.WizardConfig{}, fmt.Errorf("loading catalog: %w", err)
 	}
 
+	depDefaults, err := catalog.LoadDepDefaultsAuto()
+	if err != nil {
+		return hosttui.WizardConfig{}, fmt.Errorf("loading dep defaults: %w", err)
+	}
+
 	// Detect volumes
 	vols := volumes.Detect()
 	var wizVols []hosttui.Volume
@@ -417,6 +422,9 @@ func buildWizardConfig(prefillPath string) (hosttui.WizardConfig, error) {
 		Regions:     cat.Regions(),
 		PackGroups:  packGroups,
 		PrefillPath: prefillPath,
+		ResolveDeps: func(selectedIDs map[string]bool) map[string]bool {
+			return cat.ResolveDeps(selectedIDs, depDefaults)
+		},
 	}, nil
 }
 
