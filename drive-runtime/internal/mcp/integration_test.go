@@ -12,7 +12,7 @@ import (
 	mcpserver "github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/query"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 func setupTestDrive(t *testing.T) string {
@@ -47,7 +47,7 @@ func setupTestDrive(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
 		t.Fatalf("mkdir data: %v", err)
 	}
-	db, err := sql.Open("sqlite", filepath.Join(dir, "data", "test.sqlite"))
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "data", "test.sqlite"))
 	if err != nil {
 		t.Fatalf("open test.sqlite: %v", err)
 	}

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
 )
@@ -130,7 +130,7 @@ func TestDatabasesListsTables(t *testing.T) {
 	}
 
 	dbPath := filepath.Join(dataDir, "test.sqlite")
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		t.Fatalf("sql.Open error = %v", err)
 	}

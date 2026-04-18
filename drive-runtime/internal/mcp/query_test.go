@@ -10,14 +10,14 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/query"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 func setupQueryTestDB(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "data"), 0o755)
-	db, err := sql.Open("sqlite", filepath.Join(dir, "data", "test.sqlite"))
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "data", "test.sqlite"))
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}

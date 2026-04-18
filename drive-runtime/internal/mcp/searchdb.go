@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 )
 
 // searchDB provides direct database/sql access to search.db, bypassing the
-// Session's sqlite3 binary shell-out. This uses modernc.org/sqlite which has
+// Session's sqlite3 binary shell-out. This uses ncruces/go-sqlite3 which has
 // FTS5 compiled in, so it works without any external binaries.
 type searchDB struct {
 	db *sql.DB
@@ -20,7 +20,7 @@ type searchDB struct {
 
 func openSearchDB(driveRoot string) (*searchDB, error) {
 	dbPath := filepath.Join(driveRoot, "data", "search.db")
-	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=ro", dbPath))
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro", dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("opening search.db: %w", err)
 	}

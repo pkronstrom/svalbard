@@ -2,11 +2,12 @@ package inspect
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 // SourceInfo describes a single content source on the drive.
@@ -160,7 +161,7 @@ func Databases(driveRoot string) ([]DatabaseInfo, error) {
 
 // listSQLiteTables opens a SQLite database read-only and returns table names.
 func listSQLiteTables(path string) ([]string, error) {
-	db, err := sql.Open("sqlite", path+"?mode=ro")
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro", path))
 	if err != nil {
 		return nil, err
 	}

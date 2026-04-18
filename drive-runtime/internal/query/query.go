@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	_ "modernc.org/sqlite" // register sqlite driver
+	_ "github.com/ncruces/go-sqlite3/driver" // register sqlite3 driver
 )
 
 // TableSchema describes one table in a SQLite database.
@@ -128,7 +128,7 @@ func resolvePath(driveRoot, database string) (string, error) {
 // openReadOnly opens a SQLite database in read-only mode with ATTACH disabled.
 func openReadOnly(dbPath string) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?mode=ro&_query_only=true", dbPath)
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}

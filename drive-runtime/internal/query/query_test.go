@@ -8,14 +8,14 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/query"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 func setupTestDB(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "data"), 0o755)
-	db, err := sql.Open("sqlite", filepath.Join(dir, "data", "test.sqlite"))
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "data", "test.sqlite"))
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestDescribeReturnsSchema(t *testing.T) {
 func TestDescribeReturnsFTSStatus(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "data"), 0o755)
-	db, err := sql.Open("sqlite", filepath.Join(dir, "data", "fts.sqlite"))
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "data", "fts.sqlite"))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestDescribeReturnsFTSStatus(t *testing.T) {
 func TestDescribeReturnsSampleRows(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "data"), 0o755)
-	db, err := sql.Open("sqlite", filepath.Join(dir, "data", "sample.sqlite"))
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "data", "sample.sqlite"))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

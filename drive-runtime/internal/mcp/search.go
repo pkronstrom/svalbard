@@ -19,7 +19,7 @@ import (
 )
 
 // SearchCapability exposes search and read functionality via the MCP "search" tool.
-// Uses modernc.org/sqlite directly for FTS5 queries (no sqlite3 binary needed).
+// Uses ncruces/go-sqlite3 directly for FTS5 queries (no sqlite3 binary needed).
 // Uses kiwix-serve only for browse/read with full HTML content.
 type SearchCapability struct {
 	driveRoot string
