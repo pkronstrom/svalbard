@@ -28,6 +28,9 @@ type Item struct {
 	Menu        *MenuSpec         `yaml:"menu,omitempty"`
 	Env         map[string]string `yaml:"env,omitempty"`
 
+	// Recipe dependency declarations.
+	Deps []string `yaml:"deps,omitempty"`
+
 	// Embedding model params (gguf-embed only).
 	Embedding *EmbeddingSpec `yaml:"embedding,omitempty"`
 
