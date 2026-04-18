@@ -8,10 +8,11 @@ import (
 )
 
 var (
-	scriptRe = regexp.MustCompile(`(?si)<script[^>]*>.*?</script>`)
-	styleRe  = regexp.MustCompile(`(?si)<style[^>]*>.*?</style>`)
-	tagRe    = regexp.MustCompile(`(?s)<[^>]*>`)
-	wsRe     = regexp.MustCompile(`[\s]+`)
+	scriptRe  = regexp.MustCompile(`(?si)<script[^>]*>.*?</script>`)
+	styleRe   = regexp.MustCompile(`(?si)<style[^>]*>.*?</style>`)
+	tagRe     = regexp.MustCompile(`(?s)<[^>]*>`)
+	wsRe      = regexp.MustCompile(`[\s]+`)
+	headingRe = regexp.MustCompile(`(?i)<h[23][^>]*>(.*?)</h[23]>`)
 )
 
 var entityReplacer = strings.NewReplacer(
@@ -70,4 +71,69 @@ func TruncateText(text string, maxChars int) string {
 
 	// Hard truncate.
 	return window
+}
+
+// Section represents a heading-delimited section of an HTML document.
+type Section struct {
+	Heading string `json:"heading"` // "" for intro/lead content before first heading
+	Body    string `json:"body"`
+}
+
+// ExtractSections splits raw HTML content on <h2> and <h3> heading boundaries,
+// returning structured sections. Content before the first heading becomes a
+// section with an empty Heading. Sections with empty bodies after stripping
+// HTML are omitted.
+func ExtractSections(htmlContent string) []Section {
+	if strings.TrimSpace(htmlContent) == "" {
+		return nil
+	}
+
+	matches := headingRe.FindAllStringSubmatchIndex(htmlContent, -1)
+
+	// No headings found — return the whole content as a single section.
+	if len(matches) == 0 {
+		body := StripHTML(htmlContent)
+		if body == "" {
+			return nil
+		}
+		return []Section{{Heading: "", Body: body}}
+	}
+
+	var sections []Section
+
+	// Content before the first heading (intro/lead).
+	if matches[0][0] > 0 {
+		intro := StripHTML(htmlContent[:matches[0][0]])
+		if intro != "" {
+			sections = append(sections, Section{Heading: "", Body: intro})
+		}
+	}
+
+	for i, m := range matches {
+		// m[0]:m[1] is the full <h2>...</h2> match
+		// m[2]:m[3] is the capture group (heading inner HTML)
+		headingHTML := htmlContent[m[2]:m[3]]
+		heading := StripHTML(headingHTML)
+
+		// Body runs from after the closing tag to the start of the next heading
+		// (or end of content).
+		bodyStart := m[1]
+		var bodyEnd int
+		if i+1 < len(matches) {
+			bodyEnd = matches[i+1][0]
+		} else {
+			bodyEnd = len(htmlContent)
+		}
+
+		body := StripHTML(htmlContent[bodyStart:bodyEnd])
+		if body == "" {
+			continue
+		}
+		sections = append(sections, Section{Heading: heading, Body: body})
+	}
+
+	if len(sections) == 0 {
+		return nil
+	}
+	return sections
 }
