@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,17 +10,20 @@ import (
 	"strings"
 	"sync"
 
+	_ "github.com/ncruces/go-sqlite3/driver"
+
 	drivebinary "github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 )
 
 type SessionInfo struct {
 	SourceCount      int
 	ArticleCount     int
 	BestMode         Mode
-	SemanticEnabled  bool
+	HybridEnabled    bool
 	EmbeddingModelID string
 }
 
@@ -31,8 +35,8 @@ type SearchResponse struct {
 
 type Session struct {
 	driveRoot string
-	dbPath    string
-	sqliteBin string
+	db        *sql.DB
+	eng       *engine.Engine
 	caps      Capabilities
 	info      SessionInfo
 	opener    func(string) error
@@ -54,17 +58,18 @@ func NewSession(driveRoot string, opener func(string) error) (*Session, error) {
 		return nil, fmt.Errorf("search index not found. run 'svalbard index' to build it")
 	}
 
-	sqliteBin, err := drivebinary.Resolve("sqlite3", driveRoot, platform.Detect)
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro", dbPath))
 	if err != nil {
-		return nil, fmt.Errorf("sqlite3 not found")
+		return nil, fmt.Errorf("opening search.db: %w", err)
 	}
 
-	caps, articleCount, sourceCount, err := detectCapabilities(driveRoot, dbPath, sqliteBin)
+	caps, articleCount, sourceCount, err := detectCapabilities(driveRoot, db)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 
-	// If embeddings were created with a specific model but that model isn't on the drive, disable semantic.
+	// If embeddings were created with a specific model but that model isn't on the drive, disable hybrid.
 	if caps.EmbeddingModelID != "" && caps.EmbeddingModel == "" {
 		caps.HasEmbeddingData = false
 	}
@@ -72,14 +77,14 @@ func NewSession(driveRoot string, opener func(string) error) (*Session, error) {
 	bestMode := BestMode(caps)
 	return &Session{
 		driveRoot: driveRoot,
-		dbPath:    dbPath,
-		sqliteBin: sqliteBin,
+		db:        db,
+		eng:       engine.New(db),
 		caps:      caps,
 		info: SessionInfo{
 			SourceCount:      sourceCount,
 			ArticleCount:     articleCount,
 			BestMode:         bestMode,
-			SemanticEnabled:  bestMode == ModeSemantic,
+			HybridEnabled:    bestMode == ModeHybrid,
 			EmbeddingModelID: caps.EmbeddingModelID,
 		},
 		opener:    opener,
@@ -105,23 +110,26 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 	var results []Result
 	var err error
 
-	if effectiveMode == ModeSemantic {
-		if err := s.ensureEmbedServer(ctx); err != nil {
+	if effectiveMode == ModeHybrid {
+		if embedErr := s.ensureEmbedServer(ctx); embedErr != nil {
 			effectiveMode = ModeKeyword
-			status = "Semantic unavailable, fell back to keyword"
+			status = "Hybrid unavailable, fell back to keyword"
 		} else {
-			results, err = semanticSearch(s.sqliteBin, s.dbPath, query, s.info.ArticleCount, s.embedPort, s.caps.QueryPrefix, limit)
-			if err != nil || len(results) == 0 {
+			queryVec, embedErr := embedQuery(s.caps.QueryPrefix+query, s.embedPort)
+			if embedErr == nil {
+				results, err = s.eng.Hybrid(query, queryVec, limit)
+			}
+			if embedErr != nil || err != nil || len(results) == 0 {
 				effectiveMode = ModeKeyword
-				if err != nil {
-					status = "Semantic search failed, fell back to keyword"
+				if embedErr != nil || err != nil {
+					status = "Hybrid search failed, fell back to keyword"
 				}
 			}
 		}
 	}
 
 	if effectiveMode == ModeKeyword {
-		results, err = keywordSearch(s.sqliteBin, s.dbPath, query, limit)
+		results, err = s.eng.Keyword(query, limit)
 		if err != nil {
 			return SearchResponse{}, err
 		}
@@ -161,6 +169,9 @@ func (s *Session) Close() error {
 		_, _ = s.kiwixServer.Process.Wait()
 		s.kiwixServer = nil
 	}
+	if s.db != nil {
+		s.db.Close()
+	}
 	return nil
 }
 
@@ -196,7 +207,7 @@ func (s *Session) ensureEmbedServer(ctx context.Context) error {
 		s.embedServer = nil
 	}
 	if !s.caps.HasLlamaServer || s.caps.EmbeddingModel == "" {
-		return fmt.Errorf("semantic backend unavailable")
+		return fmt.Errorf("hybrid backend unavailable")
 	}
 	port, err := netutil.FindAvailablePort("127.0.0.1", 8085)
 	if err != nil {

@@ -265,11 +265,11 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "tab":
-		if m.searchInfo.SemanticEnabled {
-			if m.searchMode == search.ModeSemantic {
+		if m.searchInfo.HybridEnabled {
+			if m.searchMode == search.ModeHybrid {
 				m.searchMode = search.ModeKeyword
 			} else {
-				m.searchMode = search.ModeSemantic
+				m.searchMode = search.ModeHybrid
 			}
 			m.searchStatus = fmt.Sprintf("Mode: %s", m.searchMode)
 			m.searchErr = nil
@@ -323,7 +323,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		session := m.searchSession
 		m.searchLoading = true
 		m.searchErr = nil
-		if mode == search.ModeSemantic {
+		if mode == search.ModeHybrid {
 			m.searchStatus = "Starting semantic backend..."
 		} else {
 			m.searchStatus = "Searching..."

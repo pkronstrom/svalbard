@@ -57,8 +57,8 @@ func renderSearchView(m Model) string {
 	b.WriteString(m.theme.Section.Render(modeLabel))
 	b.WriteString("\n")
 
-	if m.searchInfo.SemanticEnabled {
-		b.WriteString(m.theme.Muted.Render("semantic available"))
+	if m.searchInfo.HybridEnabled {
+		b.WriteString(m.theme.Muted.Render("hybrid search available"))
 		b.WriteString("\n")
 	}
 

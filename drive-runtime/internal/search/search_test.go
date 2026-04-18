@@ -15,24 +15,26 @@ func TestBuildFTSQueryPrefixesTermsForWildcardSearch(t *testing.T) {
 	}
 }
 
-func TestDecodeVectorHexParsesLittleEndianFloat32(t *testing.T) {
-	got, err := search.DecodeVectorHex("0000803F00000040")
-	if err != nil {
-		t.Fatalf("DecodeVectorHex() error = %v", err)
-	}
-	if len(got) != 2 || got[0] != 1 || got[1] != 2 {
-		t.Fatalf("DecodeVectorHex() = %#v, want [1 2]", got)
-	}
-}
-
-func TestBestModePrefersSemanticWhenCapabilitiesAreAvailable(t *testing.T) {
+func TestBestModeReturnsHybridWhenCapabilitiesAreAvailable(t *testing.T) {
 	got := search.BestMode(search.Capabilities{
 		HasEmbeddings:    true,
 		HasEmbeddingData: true,
 		HasLlamaServer:   true,
 		EmbeddingModel:   "/tmp/model.gguf",
 	})
-	if want := search.ModeSemantic; got != want {
+	if want := search.ModeHybrid; got != want {
+		t.Fatalf("BestMode() = %q, want %q", got, want)
+	}
+}
+
+func TestBestModeReturnsKeywordWhenCapabilitiesAreMissing(t *testing.T) {
+	got := search.BestMode(search.Capabilities{
+		HasEmbeddings:    true,
+		HasEmbeddingData: true,
+		HasLlamaServer:   false,
+		EmbeddingModel:   "",
+	})
+	if want := search.ModeKeyword; got != want {
 		t.Fatalf("BestMode() = %q, want %q", got, want)
 	}
 }

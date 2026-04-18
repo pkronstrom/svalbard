@@ -56,7 +56,7 @@ func (s *searchDB) keywordSearch(query string, limit int) ([]search.Result, erro
 	for rows.Next() {
 		var r search.Result
 		var snippet sql.NullString
-		if err := rows.Scan(&r.ID, &r.Filename, &r.Path, &r.Title, &snippet); err != nil {
+		if err := rows.Scan(&r.ArticleID, &r.Filename, &r.Path, &r.Title, &snippet); err != nil {
 			continue
 		}
 		if snippet.Valid {
