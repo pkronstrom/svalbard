@@ -62,6 +62,51 @@ func TestParseEmbeddingNested(t *testing.T) {
 	}
 }
 
+func TestTruncateDims(t *testing.T) {
+	vec := []float32{3.0, 4.0, 99.0, 99.0}
+	result := TruncateDims(vec, 2)
+	if len(result) != 2 {
+		t.Fatalf("len = %d, want 2", len(result))
+	}
+	// 3/5=0.6, 4/5=0.8 (3-4-5 triangle)
+	if math.Abs(float64(result[0])-0.6) > 1e-5 {
+		t.Errorf("result[0] = %f, want 0.6", result[0])
+	}
+	if math.Abs(float64(result[1])-0.8) > 1e-5 {
+		t.Errorf("result[1] = %f, want 0.8", result[1])
+	}
+	// Check magnitude is 1.0
+	var mag float64
+	for _, v := range result {
+		mag += float64(v) * float64(v)
+	}
+	if math.Abs(mag-1.0) > 1e-6 {
+		t.Errorf("not unit vector: magnitude^2 = %f", mag)
+	}
+}
+
+func TestTruncateDimsNoTruncation(t *testing.T) {
+	vec := []float32{0.6, 0.8}
+	result := TruncateDims(vec, 10)
+	if len(result) != 2 {
+		t.Fatalf("should not grow: len = %d", len(result))
+	}
+}
+
+func TestTruncateDimsZeroVector(t *testing.T) {
+	vec := []float32{0, 0, 0}
+	result := TruncateDims(vec, 2)
+	if len(result) != 2 {
+		t.Fatalf("len = %d, want 2", len(result))
+	}
+	// Zero vector stays zero
+	for _, v := range result {
+		if v != 0 {
+			t.Errorf("expected zero, got %f", v)
+		}
+	}
+}
+
 func TestFindEmbeddingModel(t *testing.T) {
 	dir := t.TempDir()
 	embedDir := filepath.Join(dir, "models", "embed")

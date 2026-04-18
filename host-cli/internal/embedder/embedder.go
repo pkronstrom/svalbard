@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -85,6 +86,51 @@ func (s *Server) Stop() {
 // EmbedBatch sends texts to the llama-server /embedding endpoint and returns
 // one float32 vector per input text.
 func (s *Server) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	vectors, err := s.embedBatchOnce(ctx, texts)
+	if err == nil {
+		return vectors, nil
+	}
+
+	var limitErr *contextLimitError
+	if !errors.As(err, &limitErr) {
+		return nil, err
+	}
+
+	// A single oversized document should not fail the whole indexing batch.
+	vectors = make([][]float32, 0, len(texts))
+	for _, text := range texts {
+		vec, err := s.embedSingleWithRetry(ctx, text)
+		if err != nil {
+			return nil, err
+		}
+		vectors = append(vectors, vec)
+	}
+	return vectors, nil
+}
+
+func (s *Server) embedSingleWithRetry(ctx context.Context, text string) ([]float32, error) {
+	current := text
+	for range 6 {
+		vectors, err := s.embedBatchOnce(ctx, []string{current})
+		if err == nil {
+			return vectors[0], nil
+		}
+
+		var limitErr *contextLimitError
+		if !errors.As(err, &limitErr) {
+			return nil, err
+		}
+
+		next := shrinkTextForContext(current, limitErr.PromptTokens, limitErr.ContextSize)
+		if next == current {
+			return nil, err
+		}
+		current = next
+	}
+	return nil, fmt.Errorf("embedder: exceeded retry budget while shrinking oversized input")
+}
+
+func (s *Server) embedBatchOnce(ctx context.Context, texts []string) ([][]float32, error) {
 	url := fmt.Sprintf("http://%s:%d/embedding", s.host, s.port)
 
 	payload, err := json.Marshal(map[string]any{"content": texts})
@@ -107,6 +153,9 @@ func (s *Server) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if limitErr := parseContextLimitError(body); limitErr != nil {
+			return nil, limitErr
+		}
 		return nil, fmt.Errorf("embedder: /embedding returned %d: %s", resp.StatusCode, body)
 	}
 
@@ -128,6 +177,16 @@ func (s *Server) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 	return vectors, nil
 }
 
+type contextLimitError struct {
+	Message      string
+	PromptTokens int
+	ContextSize  int
+}
+
+func (e *contextLimitError) Error() string {
+	return fmt.Sprintf("embedder: %s", e.Message)
+}
+
 // VectorToBlob packs a float32 vector as a little-endian binary blob.
 func VectorToBlob(vec []float32) []byte {
 	buf := make([]byte, len(vec)*4)
@@ -143,6 +202,25 @@ func BlobToVector(blob []byte) []float32 {
 	vec := make([]float32, n)
 	for i := range n {
 		vec[i] = math.Float32frombits(binary.LittleEndian.Uint32(blob[i*4:]))
+	}
+	return vec
+}
+
+// TruncateDims truncates a vector to the first dims elements and L2-normalizes.
+// If the vector is shorter than dims, it is normalized in place but not grown.
+func TruncateDims(vec []float32, dims int) []float32 {
+	if dims > 0 && dims < len(vec) {
+		vec = vec[:dims]
+	}
+	var norm float64
+	for _, v := range vec {
+		norm += float64(v) * float64(v)
+	}
+	if norm > 0 {
+		norm = math.Sqrt(norm)
+		for i := range vec {
+			vec[i] = float32(float64(vec[i]) / norm)
+		}
 	}
 	return vec
 }
@@ -226,6 +304,86 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+func parseContextLimitError(body []byte) *contextLimitError {
+	var payload struct {
+		Error struct {
+			Message       string `json:"message"`
+			Type          string `json:"type"`
+			PromptTokens  int    `json:"n_prompt_tokens"`
+			ContextWindow int    `json:"n_ctx"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil
+	}
+	if payload.Error.Type != "exceed_context_size_error" {
+		return nil
+	}
+	return &contextLimitError{
+		Message:      payload.Error.Message,
+		PromptTokens: payload.Error.PromptTokens,
+		ContextSize:  payload.Error.ContextWindow,
+	}
+}
+
+func shrinkTextForContext(text string, promptTokens, contextSize int) string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return text
+	}
+
+	safeCtx := contextSize - 64
+	if safeCtx < 64 {
+		safeCtx = contextSize / 2
+	}
+	if safeCtx <= 0 || promptTokens <= 0 {
+		safeCtx = 256
+		promptTokens = 512
+	}
+
+	ratio := float64(safeCtx) / float64(promptTokens)
+	if ratio > 0.85 {
+		ratio = 0.85
+	}
+	if ratio <= 0 {
+		ratio = 0.5
+	}
+
+	targetWords := int(float64(len(words)) * ratio)
+	if targetWords >= len(words) {
+		targetWords = len(words) - 1
+	}
+	if targetWords < 32 {
+		targetWords = 32
+	}
+	if targetWords >= len(words) {
+		targetWords = len(words) / 2
+		if targetWords < 1 {
+			targetWords = 1
+		}
+	}
+
+	shrunk := strings.Join(words[:targetWords], " ")
+	if shrunk == text {
+		runes := []rune(text)
+		limit := int(float64(len(runes)) * ratio)
+		if limit >= len(runes) {
+			limit = len(runes) - 1
+		}
+		if limit < 16 {
+			limit = 16
+		}
+		if limit >= len(runes) {
+			return text
+		}
+		shrunk = string(runes[:limit])
+	}
+	if !strings.HasSuffix(shrunk, "...") {
+		shrunk += "..."
+	}
+	return shrunk
 }
 
 // FindEmbeddingModel returns the path to the first .gguf file in models/embed/.
