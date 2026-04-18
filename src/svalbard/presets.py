@@ -1,9 +1,12 @@
+import logging
 from pathlib import Path
 
 import yaml
 
 from svalbard.models import License, Preset, Source
 from svalbard.paths import builtin_root, workspace_root as resolve_workspace_root
+
+_log = logging.getLogger(__name__)
 
 # Resolve built-in paths relative to the packaged project root.
 _PROJECT_ROOT = builtin_root()
@@ -35,6 +38,69 @@ def _build_recipe_index(recipe_dirs: list[Path] | None = None) -> dict[str, dict
             if data and "id" in data and data.get("strategy") != "local":
                 index[data["id"]] = data
     return index
+
+
+def _load_dep_defaults(path: Path | None = None) -> dict[str, list[str]]:
+    """Load type-level dependency defaults from YAML."""
+    if path is None:
+        path = _PROJECT_ROOT / "recipes" / "dep-defaults.yaml"
+    if not path.exists():
+        return {}
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    return data or {}
+
+
+def _get_deps_for_recipe(recipe: dict, defaults: dict[str, list[str]]) -> list[str]:
+    """Return deps for a recipe: explicit deps field > type default > empty."""
+    if "deps" in recipe:
+        return recipe["deps"]
+    return defaults.get(recipe.get("type", ""), [])
+
+
+def _resolve_deps(
+    sources: list,  # list[Source]
+    recipe_index: dict[str, dict],
+    defaults: dict[str, list[str]],
+) -> list:  # list[Source]
+    """Resolve deps transitively, preserving existing Source objects.
+
+    Sources already in the list are kept as-is (preserving any overrides).
+    Only auto-dep additions are constructed from the recipe index.
+    Missing dep IDs produce a warning.
+    """
+    existing = {s.id: s for s in sources}
+    resolved_ids: set[str] = set()
+    result: list = []
+
+    def _visit(source_id: str, is_auto: bool) -> None:
+        if source_id in resolved_ids:
+            return
+        resolved_ids.add(source_id)
+
+        if source_id in existing:
+            src = existing[source_id]
+            src.auto_dep = False  # user-selected
+            result.append(src)
+        elif is_auto:
+            recipe = recipe_index.get(source_id)
+            if recipe is None:
+                _log.warning("Dep '%s' not found in recipe index — skipping", source_id)
+                return
+            src = _source_from_recipe(recipe)
+            src.auto_dep = True
+            result.append(src)
+        else:
+            return
+
+        recipe = recipe_index.get(source_id, {})
+        for dep_id in _get_deps_for_recipe(recipe, defaults):
+            _visit(dep_id, is_auto=True)
+
+    for src in sources:
+        _visit(src.id, is_auto=False)
+
+    return result
 
 
 def builtin_recipe_ids() -> set[str]:
@@ -74,6 +140,7 @@ def parse_preset(
     path: Path,
     recipe_index: dict[str, dict] | None = None,
     _seen: set[str] | None = None,
+    dep_defaults: dict[str, list[str]] | None = None,
 ) -> Preset:
     """Parse a preset YAML file, resolving source IDs from recipes.
 
@@ -146,6 +213,10 @@ def parse_preset(
         if s.id not in existing_ids:
             sources.append(s)
             existing_ids.add(s.id)
+
+    # ── Resolve dependencies (top-level only) ───────────────────────────
+    if dep_defaults is not None:
+        sources = _resolve_deps(sources, recipe_index, dep_defaults)
 
     return Preset(
         name=preset_name,
