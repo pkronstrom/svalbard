@@ -67,7 +67,10 @@ func sendKeyCmd(m packPickerModel, key string) (packPickerModel, tea.Cmd) {
 }
 
 func TestPackPickerShowsGroupsAndPacks(t *testing.T) {
-	m := newPackPicker(samplePackGroups(), nil, 64)
+	m := newPackPicker(packPickerConfig{
+		groups: samplePackGroups(),
+		freeGB: 64,
+	})
 	m.width = 80
 	m.height = 30
 
@@ -81,7 +84,10 @@ func TestPackPickerShowsGroupsAndPacks(t *testing.T) {
 }
 
 func TestPackPickerTogglePack(t *testing.T) {
-	m := newPackPicker(samplePackGroups(), nil, 64)
+	m := newPackPicker(packPickerConfig{
+		groups: samplePackGroups(),
+		freeGB: 64,
+	})
 	m.width = 80
 	m.height = 30
 
@@ -102,7 +108,10 @@ func TestPackPickerTogglePack(t *testing.T) {
 }
 
 func TestPackPickerExpandCollapse(t *testing.T) {
-	m := newPackPicker(samplePackGroups(), nil, 64)
+	m := newPackPicker(packPickerConfig{
+		groups: samplePackGroups(),
+		freeGB: 64,
+	})
 	m.width = 80
 	m.height = 30
 
@@ -127,7 +136,11 @@ func TestPackPickerExpandCollapse(t *testing.T) {
 func TestPackPickerTriState(t *testing.T) {
 	// Pre-check only one source in the core pack
 	checked := map[string]bool{"wikiciv": true}
-	m := newPackPicker(samplePackGroups(), checked, 64)
+	m := newPackPicker(packPickerConfig{
+		groups:     samplePackGroups(),
+		checkedIDs: checked,
+		freeGB:     64,
+	})
 	m.width = 80
 	m.height = 30
 
@@ -143,7 +156,11 @@ func TestPackPickerPreChecked(t *testing.T) {
 		"wikiciv":        true,
 		"permacomputing": true,
 	}
-	m := newPackPicker(samplePackGroups(), checked, 64)
+	m := newPackPicker(packPickerConfig{
+		groups:     samplePackGroups(),
+		checkedIDs: checked,
+		freeGB:     64,
+	})
 
 	if !m.picker.CheckedIDs["wikiciv"] || !m.picker.CheckedIDs["permacomputing"] {
 		t.Error("Constructor should pre-select items from checked map; got:", m.picker.CheckedIDs)
@@ -161,7 +178,11 @@ func TestPackPickerSizeTotal(t *testing.T) {
 		"wikiciv":        true,
 		"permacomputing": true,
 	}
-	m := newPackPicker(samplePackGroups(), checked, 64)
+	m := newPackPicker(packPickerConfig{
+		groups:     samplePackGroups(),
+		checkedIDs: checked,
+		freeGB:     64,
+	})
 	m.width = 80
 	m.height = 30
 
@@ -181,11 +202,15 @@ func TestPackPickerSizeTotal(t *testing.T) {
 
 func TestPackPickerOverBudget(t *testing.T) {
 	checked := map[string]bool{
-		"osm-finland":  true,
+		"osm-finland":    true,
 		"natural-earth": true,
 	}
 	// Only 1 GB free but selected 3.3 GB
-	m := newPackPicker(samplePackGroups(), checked, 1.0)
+	m := newPackPicker(packPickerConfig{
+		groups:     samplePackGroups(),
+		checkedIDs: checked,
+		freeGB:     1.0,
+	})
 	m.width = 80
 	m.height = 30
 
@@ -199,7 +224,11 @@ func TestPackPickerApply(t *testing.T) {
 	checked := map[string]bool{
 		"wikiciv": true,
 	}
-	m := newPackPicker(samplePackGroups(), checked, 64)
+	m := newPackPicker(packPickerConfig{
+		groups:     samplePackGroups(),
+		checkedIDs: checked,
+		freeGB:     64,
+	})
 	m.width = 80
 	m.height = 30
 
@@ -219,7 +248,10 @@ func TestPackPickerApply(t *testing.T) {
 }
 
 func TestPackPickerCancel(t *testing.T) {
-	m := newPackPicker(samplePackGroups(), nil, 64)
+	m := newPackPicker(packPickerConfig{
+		groups: samplePackGroups(),
+		freeGB: 64,
+	})
 	m.width = 80
 	m.height = 30
 

@@ -14,23 +14,58 @@ type packDoneMsg struct {
 }
 type packCancelMsg struct{}
 
+type packPickerConfig struct {
+	groups      []tui.PackGroup
+	checkedIDs  map[string]bool
+	freeGB      float64
+	resolveDeps func(map[string]bool) map[string]bool
+}
+
 // packPickerModel is the Bubble Tea sub-model for the pack picker sub-screen.
 type packPickerModel struct {
-	picker tui.TreePicker
-	width  int
-	height int
+	picker      tui.TreePicker
+	resolveDeps func(map[string]bool) map[string]bool
+	width       int
+	height      int
 }
 
 // newPackPicker creates a pack picker model.
-func newPackPicker(groups []tui.PackGroup, checked map[string]bool, freeGB float64) packPickerModel {
+func newPackPicker(cfg packPickerConfig) packPickerModel {
 	tp := tui.NewTreePicker(tui.TreePickerConfig{
-		Groups:     groups,
-		CheckedIDs: checked,
-		FreeGB:     freeGB,
+		Groups:     cfg.groups,
+		CheckedIDs: cfg.checkedIDs,
+		FreeGB:     cfg.freeGB,
 		ShowAction: true,
 	})
 
-	return packPickerModel{picker: tp}
+	m := packPickerModel{
+		picker:      tp,
+		resolveDeps: cfg.resolveDeps,
+	}
+	m.recalcDeps()
+	return m
+}
+
+func (m *packPickerModel) recalcDeps() {
+	if m.resolveDeps == nil {
+		return
+	}
+
+	autoDeps := m.resolveDeps(m.picker.UserCheckedIDs)
+
+	// Remove old auto-deps that are no longer needed
+	for id := range m.picker.AutoDepIDs {
+		if !autoDeps[id] && !m.picker.UserCheckedIDs[id] {
+			delete(m.picker.CheckedIDs, id)
+		}
+	}
+
+	// Add new auto-deps
+	for id := range autoDeps {
+		m.picker.CheckedIDs[id] = true
+	}
+
+	m.picker.AutoDepIDs = autoDeps
 }
 
 // Init satisfies tea.Model.
@@ -50,7 +85,11 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Let the shared picker handle navigation/toggle.
-		if m.picker.Update(msg) {
+		result := m.picker.UpdateWithResult(msg)
+		if result == tui.UpdateToggled {
+			m.recalcDeps()
+		}
+		if result != tui.UpdateNone {
 			return m, nil
 		}
 

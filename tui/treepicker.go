@@ -60,6 +60,8 @@ type TreePickerConfig struct {
 type TreePicker struct {
 	Groups          []PackGroup
 	CheckedIDs      map[string]bool
+	AutoDepIDs      map[string]bool // IDs auto-included as deps
+	UserCheckedIDs  map[string]bool // IDs the user explicitly toggled on
 	CollapsedGroups map[string]bool
 	CollapsedPacks  map[string]bool
 	Rows            []PickerRow
@@ -81,6 +83,8 @@ func NewTreePicker(cfg TreePickerConfig) TreePicker {
 	tp := TreePicker{
 		Groups:          cfg.Groups,
 		CheckedIDs:      make(map[string]bool),
+		AutoDepIDs:      make(map[string]bool),
+		UserCheckedIDs:  make(map[string]bool),
 		CollapsedGroups: make(map[string]bool),
 		CollapsedPacks:  make(map[string]bool),
 		FreeGB:          cfg.FreeGB,
@@ -94,6 +98,7 @@ func NewTreePicker(cfg TreePickerConfig) TreePicker {
 	for id, v := range cfg.CheckedIDs {
 		if v {
 			tp.CheckedIDs[id] = true
+			tp.UserCheckedIDs[id] = true
 		}
 	}
 
@@ -147,46 +152,61 @@ func (tp *TreePicker) RebuildRows() {
 	}
 }
 
+// UpdateResult indicates what happened during Update.
+type UpdateResult int
+
+const (
+	UpdateNone    UpdateResult = iota // key not handled
+	UpdateNav                         // navigation only
+	UpdateToggled                     // selection changed
+)
+
 // Update handles navigation and toggle keys. Returns true if a key was handled.
 // Does NOT handle Enter on RowAction or Esc/q — callers handle those.
 func (tp *TreePicker) Update(msg tea.KeyMsg) bool {
+	return tp.UpdateWithResult(msg) != UpdateNone
+}
+
+// UpdateWithResult handles navigation and toggle keys, returning what happened.
+// Does NOT handle Enter on RowAction or Esc/q — callers handle those.
+func (tp *TreePicker) UpdateWithResult(msg tea.KeyMsg) UpdateResult {
 	switch {
 	case tp.Keys.MoveUp.Matches(msg):
 		if tp.Cursor > 0 {
 			tp.Cursor--
 		}
 		tp.EnsureVisible()
-		return true
+		return UpdateNav
 
 	case tp.Keys.MoveDown.Matches(msg):
 		if tp.Cursor < len(tp.Rows)-1 {
 			tp.Cursor++
 		}
 		tp.EnsureVisible()
-		return true
+		return UpdateNav
 
 	case tp.Keys.Toggle.Matches(msg):
 		if !tp.ReadOnly {
 			tp.ToggleAtCursor()
 		}
-		return true
+		return UpdateToggled
 
 	case tp.Keys.Enter.Matches(msg):
 		if tp.Cursor >= 0 && tp.Cursor < len(tp.Rows) && tp.Rows[tp.Cursor].Kind == RowAction {
-			return false // let caller handle action
+			return UpdateNone // let caller handle action
 		}
 		tp.ExpandCollapseAtCursor()
-		return true
+		return UpdateNav
 
 	case msg.Type == tea.KeyRight:
 		tp.ExpandAtCursor()
-		return true
+		return UpdateNav
 
 	case msg.Type == tea.KeyLeft:
 		tp.CollapseAtCursor()
-		return true
+		return UpdateNav
 	}
-	return false
+	return UpdateNone
 }
 
 // CursorRow returns the row at the current cursor, or nil.
@@ -221,8 +241,10 @@ func (tp *TreePicker) ToggleAtCursor() {
 			for _, s := range p.Sources {
 				if allChecked {
 					delete(tp.CheckedIDs, s.ID)
+					delete(tp.UserCheckedIDs, s.ID)
 				} else {
 					tp.CheckedIDs[s.ID] = true
+					tp.UserCheckedIDs[s.ID] = true
 				}
 			}
 		}
@@ -233,19 +255,27 @@ func (tp *TreePicker) ToggleAtCursor() {
 		if checked == total && total > 0 {
 			for _, s := range pack.Sources {
 				delete(tp.CheckedIDs, s.ID)
+				delete(tp.UserCheckedIDs, s.ID)
 			}
 		} else {
 			for _, s := range pack.Sources {
 				tp.CheckedIDs[s.ID] = true
+				tp.UserCheckedIDs[s.ID] = true
 			}
 		}
 
 	case RowItem:
 		src := row.Source
+		// Can't uncheck a pure auto-dep (not manually selected by user)
+		if tp.AutoDepIDs[src.ID] && !tp.UserCheckedIDs[src.ID] {
+			return
+		}
 		if tp.CheckedIDs[src.ID] {
 			delete(tp.CheckedIDs, src.ID)
+			delete(tp.UserCheckedIDs, src.ID)
 		} else {
 			tp.CheckedIDs[src.ID] = true
+			tp.UserCheckedIDs[src.ID] = true
 		}
 	}
 }
@@ -527,6 +557,7 @@ func (tp *TreePicker) RenderTree() string {
 
 		case RowItem:
 			src := row.Source
+			isAutoDep := tp.AutoDepIDs[src.ID] && !tp.UserCheckedIDs[src.ID]
 			mark := "·"
 			if tp.CheckedIDs[src.ID] {
 				mark = "✓"
@@ -536,10 +567,21 @@ func (tp *TreePicker) RenderTree() string {
 				strat = " " + strat
 			}
 			line := fmt.Sprintf("        %s%s %s %s%s  %s", prefix, mark, src.ID, TypeSymbol(src.Type), strat, FormatSizeGB(src.SizeGB))
+			if isAutoDep {
+				line += "  ← dep"
+			}
 			if isCursor {
-				b.WriteString(tp.Theme.Selected.Render(line))
+				if isAutoDep {
+					b.WriteString(tp.Theme.SelectedMuted.Render(line))
+				} else {
+					b.WriteString(tp.Theme.Selected.Render(line))
+				}
 			} else if tp.CheckedIDs[src.ID] {
-				b.WriteString(tp.Theme.Base.Render(line))
+				if isAutoDep {
+					b.WriteString(tp.Theme.Muted.Render(line))
+				} else {
+					b.WriteString(tp.Theme.Base.Render(line))
+				}
 			} else {
 				b.WriteString(tp.Theme.Muted.Render(line))
 			}
@@ -597,6 +639,9 @@ func (tp *TreePicker) RenderDetail() string {
 			stratLabel = "build ⚒"
 		}
 		info := tp.Theme.Muted.Render(fmt.Sprintf("  %s · %s · %s", src.Type, stratLabel, FormatSizeGB(src.SizeGB)))
+		if tp.AutoDepIDs[src.ID] && !tp.UserCheckedIDs[src.ID] {
+			info += "\n" + tp.Theme.Muted.Render("  auto-included — needed by another recipe")
+		}
 		if src.Description != "" {
 			info += "\n" + tp.Theme.Muted.Render("  "+src.Description)
 		}

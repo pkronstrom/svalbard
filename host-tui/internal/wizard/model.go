@@ -122,7 +122,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.checkedIDs[id] = true
 		}
 		m.stage = stagePacks
-		m.packPicker = newPackPicker(m.config.PackGroups, m.checkedIDs, m.freeGB)
+		m.packPicker = newPackPicker(packPickerConfig{
+			groups:      m.config.PackGroups,
+			checkedIDs:  m.checkedIDs,
+			freeGB:      m.freeGB,
+			resolveDeps: m.config.ResolveDeps,
+		})
 		return m.sizeActiveModel()
 
 	case packDoneMsg:
@@ -173,7 +178,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reviewBackMsg:
 		m.stage = stagePacks
-		m.packPicker = newPackPicker(m.config.PackGroups, m.checkedIDs, m.freeGB)
+		m.packPicker = newPackPicker(packPickerConfig{
+			groups:      m.config.PackGroups,
+			checkedIDs:  m.checkedIDs,
+			freeGB:      m.freeGB,
+			resolveDeps: m.config.ResolveDeps,
+		})
 		return m.sizeActiveModel()
 
 	case tea.KeyMsg:

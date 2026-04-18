@@ -28,6 +28,9 @@ type (
 	PackSource = tui.PackSource
 )
 
+// DepResolver returns auto-dep IDs for a given set of selected IDs.
+type DepResolver func(selectedIDs map[string]bool) map[string]bool
+
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
 	ID         string
@@ -55,8 +58,9 @@ type WizardConfig struct {
 	PrefillPath string
 	StartAtStep int
 	InitVault   InitFunc  // called after review confirm
-	RunApply    ApplyFunc // called to download content
-	RunIndex    IndexFunc // called to build search index after apply
+	ResolveDeps DepResolver // nil = no dep resolution
+	RunApply    ApplyFunc  // called to download content
+	RunIndex    IndexFunc  // called to build search index after apply
 }
 
 // WizardResult is returned when the wizard completes.
