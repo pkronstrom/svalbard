@@ -110,7 +110,7 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 			effectiveMode = ModeKeyword
 			status = "Semantic unavailable, fell back to keyword"
 		} else {
-			results, err = semanticSearch(s.sqliteBin, s.dbPath, query, s.info.ArticleCount, s.embedPort, limit)
+			results, err = semanticSearch(s.sqliteBin, s.dbPath, query, s.info.ArticleCount, s.embedPort, s.caps.QueryPrefix, limit)
 			if err != nil || len(results) == 0 {
 				effectiveMode = ModeKeyword
 				if err != nil {

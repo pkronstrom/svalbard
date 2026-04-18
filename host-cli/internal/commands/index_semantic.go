@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -9,11 +10,32 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/embedder"
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 )
 
 const embeddingBatchSize = 32
+
+const (
+	embeddingTextMaxRunes = 1800
+	embeddingTextMaxWords = 220
+)
+
+// loadEmbeddingSpec reads the .embedding.json sidecar next to the GGUF model.
+// Returns an empty spec (no prefixes) if the sidecar doesn't exist.
+func loadEmbeddingSpec(modelPath string) catalog.EmbeddingSpec {
+	sidecar := strings.TrimSuffix(modelPath, filepath.Ext(modelPath)) + ".embedding.json"
+	data, err := os.ReadFile(sidecar)
+	if err != nil {
+		return catalog.EmbeddingSpec{}
+	}
+	var spec catalog.EmbeddingSpec
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return catalog.EmbeddingSpec{}
+	}
+	return spec
+}
 
 // SemanticProgress reports per-source embedding progress.
 type SemanticProgress struct {
@@ -98,6 +120,9 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 		}
 	}
 
+	// Load embedding params from recipe sidecar.
+	embSpec := loadEmbeddingSpec(modelPath)
+
 	notify(SemanticProgress{Status: "starting", Detail: "Starting embedding server..."})
 
 	server, err := embedder.StartServer(ctx, modelPath, root)
@@ -108,7 +133,7 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 
 	// Embed each source separately for per-file progress.
 	for _, src := range sources {
-		if err := embedSource(ctx, db, server, src, notify); err != nil {
+		if err := embedSource(ctx, db, server, src, embSpec.DocPrefix, notify); err != nil {
 			return err
 		}
 	}
@@ -118,6 +143,12 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 	}
 	if err := db.SetMeta("embedding_model", modelID); err != nil {
 		return fmt.Errorf("setting embedding_model: %w", err)
+	}
+	if err := db.SetMeta("embedding_doc_prefix", embSpec.DocPrefix); err != nil {
+		return fmt.Errorf("setting embedding_doc_prefix: %w", err)
+	}
+	if err := db.SetMeta("embedding_query_prefix", embSpec.QueryPrefix); err != nil {
+		return fmt.Errorf("setting embedding_query_prefix: %w", err)
 	}
 	if dimCount, err := db.EmbeddingDims(); err == nil && dimCount > 0 {
 		db.SetMeta("embedding_dims", fmt.Sprintf("%d", dimCount))
@@ -134,6 +165,7 @@ func embedSource(
 	db *searchdb.DB,
 	server *embedder.Server,
 	src searchdb.SourceInfo,
+	docPrefix string,
 	notify func(SemanticProgress),
 ) error {
 	embedded, _ := db.EmbeddingCountBySource(src.ID)
@@ -192,7 +224,7 @@ func embedSource(
 
 		texts := make([]string, len(batch))
 		for i, a := range batch {
-			texts[i] = "search_document: " + a.Title + " " + a.Body
+			texts[i] = prepareEmbeddingText(docPrefix, a.Title, a.Body)
 		}
 
 		vectors, err := server.EmbedBatch(ctx, texts)
@@ -232,4 +264,62 @@ func embedSource(
 		Current: src.ArticleCount, Total: src.ArticleCount,
 	})
 	return nil
+}
+
+func prepareEmbeddingText(prefix, title, body string) string {
+	title = strings.TrimSpace(title)
+	body = strings.Join(strings.Fields(body), " ")
+
+	base := prefix + title
+	if body == "" {
+		return truncateRunes(base, embeddingTextMaxRunes)
+	}
+
+	body, wordTruncated := truncateWords(body, embeddingTextMaxWords)
+
+	full := base + " " + body
+	if len([]rune(full)) <= embeddingTextMaxRunes && !wordTruncated {
+		return full
+	}
+
+	if len([]rune(base)) >= embeddingTextMaxRunes-3 {
+		return truncateRunes(base, embeddingTextMaxRunes-3) + "..."
+	}
+
+	remaining := embeddingTextMaxRunes - len([]rune(base)) - 1
+	if remaining <= 3 {
+		return truncateRunes(base, embeddingTextMaxRunes-3) + "..."
+	}
+
+	suffix := ""
+	if wordTruncated || len([]rune(full)) > embeddingTextMaxRunes {
+		suffix = "..."
+	}
+	if suffix == "" {
+		return full
+	}
+
+	return base + " " + truncateRunes(body, remaining-len([]rune(suffix))) + suffix
+}
+
+func truncateRunes(s string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit])
+}
+
+func truncateWords(s string, limit int) (string, bool) {
+	if limit <= 0 {
+		return "", len(strings.Fields(s)) > 0
+	}
+	words := strings.Fields(s)
+	if len(words) <= limit {
+		return s, false
+	}
+	return strings.Join(words[:limit], " "), true
 }

@@ -37,6 +37,7 @@ type Capabilities struct {
 	HasLlamaServer   bool
 	EmbeddingModel   string // file path from models/embed/
 	EmbeddingModelID string // model ID from search.db meta
+	QueryPrefix      string // prefix for query embedding (from recipe sidecar via meta)
 }
 
 type Result struct {
@@ -171,7 +172,7 @@ func Run(ctx context.Context, stdin io.Reader, stdout io.Writer, driveRoot, init
 				}
 			}
 			if effectiveMode == ModeSemantic {
-				results, err = semanticSearch(sqliteBin, dbPath, query, articleCount, embedPort, 20)
+				results, err = semanticSearch(sqliteBin, dbPath, query, articleCount, embedPort, caps.QueryPrefix, 20)
 				if err != nil || len(results) == 0 {
 					effectiveMode = ModeKeyword
 				}
@@ -235,7 +236,8 @@ func detectCapabilities(driveRoot, dbPath, sqliteBin string) (Capabilities, int,
 		"SELECT count(*) FROM articles;" +
 		"SELECT count(*) FROM sqlite_master WHERE name='embeddings';" +
 		"SELECT CASE WHEN (SELECT count(*) FROM sqlite_master WHERE name='embeddings') > 0 THEN (SELECT count(*) FROM embeddings) ELSE 0 END;" +
-		"SELECT COALESCE((SELECT value FROM meta WHERE key='embedding_model'), '');"
+		"SELECT COALESCE((SELECT value FROM meta WHERE key='embedding_model'), '');" +
+		"SELECT COALESCE((SELECT value FROM meta WHERE key='embedding_query_prefix'), '');"
 	out, err := runSQLite(sqliteBin, dbPath, sql)
 	if err != nil {
 		return caps, 0, 0, err
@@ -257,6 +259,9 @@ func detectCapabilities(driveRoot, dbPath, sqliteBin string) (Capabilities, int,
 		caps.HasEmbeddingData = embedCount > 0
 	}
 	caps.EmbeddingModelID = strings.TrimSpace(lines[4])
+	if len(lines) > 5 {
+		caps.QueryPrefix = strings.TrimSpace(lines[5])
+	}
 
 	if _, err := drivebinary.Resolve("llama-server", driveRoot, platform.Detect); err == nil {
 		caps.HasLlamaServer = true
@@ -301,7 +306,7 @@ func keywordSearch(sqliteBin, dbPath, query string, limit int) ([]Result, error)
 	return nil, err
 }
 
-func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort, limit int) ([]Result, error) {
+func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort int, queryPrefix string, limit int) ([]Result, error) {
 	var candidateIDs []int
 	if articleCount >= 500000 {
 		ftsQuery := BuildFTSQuery(query)
@@ -335,7 +340,7 @@ func semanticSearch(sqliteBin, dbPath, query string, articleCount, embedPort, li
 		return nil, nil
 	}
 
-	queryVector, err := embedQuery(query, embedPort)
+	queryVector, err := embedQuery(queryPrefix+query, embedPort)
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +425,7 @@ func queryResults(sqliteBin, dbPath, sql string) ([]Result, error) {
 
 func embedQuery(query string, port int) ([]float32, error) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/embedding", port)
-	payload := map[string][]string{"content": {"search_query: " + query}}
+	payload := map[string][]string{"content": {query}}
 	body, _ := json.Marshal(payload)
 	resp, err := http.Post(url, "application/json", strings.NewReader(string(body)))
 	if err != nil {

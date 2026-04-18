@@ -3,6 +3,7 @@ package apply
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -161,6 +162,7 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 					entry, err = downloadItem(ctx, root, job.id, job.recipe, dlProgress)
 					if err == nil {
 						entries = []manifest.RealizedEntry{entry}
+						writeEmbeddingSidecar(root, entry, job.recipe)
 					}
 
 				case len(job.recipe.Platforms) > 0:
@@ -484,6 +486,25 @@ func buildItem(ctx context.Context, root, id string, recipe catalog.Item) (manif
 }
 
 var execCommand = exec.Command
+
+// writeEmbeddingSidecar writes a .embedding.json next to a downloaded gguf-embed
+// model so the indexer and search runtime can discover embedding params without
+// loading the full catalog.
+func writeEmbeddingSidecar(root string, entry manifest.RealizedEntry, recipe catalog.Item) {
+	if recipe.Type != "gguf-embed" || recipe.Embedding == nil {
+		return
+	}
+	ggufPath := filepath.Join(root, entry.RelativePath)
+	sidecarPath := strings.TrimSuffix(ggufPath, filepath.Ext(ggufPath)) + ".embedding.json"
+	data, err := json.MarshalIndent(recipe.Embedding, "", "  ")
+	if err != nil {
+		slog.Warn("failed to marshal embedding sidecar", "id", entry.ID, "error", err)
+		return
+	}
+	if err := os.WriteFile(sidecarPath, data, 0o644); err != nil {
+		slog.Warn("failed to write embedding sidecar", "path", sidecarPath, "error", err)
+	}
+}
 
 func filenameFromURL(rawURL string) string {
 	u, err := url.Parse(rawURL)

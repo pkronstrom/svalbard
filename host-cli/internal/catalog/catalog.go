@@ -28,11 +28,23 @@ type Item struct {
 	Menu        *MenuSpec         `yaml:"menu,omitempty"`
 	Env         map[string]string `yaml:"env,omitempty"`
 
+	// Embedding model params (gguf-embed only).
+	Embedding *EmbeddingSpec `yaml:"embedding,omitempty"`
+
 	// Python venv/package fields
 	Python      string   `yaml:"python,omitempty"`
 	Venv        string   `yaml:"venv,omitempty"`
 	Packages    []string `yaml:"packages,omitempty"`
 	EntryPoints []string `yaml:"entry_points,omitempty"`
+}
+
+// EmbeddingSpec describes how an embedding model should be used at index and
+// search time.  Stored in the recipe YAML and written as a sidecar JSON next
+// to the downloaded GGUF so the indexer and search runtime can read it without
+// loading the full catalog.
+type EmbeddingSpec struct {
+	DocPrefix   string `yaml:"doc_prefix,omitempty"   json:"doc_prefix,omitempty"`
+	QueryPrefix string `yaml:"query_prefix,omitempty" json:"query_prefix,omitempty"`
 }
 
 // BuildSpec describes how to build a recipe from source data.
