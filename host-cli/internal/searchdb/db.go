@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 // DB wraps a SQLite database with FTS5 for article search.
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
 
 // Open opens (or creates) the search database at path and ensures the schema exists.
 func Open(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, fmt.Errorf("searchdb: open %s: %w", path, err)
 	}
