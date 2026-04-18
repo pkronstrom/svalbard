@@ -24,7 +24,7 @@ func TestPrepareEmbeddingTextTruncatesLongBody(t *testing.T) {
 		t.Fatalf("expected truncated text to end with ellipsis: %q", text[len(text)-16:])
 	}
 
-	// Without prefix (MiniLM-style).
+	// Without prefix (no task-prefix model).
 	textNoPrefix := prepareEmbeddingText("", "Permacomputing", body)
 	if strings.HasPrefix(textNoPrefix, "search_document: ") {
 		t.Fatalf("should not have prefix when empty: %q", textNoPrefix[:min(len(textNoPrefix), 32)])

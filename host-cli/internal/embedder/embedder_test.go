@@ -119,7 +119,7 @@ func TestFindEmbeddingModel(t *testing.T) {
 	}
 
 	// Add a model.
-	modelPath := filepath.Join(embedDir, "all-MiniLM-L6-v2-Q8_0.gguf")
+	modelPath := filepath.Join(embedDir, "nomic-embed-text-v1.5.Q8_0.gguf")
 	os.WriteFile(modelPath, []byte("fake"), 0o644)
 
 	found, err := FindEmbeddingModel(dir)
@@ -131,7 +131,7 @@ func TestFindEmbeddingModel(t *testing.T) {
 	}
 
 	// macOS resource fork files should be skipped.
-	dotPath := filepath.Join(embedDir, "._all-MiniLM-L6-v2-Q8_0.gguf")
+	dotPath := filepath.Join(embedDir, "._nomic-embed-text-v1.5.Q8_0.gguf")
 	os.WriteFile(dotPath, []byte("fake"), 0o644)
 	os.Remove(modelPath)
 
