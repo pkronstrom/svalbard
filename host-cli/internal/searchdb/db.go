@@ -17,9 +17,10 @@ type DB struct {
 
 // Article represents an article to be indexed.
 type Article struct {
-	Path  string
-	Title string
-	Body  string
+	Path     string
+	Title    string
+	Body     string
+	Sections string // JSON: [{"heading":"","body":"..."}]
 }
 
 // SearchResult represents a single search hit.
@@ -46,7 +47,8 @@ CREATE TABLE IF NOT EXISTS articles (
     source_id INTEGER NOT NULL REFERENCES sources(id),
     path TEXT NOT NULL,
     title TEXT NOT NULL,
-    body TEXT NOT NULL
+    body TEXT NOT NULL,
+    sections TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_source ON articles(source_id);
@@ -62,9 +64,14 @@ CREATE TRIGGER IF NOT EXISTS articles_ad AFTER DELETE ON articles BEGIN
 END;
 
 CREATE TABLE IF NOT EXISTS embeddings (
-    article_id INTEGER PRIMARY KEY REFERENCES articles(id),
-    vector BLOB NOT NULL
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id INTEGER NOT NULL REFERENCES articles(id),
+    chunk_index INTEGER NOT NULL,
+    chunk_header TEXT NOT NULL,
+    vector BLOB NOT NULL,
+    UNIQUE(article_id, chunk_index)
 );
+CREATE INDEX IF NOT EXISTS idx_embeddings_article ON embeddings(article_id);
 `
 
 // Open opens (or creates) the search database at path and ensures the schema exists.
@@ -83,6 +90,32 @@ func Open(path string) (*DB, error) {
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("searchdb: create schema: %w", err)
+	}
+
+	// Migrate: add sections column to articles if missing.
+	var hasSections int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('articles') WHERE name='sections'`).Scan(&hasSections)
+	if hasSections == 0 {
+		db.Exec("ALTER TABLE articles ADD COLUMN sections TEXT")
+	}
+
+	// Migrate: detect old-style embeddings table (article_id as PK, no chunk_index)
+	// and recreate with the new schema.
+	var hasChunkIndex int
+	err = db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('embeddings') WHERE name='chunk_index'`,
+	).Scan(&hasChunkIndex)
+	if err == nil && hasChunkIndex == 0 {
+		db.Exec("DROP TABLE IF EXISTS embeddings")
+		db.Exec(`CREATE TABLE IF NOT EXISTS embeddings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			article_id INTEGER NOT NULL REFERENCES articles(id),
+			chunk_index INTEGER NOT NULL,
+			chunk_header TEXT NOT NULL,
+			vector BLOB NOT NULL,
+			UNIQUE(article_id, chunk_index)
+		)`)
+		db.Exec(`CREATE INDEX IF NOT EXISTS idx_embeddings_article ON embeddings(article_id)`)
 	}
 
 	return &DB{db: db}, nil
@@ -177,14 +210,18 @@ func (d *DB) InsertArticles(sourceID int64, articles []Article) error {
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare("INSERT INTO articles (source_id, path, title, body) VALUES (?, ?, ?, ?)")
+	stmt, err := tx.Prepare("INSERT INTO articles (source_id, path, title, body, sections) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("searchdb: prepare insert: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, a := range articles {
-		if _, err := stmt.Exec(sourceID, a.Path, a.Title, a.Body); err != nil {
+		var sections interface{}
+		if a.Sections != "" {
+			sections = a.Sections
+		}
+		if _, err := stmt.Exec(sourceID, a.Path, a.Title, a.Body, sections); err != nil {
 			return fmt.Errorf("searchdb: insert article %q: %w", a.Path, err)
 		}
 	}
@@ -235,21 +272,24 @@ func (d *DB) Search(query string, limit int) ([]SearchResult, error) {
 	return results, rows.Err()
 }
 
-// EmbeddingPair holds an article ID and its embedding vector blob.
-type EmbeddingPair struct {
-	ArticleID int64
-	Vector    []byte // little-endian float32 blob
+// ChunkEmbedding holds a chunk-level embedding for an article.
+type ChunkEmbedding struct {
+	ArticleID  int64
+	ChunkIndex int
+	Header     string
+	Vector     []byte // little-endian float32 blob
 }
 
 // UnembeddedArticle is an article that has not yet been embedded.
 type UnembeddedArticle struct {
-	ID    int64
-	Title string
-	Body  string
+	ID       int64
+	Title    string
+	Body     string
+	Sections string
 }
 
-// InsertEmbeddings stores a batch of embedding vectors within a transaction.
-func (d *DB) InsertEmbeddings(pairs []EmbeddingPair) error {
+// InsertChunkEmbeddings stores a batch of chunk embedding vectors within a transaction.
+func (d *DB) InsertChunkEmbeddings(chunks []ChunkEmbedding) error {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return fmt.Errorf("searchdb: begin tx: %w", err)
@@ -257,16 +297,16 @@ func (d *DB) InsertEmbeddings(pairs []EmbeddingPair) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(
-		"INSERT OR REPLACE INTO embeddings (article_id, vector) VALUES (?, ?)",
+		"INSERT OR REPLACE INTO embeddings (article_id, chunk_index, chunk_header, vector) VALUES (?, ?, ?, ?)",
 	)
 	if err != nil {
-		return fmt.Errorf("searchdb: prepare insert embedding: %w", err)
+		return fmt.Errorf("searchdb: prepare insert chunk embedding: %w", err)
 	}
 	defer stmt.Close()
 
-	for _, p := range pairs {
-		if _, err := stmt.Exec(p.ArticleID, p.Vector); err != nil {
-			return fmt.Errorf("searchdb: insert embedding %d: %w", p.ArticleID, err)
+	for _, c := range chunks {
+		if _, err := stmt.Exec(c.ArticleID, c.ChunkIndex, c.Header, c.Vector); err != nil {
+			return fmt.Errorf("searchdb: insert chunk embedding %d/%d: %w", c.ArticleID, c.ChunkIndex, err)
 		}
 	}
 	return tx.Commit()
@@ -276,7 +316,7 @@ func (d *DB) InsertEmbeddings(pairs []EmbeddingPair) error {
 // starting after afterID, limited to limit rows.
 func (d *DB) UnembeddedArticles(afterID int64, limit int) ([]UnembeddedArticle, error) {
 	rows, err := d.db.Query(
-		`SELECT a.id, a.title, a.body FROM articles a
+		`SELECT a.id, a.title, a.body, COALESCE(a.sections, '') FROM articles a
 		 LEFT JOIN embeddings e ON e.article_id = a.id
 		 WHERE e.article_id IS NULL AND a.id > ?
 		 ORDER BY a.id LIMIT ?`,
@@ -290,7 +330,7 @@ func (d *DB) UnembeddedArticles(afterID int64, limit int) ([]UnembeddedArticle, 
 	var articles []UnembeddedArticle
 	for rows.Next() {
 		var a UnembeddedArticle
-		if err := rows.Scan(&a.ID, &a.Title, &a.Body); err != nil {
+		if err := rows.Scan(&a.ID, &a.Title, &a.Body, &a.Sections); err != nil {
 			return nil, fmt.Errorf("searchdb: scan unembedded: %w", err)
 		}
 		articles = append(articles, a)
@@ -357,7 +397,7 @@ func (d *DB) Sources() ([]SourceInfo, error) {
 // source, ordered by ID, starting after afterID, limited to limit rows.
 func (d *DB) UnembeddedArticlesBySource(sourceID int64, afterID int64, limit int) ([]UnembeddedArticle, error) {
 	rows, err := d.db.Query(
-		`SELECT a.id, a.title, a.body FROM articles a
+		`SELECT a.id, a.title, a.body, COALESCE(a.sections, '') FROM articles a
 		 LEFT JOIN embeddings e ON e.article_id = a.id
 		 WHERE e.article_id IS NULL AND a.source_id = ? AND a.id > ?
 		 ORDER BY a.id LIMIT ?`,
@@ -371,7 +411,7 @@ func (d *DB) UnembeddedArticlesBySource(sourceID int64, afterID int64, limit int
 	var articles []UnembeddedArticle
 	for rows.Next() {
 		var a UnembeddedArticle
-		if err := rows.Scan(&a.ID, &a.Title, &a.Body); err != nil {
+		if err := rows.Scan(&a.ID, &a.Title, &a.Body, &a.Sections); err != nil {
 			return nil, fmt.Errorf("searchdb: scan unembedded: %w", err)
 		}
 		articles = append(articles, a)
@@ -379,11 +419,11 @@ func (d *DB) UnembeddedArticlesBySource(sourceID int64, afterID int64, limit int
 	return articles, rows.Err()
 }
 
-// EmbeddingCountBySource returns the number of embeddings for a given source.
+// EmbeddingCountBySource returns the number of articles with embeddings for a given source.
 func (d *DB) EmbeddingCountBySource(sourceID int64) (int64, error) {
 	var count int64
 	err := d.db.QueryRow(
-		`SELECT COUNT(*) FROM embeddings e
+		`SELECT COUNT(DISTINCT e.article_id) FROM embeddings e
 		 JOIN articles a ON a.id = e.article_id
 		 WHERE a.source_id = ?`,
 		sourceID,

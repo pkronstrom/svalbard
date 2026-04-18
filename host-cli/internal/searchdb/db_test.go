@@ -231,7 +231,7 @@ func TestEmbeddingDims(t *testing.T) {
 
 	// 384-dim embedding = 384 * 4 bytes = 1536 bytes.
 	vec := make([]byte, 384*4)
-	db.InsertEmbeddings([]EmbeddingPair{{ArticleID: 1, Vector: vec}})
+	db.InsertChunkEmbeddings([]ChunkEmbedding{{ArticleID: 1, ChunkIndex: 0, Header: "One", Vector: vec}})
 
 	dims, err := db.EmbeddingDims()
 	if err != nil {
@@ -242,7 +242,7 @@ func TestEmbeddingDims(t *testing.T) {
 	}
 }
 
-func TestEmbeddings(t *testing.T) {
+func TestChunkEmbeddings(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -280,11 +280,11 @@ func TestEmbeddings(t *testing.T) {
 		t.Fatalf("unembedded = %d, want 3", len(unembedded))
 	}
 
-	// Insert embeddings for first two.
+	// Insert chunk embeddings for first two articles (one chunk each).
 	fakeVec := make([]byte, 8) // 2 floats
-	err = db.InsertEmbeddings([]EmbeddingPair{
-		{ArticleID: unembedded[0].ID, Vector: fakeVec},
-		{ArticleID: unembedded[1].ID, Vector: fakeVec},
+	err = db.InsertChunkEmbeddings([]ChunkEmbedding{
+		{ArticleID: unembedded[0].ID, ChunkIndex: 0, Header: "One", Vector: fakeVec},
+		{ArticleID: unembedded[1].ID, ChunkIndex: 0, Header: "Two", Vector: fakeVec},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -308,5 +308,186 @@ func TestEmbeddings(t *testing.T) {
 	}
 	if remaining[0].Title != "Three" {
 		t.Errorf("remaining title = %q, want Three", remaining[0].Title)
+	}
+}
+
+func TestInsertChunkEmbeddingsMultipleChunksPerArticle(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	sid, _ := db.UpsertSource("test.zim", "Test")
+	db.InsertArticles(sid, []Article{
+		{Path: "/A/One", Title: "One", Body: "first article"},
+	})
+
+	fakeVec := make([]byte, 16) // 4 floats
+
+	// Insert 3 chunks for the same article.
+	err = db.InsertChunkEmbeddings([]ChunkEmbedding{
+		{ArticleID: 1, ChunkIndex: 0, Header: "Intro", Vector: fakeVec},
+		{ArticleID: 1, ChunkIndex: 1, Header: "Section A", Vector: fakeVec},
+		{ArticleID: 1, ChunkIndex: 2, Header: "Section B", Vector: fakeVec},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Total rows in embeddings should be 3.
+	count, err := db.EmbeddingCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Errorf("embedding count = %d, want 3", count)
+	}
+
+	// Article should NOT appear as unembedded (it has chunks).
+	unembedded, err := db.UnembeddedArticles(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unembedded) != 0 {
+		t.Errorf("unembedded = %d, want 0", len(unembedded))
+	}
+}
+
+func TestInsertChunkEmbeddingsInsertOrReplace(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	sid, _ := db.UpsertSource("test.zim", "Test")
+	db.InsertArticles(sid, []Article{
+		{Path: "/A/One", Title: "One", Body: "first article"},
+	})
+
+	vec1 := make([]byte, 8)
+	vec1[0] = 0x01
+	vec2 := make([]byte, 8)
+	vec2[0] = 0x02
+
+	// Insert a chunk.
+	err = db.InsertChunkEmbeddings([]ChunkEmbedding{
+		{ArticleID: 1, ChunkIndex: 0, Header: "Original", Vector: vec1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Replace with different header and vector.
+	err = db.InsertChunkEmbeddings([]ChunkEmbedding{
+		{ArticleID: 1, ChunkIndex: 0, Header: "Updated", Vector: vec2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should still be exactly 1 row (replaced, not duplicated).
+	count, err := db.EmbeddingCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Errorf("embedding count after replace = %d, want 1", count)
+	}
+}
+
+func TestEmbeddingCountBySourceDistinct(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	sid, _ := db.UpsertSource("test.zim", "Test")
+	db.InsertArticles(sid, []Article{
+		{Path: "/A/One", Title: "One", Body: "first"},
+		{Path: "/A/Two", Title: "Two", Body: "second"},
+	})
+
+	fakeVec := make([]byte, 8)
+
+	// Insert 3 chunks for article 1, 2 chunks for article 2.
+	err = db.InsertChunkEmbeddings([]ChunkEmbedding{
+		{ArticleID: 1, ChunkIndex: 0, Header: "1-A", Vector: fakeVec},
+		{ArticleID: 1, ChunkIndex: 1, Header: "1-B", Vector: fakeVec},
+		{ArticleID: 1, ChunkIndex: 2, Header: "1-C", Vector: fakeVec},
+		{ArticleID: 2, ChunkIndex: 0, Header: "2-A", Vector: fakeVec},
+		{ArticleID: 2, ChunkIndex: 1, Header: "2-B", Vector: fakeVec},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// EmbeddingCountBySource should return 2 (distinct articles), not 5 (chunks).
+	count, err := db.EmbeddingCountBySource(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Errorf("EmbeddingCountBySource = %d, want 2 (distinct articles)", count)
+	}
+}
+
+func TestUnembeddedArticlesBySourceReturnsSections(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	sid, _ := db.UpsertSource("test.zim", "Test")
+	sectionsJSON := `[{"heading":"Intro","body":"hello"},{"heading":"Details","body":"world"}]`
+	db.InsertArticles(sid, []Article{
+		{Path: "/A/One", Title: "One", Body: "first", Sections: sectionsJSON},
+		{Path: "/A/Two", Title: "Two", Body: "second"},
+	})
+
+	articles, err := db.UnembeddedArticlesBySource(sid, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(articles) != 2 {
+		t.Fatalf("unembedded articles = %d, want 2", len(articles))
+	}
+
+	// First article should have sections JSON.
+	if articles[0].Sections != sectionsJSON {
+		t.Errorf("article 1 sections = %q, want %q", articles[0].Sections, sectionsJSON)
+	}
+
+	// Second article should have empty sections.
+	if articles[1].Sections != "" {
+		t.Errorf("article 2 sections = %q, want empty", articles[1].Sections)
+	}
+}
+
+func TestUnembeddedArticlesReturnsSections(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	sid, _ := db.UpsertSource("test.zim", "Test")
+	sectionsJSON := `[{"heading":"A","body":"aaa"}]`
+	db.InsertArticles(sid, []Article{
+		{Path: "/A/One", Title: "One", Body: "first", Sections: sectionsJSON},
+	})
+
+	articles, err := db.UnembeddedArticles(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(articles) != 1 {
+		t.Fatalf("unembedded = %d, want 1", len(articles))
+	}
+	if articles[0].Sections != sectionsJSON {
+		t.Errorf("sections = %q, want %q", articles[0].Sections, sectionsJSON)
 	}
 }

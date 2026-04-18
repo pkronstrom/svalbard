@@ -236,15 +236,17 @@ func embedSource(
 			return fmt.Errorf("embedding %s: %w", src.Filename, err)
 		}
 
-		pairs := make([]searchdb.EmbeddingPair, len(batch))
+		chunks := make([]searchdb.ChunkEmbedding, len(batch))
 		for i, a := range batch {
-			pairs[i] = searchdb.EmbeddingPair{
-				ArticleID: a.ID,
-				Vector:    embedder.VectorToBlob(vectors[i]),
+			chunks[i] = searchdb.ChunkEmbedding{
+				ArticleID:  a.ID,
+				ChunkIndex: 0,
+				Header:     a.Title,
+				Vector:     embedder.VectorToBlob(vectors[i]),
 			}
 		}
 
-		if err := db.InsertEmbeddings(pairs); err != nil {
+		if err := db.InsertChunkEmbeddings(chunks); err != nil {
 			return fmt.Errorf("storing embeddings for %s: %w", src.Filename, err)
 		}
 
