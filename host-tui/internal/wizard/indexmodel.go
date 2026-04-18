@@ -1,3 +1,7 @@
+// TODO(deps): Before indexing, check if an embedding model is present in the
+// vault config. If missing, prompt user to add nomic-embed-text-v1.5 (140 MB).
+// See: docs/superpowers/specs/2026-04-18-recipe-deps-design.md
+
 package wizard
 
 import (
