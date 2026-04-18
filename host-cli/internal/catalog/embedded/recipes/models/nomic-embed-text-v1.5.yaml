@@ -9,6 +9,7 @@ description: Nomic Embed Text v1.5 — small embedding model for semantic search
 embedding:
   doc_prefix: "search_document: "
   query_prefix: "search_query: "
+  dims: 256
 license:
   id: Apache-2.0
   attribution: Nomic AI

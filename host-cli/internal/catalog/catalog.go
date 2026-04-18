@@ -48,6 +48,7 @@ type Item struct {
 type EmbeddingSpec struct {
 	DocPrefix   string `yaml:"doc_prefix,omitempty"   json:"doc_prefix,omitempty"`
 	QueryPrefix string `yaml:"query_prefix,omitempty" json:"query_prefix,omitempty"`
+	Dims        int    `yaml:"dims,omitempty"          json:"dims,omitempty"`
 }
 
 // BuildSpec describes how to build a recipe from source data.
