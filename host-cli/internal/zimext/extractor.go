@@ -1,6 +1,7 @@
 package zimext
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -49,15 +50,25 @@ func ExtractArticles(path string) ([]searchdb.Article, string, error) {
 			return nil, "", fmt.Errorf("read %s: %w", entry.FullPath(), err)
 		}
 
+		// Extract sections from raw HTML before stripping.
+		sections := ExtractSections(string(content))
+		var sectionsJSON string
+		if len(sections) > 0 {
+			if data, err := json.Marshal(sections); err == nil {
+				sectionsJSON = string(data)
+			}
+		}
+
 		body := StripHTML(string(content))
 		if body == "" {
 			continue
 		}
 
 		articles = append(articles, searchdb.Article{
-			Path:  "/" + strings.TrimLeft(entry.Path(), "/"),
-			Title: strings.TrimSpace(entry.Title()),
-			Body:  TruncateText(body, maxArticleBodyChars),
+			Path:     "/" + strings.TrimLeft(entry.Path(), "/"),
+			Title:    strings.TrimSpace(entry.Title()),
+			Body:     TruncateText(body, maxArticleBodyChars),
+			Sections: sectionsJSON,
 		})
 	}
 
