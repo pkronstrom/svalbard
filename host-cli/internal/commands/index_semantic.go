@@ -131,9 +131,11 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 	}
 	defer server.Stop()
 
+	dims := embSpec.Dims // 0 if not set → no truncation
+
 	// Embed each source separately for per-file progress.
 	for _, src := range sources {
-		if err := embedSource(ctx, db, server, src, embSpec.DocPrefix, notify); err != nil {
+		if err := embedSource(ctx, db, server, src, embSpec.DocPrefix, dims, notify); err != nil {
 			return err
 		}
 	}
@@ -150,11 +152,112 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 	if err := db.SetMeta("embedding_query_prefix", embSpec.QueryPrefix); err != nil {
 		return fmt.Errorf("setting embedding_query_prefix: %w", err)
 	}
-	if dimCount, err := db.EmbeddingDims(); err == nil && dimCount > 0 {
+	if dims > 0 {
+		db.SetMeta("embedding_dims", fmt.Sprintf("%d", dims))
+	} else if dimCount, err := db.EmbeddingDims(); err == nil && dimCount > 0 {
 		db.SetMeta("embedding_dims", fmt.Sprintf("%d", dimCount))
 	}
 
 	return nil
+}
+
+// Chunk represents a single embedding unit derived from an article section.
+type Chunk struct {
+	Header string // "Article Title" or "Article Title > Section Heading"
+	Text   string // full embedding input with doc prefix
+}
+
+// buildChunks creates multiple chunks from an article's sections JSON.
+// Returns nil if sectionsJSON is empty or invalid (caller should fall back to
+// single-chunk mode using title+body).
+func buildChunks(docPrefix, title, sectionsJSON string) []Chunk {
+	if sectionsJSON == "" {
+		return nil
+	}
+
+	var sections []struct {
+		Heading string `json:"heading"`
+		Body    string `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(sectionsJSON), &sections); err != nil {
+		return nil
+	}
+	if len(sections) == 0 {
+		return nil
+	}
+
+	// Merge adjacent small sections (<80 words).
+	type merged struct {
+		heading string
+		body    string
+	}
+	var groups []merged
+	for _, s := range sections {
+		body := strings.TrimSpace(s.Body)
+		if len(groups) > 0 && wordCount(groups[len(groups)-1].body) < 80 {
+			prev := &groups[len(groups)-1]
+			if prev.body == "" {
+				prev.body = body
+			} else {
+				prev.body += "\n\n" + body
+			}
+			// Keep the first non-empty heading.
+			if prev.heading == "" && s.Heading != "" {
+				prev.heading = s.Heading
+			}
+		} else {
+			groups = append(groups, merged{heading: s.Heading, body: body})
+		}
+	}
+
+	// Split large sections (>500 words) at paragraph boundaries.
+	var chunks []Chunk
+	for _, g := range groups {
+		header := title
+		if g.heading != "" {
+			header = title + " > " + g.heading
+		}
+
+		if wordCount(g.body) <= 500 {
+			text := docPrefix + header + ": " + g.body
+			chunks = append(chunks, Chunk{Header: header, Text: text})
+			continue
+		}
+
+		// Split on double-newline paragraph boundaries.
+		paragraphs := strings.Split(g.body, "\n\n")
+		var buf strings.Builder
+		for _, p := range paragraphs {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if buf.Len() > 0 && wordCount(buf.String()+"\n\n"+p) > 500 {
+				// Flush current buffer as a chunk.
+				text := docPrefix + header + ": " + buf.String()
+				chunks = append(chunks, Chunk{Header: header, Text: text})
+				buf.Reset()
+			}
+			if buf.Len() > 0 {
+				buf.WriteString("\n\n")
+			}
+			buf.WriteString(p)
+		}
+		if buf.Len() > 0 {
+			text := docPrefix + header + ": " + buf.String()
+			chunks = append(chunks, Chunk{Header: header, Text: text})
+		}
+	}
+
+	if len(chunks) == 0 {
+		return nil
+	}
+	return chunks
+}
+
+// wordCount returns the number of whitespace-delimited words in s.
+func wordCount(s string) int {
+	return len(strings.Fields(s))
 }
 
 // embedSource embeds all unembedded articles for a single source, using a
@@ -166,6 +269,7 @@ func embedSource(
 	server *embedder.Server,
 	src searchdb.SourceInfo,
 	docPrefix string,
+	dims int,
 	notify func(SemanticProgress),
 ) error {
 	embedded, _ := db.EmbeddingCountBySource(src.ID)
@@ -222,12 +326,33 @@ func embedSource(
 		afterID = batch[len(batch)-1].ID
 		nextCh = prefetch(afterID)
 
-		texts := make([]string, len(batch))
-		for i, a := range batch {
-			texts[i] = prepareEmbeddingText(docPrefix, a.Title, a.Body)
+		// Build chunks for each article in the batch.
+		type articleChunks struct {
+			articleID int64
+			chunks    []Chunk
+		}
+		var allArticleChunks []articleChunks
+		var allTexts []string
+
+		for _, a := range batch {
+			chunks := buildChunks(docPrefix, a.Title, a.Sections)
+			if len(chunks) == 0 {
+				// Fallback: single chunk from title+body (old behavior).
+				chunks = []Chunk{{
+					Header: a.Title,
+					Text:   prepareEmbeddingText(docPrefix, a.Title, a.Body),
+				}}
+			}
+			allArticleChunks = append(allArticleChunks, articleChunks{
+				articleID: a.ID,
+				chunks:    chunks,
+			})
+			for _, c := range chunks {
+				allTexts = append(allTexts, c.Text)
+			}
 		}
 
-		vectors, err := server.EmbedBatch(ctx, texts)
+		vectors, err := server.EmbedBatch(ctx, allTexts)
 		if err != nil {
 			notify(SemanticProgress{
 				File: src.Filename, Status: "failed",
@@ -236,17 +361,29 @@ func embedSource(
 			return fmt.Errorf("embedding %s: %w", src.Filename, err)
 		}
 
-		chunks := make([]searchdb.ChunkEmbedding, len(batch))
-		for i, a := range batch {
-			chunks[i] = searchdb.ChunkEmbedding{
-				ArticleID:  a.ID,
-				ChunkIndex: 0,
-				Header:     a.Title,
-				Vector:     embedder.VectorToBlob(vectors[i]),
+		// Truncate dims if configured.
+		if dims > 0 {
+			for i := range vectors {
+				vectors[i] = embedder.TruncateDims(vectors[i], dims)
 			}
 		}
 
-		if err := db.InsertChunkEmbeddings(chunks); err != nil {
+		// Map vectors back to chunk embeddings.
+		var chunkEmbeddings []searchdb.ChunkEmbedding
+		vecIdx := 0
+		for _, ac := range allArticleChunks {
+			for ci, c := range ac.chunks {
+				chunkEmbeddings = append(chunkEmbeddings, searchdb.ChunkEmbedding{
+					ArticleID:  ac.articleID,
+					ChunkIndex: ci,
+					Header:     c.Header,
+					Vector:     embedder.VectorToBlob(vectors[vecIdx]),
+				})
+				vecIdx++
+			}
+		}
+
+		if err := db.InsertChunkEmbeddings(chunkEmbeddings); err != nil {
 			return fmt.Errorf("storing embeddings for %s: %w", src.Filename, err)
 		}
 

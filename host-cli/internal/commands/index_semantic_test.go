@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -56,4 +57,181 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// --- buildChunks tests ---
+
+func sectionsJSON(sections []struct{ Heading, Body string }) string {
+	type sec struct {
+		Heading string `json:"heading"`
+		Body    string `json:"body"`
+	}
+	out := make([]sec, len(sections))
+	for i, s := range sections {
+		out[i] = sec{Heading: s.Heading, Body: s.Body}
+	}
+	b, _ := json.Marshal(out)
+	return string(b)
+}
+
+func TestBuildChunksMultiSection(t *testing.T) {
+	secs := []struct{ Heading, Body string }{
+		{"Introduction", strings.Repeat("word ", 100)},
+		{"History", strings.Repeat("word ", 120)},
+		{"Usage", strings.Repeat("word ", 90)},
+	}
+	chunks := buildChunks("search_document: ", "Water Filter", sectionsJSON(secs))
+
+	if len(chunks) == 0 {
+		t.Fatal("expected multiple chunks, got nil")
+	}
+
+	// Each chunk should have the correct header format.
+	for _, c := range chunks {
+		if !strings.HasPrefix(c.Header, "Water Filter") {
+			t.Errorf("chunk header should start with article title, got %q", c.Header)
+		}
+		if !strings.HasPrefix(c.Text, "search_document: ") {
+			t.Errorf("chunk text should start with doc prefix, got %q", c.Text[:min(len(c.Text), 40)])
+		}
+	}
+
+	// At least one chunk should have a " > " separator in the header.
+	found := false
+	for _, c := range chunks {
+		if strings.Contains(c.Header, " > ") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected at least one chunk with ' > ' separator in header")
+	}
+}
+
+func TestBuildChunksSingleShortSection(t *testing.T) {
+	secs := []struct{ Heading, Body string }{
+		{"Overview", "A short body with just a few words."},
+	}
+	chunks := buildChunks("", "Compass", sectionsJSON(secs))
+
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].Header != "Compass > Overview" {
+		t.Errorf("header = %q, want %q", chunks[0].Header, "Compass > Overview")
+	}
+	if !strings.Contains(chunks[0].Text, "A short body") {
+		t.Errorf("text should contain body content, got %q", chunks[0].Text)
+	}
+}
+
+func TestBuildChunksEmptyJSON(t *testing.T) {
+	if chunks := buildChunks("prefix: ", "Title", ""); chunks != nil {
+		t.Fatalf("expected nil for empty string, got %d chunks", len(chunks))
+	}
+	if chunks := buildChunks("prefix: ", "Title", "[]"); chunks != nil {
+		t.Fatalf("expected nil for empty array, got %d chunks", len(chunks))
+	}
+	if chunks := buildChunks("prefix: ", "Title", "invalid json"); chunks != nil {
+		t.Fatalf("expected nil for invalid JSON, got %d chunks", len(chunks))
+	}
+}
+
+func TestBuildChunksMergesSmallSections(t *testing.T) {
+	// Each section has < 80 words, so adjacent ones should be merged.
+	secs := []struct{ Heading, Body string }{
+		{"Intro", "First short section."},
+		{"Note", "Second short section."},
+		{"More", "Third short section."},
+	}
+	chunks := buildChunks("", "Article", sectionsJSON(secs))
+
+	// All three are tiny (<80 words each), so the second and third should
+	// merge into the first, yielding a single chunk.
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 merged chunk, got %d", len(chunks))
+	}
+	// The merged chunk should contain content from all sections.
+	if !strings.Contains(chunks[0].Text, "First short section") {
+		t.Error("merged chunk missing first section body")
+	}
+	if !strings.Contains(chunks[0].Text, "Second short section") {
+		t.Error("merged chunk missing second section body")
+	}
+	if !strings.Contains(chunks[0].Text, "Third short section") {
+		t.Error("merged chunk missing third section body")
+	}
+}
+
+func TestBuildChunksSplitsLargeSections(t *testing.T) {
+	// Build a section with >500 words using multiple paragraphs.
+	var paras []string
+	for i := 0; i < 6; i++ {
+		paras = append(paras, strings.Repeat("word ", 100))
+	}
+	largeBody := strings.Join(paras, "\n\n")
+
+	secs := []struct{ Heading, Body string }{
+		{"Details", largeBody},
+	}
+	chunks := buildChunks("search_document: ", "Big Article", sectionsJSON(secs))
+
+	if len(chunks) < 2 {
+		t.Fatalf("expected large section to be split into >= 2 chunks, got %d", len(chunks))
+	}
+
+	// All chunks should share the same header.
+	for _, c := range chunks {
+		if c.Header != "Big Article > Details" {
+			t.Errorf("chunk header = %q, want %q", c.Header, "Big Article > Details")
+		}
+	}
+
+	// Each chunk body should be <= ~500 words (with some tolerance for the
+	// last paragraph that pushed it over).
+	for i, c := range chunks {
+		// Extract body after the header prefix.
+		bodyStart := strings.Index(c.Text, ": ")
+		if bodyStart < 0 {
+			t.Fatalf("chunk %d text has no ': ' separator", i)
+		}
+		body := c.Text[bodyStart+2:]
+		wc := wordCount(body)
+		if wc > 600 { // generous upper bound: 500 + one full paragraph
+			t.Errorf("chunk %d has %d words, expected <= ~500", i, wc)
+		}
+	}
+}
+
+func TestBuildChunksEmptyHeadingUsesTitle(t *testing.T) {
+	secs := []struct{ Heading, Body string }{
+		{"", "Some content without a heading."},
+	}
+	chunks := buildChunks("", "My Article", sectionsJSON(secs))
+
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	// When heading is empty, header should just be the title (no " > ").
+	if chunks[0].Header != "My Article" {
+		t.Errorf("header = %q, want %q", chunks[0].Header, "My Article")
+	}
+}
+
+func TestWordCount(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"", 0},
+		{"hello", 1},
+		{"one two three", 3},
+		{"  spaced   out  ", 2},
+	}
+	for _, tc := range tests {
+		if got := wordCount(tc.input); got != tc.want {
+			t.Errorf("wordCount(%q) = %d, want %d", tc.input, got, tc.want)
+		}
+	}
 }
