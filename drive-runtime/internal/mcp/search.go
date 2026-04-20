@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -159,15 +158,16 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 	}
 
 	// Fetch more results when filtering by source, then trim.
+	// Use 200 to avoid missing source-specific hits that rank below global top-N.
 	fetchLimit := limit
-	if sourceFilter != "" && fetchLimit < 50 {
-		fetchLimit = 50
+	if sourceFilter != "" && fetchLimit < 200 {
+		fetchLimit = 200
 	}
 
 	// Try hybrid search if embedding server is available.
 	var results []engine.Result
 	if c.ensureEmbedServer() == nil {
-		queryVec, embedErr := embedQuery(c.queryPfx+query, c.embedPort)
+		queryVec, embedErr := engine.EmbedQuery(c.queryPfx+query, c.embedPort)
 		if embedErr == nil {
 			results, _ = eng.Hybrid(query, queryVec, fetchLimit)
 		}
@@ -201,6 +201,11 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 			Path:     r.Path,
 			Title:    r.Title,
 			ReadHint: "Use search_read with this exact source and path",
+		}
+
+		// Prepend chunk header for section context (e.g., "Water Purification > Solar disinfection")
+		if r.ChunkHeader != "" && r.ChunkHeader != r.Title {
+			item.Title = r.ChunkHeader
 		}
 
 		switch detail {
@@ -348,36 +353,6 @@ func findEmbeddingModel(driveRoot string) string {
 		}
 	}
 	return ""
-}
-
-func embedQuery(query string, port int) ([]float32, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/embedding", port)
-	payload := map[string][]string{"content": {query}}
-	body, _ := json.Marshal(payload)
-	resp, err := http.Post(url, "application/json", strings.NewReader(string(body)))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var data []struct {
-		Embedding json.RawMessage `json:"embedding"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("empty embedding response")
-	}
-	// Handle both nested [[...]] and flat [...] response formats.
-	var nested [][]float32
-	if err := json.Unmarshal(data[0].Embedding, &nested); err == nil && len(nested) > 0 {
-		return nested[0], nil
-	}
-	var vec []float32
-	if err := json.Unmarshal(data[0].Embedding, &vec); err != nil {
-		return nil, err
-	}
-	return vec, nil
 }
 
 // ensureKiwix starts kiwix-serve lazily. Handles the case where the binary

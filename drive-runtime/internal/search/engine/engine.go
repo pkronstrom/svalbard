@@ -3,11 +3,14 @@ package engine
 import (
 	"database/sql"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"sort"
 	"strings"
-	"sync"
+	"time"
 )
 
 // Result represents a search hit.
@@ -65,48 +68,32 @@ func (e *Engine) Keyword(query string, limit int) ([]Result, error) {
 	return results, rows.Err()
 }
 
-// Hybrid runs FTS5 keyword and vector search in parallel, merges with RRF, applies MMR.
+// Hybrid runs FTS5 keyword search, then vector search pre-filtered to FTS
+// candidates, merges with RRF, and applies MMR diversity.
 func (e *Engine) Hybrid(query string, queryVec []float32, limit int) ([]Result, error) {
-	// Run FTS5 and vector search in parallel
-	type ftsResult struct {
-		results []Result
-		err     error
-	}
-	type vecResult struct {
-		results []scoredChunk
-		err     error
-	}
+	// Step 1: Run FTS5 first to get candidate article IDs for vector pre-filter.
+	ftsResults, ftsErr := e.Keyword(query, 200)
 
-	var wg sync.WaitGroup
-	ftsCh := make(chan ftsResult, 1)
-	vecCh := make(chan vecResult, 1)
-
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		r, err := e.Keyword(query, 100)
-		ftsCh <- ftsResult{r, err}
-	}()
-	go func() {
-		defer wg.Done()
-		r, err := e.vectorSearch(queryVec, 100)
-		vecCh <- vecResult{r, err}
-	}()
-	wg.Wait()
-
-	fts := <-ftsCh
-	vec := <-vecCh
-
-	// FTS5 results
-	var ftsResults []Result
-	if fts.err == nil {
-		ftsResults = fts.results
+	// Step 2: Run vector search filtered to FTS candidate articles.
+	// This avoids loading ALL embeddings into memory.
+	var candidateIDs []int
+	if ftsErr == nil {
+		for _, r := range ftsResults {
+			candidateIDs = append(candidateIDs, r.ArticleID)
+		}
 	}
 
-	// Vector results
 	var vecChunks []scoredChunk
-	if vec.err == nil {
-		vecChunks = vec.results
+	if len(candidateIDs) > 0 {
+		vecChunks, _ = e.vectorSearchFiltered(queryVec, candidateIDs, 100)
+	} else {
+		// No FTS hits — fall back to full scan (small corpus or unusual query)
+		vecChunks, _ = e.vectorSearch(queryVec, 100)
+	}
+
+	// Trim FTS results to top 100 for RRF (we fetched 200 for wider pre-filter)
+	if len(ftsResults) > 100 {
+		ftsResults = ftsResults[:100]
 	}
 
 	// RRF merge
@@ -135,7 +122,37 @@ func (e *Engine) Hybrid(query string, queryVec []float32, limit int) ([]Result, 
 	return e.fetchDetails(deduped)
 }
 
+// vectorSearchFiltered fetches embeddings only for the given article IDs.
+func (e *Engine) vectorSearchFiltered(queryVec []float32, articleIDs []int, limit int) ([]scoredChunk, error) {
+	if len(articleIDs) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(articleIDs))
+	args := make([]any, len(articleIDs))
+	for i, id := range articleIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(
+		`SELECT e.article_id, e.chunk_header, e.vector
+		 FROM embeddings e
+		 WHERE e.article_id IN (%s)`,
+		strings.Join(placeholders, ","),
+	)
+
+	rows, err := e.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("engine: filtered vector search: %w", err)
+	}
+	defer rows.Close()
+
+	return e.scanAndScoreVectors(rows, queryVec, limit)
+}
+
 // vectorSearch fetches all embeddings and computes dot product with queryVec.
+// Used as fallback when FTS5 returns no candidates.
 func (e *Engine) vectorSearch(queryVec []float32, limit int) ([]scoredChunk, error) {
 	rows, err := e.db.Query(
 		`SELECT e.article_id, e.chunk_header, e.vector
@@ -145,6 +162,10 @@ func (e *Engine) vectorSearch(queryVec []float32, limit int) ([]scoredChunk, err
 	}
 	defer rows.Close()
 
+	return e.scanAndScoreVectors(rows, queryVec, limit)
+}
+
+func (e *Engine) scanAndScoreVectors(rows *sql.Rows, queryVec []float32, limit int) ([]scoredChunk, error) {
 	var results []scoredChunk
 	for rows.Next() {
 		var articleID int
@@ -332,6 +353,45 @@ func (e *Engine) fetchDetails(entries []rrfEntry) ([]Result, error) {
 		results = append(results, r)
 	}
 	return results, rows.Err()
+}
+
+// EmbedQuery sends a query to the llama-server embedding endpoint and returns
+// the resulting float32 vector. Includes a 30-second timeout and status check.
+func EmbedQuery(query string, port int) ([]float32, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/embedding", port)
+	payload, _ := json.Marshal(map[string][]string{"content": {query}})
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		return nil, fmt.Errorf("embed query: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("embed query: server returned %d: %s", resp.StatusCode, body)
+	}
+
+	var data []struct {
+		Embedding json.RawMessage `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("embed query: decode response: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("embed query: empty response")
+	}
+
+	var nested [][]float32
+	if err := json.Unmarshal(data[0].Embedding, &nested); err == nil && len(nested) > 0 {
+		return nested[0], nil
+	}
+	var vec []float32
+	if err := json.Unmarshal(data[0].Embedding, &vec); err != nil {
+		return nil, fmt.Errorf("embed query: unmarshal: %w", err)
+	}
+	return vec, nil
 }
 
 // BuildFTSQuery converts a user query to an FTS5 MATCH expression.

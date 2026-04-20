@@ -12,6 +12,9 @@ var (
 	styleRe   = regexp.MustCompile(`(?si)<style[^>]*>.*?</style>`)
 	tagRe     = regexp.MustCompile(`(?s)<[^>]*>`)
 	wsRe      = regexp.MustCompile(`[\s]+`)
+	blockRe   = regexp.MustCompile(`(?i)</?(p|div|br|li|tr|blockquote|section|article|aside|details|figcaption|header|footer|main|nav|pre|ul|ol|dl|dt|dd|table|hr)[^>]*>`)
+	blankRe   = regexp.MustCompile(`\n{3,}`)
+	lineWsRe  = regexp.MustCompile(`[^\S\n]+`)
 	headingRe = regexp.MustCompile(`(?i)<h[23][^>]*>(.*?)</h[23]>`)
 )
 
@@ -73,6 +76,29 @@ func TruncateText(text string, maxChars int) string {
 	return window
 }
 
+// stripHTMLWithParagraphs is like StripHTML but preserves paragraph boundaries
+// as \n\n. Block-level HTML tags (p, div, br, li, etc.) are converted to
+// newlines so that downstream chunking can split on paragraph boundaries.
+func stripHTMLWithParagraphs(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	s := scriptRe.ReplaceAllString(raw, " ")
+	s = styleRe.ReplaceAllString(s, " ")
+
+	// Convert block-level tags to newlines before stripping all tags.
+	s = blockRe.ReplaceAllString(s, "\n")
+	s = tagRe.ReplaceAllString(s, " ")
+	s = entityReplacer.Replace(s)
+
+	// Collapse whitespace within lines, but preserve newlines.
+	s = lineWsRe.ReplaceAllString(s, " ")
+	// Normalize 3+ newlines to exactly 2 (paragraph break).
+	s = blankRe.ReplaceAllString(s, "\n\n")
+
+	return strings.TrimSpace(s)
+}
+
 // Section represents a heading-delimited section of an HTML document.
 type Section struct {
 	Heading string `json:"heading"` // "" for intro/lead content before first heading
@@ -92,7 +118,7 @@ func ExtractSections(htmlContent string) []Section {
 
 	// No headings found — return the whole content as a single section.
 	if len(matches) == 0 {
-		body := StripHTML(htmlContent)
+		body := stripHTMLWithParagraphs(htmlContent)
 		if body == "" {
 			return nil
 		}
@@ -103,7 +129,7 @@ func ExtractSections(htmlContent string) []Section {
 
 	// Content before the first heading (intro/lead).
 	if matches[0][0] > 0 {
-		intro := StripHTML(htmlContent[:matches[0][0]])
+		intro := stripHTMLWithParagraphs(htmlContent[:matches[0][0]])
 		if intro != "" {
 			sections = append(sections, Section{Heading: "", Body: intro})
 		}
@@ -125,7 +151,7 @@ func ExtractSections(htmlContent string) []Section {
 			bodyEnd = len(htmlContent)
 		}
 
-		body := StripHTML(htmlContent[bodyStart:bodyEnd])
+		body := stripHTMLWithParagraphs(htmlContent[bodyStart:bodyEnd])
 		if body == "" {
 			continue
 		}

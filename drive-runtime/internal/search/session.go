@@ -115,7 +115,7 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 			effectiveMode = ModeKeyword
 			status = "Hybrid unavailable, fell back to keyword"
 		} else {
-			queryVec, embedErr := embedQuery(s.caps.QueryPrefix+query, s.embedPort)
+			queryVec, embedErr := engine.EmbedQuery(s.caps.QueryPrefix+query, s.embedPort)
 			if embedErr == nil {
 				results, err = s.eng.Hybrid(query, queryVec, limit)
 			}

@@ -246,6 +246,25 @@ func TestExtractSectionsHeadingWithAttributes(t *testing.T) {
 	}
 }
 
+func TestExtractSectionsPreservesParagraphBreaks(t *testing.T) {
+	html := `<h2>Section</h2>
+<p>First paragraph with content.</p>
+<p>Second paragraph with more content.</p>
+<p>Third paragraph ending the section.</p>`
+
+	sections := ExtractSections(html)
+	if len(sections) != 1 {
+		t.Fatalf("expected 1 section, got %d", len(sections))
+	}
+	if !strings.Contains(sections[0].Body, "\n\n") {
+		t.Errorf("section body should preserve paragraph breaks, got: %q", sections[0].Body)
+	}
+	paragraphs := strings.Split(sections[0].Body, "\n\n")
+	if len(paragraphs) < 3 {
+		t.Errorf("expected at least 3 paragraphs, got %d: %q", len(paragraphs), sections[0].Body)
+	}
+}
+
 func TestExtractSectionsOnlyTagsNoText(t *testing.T) {
 	html := `<div><span></span></div>`
 	sections := ExtractSections(html)

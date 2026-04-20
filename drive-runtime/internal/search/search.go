@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -59,7 +58,11 @@ func BestMode(c Capabilities) Mode {
 func RenderResults(w io.Writer, results []Result) {
 	for i, result := range results {
 		label := strings.TrimSuffix(result.Filename, ".zim")
-		fmt.Fprintf(w, "  %d. [%s] %s\n", i+1, label, result.Title)
+		title := result.Title
+		if result.ChunkHeader != "" && result.ChunkHeader != result.Title {
+			title = result.ChunkHeader
+		}
+		fmt.Fprintf(w, "  %d. [%s] %s\n", i+1, label, title)
 		if result.Snippet != "" {
 			fmt.Fprintf(w, "     %s\n", result.Snippet)
 		}
@@ -152,7 +155,7 @@ func Run(ctx context.Context, stdin io.Reader, stdout io.Writer, driveRoot, init
 				}
 			}
 			if effectiveMode == ModeHybrid {
-				queryVec, embedErr := embedQuery(caps.QueryPrefix+query, embedPort)
+				queryVec, embedErr := engine.EmbedQuery(caps.QueryPrefix+query, embedPort)
 				if embedErr == nil {
 					results, err = eng.Hybrid(query, queryVec, 20)
 				}
@@ -254,35 +257,6 @@ func findEmbeddingModel(driveRoot string) string {
 		}
 	}
 	return ""
-}
-
-func embedQuery(query string, port int) ([]float32, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/embedding", port)
-	payload := map[string][]string{"content": {query}}
-	body, _ := json.Marshal(payload)
-	resp, err := http.Post(url, "application/json", strings.NewReader(string(body)))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var data []struct {
-		Embedding json.RawMessage `json:"embedding"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("empty embedding response")
-	}
-	var nested [][]float32
-	if err := json.Unmarshal(data[0].Embedding, &nested); err == nil && len(nested) > 0 {
-		return nested[0], nil
-	}
-	var vec []float32
-	if err := json.Unmarshal(data[0].Embedding, &vec); err != nil {
-		return nil, err
-	}
-	return vec, nil
 }
 
 func startEmbeddingServer(ctx context.Context, llamaBin, model string, port int) (*exec.Cmd, error) {

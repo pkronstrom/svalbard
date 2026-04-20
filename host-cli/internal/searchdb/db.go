@@ -65,7 +65,7 @@ END;
 
 CREATE TABLE IF NOT EXISTS embeddings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    article_id INTEGER NOT NULL REFERENCES articles(id),
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     chunk_index INTEGER NOT NULL,
     chunk_header TEXT NOT NULL,
     vector BLOB NOT NULL,
@@ -85,6 +85,12 @@ func Open(path string) (*DB, error) {
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("searchdb: set WAL mode: %w", err)
+	}
+
+	// Enable foreign key enforcement (required for ON DELETE CASCADE).
+	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("searchdb: enable foreign keys: %w", err)
 	}
 
 	if _, err := db.Exec(schema); err != nil {
