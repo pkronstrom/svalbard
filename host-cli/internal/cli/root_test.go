@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
+)
 
 func TestNewRootCommandHasHardResetCommands(t *testing.T) {
 	cmd := NewRootCommand()
@@ -12,5 +16,19 @@ func TestNewRootCommandHasHardResetCommands(t *testing.T) {
 		if !got[name] {
 			t.Fatalf("missing command %q", name)
 		}
+	}
+}
+
+func TestMapSemanticIndexEventPreservesGlobalEvents(t *testing.T) {
+	ev := mapSemanticIndexEvent(commands.SemanticProgress{
+		Status: "starting",
+		Detail: "Starting embedding server...",
+	}, true)
+
+	if ev.File != "" {
+		t.Fatalf("global semantic event file = %q, want empty", ev.File)
+	}
+	if ev.Detail != "Starting embedding server..." {
+		t.Fatalf("global semantic event detail = %q", ev.Detail)
 	}
 }

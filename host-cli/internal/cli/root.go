@@ -180,6 +180,32 @@ func NewRootCommand() *cobra.Command {
 	return root
 }
 
+func mapSemanticIndexEvent(p commands.SemanticProgress, fullIndex bool) hosttui.IndexEvent {
+	ev := hosttui.IndexEvent{
+		Status: p.Status,
+		Detail: p.Detail,
+	}
+	if p.File == "" {
+		return ev
+	}
+
+	if fullIndex {
+		ev.File = "embed: " + p.File
+		if p.Detail != "" {
+			ev.Detail = p.File + "  " + p.Detail
+		} else {
+			ev.Detail = p.File
+		}
+		return ev
+	}
+
+	ev.File = p.File
+	if ev.Detail == "" {
+		ev.Detail = p.File
+	}
+	return ev
+}
+
 func newInitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init [path]",
@@ -657,15 +683,9 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			})
 		}
 		semanticCb := func(p commands.SemanticProgress) {
-			file := p.File
-			if file == "" {
-				file = p.Detail
-			}
-			onProgress(hosttui.IndexEvent{
-				File:   file,
-				Status: mapStatus(p.Status),
-				Detail: p.Detail,
-			})
+			ev := mapSemanticIndexEvent(p, false)
+			ev.Status = mapStatus(p.Status)
+			onProgress(ev)
 		}
 
 		if indexType == "full" {
@@ -674,21 +694,9 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			}
 			// Semantic uses prefixed file IDs to avoid overwriting keyword entries.
 			fullSemanticCb := func(p commands.SemanticProgress) {
-				file := p.File
-				if file != "" {
-					file = "embed: " + file
-				} else {
-					file = p.Detail
-				}
-				detail := p.Detail
-				if p.File != "" && p.Detail != "" {
-					detail = p.File + "  " + p.Detail
-				}
-				onProgress(hosttui.IndexEvent{
-					File:   file,
-					Status: mapStatus(p.Status),
-					Detail: detail,
-				})
+				ev := mapSemanticIndexEvent(p, true)
+				ev.Status = mapStatus(p.Status)
+				onProgress(ev)
 			}
 			// Semantic is best-effort — keyword index still succeeds if model is missing.
 			if err := commands.IndexSemantic(ctx, root, true, io.Discard, fullSemanticCb); err != nil {
@@ -708,4 +716,3 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 
 	return deps
 }
-
