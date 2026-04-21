@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -306,6 +308,11 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
+var (
+	batchTokensRe = regexp.MustCompile(`input \((\d+) tokens\)`)
+	batchSizeRe   = regexp.MustCompile(`current batch size:\s*(\d+)`)
+)
+
 func parseContextLimitError(body []byte) *contextLimitError {
 	var payload struct {
 		Error struct {
@@ -318,14 +325,43 @@ func parseContextLimitError(body []byte) *contextLimitError {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil
 	}
-	if payload.Error.Type != "exceed_context_size_error" {
-		return nil
+	e := payload.Error
+
+	switch e.Type {
+	case "exceed_context_size_error":
+		return &contextLimitError{
+			Message:      e.Message,
+			PromptTokens: e.PromptTokens,
+			ContextSize:  e.ContextWindow,
+		}
+	case "server_error":
+		// llama-server returns a 500 server_error when input exceeds the
+		// physical batch size. Structured fields are missing; parse from
+		// the message text so the retry/shrink path still fires.
+		if !strings.Contains(e.Message, "too large to process") {
+			return nil
+		}
+		tokens := firstIntMatch(batchTokensRe, e.Message)
+		batch := firstIntMatch(batchSizeRe, e.Message)
+		if tokens == 0 || batch == 0 {
+			return nil
+		}
+		return &contextLimitError{
+			Message:      e.Message,
+			PromptTokens: tokens,
+			ContextSize:  batch,
+		}
 	}
-	return &contextLimitError{
-		Message:      payload.Error.Message,
-		PromptTokens: payload.Error.PromptTokens,
-		ContextSize:  payload.Error.ContextWindow,
+	return nil
+}
+
+func firstIntMatch(re *regexp.Regexp, s string) int {
+	m := re.FindStringSubmatch(s)
+	if len(m) < 2 {
+		return 0
 	}
+	n, _ := strconv.Atoi(m[1])
+	return n
 }
 
 func shrinkTextForContext(text string, promptTokens, contextSize int) string {

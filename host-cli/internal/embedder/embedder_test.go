@@ -107,6 +107,43 @@ func TestTruncateDimsZeroVector(t *testing.T) {
 	}
 }
 
+func TestParseContextLimitErrorExceedContext(t *testing.T) {
+	body := []byte(`{"error":{"code":400,"message":"input (608 tokens) is larger than the max context size (512 tokens).\nskipping","type":"exceed_context_size_error","n_prompt_tokens":608,"n_ctx":512}}`)
+	got := parseContextLimitError(body)
+	if got == nil {
+		t.Fatal("parseContextLimitError returned nil for exceed_context_size_error")
+	}
+	if got.PromptTokens != 608 {
+		t.Errorf("PromptTokens = %d, want 608", got.PromptTokens)
+	}
+	if got.ContextSize != 512 {
+		t.Errorf("ContextSize = %d, want 512", got.ContextSize)
+	}
+}
+
+func TestParseContextLimitErrorPhysicalBatch(t *testing.T) {
+	// Exact payload from an observed wikiciv failure: type=server_error and
+	// values are only present in the message string, not structured fields.
+	body := []byte(`{"error":{"code":500,"message":"input (7825 tokens) is too large to process. increase the physical batch size (current batch size: 4096)","type":"server_error"}}`)
+	got := parseContextLimitError(body)
+	if got == nil {
+		t.Fatal("parseContextLimitError returned nil for physical-batch server_error")
+	}
+	if got.PromptTokens != 7825 {
+		t.Errorf("PromptTokens = %d, want 7825", got.PromptTokens)
+	}
+	if got.ContextSize != 4096 {
+		t.Errorf("ContextSize = %d, want 4096", got.ContextSize)
+	}
+}
+
+func TestParseContextLimitErrorUnrelated(t *testing.T) {
+	body := []byte(`{"error":{"code":500,"message":"something else","type":"server_error"}}`)
+	if got := parseContextLimitError(body); got != nil {
+		t.Fatalf("expected nil for unrelated server_error, got %+v", got)
+	}
+}
+
 func TestFindEmbeddingModel(t *testing.T) {
 	dir := t.TempDir()
 	embedDir := filepath.Join(dir, "models", "embed")
