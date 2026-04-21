@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,7 +21,10 @@ const embeddingBatchSize = 32
 const (
 	embeddingTextMaxRunes = 1800
 	embeddingTextMaxWords = 220
+	chunkWordLimit        = 500
 )
+
+var sentenceEndRe = regexp.MustCompile(`([.!?])\s+`)
 
 // loadEmbeddingSpec reads the .embedding.json sidecar next to the GGUF model.
 // Returns an empty spec (no prefixes) if the sidecar doesn't exist.
@@ -133,6 +137,14 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 
 	dims := embSpec.Dims // 0 if not set → no truncation
 
+	// Replace the sticky "Starting..." banner with the active model so the
+	// progress view shows which model is actually embedding.
+	modelBanner := fmt.Sprintf("Embedding with %s", modelID)
+	if dims > 0 {
+		modelBanner = fmt.Sprintf("Embedding with %s (%d dims)", modelID, dims)
+	}
+	notify(SemanticProgress{Status: "starting", Detail: modelBanner})
+
 	// Embed each source separately for per-file progress.
 	for _, src := range sources {
 		if err := embedSource(ctx, db, server, src, embSpec.DocPrefix, dims, notify); err != nil {
@@ -218,21 +230,26 @@ func buildChunks(docPrefix, title, sectionsJSON string) []Chunk {
 			header = title + " > " + g.heading
 		}
 
-		if wordCount(g.body) <= 500 {
+		if wordCount(g.body) <= chunkWordLimit {
 			text := docPrefix + header + ": " + g.body
 			chunks = append(chunks, Chunk{Header: header, Text: text})
 			continue
 		}
 
-		// Split on double-newline paragraph boundaries.
-		paragraphs := strings.Split(g.body, "\n\n")
-		var buf strings.Builder
-		for _, p := range paragraphs {
+		// Split on double-newline paragraph boundaries, pre-expanding any
+		// paragraph that by itself exceeds the word limit.
+		var paragraphs []string
+		for _, p := range strings.Split(g.body, "\n\n") {
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue
 			}
-			if buf.Len() > 0 && wordCount(buf.String()+"\n\n"+p) > 500 {
+			paragraphs = append(paragraphs, splitOversizedParagraph(p, chunkWordLimit)...)
+		}
+
+		var buf strings.Builder
+		for _, p := range paragraphs {
+			if buf.Len() > 0 && wordCount(buf.String()+"\n\n"+p) > chunkWordLimit {
 				// Flush current buffer as a chunk.
 				text := docPrefix + header + ": " + buf.String()
 				chunks = append(chunks, Chunk{Header: header, Text: text})
@@ -258,6 +275,75 @@ func buildChunks(docPrefix, title, sectionsJSON string) []Chunk {
 // wordCount returns the number of whitespace-delimited words in s.
 func wordCount(s string) int {
 	return len(strings.Fields(s))
+}
+
+// splitOversizedParagraph splits a paragraph that exceeds the word limit into
+// smaller pieces. It prefers sentence boundaries; if a single "sentence" is
+// still oversized (or the text has no sentence punctuation), it hard-splits
+// by word count.
+func splitOversizedParagraph(p string, limit int) []string {
+	if wordCount(p) <= limit {
+		return []string{p}
+	}
+	sentences := splitSentences(p)
+	var out []string
+	var buf []string
+	bufWords := 0
+	flush := func() {
+		if len(buf) > 0 {
+			out = append(out, strings.Join(buf, " "))
+			buf = buf[:0]
+			bufWords = 0
+		}
+	}
+	for _, s := range sentences {
+		sw := wordCount(s)
+		if sw > limit {
+			flush()
+			words := strings.Fields(s)
+			for i := 0; i < len(words); i += limit {
+				end := i + limit
+				if end > len(words) {
+					end = len(words)
+				}
+				out = append(out, strings.Join(words[i:end], " "))
+			}
+			continue
+		}
+		if bufWords > 0 && bufWords+sw > limit {
+			flush()
+		}
+		buf = append(buf, s)
+		bufWords += sw
+	}
+	flush()
+	return out
+}
+
+// splitSentences splits text at sentence terminators, keeping the punctuation
+// attached to the preceding sentence. Returns the whole input as a single
+// element when no terminator is found.
+func splitSentences(text string) []string {
+	locs := sentenceEndRe.FindAllStringIndex(text, -1)
+	if len(locs) == 0 {
+		return []string{text}
+	}
+	var out []string
+	start := 0
+	for _, loc := range locs {
+		end := loc[0] + 1 // include the terminator
+		seg := strings.TrimSpace(text[start:end])
+		if seg != "" {
+			out = append(out, seg)
+		}
+		start = loc[1]
+	}
+	if start < len(text) {
+		if seg := strings.TrimSpace(text[start:]); seg != "" {
+			out = append(out, seg)
+		}
+	}
+	return out
 }
 
 // embedSource embeds all unembedded articles for a single source, using a

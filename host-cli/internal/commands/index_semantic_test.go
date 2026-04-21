@@ -219,6 +219,55 @@ func TestBuildChunksEmptyHeadingUsesTitle(t *testing.T) {
 	}
 }
 
+func TestBuildChunksSingleOversizedParagraph(t *testing.T) {
+	// 100 sentences of 20 words each — 2000 words total — all on one line
+	// (no "\n\n" breaks). The paragraph-split path must fall through to
+	// sentence splitting so no single chunk exceeds the limit.
+	var sentences []string
+	for i := 0; i < 100; i++ {
+		sentences = append(sentences, strings.Repeat("word ", 19)+"end.")
+	}
+	single := strings.Join(sentences, " ")
+
+	secs := []struct{ Heading, Body string }{{"Overview", single}}
+	chunks := buildChunks("search_document: ", "Monolith", sectionsJSON(secs))
+
+	if len(chunks) < 4 {
+		t.Fatalf("expected ≥4 chunks for 2000-word single paragraph, got %d", len(chunks))
+	}
+	for i, c := range chunks {
+		bodyStart := strings.Index(c.Text, ": ")
+		if bodyStart < 0 {
+			t.Fatalf("chunk %d has no ': ' separator", i)
+		}
+		body := c.Text[bodyStart+2:]
+		if wc := wordCount(body); wc > 600 {
+			t.Errorf("chunk %d has %d words, expected ≤600", i, wc)
+		}
+	}
+}
+
+func TestBuildChunksOversizedNoSentences(t *testing.T) {
+	// 2000 words, no punctuation, no "\n\n" — forces hard word-count split.
+	body := strings.Repeat("word ", 2000)
+	secs := []struct{ Heading, Body string }{{"Dump", body}}
+	chunks := buildChunks("", "Bare", sectionsJSON(secs))
+
+	if len(chunks) < 3 {
+		t.Fatalf("expected ≥3 chunks for hard-split fallback, got %d", len(chunks))
+	}
+	for i, c := range chunks {
+		bodyStart := strings.Index(c.Text, ": ")
+		if bodyStart < 0 {
+			t.Fatalf("chunk %d has no ': ' separator", i)
+		}
+		body := c.Text[bodyStart+2:]
+		if wc := wordCount(body); wc > chunkWordLimit+1 {
+			t.Errorf("chunk %d has %d words, expected ≤%d", i, wc, chunkWordLimit)
+		}
+	}
+}
+
 func TestWordCount(t *testing.T) {
 	tests := []struct {
 		input string
