@@ -7,6 +7,7 @@ build/
 bin/
 .venv/
 .worktrees/
+.debug-bin/
 build-tools/zim-compact
 
 *.zim
