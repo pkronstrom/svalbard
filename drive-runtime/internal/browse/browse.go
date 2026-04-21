@@ -122,12 +122,13 @@ func waitHealthy(ctx context.Context, url string, exitCh <-chan error) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-tick.C:
+			// Any HTTP response means the server is listening. kiwix-serve
+			// redirects "/" to "/ROOT/..." on multi-ZIM setups (302), so we
+			// can't require StatusOK — we just need "responds at all".
 			resp, err := client.Get(url)
 			if err == nil {
 				resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					return nil
-				}
+				return nil
 			}
 		}
 	}
