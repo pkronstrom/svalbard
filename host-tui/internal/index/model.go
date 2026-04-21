@@ -22,6 +22,8 @@ type IndexStatus struct {
 	KeywordLastBuilt string
 	SemanticEnabled  bool
 	SemanticStatus   string
+	EmbeddingModel   string // model ID last used to embed, empty if never
+	EmbeddingDims    int    // effective dims of stored embeddings, 0 if unknown
 }
 
 // IndexEvent reports progress during index rebuild.
@@ -310,6 +312,15 @@ func (m Model) fullDetail() tui.DetailPane {
 		semanticNote += " — will run keyword only"
 	}
 
+	modelNote := "not embedded yet"
+	if m.status.EmbeddingModel != "" {
+		if m.status.EmbeddingDims > 0 {
+			modelNote = fmt.Sprintf("%s (%d dims)", m.status.EmbeddingModel, m.status.EmbeddingDims)
+		} else {
+			modelNote = m.status.EmbeddingModel
+		}
+	}
+
 	return tui.DetailPane{
 		Theme: m.theme,
 		Title: "Full index",
@@ -319,6 +330,7 @@ func (m Model) fullDetail() tui.DetailPane {
 			{Label: "Sources", Value: fmt.Sprintf("%d", m.status.KeywordSources)},
 			{Label: "Articles", Value: fmt.Sprintf("%d", m.status.KeywordArticles)},
 			{Label: "Semantic", Value: semanticNote},
+			{Label: "Model", Value: modelNote},
 			{Label: "Last built", Value: lastBuilt},
 		},
 		Body: "Complete search indexing. Builds keyword FTS5 index for\nexact matches, then generates vector embeddings for\nsimilarity search.",

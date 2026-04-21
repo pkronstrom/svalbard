@@ -85,6 +85,8 @@ type IndexStatus struct {
 	KeywordLastBuilt string
 	SemanticEnabled  bool
 	SemanticStatus   string // e.g. "model not installed"
+	EmbeddingModel   string // model ID last used to embed, empty if never
+	EmbeddingDims    int    // effective dims of stored embeddings, 0 if unknown
 }
 
 // IndexEvent reports progress during index rebuild.

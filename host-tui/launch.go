@@ -478,6 +478,8 @@ func (m *appModel) newIndex() index.Model {
 					KeywordLastBuilt: status.KeywordLastBuilt,
 					SemanticEnabled:  status.SemanticEnabled,
 					SemanticStatus:   status.SemanticStatus,
+					EmbeddingModel:   status.EmbeddingModel,
+					EmbeddingDims:    status.EmbeddingDims,
 				}
 			}
 		}

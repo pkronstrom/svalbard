@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	hosttui "github.com/pkronstrom/svalbard/host-tui"
@@ -634,6 +635,14 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 				status.KeywordArticles = ac
 				if ts, err := db.GetMeta("indexed_at"); err == nil {
 					status.KeywordLastBuilt = ts
+				}
+				if model, err := db.GetMeta("embedding_model"); err == nil {
+					status.EmbeddingModel = model
+				}
+				if dimsStr, err := db.GetMeta("embedding_dims"); err == nil && dimsStr != "" {
+					if d, convErr := strconv.Atoi(dimsStr); convErr == nil {
+						status.EmbeddingDims = d
+					}
 				}
 			}
 		}
