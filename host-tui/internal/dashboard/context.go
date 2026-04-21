@@ -28,6 +28,11 @@ func contextForDestination(id string, m Model) tui.DetailPane {
 				tui.DetailField{Label: "Realized", Value: fmt.Sprintf("%d items", s.RealizedCount)},
 				tui.DetailField{Label: "Pending", Value: fmt.Sprintf("%d items", s.PendingCount)},
 			)
+			if s.DiskUsedGB > 0 {
+				base.Fields = append(base.Fields,
+					tui.DetailField{Label: "Vault size", Value: fmt.Sprintf("%.1f GB", s.DiskUsedGB)},
+				)
+			}
 			if s.DiskFreeGB > 0 {
 				base.Fields = append(base.Fields,
 					tui.DetailField{Label: "Disk free", Value: fmt.Sprintf("%.1f GB", s.DiskFreeGB)},

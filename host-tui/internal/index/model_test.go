@@ -118,3 +118,26 @@ func TestIndexShowsStatus(t *testing.T) {
 		t.Errorf("View() should show source count 5, got:\n%s", out)
 	}
 }
+
+func TestGlobalProgressEventDoesNotCreateStep(t *testing.T) {
+	m := New(Config{})
+	m.width = 80
+	m.height = 24
+	m.rebuilding = true
+	m.rebuildType = "full"
+
+	m.updateStep(IndexEvent{
+		File:   "",
+		Status: "indexing",
+		Detail: "Starting embedding server...",
+	})
+
+	if len(m.steps) != 0 {
+		t.Fatalf("global progress event created %d step(s), want 0", len(m.steps))
+	}
+
+	out := stripAnsi(m.View())
+	if !strings.Contains(out, "Starting embedding server...") {
+		t.Fatalf("View() should show global status, got:\n%s", out)
+	}
+}

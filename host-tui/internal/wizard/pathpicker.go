@@ -3,10 +3,10 @@ package wizard
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/charmbracelet/bubbles/filepicker"
-	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkronstrom/svalbard/tui"
 )
@@ -24,35 +24,25 @@ type pathOption struct {
 	path    string  // filesystem path
 	freeGB  float64 // free space in GB
 	network bool    // true for network volumes
-	custom  bool    // true for the "Custom path..." entry
 }
 
 // pathPickerModel is the Bubble Tea sub-model for vault path selection.
 type pathPickerModel struct {
-	options     []pathOption
-	cursor      int
-	customInput bool // true when browsing for a custom path
-	picker      filepicker.Model
-	width       int
-	height      int
-	theme       tui.Theme
-	keys        tui.KeyMap
+	options []pathOption
+	cursor  int
+	input   string // editable path text input
+	errMsg  string // validation error
+	width   int
+	height  int
+	theme   tui.Theme
+	keys    tui.KeyMap
 }
 
 // newPathPicker creates a pathPickerModel from detected volumes and a home
-// volume. If prefill is non-empty it appears as the first option.
+// volume. If prefill is non-empty it appears as the default input path,
+// otherwise cwd + "/svalbard-vault" is used.
 func newPathPicker(volumes []Volume, home Volume, prefill string) pathPickerModel {
 	var opts []pathOption
-
-	// If prefill is provided, add it as the first option.
-	if prefill != "" {
-		opts = append(opts, pathOption{
-			label:  prefill,
-			detail: "",
-			path:   prefill,
-			freeGB: 0,
-		})
-	}
 
 	// Add detected volumes.
 	for _, v := range volumes {
@@ -75,39 +65,23 @@ func newPathPicker(volumes []Volume, home Volume, prefill string) pathPickerMode
 		freeGB: home.FreeGB,
 	})
 
-	// Add custom path entry.
-	opts = append(opts, pathOption{
-		label:  "Custom path...",
-		custom: true,
-	})
+	// Default input path.
+	defaultPath := prefill
+	if defaultPath == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			cwd = home.Path
+		}
+		defaultPath = filepath.Join(cwd, "svalbard-vault")
+	}
 
 	return pathPickerModel{
 		options: opts,
-		cursor:  0,
+		cursor:  -1, // -1 = text input focused
+		input:   defaultPath,
 		theme:   tui.DefaultTheme(),
 		keys:    tui.DefaultKeyMap(),
 	}
-}
-
-func newFilePicker() filepicker.Model {
-	fp := filepicker.New()
-	fp.CurrentDirectory, _ = os.Getwd()
-	fp.DirAllowed = true
-	fp.FileAllowed = false
-	fp.ShowPermissions = false
-	fp.ShowSize = false
-	fp.ShowHidden = false
-	fp.AutoHeight = false
-	fp.Cursor = ">"
-
-	// Remove esc from the filepicker's Back binding so we handle it
-	// ourselves to exit the file browser back to the list.
-	fp.KeyMap.Back = key.NewBinding(
-		key.WithKeys("h", "backspace", "left"),
-		key.WithHelp("h", "back"),
-	)
-
-	return fp
 }
 
 // Init satisfies tea.Model. No initial command is needed.
@@ -121,159 +95,129 @@ func (m pathPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		if m.customInput {
-			pickerHeight := msg.Height - 7
-			if pickerHeight < 4 {
-				pickerHeight = 4
-			}
-			m.picker.SetHeight(pickerHeight)
-		}
 		return m, nil
 
 	case tea.KeyMsg:
-		if m.customInput {
-			return m.updateFilePicker(msg)
-		}
-		return m.updateList(msg)
-	}
-
-	if m.customInput {
-		// Forward non-key messages (readDirMsg etc.) to the filepicker.
-		var cmd tea.Cmd
-		m.picker, cmd = m.picker.Update(msg)
-		return m, cmd
+		return m.updateKey(msg)
 	}
 
 	return m, nil
 }
 
-// updateList handles key input when in list selection mode.
-func (m pathPickerModel) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m pathPickerModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.keys.ForceQuit.Matches(msg):
 		return m, tea.Quit
 
 	case m.keys.MoveDown.Matches(msg):
+		// Only navigate options when input is not focused, or move from input to first option.
 		if m.cursor < len(m.options)-1 {
 			m.cursor++
+			m.input = filepath.Join(m.options[m.cursor].path, "svalbard-vault")
+			m.errMsg = ""
 		}
 		return m, nil
 
 	case m.keys.MoveUp.Matches(msg):
-		if m.cursor > 0 {
+		if m.cursor > -1 {
 			m.cursor--
+			if m.cursor >= 0 {
+				m.input = filepath.Join(m.options[m.cursor].path, "svalbard-vault")
+			}
+			m.errMsg = ""
 		}
 		return m, nil
 
 	case m.keys.Enter.Matches(msg):
-		opt := m.options[m.cursor]
-		if opt.custom {
-			m.customInput = true
-			m.picker = newFilePicker()
-			pickerHeight := m.height - 7
-			if pickerHeight < 4 {
-				pickerHeight = 4
-			}
-			m.picker.SetHeight(pickerHeight)
-			return m, m.picker.Init()
+		path := strings.TrimSpace(m.input)
+		if path == "" {
+			m.errMsg = "path cannot be empty"
+			return m, nil
+		}
+
+		// Validate parent directory exists.
+		parent := filepath.Dir(path)
+		if info, err := os.Stat(parent); err != nil || !info.IsDir() {
+			m.errMsg = fmt.Sprintf("parent directory does not exist: %s", parent)
+			return m, nil
+		}
+
+		freeGB := 0.0
+		if m.cursor >= 0 && m.cursor < len(m.options) {
+			freeGB = m.options[m.cursor].freeGB
 		}
 		return m, func() tea.Msg {
-			return pathDoneMsg{path: opt.path, freeGB: opt.freeGB}
+			return pathDoneMsg{path: path, freeGB: freeGB}
 		}
+
+	case msg.Type == tea.KeyBackspace:
+		if len(m.input) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.input)
+			m.input = m.input[:len(m.input)-size]
+			m.errMsg = ""
+			m.cursor = -1 // back to free-form input
+		}
+		return m, nil
+
+	case msg.Type == tea.KeyRunes:
+		m.input += string(msg.Runes)
+		m.errMsg = ""
+		m.cursor = -1 // back to free-form input
+		return m, nil
 	}
 
 	return m, nil
 }
 
-// updateFilePicker handles key input when browsing for a custom path.
-func (m pathPickerModel) updateFilePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case m.keys.ForceQuit.Matches(msg):
-		return m, tea.Quit
-
-	case m.keys.Back.Matches(msg):
-		// Esc exits the file browser back to the list.
-		m.customInput = false
-		return m, nil
-	}
-
-	// Forward to filepicker.
-	var cmd tea.Cmd
-	m.picker, cmd = m.picker.Update(msg)
-
-	// Check if user selected a directory.
-	if didSelect, path := m.picker.DidSelectFile(msg); didSelect {
-		return m, func() tea.Msg {
-			return pathDoneMsg{path: path, freeGB: 0}
-		}
-	}
-
-	return m, cmd
-}
-
 // View renders the path picker UI.
 func (m pathPickerModel) View() string {
-	if m.customInput {
-		return m.viewFilePicker()
-	}
-	return m.viewList()
-}
-
-// viewList renders the numbered list of path options.
-func (m pathPickerModel) viewList() string {
 	var b strings.Builder
 
-	for i, opt := range m.options {
-		cursor := "  "
-		if i == m.cursor {
-			cursor = "> "
-		}
+	b.WriteString(m.theme.Section.Render("Vault path"))
+	b.WriteString("\n\n")
 
-		if opt.custom {
-			line := fmt.Sprintf("%sc) %s", cursor, opt.label)
+	// Quick-select volume options.
+	if len(m.options) > 0 {
+		b.WriteString(m.theme.Muted.Render("  Quick select:"))
+		b.WriteString("\n")
+		for i, opt := range m.options {
+			cursor := "  "
 			if i == m.cursor {
-				b.WriteString(m.theme.Focus.Render(line))
-			} else {
-				b.WriteString(m.theme.Base.Render(line))
+				cursor = "> "
 			}
-		} else {
+
 			networkTag := ""
 			if opt.network {
 				networkTag = " [network]"
 			}
 
-			detailStr := ""
-			if opt.detail != "" {
-				detailStr = "  " + opt.detail
-			}
-
-			line := fmt.Sprintf("%s%d) %s%s%s", cursor, i+1, opt.label, networkTag, detailStr)
+			line := fmt.Sprintf("%s%d) %s%s  %s", cursor, i+1, opt.label, networkTag, opt.detail)
 			if i == m.cursor {
 				b.WriteString(m.theme.Focus.Render(line))
 			} else {
 				b.WriteString(m.theme.Base.Render(line))
 			}
-		}
-
-		if i < len(m.options)-1 {
 			b.WriteString("\n")
 		}
+		b.WriteString("\n")
 	}
 
-	return b.String()
-}
-
-// viewFilePicker renders the file picker for custom path selection.
-func (m pathPickerModel) viewFilePicker() string {
-	var b strings.Builder
-
-	b.WriteString(m.theme.Muted.Render("Select a directory for the new vault"))
+	// Text input for path.
+	b.WriteString(m.theme.Base.Render("  Path: "))
+	b.WriteString(m.theme.Focus.Render(m.input))
+	if m.cursor == -1 {
+		b.WriteString(m.theme.Focus.Render("\u2588")) // block cursor
+	}
 	b.WriteString("\n")
-	b.WriteString(m.theme.Section.Render(m.picker.CurrentDirectory))
-	b.WriteString("\n\n")
-	b.WriteString(m.picker.View())
+
+	// Validation error.
+	if m.errMsg != "" {
+		b.WriteString(m.theme.Error.Render("  " + m.errMsg))
+		b.WriteString("\n")
+	}
+
 	b.WriteString("\n")
-	b.WriteString(m.theme.Help.Render("  enter select  h/← parent  esc cancel"))
+	b.WriteString(m.theme.Help.Render("  Enter: confirm  j/k: quick select  Esc: back"))
 
 	return b.String()
 }

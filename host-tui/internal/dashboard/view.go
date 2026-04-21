@@ -68,10 +68,9 @@ func (m Model) View() string {
 		AppName:      "Svalbard",
 		Identity:     filepath.Base(m.vaultPath),
 		Status:       m.ambientStatus(),
-		Left:         nav.Render(),
-		Right:        detail.Render(),
-		CompactRight: detail.Title,
-		Footer:       footer,
+		Left:   nav.Render(),
+		Right:  detail.Render(),
+		Footer: footer,
 		Width:        m.width,
 		Height:       m.height,
 	}

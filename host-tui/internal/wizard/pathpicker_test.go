@@ -1,6 +1,8 @@
 package wizard
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -40,26 +42,115 @@ func TestPathPickerShowsVolumes(t *testing.T) {
 	if !strings.Contains(out, "~/svalbard/") {
 		t.Errorf("expected home path in view, got:\n%s", out)
 	}
-	// Should show custom option
-	if !strings.Contains(out, "Custom path") {
-		t.Errorf("expected 'Custom path' option in view, got:\n%s", out)
-	}
 	// Should show size info
 	if !strings.Contains(out, "50") && !strings.Contains(out, "64") {
 		t.Errorf("expected size info for USB volume, got:\n%s", out)
 	}
+	// Should show text input
+	if !strings.Contains(out, "Path:") {
+		t.Errorf("expected 'Path:' input label in view, got:\n%s", out)
+	}
 }
 
-func TestPathPickerSelectsVolume(t *testing.T) {
+func TestPathPickerDefaultsToSwalbardVault(t *testing.T) {
 	m := newPathPicker(sampleVolumes(), sampleHome(), "")
 
-	// Press Enter on the first option (cursor starts at 0)
-	msg := tea.KeyMsg{Type: tea.KeyEnter}
-	updated, cmd := m.Update(msg)
-	_ = updated
+	cwd, _ := os.Getwd()
+	expected := filepath.Join(cwd, "svalbard-vault")
+	if m.input != expected {
+		t.Errorf("expected default input %q, got %q", expected, m.input)
+	}
+}
+
+func TestPathPickerSelectsVolumeViaQuickSelect(t *testing.T) {
+	m := newPathPicker(sampleVolumes(), sampleHome(), "")
+
+	// Move down to first option (from text input at cursor -1)
+	msg := tea.KeyMsg{Type: tea.KeyDown}
+	updated, _ := m.Update(msg)
+	m = updated.(pathPickerModel)
+
+	if m.cursor != 0 {
+		t.Fatalf("expected cursor 0, got %d", m.cursor)
+	}
+
+	// Input should be set to volume path + /svalbard-vault
+	expected := filepath.Join("/Volumes/USB/svalbard", "svalbard-vault")
+	if m.input != expected {
+		t.Errorf("expected input %q, got %q", expected, m.input)
+	}
+}
+
+func TestPathPickerNavigates(t *testing.T) {
+	m := newPathPicker(sampleVolumes(), sampleHome(), "")
+
+	if m.cursor != -1 {
+		t.Fatalf("expected initial cursor -1 (text input), got %d", m.cursor)
+	}
+
+	// Press down to first option
+	msg := tea.KeyMsg{Type: tea.KeyDown}
+	updated, _ := m.Update(msg)
+	m = updated.(pathPickerModel)
+
+	if m.cursor != 0 {
+		t.Errorf("expected cursor 0 after down, got %d", m.cursor)
+	}
+
+	// Press down again
+	updated, _ = m.Update(msg)
+	m = updated.(pathPickerModel)
+
+	if m.cursor != 1 {
+		t.Errorf("expected cursor 1 after two downs, got %d", m.cursor)
+	}
+
+	// Press up
+	upMsg := tea.KeyMsg{Type: tea.KeyUp}
+	updated, _ = m.Update(upMsg)
+	m = updated.(pathPickerModel)
+
+	if m.cursor != 0 {
+		t.Errorf("expected cursor 0 after up, got %d", m.cursor)
+	}
+
+	// Press up again to go back to text input
+	updated, _ = m.Update(upMsg)
+	m = updated.(pathPickerModel)
+
+	if m.cursor != -1 {
+		t.Errorf("expected cursor -1 (text input) after up, got %d", m.cursor)
+	}
+}
+
+func TestPathPickerValidatesParentDir(t *testing.T) {
+	m := newPathPicker(sampleVolumes(), sampleHome(), "")
+	m.input = "/nonexistent/parent/svalbard-vault"
+
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, cmd := m.Update(enterMsg)
+	m = updated.(pathPickerModel)
+
+	if cmd != nil {
+		t.Error("expected no command when parent dir doesn't exist")
+	}
+	if m.errMsg == "" {
+		t.Error("expected error message for nonexistent parent")
+	}
+	if !strings.Contains(m.errMsg, "parent directory does not exist") {
+		t.Errorf("expected parent directory error, got: %s", m.errMsg)
+	}
+}
+
+func TestPathPickerAcceptsValidPath(t *testing.T) {
+	m := newPathPicker(sampleVolumes(), sampleHome(), "")
+	m.input = filepath.Join(os.TempDir(), "svalbard-vault")
+
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	_, cmd := m.Update(enterMsg)
 
 	if cmd == nil {
-		t.Fatal("expected a command after selecting a volume")
+		t.Fatal("expected a command after confirming valid path")
 	}
 
 	result := cmd()
@@ -68,87 +159,9 @@ func TestPathPickerSelectsVolume(t *testing.T) {
 		t.Fatalf("expected pathDoneMsg, got %T", result)
 	}
 
-	if done.path != "/Volumes/USB/svalbard" {
-		t.Errorf("expected path %q, got %q", "/Volumes/USB/svalbard", done.path)
-	}
-	if done.freeGB != 50 {
-		t.Errorf("expected freeGB 50, got %f", done.freeGB)
-	}
-}
-
-func TestPathPickerNavigates(t *testing.T) {
-	m := newPathPicker(sampleVolumes(), sampleHome(), "")
-
-	if m.cursor != 0 {
-		t.Fatalf("expected initial cursor 0, got %d", m.cursor)
-	}
-
-	// Press down arrow
-	msg := tea.KeyMsg{Type: tea.KeyDown}
-	updated, _ := m.Update(msg)
-	m = updated.(pathPickerModel)
-
-	if m.cursor != 1 {
-		t.Errorf("expected cursor 1 after down, got %d", m.cursor)
-	}
-
-	// Press down again
-	updated, _ = m.Update(msg)
-	m = updated.(pathPickerModel)
-
-	if m.cursor != 2 {
-		t.Errorf("expected cursor 2 after two downs, got %d", m.cursor)
-	}
-
-	// Press up
-	upMsg := tea.KeyMsg{Type: tea.KeyUp}
-	updated, _ = m.Update(upMsg)
-	m = updated.(pathPickerModel)
-
-	if m.cursor != 1 {
-		t.Errorf("expected cursor 1 after up, got %d", m.cursor)
-	}
-}
-
-func TestPathPickerCustomInputActivatesFilePicker(t *testing.T) {
-	m := newPathPicker(sampleVolumes(), sampleHome(), "")
-
-	// Navigate to the custom option (last item)
-	lastIdx := len(m.options) - 1
-	for i := 0; i < lastIdx; i++ {
-		msg := tea.KeyMsg{Type: tea.KeyDown}
-		updated, _ := m.Update(msg)
-		m = updated.(pathPickerModel)
-	}
-
-	if m.cursor != lastIdx {
-		t.Fatalf("expected cursor at custom option (%d), got %d", lastIdx, m.cursor)
-	}
-
-	// Press Enter to activate file picker
-	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
-	updated, cmd := m.Update(enterMsg)
-	m = updated.(pathPickerModel)
-
-	if !m.customInput {
-		t.Fatal("expected customInput mode to be active")
-	}
-
-	// Should have produced an Init cmd (to read the initial directory)
-	if cmd == nil {
-		t.Error("expected a command from filepicker Init")
-	}
-
-	// Verify file picker view shows directory-related content
-	m.width = 80
-	m.height = 24
-	// Send a size so the picker has dimensions
-	updated, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m = updated.(pathPickerModel)
-
-	out := stripAnsi(m.View())
-	if !strings.Contains(out, "Select a directory") {
-		t.Errorf("expected file picker header in view, got:\n%s", out)
+	expected := filepath.Join(os.TempDir(), "svalbard-vault")
+	if done.path != expected {
+		t.Errorf("expected path %q, got %q", expected, done.path)
 	}
 }
 
@@ -157,42 +170,50 @@ func TestPathPickerPrefill(t *testing.T) {
 	m.width = 80
 	m.height = 24
 
+	if m.input != "/prefilled/path" {
+		t.Errorf("expected input to be prefilled path, got %q", m.input)
+	}
+
 	out := stripAnsi(m.View())
 	if !strings.Contains(out, "/prefilled/path") {
 		t.Errorf("expected prefilled path in view, got:\n%s", out)
 	}
+}
 
-	// Prefill should be the first option
-	if m.options[0].path != "/prefilled/path" {
-		t.Errorf("expected first option to be prefilled path, got %q", m.options[0].path)
+func TestPathPickerTypingResetsToFreeForm(t *testing.T) {
+	m := newPathPicker(sampleVolumes(), sampleHome(), "")
+
+	// Navigate to a volume option
+	down := tea.KeyMsg{Type: tea.KeyDown}
+	updated, _ := m.Update(down)
+	m = updated.(pathPickerModel)
+
+	if m.cursor != 0 {
+		t.Fatalf("expected cursor 0, got %d", m.cursor)
+	}
+
+	// Type a character — should reset to free-form input
+	typeMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}
+	updated, _ = m.Update(typeMsg)
+	m = updated.(pathPickerModel)
+
+	if m.cursor != -1 {
+		t.Errorf("expected cursor -1 after typing, got %d", m.cursor)
 	}
 }
 
-func TestPathPickerCustomInputEscCancels(t *testing.T) {
+func TestPathPickerRejectsEmptyPath(t *testing.T) {
 	m := newPathPicker(sampleVolumes(), sampleHome(), "")
-
-	// Navigate to custom option and activate it
-	lastIdx := len(m.options) - 1
-	for i := 0; i < lastIdx; i++ {
-		msg := tea.KeyMsg{Type: tea.KeyDown}
-		updated, _ := m.Update(msg)
-		m = updated.(pathPickerModel)
-	}
+	m.input = ""
 
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
-	updated, _ := m.Update(enterMsg)
+	updated, cmd := m.Update(enterMsg)
 	m = updated.(pathPickerModel)
 
-	if !m.customInput {
-		t.Fatal("expected customInput mode to be active")
+	if cmd != nil {
+		t.Error("expected no command for empty path")
 	}
-
-	// Press Esc to cancel
-	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
-	updated, _ = m.Update(escMsg)
-	m = updated.(pathPickerModel)
-
-	if m.customInput {
-		t.Error("expected customInput mode to be deactivated after Esc")
+	if m.errMsg == "" {
+		t.Error("expected error for empty path")
 	}
 }

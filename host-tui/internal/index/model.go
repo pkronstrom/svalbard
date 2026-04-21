@@ -71,6 +71,7 @@ type Model struct {
 	rebuilding  bool
 	rebuildType string
 	steps       []indexStep
+	globalStep  string
 	rebuildCh   <-chan IndexEvent
 	rebuildDone bool
 
@@ -158,6 +159,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rebuildType = indexType
 		m.rebuildDone = false
 		m.steps = nil
+		m.globalStep = ""
 		return m, startRebuild(m.runIndex, indexType)
 
 	case m.keys.Back.Matches(msg), m.keys.Quit.Matches(msg):
@@ -191,6 +193,13 @@ func (m Model) updateRebuilding(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateStep(ev IndexEvent) {
+	if ev.File == "" {
+		if ev.detailOrStatus() != "" {
+			m.globalStep = ev.detailOrStatus()
+		}
+		return
+	}
+
 	// Update existing step or append new one.
 	for i := range m.steps {
 		if m.steps[i].file == ev.File {
@@ -260,22 +269,19 @@ func (m Model) viewNormal() string {
 	detail := m.detailForSelected()
 
 	// Footer.
-	enter := m.keys.Enter
-	enter.Label = "Enter: rebuild"
 	footer := tui.FooterHints(
 		m.keys.MoveUp,
-		enter,
-		m.keys.Back,
+		tui.KeyBinding{Key: "enter", Label: "Enter: rebuild"},
+		tui.KeyBinding{Key: "q", Label: "q/Esc: back"},
 	)
 
 	shell := tui.ShellLayout{
 		Theme:        m.theme,
 		AppName:      "Svalbard",
 		Status:       "index",
-		Left:         nav.Render(),
-		Right:        detail.Render(),
-		CompactRight: detail.Title,
-		Footer:       m.theme.Help.Render(footer),
+		Left:   nav.Render(),
+		Right:  detail.Render(),
+		Footer: m.theme.Help.Render(footer),
 		Width:        m.width,
 		Height:       m.height,
 	}
@@ -372,6 +378,10 @@ func (m Model) viewRebuilding() string {
 	var b strings.Builder
 	b.WriteString(m.theme.Section.Render(title))
 	b.WriteString("\n\n")
+	if m.globalStep != "" {
+		b.WriteString(m.theme.Status.Render(m.globalStep))
+		b.WriteString("\n\n")
+	}
 	b.WriteString(pv.Render())
 	b.WriteString("\n")
 	b.WriteString(pv.RenderSummary())
@@ -380,7 +390,7 @@ func (m Model) viewRebuilding() string {
 	if m.rebuildDone {
 		footer = tui.FooterHints(
 			tui.KeyBinding{Key: "enter", Label: "Enter: done"},
-			m.keys.Back,
+			tui.KeyBinding{Key: "q", Label: "q/Esc: back"},
 		)
 	} else {
 		footer = m.theme.Status.Render("rebuilding...")
@@ -396,4 +406,11 @@ func (m Model) viewRebuilding() string {
 		Height:  m.height,
 	}
 	return shell.Render()
+}
+
+func (ev IndexEvent) detailOrStatus() string {
+	if ev.Detail != "" {
+		return ev.Detail
+	}
+	return ev.Status
 }

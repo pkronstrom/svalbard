@@ -22,16 +22,15 @@ const (
 // vertically in narrow ones. Callers provide pre-rendered Left and Right
 // pane content; ShellLayout handles only geometry.
 type ShellLayout struct {
-	Theme        Theme
-	AppName      string
-	Identity     string // vault name, drive identity
-	Status       string // status badge text
-	Left         string // pre-rendered left pane content
-	Right        string // pre-rendered right pane content
-	CompactRight string // 1-2 line summary for narrow mode (falls back to Right if empty)
-	Footer       string // key hint line
-	Width        int
-	Height       int // reserved for future vertical overflow management
+	Theme    Theme
+	AppName  string
+	Identity string // vault name, drive identity
+	Status   string // status badge text
+	Left     string // pre-rendered left pane content
+	Right    string // pre-rendered right pane content
+	Footer   string // key hint line
+	Width    int
+	Height   int // reserved for future vertical overflow management
 }
 
 // Render produces the adaptive layout string.
@@ -107,22 +106,23 @@ func (s ShellLayout) renderWide(topBar, footer string) string {
 }
 
 func (s ShellLayout) renderNarrow(topBar, footer string) string {
-	summary := s.CompactRight
-	if summary == "" {
-		summary = s.Right
-	}
-	rightContent := s.Theme.Muted.Render(summary)
+	var parts []string
+	parts = append(parts, topBar, "")
 
-	out := lipgloss.JoinVertical(
-		lipgloss.Left,
-		topBar,
-		"",
-		s.Left,
-		"",
-		rightContent,
-		"",
-		footer,
-	)
+	if s.Left != "" && s.Right != "" {
+		// Both panes: stack vertically with separator.
+		parts = append(parts, s.Left)
+		sep := s.Theme.Muted.Render(strings.Repeat("─", min(s.Width, 40)))
+		parts = append(parts, sep, s.Right)
+	} else if s.Left != "" {
+		parts = append(parts, s.Left)
+	} else if s.Right != "" {
+		parts = append(parts, s.Right)
+	}
+
+	parts = append(parts, "", footer)
+
+	out := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	if s.Width > 0 && s.Height > 0 {
 		return lipgloss.Place(s.Width, s.Height, lipgloss.Left, lipgloss.Top, out)

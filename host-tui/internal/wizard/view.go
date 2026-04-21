@@ -39,7 +39,45 @@ func (m Model) View() string {
 		right = m.indexModel.View()
 	}
 
-	footer := tui.FooterHints(m.keys.Enter, m.keys.Back)
+	var footer string
+	switch m.stage {
+	case stagePath:
+		footer = tui.FooterHints(
+			tui.KeyBinding{Key: "enter", Label: "Enter: confirm"},
+			tui.KeyBinding{Key: "j", Label: "j/k: quick select"},
+			tui.KeyBinding{Key: "esc", Label: "q/Esc: back"},
+		)
+	case stagePlatforms:
+		footer = tui.FooterHints(
+			tui.KeyBinding{Key: " ", Label: "Space: toggle"},
+			tui.KeyBinding{Key: "enter", Label: "Enter: next"},
+			tui.KeyBinding{Key: "esc", Label: "q/Esc: back"},
+		)
+	case stagePreset:
+		footer = tui.FooterHints(
+			m.keys.MoveUp,
+			tui.KeyBinding{Key: "enter", Label: "Enter: select"},
+			tui.KeyBinding{Key: "esc", Label: "q/Esc: back"},
+		)
+	case stagePacks:
+		footer = tui.FooterHints(
+			m.keys.MoveUp,
+			tui.KeyBinding{Key: " ", Label: "Space: toggle"},
+			tui.KeyBinding{Key: "enter", Label: "Enter: review"},
+			tui.KeyBinding{Key: "esc", Label: "Esc: back"},
+		)
+	case stageReview:
+		footer = tui.FooterHints(
+			tui.KeyBinding{Key: "enter", Label: "Enter: confirm"},
+			tui.KeyBinding{Key: "esc", Label: "Esc: back"},
+		)
+	case stageApply, stageIndex:
+		footer = tui.FooterHints(
+			tui.KeyBinding{Key: "enter", Label: "Enter: continue"},
+		)
+	default:
+		footer = tui.FooterHints(m.keys.Enter, m.keys.Back)
+	}
 
 	shell := tui.ShellLayout{
 		Theme:   m.theme,

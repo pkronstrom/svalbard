@@ -164,7 +164,15 @@ func (m Model) View() string {
 
 	body.WriteString(m.theme.Section.Render("Import"))
 	body.WriteString("\n\n")
-	body.WriteString(m.theme.Muted.Render("Enter a local path, URL, or YouTube link to import."))
+	body.WriteString(m.theme.Muted.Render("Import content into your vault. Supported sources:"))
+	body.WriteString("\n")
+	body.WriteString(m.theme.Muted.Render("  - Local files     /path/to/file.zim, /path/to/archive.tar"))
+	body.WriteString("\n")
+	body.WriteString(m.theme.Muted.Render("  - HTTP/HTTPS URLs  https://example.com/content.zim"))
+	body.WriteString("\n")
+	body.WriteString(m.theme.Muted.Render("  - YouTube links    https://youtube.com/watch?v=..."))
+	body.WriteString("\n\n")
+	body.WriteString(m.theme.Warning.Render("  Note: URL and YouTube imports require Docker (svalbard install-deps)."))
 	body.WriteString("\n\n")
 
 	// Input line.
@@ -198,9 +206,10 @@ func (m Model) View() string {
 	}
 
 	// Footer.
-	enter := m.keys.Enter
-	enter.Label = "Enter: import"
-	footer := tui.FooterHints(enter, m.keys.Back)
+	footer := tui.FooterHints(
+		tui.KeyBinding{Key: "enter", Label: "Enter: import"},
+		tui.KeyBinding{Key: "esc", Label: "Esc: back"},
+	)
 
 	shell := tui.ShellLayout{
 		Theme:   m.theme,

@@ -177,7 +177,10 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case m.keys.Enter.Matches(msg):
-		if len(m.items) == 0 || m.runApply == nil {
+		if len(m.items) == 0 {
+			return m, func() tea.Msg { return BrowseMsg{} }
+		}
+		if m.runApply == nil {
 			return m, nil
 		}
 		m.applying = true
@@ -292,13 +295,11 @@ func (m Model) View() string {
 }
 
 func (m Model) viewEmpty() string {
-	body := m.theme.Success.Render("Everything in sync.") +
-		"\n\n" +
-		m.theme.Muted.Render("No pending downloads or removals.")
+	body := m.theme.Success.Render("Everything in sync.")
 
 	footer := tui.FooterHints(
-		tui.KeyBinding{Key: "b", Label: "b: browse"},
-		m.keys.Back,
+		tui.KeyBinding{Key: "enter", Label: "Enter: browse"},
+		tui.KeyBinding{Key: "q", Label: "q/Esc: back"},
 	)
 
 	shell := tui.ShellLayout{
@@ -395,7 +396,7 @@ func (m Model) viewPlan() string {
 		m.keys.MoveUp,
 		enterLabel,
 		tui.KeyBinding{Key: "b", Label: "b: browse"},
-		m.keys.Back,
+		tui.KeyBinding{Key: "q", Label: "q/Esc: back"},
 	)
 
 	shell := tui.ShellLayout{
@@ -425,7 +426,7 @@ func (m Model) viewApply() string {
 	if m.applyDone {
 		footer = tui.FooterHints(
 			tui.KeyBinding{Key: "enter", Label: "Enter: back"},
-			m.keys.Back,
+			tui.KeyBinding{Key: "esc", Label: "Esc: back"},
 		)
 	} else {
 		done, active := 0, 0
