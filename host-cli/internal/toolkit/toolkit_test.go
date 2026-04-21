@@ -365,6 +365,53 @@ func TestTypeDirsExported(t *testing.T) {
 	}
 }
 
+func TestGenerateWritesChecksums(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	root := t.TempDir()
+	entries := []manifest.RealizedEntry{
+		{ID: "ifixit", Type: "zim", Filename: "ifixit.zim", RelativePath: "zim/ifixit.zim", ChecksumSHA256: "aaa111"},
+		{ID: "wikipedia-en", Type: "zim", Filename: "wikipedia-en.zim", RelativePath: "zim/wikipedia-en.zim", ChecksumSHA256: "bbb222"},
+		{ID: "osm-world", Type: "pmtiles", Filename: "osm-world.pmtiles", RelativePath: "maps/osm-world.pmtiles"},
+	}
+	if err := Generate(root, entries, "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".svalbard", "checksums.sha256"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	// Lines should be sorted and use forward slashes.
+	expected := "aaa111  zim/ifixit.zim\nbbb222  zim/wikipedia-en.zim\n"
+	if content != expected {
+		t.Errorf("checksums.sha256:\ngot:  %q\nwant: %q", content, expected)
+	}
+}
+
+func TestGenerateNoChecksumsRemovesFile(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	root := t.TempDir()
+	// Pre-create a stale checksums file.
+	svDir := filepath.Join(root, ".svalbard")
+	os.MkdirAll(svDir, 0o755)
+	os.WriteFile(filepath.Join(svDir, "checksums.sha256"), []byte("old\n"), 0o644)
+
+	entries := []manifest.RealizedEntry{
+		{ID: "osm-world", Type: "pmtiles", Filename: "osm-world.pmtiles", RelativePath: "maps/osm-world.pmtiles"},
+	}
+	if err := Generate(root, entries, "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(svDir, "checksums.sha256")); !os.IsNotExist(err) {
+		t.Error("stale checksums.sha256 should have been removed when no entries have checksums")
+	}
+}
+
 func TestExtractEmbeddedBinariesFallsBackGracefully(t *testing.T) {
 	// With only .gitkeep in embedded/, extraction should fail,
 	// triggering the fallback path in loadRuntimeBinaries.

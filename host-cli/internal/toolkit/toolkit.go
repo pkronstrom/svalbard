@@ -160,6 +160,9 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	if err := writeRootScripts(root, envVars); err != nil {
 		return err
 	}
+	if err := writeChecksums(root, entries); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -252,6 +255,28 @@ var builtinCapabilities = []builtinCapability{
 // ---------------------------------------------------------------------------
 // writeActionsConfig — spec-driven menu generation
 // ---------------------------------------------------------------------------
+
+// writeChecksums writes .svalbard/checksums.sha256 from manifest entries
+// that have a SHA256 checksum recorded. Each line has the format:
+//
+//	<hex-sha256>  <relative-path>
+func writeChecksums(root string, entries []manifest.RealizedEntry) error {
+	var lines []string
+	for _, e := range entries {
+		if e.ChecksumSHA256 == "" || e.RelativePath == "" {
+			continue
+		}
+		lines = append(lines, e.ChecksumSHA256+"  "+filepath.ToSlash(e.RelativePath))
+	}
+	checksumPath := filepath.Join(root, svalbardDir, "checksums.sha256")
+	if len(lines) == 0 {
+		// Remove stale file if no entries have checksums.
+		os.Remove(checksumPath)
+		return nil
+	}
+	sort.Strings(lines)
+	return os.WriteFile(checksumPath, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+}
 
 func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string, menus map[string]catalog.MenuSpec) error {
 	// Collect items per group.
