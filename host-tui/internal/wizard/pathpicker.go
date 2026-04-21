@@ -5,8 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
+	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkronstrom/svalbard/tui"
 )
@@ -30,8 +31,8 @@ type pathOption struct {
 type pathPickerModel struct {
 	options []pathOption
 	cursor  int
-	input   string // editable path text input
-	errMsg  string // validation error
+	input   textinput.Model // editable path text input
+	errMsg  string          // validation error
 	width   int
 	height  int
 	theme   tui.Theme
@@ -75,11 +76,21 @@ func newPathPicker(volumes []Volume, home Volume, prefill string) pathPickerMode
 		defaultPath = filepath.Join(cwd, "svalbard-vault")
 	}
 
+	theme := tui.DefaultTheme()
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.TextStyle = theme.Focus
+	ti.Cursor.Style = theme.Focus
+	ti.Cursor.SetMode(cursor.CursorStatic)
+	ti.SetValue(defaultPath)
+	ti.CursorEnd()
+	ti.Focus()
+
 	return pathPickerModel{
 		options: opts,
 		cursor:  -1, // -1 = text input focused
-		input:   defaultPath,
-		theme:   tui.DefaultTheme(),
+		input:   ti,
+		theme:   theme,
 		keys:    tui.DefaultKeyMap(),
 	}
 }
@@ -113,7 +124,8 @@ func (m pathPickerModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Only navigate options when input is not focused, or move from input to first option.
 		if m.cursor < len(m.options)-1 {
 			m.cursor++
-			m.input = filepath.Join(m.options[m.cursor].path, "svalbard-vault")
+			m.input.SetValue(filepath.Join(m.options[m.cursor].path, "svalbard-vault"))
+			m.input.CursorEnd()
 			m.errMsg = ""
 		}
 		return m, nil
@@ -122,14 +134,15 @@ func (m pathPickerModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor > -1 {
 			m.cursor--
 			if m.cursor >= 0 {
-				m.input = filepath.Join(m.options[m.cursor].path, "svalbard-vault")
+				m.input.SetValue(filepath.Join(m.options[m.cursor].path, "svalbard-vault"))
+				m.input.CursorEnd()
 			}
 			m.errMsg = ""
 		}
 		return m, nil
 
 	case m.keys.Enter.Matches(msg):
-		path := strings.TrimSpace(m.input)
+		path := strings.TrimSpace(m.input.Value())
 		if path == "" {
 			m.errMsg = "path cannot be empty"
 			return m, nil
@@ -149,24 +162,15 @@ func (m pathPickerModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			return pathDoneMsg{path: path, freeGB: freeGB}
 		}
-
-	case msg.Type == tea.KeyBackspace:
-		if len(m.input) > 0 {
-			_, size := utf8.DecodeLastRuneInString(m.input)
-			m.input = m.input[:len(m.input)-size]
-			m.errMsg = ""
-			m.cursor = -1 // back to free-form input
-		}
-		return m, nil
-
-	case msg.Type == tea.KeyRunes:
-		m.input += string(msg.Runes)
-		m.errMsg = ""
-		m.cursor = -1 // back to free-form input
-		return m, nil
 	}
 
-	return m, nil
+	// All other keys — typed characters, backspace, left/right arrows, ctrl+w,
+	// home/end, delete, ctrl+u, etc. — go to the textinput widget.
+	m.cursor = -1 // back to free-form input
+	m.errMsg = ""
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
 }
 
 // View renders the path picker UI.
@@ -204,10 +208,7 @@ func (m pathPickerModel) View() string {
 
 	// Text input for path.
 	b.WriteString(m.theme.Base.Render("  Path: "))
-	b.WriteString(m.theme.Focus.Render(m.input))
-	if m.cursor == -1 {
-		b.WriteString(m.theme.Focus.Render("\u2588")) // block cursor
-	}
+	b.WriteString(m.input.View())
 	b.WriteString("\n")
 
 	// Validation error.

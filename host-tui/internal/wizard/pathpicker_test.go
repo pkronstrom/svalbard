@@ -57,8 +57,8 @@ func TestPathPickerDefaultsToSwalbardVault(t *testing.T) {
 
 	cwd, _ := os.Getwd()
 	expected := filepath.Join(cwd, "svalbard-vault")
-	if m.input != expected {
-		t.Errorf("expected default input %q, got %q", expected, m.input)
+	if m.input.Value() != expected {
+		t.Errorf("expected default input %q, got %q", expected, m.input.Value())
 	}
 }
 
@@ -76,8 +76,8 @@ func TestPathPickerSelectsVolumeViaQuickSelect(t *testing.T) {
 
 	// Input should be set to volume path + /svalbard-vault
 	expected := filepath.Join("/Volumes/USB/svalbard", "svalbard-vault")
-	if m.input != expected {
-		t.Errorf("expected input %q, got %q", expected, m.input)
+	if m.input.Value() != expected {
+		t.Errorf("expected input %q, got %q", expected, m.input.Value())
 	}
 }
 
@@ -125,7 +125,7 @@ func TestPathPickerNavigates(t *testing.T) {
 
 func TestPathPickerValidatesParentDir(t *testing.T) {
 	m := newPathPicker(sampleVolumes(), sampleHome(), "")
-	m.input = "/nonexistent/parent/svalbard-vault"
+	m.input.SetValue("/nonexistent/parent/svalbard-vault")
 
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
 	updated, cmd := m.Update(enterMsg)
@@ -144,7 +144,7 @@ func TestPathPickerValidatesParentDir(t *testing.T) {
 
 func TestPathPickerAcceptsValidPath(t *testing.T) {
 	m := newPathPicker(sampleVolumes(), sampleHome(), "")
-	m.input = filepath.Join(os.TempDir(), "svalbard-vault")
+	m.input.SetValue(filepath.Join(os.TempDir(), "svalbard-vault"))
 
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
 	_, cmd := m.Update(enterMsg)
@@ -170,8 +170,8 @@ func TestPathPickerPrefill(t *testing.T) {
 	m.width = 80
 	m.height = 24
 
-	if m.input != "/prefilled/path" {
-		t.Errorf("expected input to be prefilled path, got %q", m.input)
+	if m.input.Value() != "/prefilled/path" {
+		t.Errorf("expected input to be prefilled path, got %q", m.input.Value())
 	}
 
 	out := stripAnsi(m.View())
@@ -204,7 +204,7 @@ func TestPathPickerTypingResetsToFreeForm(t *testing.T) {
 
 func TestPathPickerRejectsEmptyPath(t *testing.T) {
 	m := newPathPicker(sampleVolumes(), sampleHome(), "")
-	m.input = ""
+	m.input.SetValue("")
 
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
 	updated, cmd := m.Update(enterMsg)

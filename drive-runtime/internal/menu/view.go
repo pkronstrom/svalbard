@@ -76,11 +76,9 @@ func renderSearchView(m Model) string {
 	}
 	b.WriteString("\n")
 
-	cursor := ""
-	if !m.searchResultsFocus {
-		cursor = "█"
-	}
-	b.WriteString(fmt.Sprintf("> %s%s\n\n", m.searchQuery, cursor))
+	b.WriteString("> ")
+	b.WriteString(m.searchQuery.View())
+	b.WriteString("\n\n")
 
 	shown := len(m.searchResults)
 	b.WriteString(m.theme.Section.Render(fmt.Sprintf("Results (%d shown, max 20)", shown)))

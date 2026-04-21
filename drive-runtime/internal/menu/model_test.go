@@ -249,12 +249,12 @@ func TestSearchEscClearsQueryThenLeavesSession(t *testing.T) {
 	if err := m.openSearchSession(); err != nil {
 		t.Fatalf("openSearchSession() error = %v", err)
 	}
-	m.searchQuery = "linux"
+	m.searchQuery.SetValue("linux")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	got := updated.(Model)
-	if got.searchQuery != "" {
-		t.Fatalf("searchQuery = %q, want empty", got.searchQuery)
+	if got.searchQuery.Value() != "" {
+		t.Fatalf("searchQuery = %q, want empty", got.searchQuery.Value())
 	}
 	if !got.searchActive {
 		t.Fatal("searchActive = false after first esc, want true")
@@ -285,7 +285,7 @@ func TestSearchEnterRunsQueryAndShowsResults(t *testing.T) {
 	if err := m.openSearchSession(); err != nil {
 		t.Fatalf("openSearchSession() error = %v", err)
 	}
-	m.searchQuery = "linux"
+	m.searchQuery.SetValue("linux")
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(Model)
@@ -316,8 +316,8 @@ func TestSearchQTypesIntoQueryInput(t *testing.T) {
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	got := updated.(Model)
-	if got.searchQuery != "q" {
-		t.Fatalf("searchQuery = %q, want q", got.searchQuery)
+	if got.searchQuery.Value() != "q" {
+		t.Fatalf("searchQuery = %q, want q", got.searchQuery.Value())
 	}
 	if !got.searchActive {
 		t.Fatal("searchActive = false, want true")
@@ -339,7 +339,7 @@ func TestSearchViewShowsTitleFirstAndSourceOnlyInMetadata(t *testing.T) {
 	if err := m.openSearchSession(); err != nil {
 		t.Fatalf("openSearchSession() error = %v", err)
 	}
-	m.searchQuery = "linux"
+	m.searchQuery.SetValue("linux")
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	msg := cmd()
@@ -560,7 +560,7 @@ func TestSearchViewHighlightsSelectedTitleText(t *testing.T) {
 	if err := m.openSearchSession(); err != nil {
 		t.Fatalf("openSearchSession() error = %v", err)
 	}
-	m.searchQuery = "linux"
+	m.searchQuery.SetValue("linux")
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	msg := cmd()

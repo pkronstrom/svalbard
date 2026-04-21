@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/actions"
@@ -68,7 +70,7 @@ type Model struct {
 	searchSession      searchSession
 	searchInfo         search.SessionInfo
 	searchMode         search.Mode
-	searchQuery        string
+	searchQuery        textinput.Model
 	searchResults      []search.Result
 	searchSelected     int
 	searchScrollOffset int
@@ -83,11 +85,18 @@ func NewModel(cfg config.RuntimeConfig, driveRoot string, workDir ...string) Mod
 	if len(workDir) > 0 && workDir[0] != "" {
 		runner = actions.NewRunnerWithWorkDir(driveRoot, workDir[0])
 	}
+	theme := tui.DefaultTheme()
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.TextStyle = theme.Focus
+	ti.Cursor.Style = theme.Focus
+	ti.Cursor.SetMode(cursor.CursorStatic)
 	return Model{
-		cfg:       cfg,
-		driveRoot: driveRoot,
-		runner:    runner,
-		theme:     tui.DefaultTheme(),
+		cfg:         cfg,
+		driveRoot:   driveRoot,
+		runner:      runner,
+		theme:       theme,
+		searchQuery: ti,
 		searchFactory: func(root string) (searchSession, error) {
 			return search.NewSession(root, nil)
 		},
@@ -161,6 +170,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.searchSelected = 0
 		m.searchScrollOffset = 0
 		m.searchResultsFocus = len(m.searchResults) > 0
+		if m.searchResultsFocus {
+			m.searchQuery.Blur()
+		} else {
+			m.searchQuery.Focus()
+		}
 		switch {
 		case msg.response.Status != "":
 			m.searchStatus = msg.response.Status
@@ -282,6 +296,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.ensureSearchVisible()
 			} else {
 				m.searchResultsFocus = false
+				m.searchQuery.Focus()
 			}
 		}
 		return m, nil
@@ -291,6 +306,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if !m.searchResultsFocus {
 			m.searchResultsFocus = true
+			m.searchQuery.Blur()
 			m.ensureSearchVisible()
 			return m, nil
 		}
@@ -314,7 +330,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return searchOpenMsg{token: token, err: err}
 			}
 		}
-		query := strings.TrimSpace(m.searchQuery)
+		query := strings.TrimSpace(m.searchQuery.Value())
 		if query == "" || m.searchLoading || m.searchSession == nil {
 			return m, nil
 		}
@@ -335,10 +351,11 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.searchResultsFocus {
 			m.searchResultsFocus = false
+			m.searchQuery.Focus()
 			return m, nil
 		}
-		if m.searchQuery != "" {
-			m.searchQuery = ""
+		if m.searchQuery.Value() != "" {
+			m.searchQuery.SetValue("")
 			m.searchResults = nil
 			m.searchSelected = 0
 			m.searchScrollOffset = 0
@@ -351,22 +368,19 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		if m.searchResultsFocus {
 			m.searchResultsFocus = false
+			m.searchQuery.Focus()
 			return m, nil
 		}
-	case "backspace":
-		if !m.searchResultsFocus && len(m.searchQuery) > 0 {
-			runes := []rune(m.searchQuery)
-			m.searchQuery = string(runes[:len(runes)-1])
-		}
-		return m, nil
 	}
 
+	// Delegate remaining keys (typed chars, space, backspace, left/right arrows,
+	// ctrl+w, ctrl+u, home/end, delete, etc.) to the textinput when focused on
+	// the query field.
 	if !m.searchResultsFocus {
-		if msg.Type == tea.KeyRunes {
-			m.searchQuery += string(msg.Runes)
-		} else if msg.Type == tea.KeySpace {
-			m.searchQuery += " "
-		}
+		m.searchQuery.Focus()
+		var cmd tea.Cmd
+		m.searchQuery, cmd = m.searchQuery.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -383,7 +397,8 @@ func (m *Model) openSearchSession() error {
 	if m.searchMode == "" {
 		m.searchMode = search.ModeKeyword
 	}
-	m.searchQuery = ""
+	m.searchQuery.SetValue("")
+	m.searchQuery.Focus()
 	m.searchResults = nil
 	m.searchSelected = 0
 	m.searchScrollOffset = 0
@@ -406,7 +421,8 @@ func (m *Model) closeSearchSession() {
 	m.searchSession = nil
 	m.searchActive = false
 	m.searchToken++
-	m.searchQuery = ""
+	m.searchQuery.SetValue("")
+	m.searchQuery.Blur()
 	m.searchResults = nil
 	m.searchSelected = 0
 	m.searchScrollOffset = 0
