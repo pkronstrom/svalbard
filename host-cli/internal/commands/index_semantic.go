@@ -41,6 +41,39 @@ func loadEmbeddingSpec(modelPath string) catalog.EmbeddingSpec {
 	return spec
 }
 
+// Conservative worst-case tokens/word used to size chunks against a model's
+// context window. English prose averages ~1.3; technical content can exceed
+// 2.0. 1.5 gives headroom while still catching grossly undersized models.
+const tokensPerWordSafety = 1.5
+
+// preflightEmbeddingSpec refuses to start indexing when the installed model's
+// declared capabilities are incompatible with the chunker's settings. A spec
+// with no declared capabilities (legacy recipe) passes — the shrink-retry path
+// handles edge cases at runtime.
+func preflightEmbeddingSpec(spec catalog.EmbeddingSpec, modelID string) error {
+	if spec.Dims > 0 && !spec.Matryoshka {
+		return fmt.Errorf(
+			"embedding model %q sets dims=%d but matryoshka=false — truncating "+
+				"a non-matryoshka vector destroys its semantics. Either remove "+
+				"dims from the recipe or set matryoshka: true if the model actually "+
+				"supports it",
+			modelID, spec.Dims,
+		)
+	}
+	if spec.MaxInputTokens > 0 {
+		required := int(float64(chunkWordLimit) * tokensPerWordSafety)
+		if spec.MaxInputTokens < required {
+			return fmt.Errorf(
+				"embedding model %q supports only %d input tokens but chunks can "+
+					"reach ~%d tokens (chunkWordLimit=%d × %.1f tokens/word). Install "+
+					"a larger-context embedding model",
+				modelID, spec.MaxInputTokens, required, chunkWordLimit, tokensPerWordSafety,
+			)
+		}
+	}
+	return nil
+}
+
 // SemanticProgress reports per-source embedding progress.
 type SemanticProgress struct {
 	File    string // ZIM filename (or "" for global events)
@@ -75,15 +108,37 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 		return fmt.Errorf("no indexed sources — run keyword indexing first")
 	}
 
+	notify := func(p SemanticProgress) {
+		if onProgress != nil {
+			onProgress(p)
+		}
+	}
+
+	// Find the embedding model and load its spec BEFORE any destructive work.
+	// Preflight must be able to refuse without losing existing embeddings.
+	modelPath, err := embedder.FindEmbeddingModel(root)
+	if err != nil {
+		return err
+	}
+	modelID := strings.TrimSuffix(filepath.Base(modelPath), filepath.Ext(modelPath))
+	embSpec := loadEmbeddingSpec(modelPath)
+	if err := preflightEmbeddingSpec(embSpec, modelID); err != nil {
+		return err
+	}
+
+	// Now safe to delete: preflight passed, so indexing will proceed.
 	if force {
 		if err := db.DeleteAllEmbeddings(); err != nil {
 			return fmt.Errorf("clearing embeddings: %w", err)
 		}
-	}
-
-	notify := func(p SemanticProgress) {
-		if onProgress != nil {
-			onProgress(p)
+	} else {
+		// Detect model change — re-embed everything if model switched.
+		previousModel, _ := db.GetMeta("embedding_model")
+		if previousModel != "" && previousModel != modelID {
+			notify(SemanticProgress{Status: "starting", Detail: fmt.Sprintf("Model changed (%s → %s), re-embedding...", previousModel, modelID)})
+			if err := db.DeleteAllEmbeddings(); err != nil {
+				return fmt.Errorf("clearing old embeddings: %w", err)
+			}
 		}
 	}
 
@@ -106,30 +161,9 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 		return nil
 	}
 
-	// Find the embedding model.
-	modelPath, err := embedder.FindEmbeddingModel(root)
-	if err != nil {
-		return err
-	}
-
-	// Derive stable model ID from filename.
-	modelID := strings.TrimSuffix(filepath.Base(modelPath), filepath.Ext(modelPath))
-
-	// Detect model change — force re-embedding if model switched.
-	previousModel, _ := db.GetMeta("embedding_model")
-	if previousModel != "" && previousModel != modelID && !force {
-		notify(SemanticProgress{Status: "starting", Detail: fmt.Sprintf("Model changed (%s → %s), re-embedding...", previousModel, modelID)})
-		if err := db.DeleteAllEmbeddings(); err != nil {
-			return fmt.Errorf("clearing old embeddings: %w", err)
-		}
-	}
-
-	// Load embedding params from recipe sidecar.
-	embSpec := loadEmbeddingSpec(modelPath)
-
 	notify(SemanticProgress{Status: "starting", Detail: "Starting embedding server..."})
 
-	server, err := embedder.StartServer(ctx, modelPath, root)
+	server, err := embedder.StartServer(ctx, modelPath, root, embSpec.MaxInputTokens)
 	if err != nil {
 		return fmt.Errorf("starting embedding server: %w", err)
 	}

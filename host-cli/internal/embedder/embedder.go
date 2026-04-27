@@ -40,7 +40,10 @@ type Server struct {
 // It searches for the binary in driveRoot/bin/ (extracting archives if needed),
 // then falls back to system PATH.
 // It waits up to 30 seconds for the /health endpoint to return 200.
-func StartServer(ctx context.Context, modelPath, driveRoot string) (*Server, error) {
+//
+// maxInputTokens sizes --ubatch-size / --batch-size. Pass 0 to use the
+// conservative fallback (4096) when the model's declared max isn't known.
+func StartServer(ctx context.Context, modelPath, driveRoot string, maxInputTokens int) (*Server, error) {
 	bin, err := resolveBinary("llama-server", driveRoot)
 	if err != nil {
 		return nil, err
@@ -51,6 +54,14 @@ func StartServer(ctx context.Context, modelPath, driveRoot string) (*Server, err
 		return nil, fmt.Errorf("embedder: find free port: %w", err)
 	}
 
+	batchSize := 4096
+	if maxInputTokens > 0 {
+		batchSize = maxInputTokens
+		if batchSize < 512 {
+			batchSize = 512
+		}
+	}
+
 	var stderrBuf bytes.Buffer
 	s := &Server{host: defaultHost, port: port, stderr: &stderrBuf}
 	s.proc = exec.CommandContext(ctx, bin,
@@ -58,8 +69,8 @@ func StartServer(ctx context.Context, modelPath, driveRoot string) (*Server, err
 		"--port", fmt.Sprintf("%d", s.port),
 		"--host", s.host,
 		"--embedding",
-		"--ubatch-size", "4096",
-		"--batch-size", "4096",
+		"--ubatch-size", strconv.Itoa(batchSize),
+		"--batch-size", strconv.Itoa(batchSize),
 	)
 	s.proc.Stdout = nil
 	s.proc.Stderr = &stderrBuf

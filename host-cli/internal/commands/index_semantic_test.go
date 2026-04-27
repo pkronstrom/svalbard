@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 )
 
 func TestPrepareEmbeddingTextTruncatesLongBody(t *testing.T) {
@@ -265,6 +267,75 @@ func TestBuildChunksOversizedNoSentences(t *testing.T) {
 		if wc := wordCount(body); wc > chunkWordLimit+1 {
 			t.Errorf("chunk %d has %d words, expected ≤%d", i, wc, chunkWordLimit)
 		}
+	}
+}
+
+// --- preflightEmbeddingSpec tests ---
+
+func TestPreflightEmbeddingSpecNomic(t *testing.T) {
+	spec := catalog.EmbeddingSpec{
+		DocPrefix:      "search_document: ",
+		QueryPrefix:    "search_query: ",
+		Dims:           256,
+		Matryoshka:     true,
+		MaxInputTokens: 2048,
+	}
+	if err := preflightEmbeddingSpec(spec, "nomic-embed-text-v1.5"); err != nil {
+		t.Fatalf("unexpected error for valid Nomic spec: %v", err)
+	}
+}
+
+func TestPreflightEmbeddingSpecContextTooSmall(t *testing.T) {
+	// MiniLM-like: 512 tokens is below chunkWordLimit (500) × 1.5 = 750.
+	spec := catalog.EmbeddingSpec{MaxInputTokens: 512}
+	err := preflightEmbeddingSpec(spec, "all-minilm-l6-v2")
+	if err == nil {
+		t.Fatal("expected error for undersized context window")
+	}
+	if !strings.Contains(err.Error(), "all-minilm-l6-v2") {
+		t.Errorf("error should name the model: %v", err)
+	}
+	if !strings.Contains(err.Error(), "512") {
+		t.Errorf("error should mention token count: %v", err)
+	}
+}
+
+func TestPreflightEmbeddingSpecDimsWithoutMatryoshka(t *testing.T) {
+	// Truncating a non-matryoshka model's vector destroys its semantics.
+	spec := catalog.EmbeddingSpec{
+		Dims:           256,
+		Matryoshka:     false,
+		MaxInputTokens: 2048,
+	}
+	err := preflightEmbeddingSpec(spec, "some-model")
+	if err == nil {
+		t.Fatal("expected error for dims>0 without matryoshka")
+	}
+	if !strings.Contains(err.Error(), "matryoshka") {
+		t.Errorf("error should mention matryoshka: %v", err)
+	}
+}
+
+func TestPreflightEmbeddingSpecLegacyEmpty(t *testing.T) {
+	// A recipe without the new fields (pre-this-change) should still load.
+	// No dims → no truncation to guard. No MaxInputTokens → skip context check.
+	spec := catalog.EmbeddingSpec{
+		DocPrefix:   "search_document: ",
+		QueryPrefix: "search_query: ",
+	}
+	if err := preflightEmbeddingSpec(spec, "legacy"); err != nil {
+		t.Fatalf("unexpected error for legacy spec: %v", err)
+	}
+}
+
+func TestPreflightEmbeddingSpecMatryoshkaNoDims(t *testing.T) {
+	// Matryoshka flag set but no dims → fine, truncation simply won't run.
+	spec := catalog.EmbeddingSpec{
+		Matryoshka:     true,
+		MaxInputTokens: 2048,
+	}
+	if err := preflightEmbeddingSpec(spec, "matryoshka-native"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

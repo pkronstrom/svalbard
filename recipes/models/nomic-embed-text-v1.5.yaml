@@ -10,6 +10,8 @@ embedding:
   doc_prefix: "search_document: "
   query_prefix: "search_query: "
   dims: 256
+  matryoshka: true
+  max_input_tokens: 2048
 license:
   id: Apache-2.0
   attribution: Nomic AI

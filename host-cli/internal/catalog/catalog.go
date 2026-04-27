@@ -46,9 +46,11 @@ type Item struct {
 // to the downloaded GGUF so the indexer and search runtime can read it without
 // loading the full catalog.
 type EmbeddingSpec struct {
-	DocPrefix   string `yaml:"doc_prefix,omitempty"   json:"doc_prefix,omitempty"`
-	QueryPrefix string `yaml:"query_prefix,omitempty" json:"query_prefix,omitempty"`
-	Dims        int    `yaml:"dims,omitempty"          json:"dims,omitempty"`
+	DocPrefix      string `yaml:"doc_prefix,omitempty"       json:"doc_prefix,omitempty"`
+	QueryPrefix    string `yaml:"query_prefix,omitempty"     json:"query_prefix,omitempty"`
+	Dims           int    `yaml:"dims,omitempty"             json:"dims,omitempty"`
+	Matryoshka     bool   `yaml:"matryoshka,omitempty"       json:"matryoshka,omitempty"`
+	MaxInputTokens int    `yaml:"max_input_tokens,omitempty" json:"max_input_tokens,omitempty"`
 }
 
 // BuildSpec describes how to build a recipe from source data.
