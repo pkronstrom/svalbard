@@ -28,7 +28,7 @@ type Server struct {
 func NewServer(caps ...Capability) *Server {
 	inner := mcpserver.NewMCPServer(
 		"svalbard-drive",
-		"0.1.0",
+		"0.2.0",
 		mcpserver.WithToolCapabilities(false),
 	)
 

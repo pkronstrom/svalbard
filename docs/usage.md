@@ -1,18 +1,14 @@
 # Svalbard Usage Guide
 
-This guide describes the current Go host CLI in `host-cli/`.
+This guide describes the Go host CLI shipped as the `svalbard` binary.
 
-The active model on this branch is:
+The model:
 
 - A vault is a plain directory with `manifest.yaml`, downloaded artifacts, generated toolkit files, and the on-drive runtime.
 - The host CLI reconciles desired state against realized state.
-- Python remains only for specialized builder scripts under `recipes/builders/`, intended to run inside the `svalbard-tools` container.
+- Python is used only by specialized builder scripts under `recipes/builders/`, which run inside the `svalbard-tools` container during build-from-source recipes. The host CLI itself has no Python dependency.
 
-Examples below assume you are running from `host-cli/`:
-
-```bash
-cd host-cli
-```
+Commands below assume `svalbard` is on your `PATH` (see [README — Install](../README.md#install)). When developing from source you can substitute `go run ./host-cli/cmd/svalbard` for `svalbard`.
 
 ## Core Flow
 
@@ -25,16 +21,16 @@ cd host-cli
 Example:
 
 ```bash
-go run ./cmd/svalbard init /Volumes/MyDrive --preset default-32
-go run ./cmd/svalbard plan --vault /Volumes/MyDrive
-go run ./cmd/svalbard apply --vault /Volumes/MyDrive
-go run ./cmd/svalbard index --vault /Volumes/MyDrive
+svalbard init /Volumes/MyDrive --preset default-32
+svalbard plan --vault /Volumes/MyDrive
+svalbard apply --vault /Volumes/MyDrive
+svalbard index --vault /Volumes/MyDrive
 cd /Volumes/MyDrive && ./run
 ```
 
 ## Catalog And Presets
 
-The Go CLI loads the built-in catalog from embedded copies of `recipes/` and `presets/`.
+The CLI loads the built-in catalog from embedded copies of `recipes/` and `presets/`.
 
 - `svalbard preset list` shows the embedded preset names.
 - `svalbard preset copy <source> <target>` exports one preset as YAML.
@@ -62,7 +58,7 @@ Create a new vault directory and seed its desired state from a preset.
 Example:
 
 ```bash
-go run ./cmd/svalbard init /Volumes/MyDrive --preset finland-128
+svalbard init /Volumes/MyDrive --preset finland-128
 ```
 
 ### `svalbard add <item...> --vault <path>`
@@ -108,11 +104,11 @@ Import a local file into the vault library.
 Example:
 
 ```bash
-go run ./cmd/svalbard import ../manual.pdf --vault /Volumes/MyDrive --add --name field-manual
-go run ./cmd/svalbard apply --vault /Volumes/MyDrive
+svalbard import ../manual.pdf --vault /Volumes/MyDrive --add --name field-manual
+svalbard apply --vault /Volumes/MyDrive
 ```
 
-The current Go implementation imports local files only. Remote web/media ingestion from the old Python flow is not part of this CLI contract.
+The current implementation imports local files only — remote web/media ingestion is not part of the host CLI.
 
 ### `svalbard preset list`
 
@@ -125,21 +121,17 @@ Write a preset YAML file to the target path.
 Example:
 
 ```bash
-go run ./cmd/svalbard preset copy default-128 ../tmp/default-128.yaml
+svalbard preset copy default-128 ../tmp/default-128.yaml
 ```
 
 ### `svalbard index --vault <path>`
 
-Build the SQLite full-text search index from realized ZIM files under the vault.
+Build the SQLite full-text and semantic search index from realized ZIM files under the vault.
 
 The generated database is written under `data/search.db`.
 
 ## Builder Scripts
 
-Python builder scripts are still valid, but they are not the host CLI anymore.
+Some recipes build their artifacts from source rather than downloading prebuilt outputs (e.g. ZIM scraping, geodata processing). These steps are implemented as Python scripts under `recipes/builders/` and run inside the `svalbard-tools` container — the host CLI invokes them through Docker on demand.
 
-- Keep them under `recipes/builders/`.
-- Run them through `svalbard-tools`.
-- Treat them as containerized worker implementation, not host prerequisites.
-
-The remaining Python tests in `src/tests/` should track those builder scripts directly rather than the retired Python control plane.
+You only need Docker and the `svalbard-tools` image when working with build recipes; standard download-based provisioning has no Python or Docker dependency.

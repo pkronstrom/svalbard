@@ -6,7 +6,9 @@
 
 Seed vault for human knowledge — civilization on a stick.
 
-> **Alpha (v0.1.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
+> **Alpha (v0.2.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
+>
+> **Heads up:** the codebase was recently rewritten from Python to Go. Not every flow has been re-tested end-to-end on the new code path yet, so expect breakages — please file an issue if you hit one.
 
 ## Why
 
@@ -89,8 +91,9 @@ The built binary is at `bin/svalbard`.
 
 The core is Go:
 
-- `host-cli/` — host-side CLI and TUI for vault init, desired-state changes, apply, status, import, presets, and indexing
-- `host-tui/` — shared TUI components (Bubble Tea)
+- `host-cli/` — host-side CLI for vault init, desired-state changes, apply, status, import, presets, and indexing
+- `host-tui/` — host-side TUI app (Bubble Tea) — interactive dashboard and init wizard
+- `tui/` — shared TUI component library used by `host-tui/` and `drive-runtime/` (layout, theme, key bindings, tree picker, progress views)
 - `drive-runtime/` — on-drive launcher and native runtime actions, embedded into the host binary at build time
 - `recipes/` and `presets/` — catalog inputs, embedded into the host binary via `//go:embed`
 
