@@ -12,20 +12,25 @@ Commands below assume `svalbard` is on your `PATH` (see [README — Install](../
 
 ## Core Flow
 
-1. Initialize a vault from an embedded preset.
-2. Inspect the reconciliation plan.
-3. Apply the plan to download and materialize content.
-4. Build the search index.
-5. Run the generated `./run` launcher from the vault root.
+1. Run the guided wizard to create a vault and select a preset.
+2. Wait for the wizard's apply step to download and materialize content.
+3. Build the search index.
+4. Run the generated `./run` launcher from the vault root.
 
 Example:
 
 ```bash
-svalbard init /Volumes/MyDrive --preset default-32
-svalbard plan --vault /Volumes/MyDrive
-svalbard apply --vault /Volumes/MyDrive
+svalbard init /Volumes/MyDrive   # opens interactive wizard — pick preset, apply
 svalbard index --vault /Volumes/MyDrive
 cd /Volumes/MyDrive && ./run
+```
+
+For an existing vault you can iterate with the non-interactive subcommands:
+
+```bash
+svalbard plan --vault /Volumes/MyDrive
+svalbard apply --vault /Volumes/MyDrive
+svalbard status --vault /Volumes/MyDrive
 ```
 
 ## Catalog And Presets
@@ -34,7 +39,7 @@ The CLI loads the built-in catalog from embedded copies of `recipes/` and `prese
 
 - `svalbard preset list` shows the embedded preset names.
 - `svalbard preset copy <source> <target>` exports one preset as YAML.
-- `svalbard init --preset <name>` currently resolves only catalog presets known to the binary.
+- The init wizard only offers presets that are known to the binary's embedded catalog.
 
 That means `preset copy` is useful for inspection and editing, but local custom preset loading is not yet part of the current CLI flow.
 
@@ -51,14 +56,16 @@ After `apply`, a vault typically contains:
 
 ## Commands
 
-### `svalbard init [path] --preset <name>`
+### `svalbard init [path]`
 
-Create a new vault directory and seed its desired state from a preset.
+Open the guided setup wizard. The wizard handles preset selection, vault directory creation, manifest seeding, and the initial download/apply in one flow. The optional `path` argument pre-fills the destination so you don't have to type it in the wizard.
+
+Non-interactive vault creation (a `--preset` flag) is not currently supported — `init` always launches the wizard.
 
 Example:
 
 ```bash
-svalbard init /Volumes/MyDrive --preset finland-128
+svalbard init /Volumes/MyDrive
 ```
 
 ### `svalbard add <item...> --vault <path>`

@@ -123,21 +123,17 @@ Finnish presets (`finland-*`) add Finnish-language Wikipedia, Wiktionary, Finnis
 <img src="docs/demo.gif" alt="svalbard wizard demo" width="100%">
 
 ```bash
-# 1. Create a vault from a preset
-svalbard init /Volumes/MyStick --preset default-32
+# 1. Launch the guided setup wizard — pick a preset and apply
+svalbard init /Volumes/MyStick
 
-# 2. Review and materialize the plan
-svalbard plan --vault /Volumes/MyStick
-svalbard apply --vault /Volumes/MyStick
-
-# 3. Build the search index
+# 2. Build the search index
 svalbard index --vault /Volumes/MyStick
 
-# 4. Done — unplug and go
+# 3. Done — unplug and go
 cd /Volumes/MyStick && ./run
 ```
 
-Or just run `svalbard` with no arguments to launch the interactive TUI wizard.
+`svalbard init` opens an interactive wizard that handles preset selection, manifest creation, and the initial download/apply in one flow. Run `svalbard` with no arguments to launch the dashboard for an existing vault. The non-interactive `add`/`remove`/`plan`/`apply`/`status`/`import` subcommands are for managing a vault that already exists.
 
 ### Add your own content
 
@@ -157,7 +153,7 @@ svalbard apply --vault /Volumes/MyStick
 | Command | Description |
 |---------|-------------|
 | `svalbard` | Launch the interactive TUI (dashboard or wizard) |
-| `svalbard init [path] --preset <name>` | Initialize a new vault from a preset |
+| `svalbard init [path]` | Open the guided wizard to create a vault — preset is chosen interactively |
 | `svalbard add <item...> --vault <path>` | Add catalog or local item ids to desired state |
 | `svalbard remove <item...> --vault <path>` | Remove item ids from desired state |
 | `svalbard plan --vault <path>` | Show the reconciliation plan |
