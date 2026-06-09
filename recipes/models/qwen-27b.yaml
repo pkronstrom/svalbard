@@ -1,0 +1,15 @@
+id: qwen-27b
+type: gguf
+display_group: models
+tags:
+- computing
+- coding
+- agentic
+depth: comprehensive
+size_gb: 16.7
+filename: Qwen3.6-27B-MTP-UD-Q4_K_XL.gguf
+url: https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF/resolve/main/Qwen3.6-27B-UD-Q4_K_XL.gguf
+description: Qwen3.6 27B dense (MTP UD-Q4_K_XL) — dense coding/agentic model for 24-32 GB RAM hosts; built-in multi-token-prediction for faster decode on llama.cpp; slots between 9B and 35B-A3B
+license:
+  id: Apache-2.0
+  attribution: Alibaba Cloud / Qwen Team / Unsloth
