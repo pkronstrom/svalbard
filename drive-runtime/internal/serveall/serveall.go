@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
@@ -77,7 +78,9 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 			if err != nil {
 				return err
 			}
-			cmd := exec.CommandContext(ctx, binaries["llama-server"], "-m", model, "--port", fmt.Sprintf("%d", port), "--host", bind)
+			llamaArgs := []string{"-m", model, "--port", fmt.Sprintf("%d", port), "--host", bind}
+			llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model)...)
+			cmd := exec.CommandContext(ctx, binaries["llama-server"], llamaArgs...)
 			cmd.Stdout = stdout
 			cmd.Stderr = stdout
 			if err := cmd.Start(); err != nil {

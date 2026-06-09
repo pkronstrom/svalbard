@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
@@ -184,7 +185,9 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 
 	fmt.Fprintf(stdout, "Starting llama-server with %s\n", modelName)
 	fmt.Fprintf(stdout, "llama-server log: %s\n", logPath)
-	llamaCmd := exec.CommandContext(ctx, llamaBin, "-m", model, "--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port))
+	llamaArgs := []string{"-m", model, "--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port)}
+	llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model)...)
+	llamaCmd := exec.CommandContext(ctx, llamaBin, llamaArgs...)
 	llamaCmd.Stdout = logFile
 	llamaCmd.Stderr = logFile
 	if err := llamaCmd.Start(); err != nil {
