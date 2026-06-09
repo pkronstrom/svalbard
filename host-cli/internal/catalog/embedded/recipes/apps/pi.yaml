@@ -1,0 +1,24 @@
+id: pi
+type: binary
+display_group: tools
+tags:
+- computing
+- agentic
+- coding
+depth: reference-only
+size_gb: 0.09
+platforms:
+  linux-x86_64: https://github.com/earendil-works/pi/releases/latest/download/pi-linux-x64.tar.gz
+  linux-arm64: https://github.com/earendil-works/pi/releases/latest/download/pi-linux-arm64.tar.gz
+  macos-arm64: https://github.com/earendil-works/pi/releases/latest/download/pi-darwin-arm64.tar.gz
+  macos-x86_64: https://github.com/earendil-works/pi/releases/latest/download/pi-darwin-x64.tar.gz
+description: pi terminal coding agent (self-contained Bun binary)
+menu:
+  group: local-ai
+  subheader: AI Clients
+  label: pi
+  description: Launch the pi coding agent against local models
+  order: 240
+license:
+  id: MIT
+  attribution: earendil-works / Mario Zechner
