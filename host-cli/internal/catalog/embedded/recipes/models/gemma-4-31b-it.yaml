@@ -6,10 +6,10 @@ tags:
 - general-reference
 - tool-calling
 depth: comprehensive
-size_gb: 18.7
-url: https://huggingface.co/ggml-org/gemma-4-31B-it-GGUF/resolve/main/gemma-4-31B-it-Q4_K_M.gguf
-description: Gemma 4 31B IT (Q4_K_M) — highest-capability dense general/tool-call model for premium hosts
+size_gb: 16.1
+url: https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF/resolve/main/gemma-4-31B-it-qat-UD-Q4_K_XL.gguf
+description: Gemma 4 31B IT (QAT UD-Q4_K_XL) — highest-capability dense general/tool-call model for premium hosts; QAT 4-bit (≈6-bit quality at 4-bit size)
 license:
   id: Apache-2.0
-  attribution: Google DeepMind / ggml-org
+  attribution: Google DeepMind / Unsloth
 

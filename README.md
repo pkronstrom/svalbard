@@ -24,7 +24,7 @@ The project ships with sanely curated presets built from open recipes, but it's 
 - **Practical knowledge** — iFixit repair guides, Stack Exchange Q&A, Practical Action field guides
 - **Books and courses** — Project Gutenberg, Wikibooks, Khan Academy
 - **Maps** — OpenStreetMap regional extracts, geodata overlays
-- **AI models** — Portable Gemma 4 and Qwen 3.5 GGUFs that run locally from the drive
+- **AI models** — Portable Gemma 4 (QAT) and Qwen 3.5/3.6 GGUFs that run locally from the drive
 - **Search** — Full-text and semantic search across all content — find answers, not just keywords
 - **Tools** — CyberChef, Kiwix server, everything self-contained
 

@@ -6,9 +6,9 @@ tags:
 - general-reference
 - tool-calling
 depth: overview
-size_gb: 3.04
-url: https://huggingface.co/gguf-org/gemma-4-e2b-it-gguf/resolve/main/gemma-4-e2b-it-edited-q4_0.gguf
-description: Gemma 4 E2B IT (Q4_0) — conservative general/tool-call model for 8 GB RAM hosts
+size_gb: 2.44
+url: https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf
+description: Gemma 4 E2B IT (QAT UD-Q4_K_XL) — conservative general/tool-call model for 8 GB RAM hosts; QAT 4-bit (≈6-bit quality at 4-bit size)
 license:
   id: Apache-2.0
-  attribution: Google DeepMind / gguf-org
+  attribution: Google DeepMind / Unsloth
