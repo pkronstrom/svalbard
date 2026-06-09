@@ -21,6 +21,5 @@ sources:
 - dufs
 - uv
 - svalbard-python
-- all-minilm-l6-v2
 - go-pmtiles
 - zstd
