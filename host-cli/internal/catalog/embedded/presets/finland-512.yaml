@@ -9,9 +9,5 @@ sources:
 # ── Finnish language ──
 - wikipedia-fi-nopic
 - wiktionary-fi
-# ── Nordic languages ──
-- wikipedia-sv-nopic
-- wikipedia-no-nopic
-- wikipedia-da-nopic
 # ── Finnish-specific ──
 - fimea

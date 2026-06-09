@@ -28,6 +28,8 @@ sources:
 # devdocs-general:      bash, git, jq, lua, zig, make, fish, nushell, latex (~5 MB)
 #
 # ── Stack Exchange sites ──
+- stackexchange-serverfault
+- stackexchange-superuser
 - stackexchange-askubuntu
 - stackexchange-dba
 - stackexchange-softwareengineering

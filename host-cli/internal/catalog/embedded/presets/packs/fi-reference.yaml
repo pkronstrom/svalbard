@@ -19,3 +19,9 @@ sources:
 - libretexts-engineering
 - libretexts-medicine
 - libretexts-geosciences
+# ── Wikipedia variants ──
+- wikipedia-fi-all
+- wikipedia-en-top-maxi
+- wikipedia-en-top-nopic
+- wikipedia-en-100-maxi
+- wikipedia-en-100-mini

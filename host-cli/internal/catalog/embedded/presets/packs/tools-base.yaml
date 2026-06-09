@@ -21,3 +21,5 @@ sources:
 - dufs
 - uv
 - svalbard-python
+- go-pmtiles
+- zstd
