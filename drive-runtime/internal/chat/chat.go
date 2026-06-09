@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/contextpicker"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
@@ -67,9 +68,10 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return err
 	}
 
-	fmt.Fprintf(stdout, "Starting llama-server on port %d with %s...\n", port, filepath.Base(model))
+	ctxSize := contextpicker.Pick(llamaserve.ContextForHost())
+	fmt.Fprintf(stdout, "Starting llama-server on port %d with %s (context %d)...\n", port, filepath.Base(model), ctxSize)
 	args := []string{"-m", model, "--port", fmt.Sprintf("%d", port), "--host", "127.0.0.1"}
-	args = append(args, llamaserve.ExtraFlags(model)...)
+	args = append(args, llamaserve.ExtraFlags(model, ctxSize)...)
 	cmd := exec.CommandContext(ctx, llamaBin, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
@@ -84,4 +86,3 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	fmt.Fprintf(stdout, "LLM: %s\n", url)
 	return cmd.Wait()
 }
-

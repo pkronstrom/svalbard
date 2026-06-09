@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/contextpicker"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
@@ -66,7 +67,7 @@ func ClientEnvironment(baseURL, modelName string) map[string]string {
 	}
 }
 
-func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelName string) (LaunchConfig, error) {
+func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelName string, ctxSize int) (LaunchConfig, error) {
 	cfg := LaunchConfig{Env: map[string]string{}}
 	runtimeRoot := filepath.Join(driveRoot, ".svalbard", "runtime", clientName)
 	configRoot := filepath.Join(runtimeRoot, "config")
@@ -101,7 +102,8 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
       },
       "models": {
         "%[1]s": {
-          "name": "%[1]s"
+          "name": "%[1]s",
+          "limit": { "context": %[5]d, "output": 8192 }
         }
       }
     }
@@ -114,7 +116,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
     }
   }
 }
-`, modelName, baseURL, mcpBinary, driveRoot)
+`, modelName, baseURL, mcpBinary, driveRoot, ctxSize)
 		if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
@@ -141,14 +143,67 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			return LaunchConfig{}, fmt.Errorf("write goose extension config: %w", err)
 		}
 		cfg.Env = map[string]string{
-			"HOME":            homeRoot,
-			"XDG_CONFIG_HOME": configRoot,
-			"XDG_CACHE_HOME":  cacheRoot,
-			"XDG_DATA_HOME":   dataRoot,
-			"GOOSE_PROVIDER":  "openai",
-			"GOOSE_MODEL":     modelName,
-			"OPENAI_API_KEY":  "local",
-			"OPENAI_HOST":     hostRoot,
+			"HOME":                homeRoot,
+			"XDG_CONFIG_HOME":     configRoot,
+			"XDG_CACHE_HOME":      cacheRoot,
+			"XDG_DATA_HOME":       dataRoot,
+			"GOOSE_PROVIDER":      "openai",
+			"GOOSE_MODEL":         modelName,
+			"GOOSE_CONTEXT_LIMIT": fmt.Sprintf("%d", ctxSize),
+			"OPENAI_API_KEY":      "local",
+			"OPENAI_HOST":         hostRoot,
+		}
+	case "pi":
+		for _, dir := range []string{configRoot, cacheRoot, dataRoot, homeRoot} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return LaunchConfig{}, err
+			}
+		}
+		mcpBinary, err := os.Executable()
+		if err != nil {
+			return LaunchConfig{}, fmt.Errorf("resolve mcp binary: %w", err)
+		}
+		// pi reads models.json + mcp.json from $PI_CODING_AGENT_DIR. Provider
+		// "llama.cpp" points at the local llama-server; the model carries the
+		// resolved context window so pi compacts at the right point.
+		modelsJSON := fmt.Sprintf(`{
+  "providers": {
+    "llama.cpp": {
+      "baseUrl": "%[2]s",
+      "api": "openai-completions",
+      "apiKey": "local",
+      "compat": { "supportsDeveloperRole": false, "supportsReasoningEffort": false },
+      "models": [
+        { "id": "%[1]s", "contextWindow": %[3]d, "maxTokens": 8192, "cost": { "input": 0, "output": 0 } }
+      ]
+    }
+  }
+}
+`, modelName, baseURL, ctxSize)
+		if err := os.WriteFile(filepath.Join(configRoot, "models.json"), []byte(modelsJSON), 0o644); err != nil {
+			return LaunchConfig{}, err
+		}
+		// pi supports MCP natively (no plugin) via mcp.json — wire the svalbard
+		// stdio server, at parity with OpenCode/Goose.
+		mcpJSON := fmt.Sprintf(`{
+  "mcpServers": {
+    "svalbard": {
+      "command": "%[1]s",
+      "args": ["mcp", "--drive", "%[2]s"]
+    }
+  }
+}
+`, mcpBinary, driveRoot)
+		if err := os.WriteFile(filepath.Join(configRoot, "mcp.json"), []byte(mcpJSON), 0o644); err != nil {
+			return LaunchConfig{}, err
+		}
+		cfg.Args = []string{"--model", "llama.cpp/" + modelName}
+		cfg.Env = map[string]string{
+			"HOME":                homeRoot,
+			"XDG_CONFIG_HOME":     configRoot,
+			"XDG_CACHE_HOME":      cacheRoot,
+			"XDG_DATA_HOME":       dataRoot,
+			"PI_CODING_AGENT_DIR": configRoot,
 		}
 	default:
 		cfg.Env = map[string]string{}
@@ -183,10 +238,11 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	}
 	defer logFile.Close()
 
-	fmt.Fprintf(stdout, "Starting llama-server with %s\n", modelName)
+	ctxSize := contextpicker.Pick(llamaserve.ContextForHost())
+	fmt.Fprintf(stdout, "Starting llama-server with %s (context %d)\n", modelName, ctxSize)
 	fmt.Fprintf(stdout, "llama-server log: %s\n", logPath)
 	llamaArgs := []string{"-m", model, "--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port)}
-	llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model)...)
+	llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model, ctxSize)...)
 	llamaCmd := exec.CommandContext(ctx, llamaBin, llamaArgs...)
 	llamaCmd.Stdout = logFile
 	llamaCmd.Stderr = logFile
@@ -203,7 +259,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	}
 
 	fmt.Fprintf(stdout, "Launching %s against %s\n", clientName, modelName)
-	launchCfg, err := PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelName)
+	launchCfg, err := PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelName, ctxSize)
 	if err != nil {
 		return err
 	}

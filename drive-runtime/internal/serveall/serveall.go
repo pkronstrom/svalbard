@@ -79,7 +79,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 				return err
 			}
 			llamaArgs := []string{"-m", model, "--port", fmt.Sprintf("%d", port), "--host", bind}
-			llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model)...)
+			llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model, llamaserve.ContextForHost())...)
 			cmd := exec.CommandContext(ctx, binaries["llama-server"], llamaArgs...)
 			cmd.Stdout = stdout
 			cmd.Stderr = stdout
@@ -154,4 +154,3 @@ func firstChatModel(driveRoot string) (string, error) {
 	}
 	return "", fmt.Errorf("no chat model found")
 }
-

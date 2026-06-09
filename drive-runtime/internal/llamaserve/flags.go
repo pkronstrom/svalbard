@@ -1,29 +1,30 @@
 // Package llamaserve derives model-family-specific llama-server flags from a
-// GGUF filename, so the on-drive runtime serves each model with sane settings
-// without per-model config plumbing. Detection is filename-based because the
-// runtime has no catalog access at serve time.
+// GGUF filename and the host's resources, so the on-drive runtime serves each
+// model with sane settings without per-model config plumbing. Detection is
+// filename-based because the runtime has no catalog access at serve time.
 package llamaserve
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
-// DefaultContext caps the KV cache for chat serving. Without an explicit
-// --ctx-size, llama-server uses the model's native training context, which for
-// Qwen3.6 / Gemma 4 (256K) would allocate a multi-GB KV cache and OOM a
-// low-RAM portable host. 16K is a usable default for chat and coding agents;
-// raise it on a host with spare RAM.
-const DefaultContext = "16384"
+// Context presets offered by the launch-time picker (in tokens).
+const (
+	CtxFast     = 8192   // snappier, less memory
+	CtxBalanced = 32768  // middle ground
+	CtxMax      = 131072 // host ceiling; may be slow / high memory
+)
 
-// ExtraFlags returns the llama-server flags implied by a model's filename:
-// a context cap, the published per-family sampling recipe, and any
-// correctness/speed flags the family requires. Callers append the result to
-// their base arg list ("-m", model, "--port", ...).
-func ExtraFlags(modelPath string) []string {
+// ExtraFlags returns the llama-server flags implied by a model's filename for
+// the given context size: a context cap, the published per-family sampling
+// recipe, and any correctness/speed flags the family requires. Callers append
+// the result to their base arg list ("-m", model, "--port", ...).
+func ExtraFlags(modelPath string, ctxSize int) []string {
 	name := strings.ToLower(filepath.Base(modelPath))
 
-	flags := []string{"--ctx-size", DefaultContext}
+	flags := []string{"--ctx-size", strconv.Itoa(ctxSize)}
 
 	// Published sampling recipes. llama.cpp's defaults (temp 0.8, top-k 40,
 	// min-p 0.05) suit neither family, so set the vendor-recommended values for

@@ -42,7 +42,7 @@ func TestClientEnvironmentUsesLocalOpenAICompatibilityVars(t *testing.T) {
 func TestPrepareClientLaunchConfigForOpenCode(t *testing.T) {
 	driveRoot := t.TempDir()
 
-	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "opencode", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen")
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "opencode", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen", 32768)
 	if err != nil {
 		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestPrepareClientLaunchConfigForOpenCode(t *testing.T) {
 func TestPrepareClientLaunchConfigForGoose(t *testing.T) {
 	driveRoot := t.TempDir()
 
-	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "goose", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen")
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "goose", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen", 32768)
 	if err != nil {
 		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
 	}
@@ -89,10 +89,57 @@ func TestPrepareClientLaunchConfigForGoose(t *testing.T) {
 	}
 }
 
+func TestPrepareClientLaunchConfigForPi(t *testing.T) {
+	driveRoot := t.TempDir()
+
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen", 65536)
+	if err != nil {
+		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+	}
+	if len(cfg.Args) != 2 || cfg.Args[0] != "--model" || cfg.Args[1] != "llama.cpp/qwen" {
+		t.Fatalf("Args = %v, want pi model args", cfg.Args)
+	}
+	piDir := cfg.Env["PI_CODING_AGENT_DIR"]
+	if piDir == "" {
+		t.Fatal("PI_CODING_AGENT_DIR not set")
+	}
+
+	models, err := os.ReadFile(filepath.Join(piDir, "models.json"))
+	if err != nil {
+		t.Fatalf("read models.json: %v", err)
+	}
+	for _, want := range []string{`"baseUrl": "http://127.0.0.1:8082/v1"`, `"id": "qwen"`, `"contextWindow": 65536`} {
+		if !strings.Contains(string(models), want) {
+			t.Errorf("models.json missing %s: %s", want, string(models))
+		}
+	}
+
+	mcp, err := os.ReadFile(filepath.Join(piDir, "mcp.json"))
+	if err != nil {
+		t.Fatalf("read mcp.json: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(mcp, &parsed); err != nil {
+		t.Fatalf("mcp.json not valid JSON: %v", err)
+	}
+	servers, ok := parsed["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatal("mcp.json missing mcpServers")
+	}
+	svalbard, ok := servers["svalbard"].(map[string]any)
+	if !ok {
+		t.Fatal("mcp.json missing svalbard server")
+	}
+	args, ok := svalbard["args"].([]any)
+	if !ok || len(args) != 3 || args[0] != "mcp" || args[1] != "--drive" || args[2] != driveRoot {
+		t.Errorf("svalbard args = %v, want [mcp --drive %s]", svalbard["args"], driveRoot)
+	}
+}
+
 func TestPrepareClientLaunchConfigOpenCodeIncludesMCPServers(t *testing.T) {
 	driveRoot := t.TempDir()
 
-	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "opencode", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "test-model")
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "opencode", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "test-model", 32768)
 	if err != nil {
 		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
 	}
@@ -151,7 +198,7 @@ func TestPrepareClientLaunchConfigOpenCodeIncludesMCPServers(t *testing.T) {
 func TestPrepareClientLaunchConfigGooseIncludesMCPServers(t *testing.T) {
 	driveRoot := t.TempDir()
 
-	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "goose", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "test-model")
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "goose", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "test-model", 32768)
 	if err != nil {
 		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
 	}

@@ -6,7 +6,7 @@ import (
 )
 
 func TestExtraFlags(t *testing.T) {
-	ctx := []string{"--ctx-size", DefaultContext}
+	ctx := []string{"--ctx-size", "32768"}
 	qwenSampling := []string{"--temp", "0.6", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.0"}
 	gemmaSampling := []string{"--temp", "1.0", "--top-k", "64", "--top-p", "0.95", "--min-p", "0.0"}
 	qwen36KV := []string{"--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0"}
@@ -34,9 +34,43 @@ func TestExtraFlags(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ExtraFlags(tc.path)
+			got := ExtraFlags(tc.path, 32768)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("ExtraFlags(%q) =\n  %v\nwant\n  %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExtraFlagsThreadsContext(t *testing.T) {
+	got := ExtraFlags("/d/models/phi-4.gguf", 8192)
+	if len(got) < 2 || got[0] != "--ctx-size" || got[1] != "8192" {
+		t.Fatalf("ExtraFlags ctx = %v, want --ctx-size 8192 first", got)
+	}
+}
+
+func TestContextForHostTiers(t *testing.T) {
+	orig := totalRAMBytes
+	t.Cleanup(func() { totalRAMBytes = orig })
+
+	cases := []struct {
+		name string
+		gib  uint64
+		want int
+	}{
+		{"detection failure", 0, CtxFast},
+		{"8GB", 8, CtxFast},
+		{"16GB", 16, CtxBalanced},
+		{"24GB", 24, 65536},
+		{"32GB", 32, 65536},
+		{"64GB", 64, CtxMax},
+		{"128GB", 128, CtxMax},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			totalRAMBytes = func() uint64 { return tc.gib * giB }
+			if got := ContextForHost(); got != tc.want {
+				t.Errorf("ContextForHost() for %dGB = %d, want %d", tc.gib, got, tc.want)
 			}
 		})
 	}
