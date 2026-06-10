@@ -166,6 +166,8 @@ svalbard apply --vault /Volumes/MyStick
 
 Set `SVALBARD_DEBUG=1` for verbose structured logging (written to `$TMPDIR/svalbard.log`).
 
+Set `SVALBARD_CACHE_DIRS=/path/one:/path/two` to reuse already-downloaded files (e.g. a local model cache like `~/.models`) during `apply`. Each catalog file is matched by filename in those directories, size-checked against the source, and copied into the vault instead of re-downloaded.
+
 ## Roadmap
 
 - [x] Go host CLI for vault init, desired-state edits, apply, status, import, preset listing, and indexing

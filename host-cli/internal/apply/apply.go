@@ -405,11 +405,27 @@ func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, d
 	}
 	destPath := filepath.Join(root, typeDir, filename)
 
-	result, err := downloader.Download(ctx, dlURL, destPath, "", onProgress)
-	if err != nil {
-		return manifest.RealizedEntry{}, fmt.Errorf("downloading %s: %w", id, err)
+	// Reuse a locally-cached copy (SVALBARD_CACHE_DIRS) before downloading.
+	var result downloader.Result
+	if dirs := downloader.CacheDirs(); len(dirs) > 0 {
+		if cached, ok := downloader.FindInCache(dirs, filename); ok {
+			if res, used, err := downloader.ReuseFromCache(ctx, cached, dlURL, destPath, onProgress); err != nil {
+				return manifest.RealizedEntry{}, fmt.Errorf("reusing cached %s: %w", id, err)
+			} else if used {
+				result = res
+				slog.Info("reused from cache", "id", id, "src", cached, "dest", destPath, "sha256", res.SHA256)
+			}
+		}
 	}
-	slog.Info("downloaded", "id", id, "path", destPath, "sha256", result.SHA256, "cached", result.Cached)
+
+	if result.Path == "" {
+		dl, err := downloader.Download(ctx, dlURL, destPath, "", onProgress)
+		if err != nil {
+			return manifest.RealizedEntry{}, fmt.Errorf("downloading %s: %w", id, err)
+		}
+		result = dl
+		slog.Info("downloaded", "id", id, "path", destPath, "sha256", result.SHA256, "cached", result.Cached)
+	}
 
 	fileInfo, err := os.Stat(destPath)
 	if err != nil {
