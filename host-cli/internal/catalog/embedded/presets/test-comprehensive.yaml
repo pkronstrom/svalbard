@@ -1,0 +1,28 @@
+name: test-comprehensive
+description: Comprehensive smoke-test — local LLM + agent harnesses, multi-ZIM FTS/semantic search, maps + geodata overlays, datasets, and SQLite tooling
+target_size_gb: 4
+region: finland
+extends:
+  - ai/harnesses
+sources:
+# Local AI — chat model + semantic-search embeddings
+- gemma-4-e2b-it
+- nomic-embed-text-v1.5
+# Library — diverse tiny ZIMs for browse + FTS + semantic search
+- wikipedia-en-100-mini
+- based-cooking
+- who-basic-emergency-care
+- ted-3d-printing
+- alpinelinux-wiki
+# Maps + geodata overlays
+- osm-uusimaa
+- virtavesien-lohikalakannat
+- pohjavesialueet
+- maplibre-vendor
+# Datasets + tools
+- fimea
+- kiwix-serve
+- sqlite3
+- sqliteviz
+- dufs
+- 7z
