@@ -113,6 +113,32 @@ func TestPrepareClientLaunchConfigForPi(t *testing.T) {
 			t.Errorf("models.json missing %s: %s", want, string(models))
 		}
 	}
+	if !json.Valid(models) {
+		t.Errorf("qwen models.json is not valid JSON: %s", string(models))
+	}
+	// Qwen round-trips tool calls without the Gemma chat-template compat flags.
+	if strings.Contains(string(models), "requiresToolResultName") {
+		t.Errorf("qwen models.json should not carry Gemma compat flags: %s", string(models))
+	}
+
+	// A Gemma model must carry the chat-template compat flags pi needs for
+	// tool-call round-tripping.
+	gemmaCfg, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "gemma-4-E2B-it-qat", 32768)
+	if err != nil {
+		t.Fatalf("PrepareClientLaunchConfig(gemma) error = %v", err)
+	}
+	gemmaModels, err := os.ReadFile(filepath.Join(gemmaCfg.Env["PI_CODING_AGENT_DIR"], "models.json"))
+	if err != nil {
+		t.Fatalf("read gemma models.json: %v", err)
+	}
+	if !json.Valid(gemmaModels) {
+		t.Errorf("gemma models.json is not valid JSON: %s", string(gemmaModels))
+	}
+	for _, want := range []string{`"requiresToolResultName": true`, `"requiresAssistantAfterToolResult": true`} {
+		if !strings.Contains(string(gemmaModels), want) {
+			t.Errorf("gemma models.json missing %s: %s", want, string(gemmaModels))
+		}
+	}
 
 	mcp, err := os.ReadFile(filepath.Join(piDir, "mcp.json"))
 	if err != nil {

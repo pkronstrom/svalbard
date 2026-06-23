@@ -163,6 +163,14 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		if err != nil {
 			return LaunchConfig{}, fmt.Errorf("resolve mcp binary: %w", err)
 		}
+		// Gemma's chat template requires every tool result to carry a name and
+		// to be followed by an assistant turn; pi needs these per-model compat
+		// flags to round-trip tool calls (mirrors a verified turbollm pi config).
+		// Other families (Qwen) round-trip without them.
+		modelCompat := ""
+		if strings.Contains(strings.ToLower(modelName), "gemma") {
+			modelCompat = `, "compat": { "thinkingFormat": "qwen-chat-template", "requiresToolResultName": true, "requiresAssistantAfterToolResult": true }`
+		}
 		// pi reads models.json + mcp.json from $PI_CODING_AGENT_DIR. Provider
 		// "llama.cpp" points at the local llama-server; the model carries the
 		// resolved context window so pi compacts at the right point.
@@ -174,12 +182,12 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
       "apiKey": "local",
       "compat": { "supportsDeveloperRole": false, "supportsReasoningEffort": false },
       "models": [
-        { "id": "%[1]s", "contextWindow": %[3]d, "maxTokens": 8192, "cost": { "input": 0, "output": 0 } }
+        { "id": "%[1]s", "contextWindow": %[3]d, "maxTokens": 8192, "cost": { "input": 0, "output": 0 }%[4]s }
       ]
     }
   }
 }
-`, modelName, baseURL, ctxSize)
+`, modelName, baseURL, ctxSize, modelCompat)
 		if err := os.WriteFile(filepath.Join(configRoot, "models.json"), []byte(modelsJSON), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
