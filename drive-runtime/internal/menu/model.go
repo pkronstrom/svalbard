@@ -81,10 +81,7 @@ type Model struct {
 }
 
 func NewModel(cfg config.RuntimeConfig, driveRoot string, workDir ...string) Model {
-	runner := actions.NewRunner(driveRoot)
-	if len(workDir) > 0 && workDir[0] != "" {
-		runner = actions.NewRunnerWithWorkDir(driveRoot, workDir[0])
-	}
+	runner := actions.NewRunner(driveRoot, workDir...)
 	theme := tui.DefaultTheme()
 	ti := textinput.New()
 	ti.Prompt = ""

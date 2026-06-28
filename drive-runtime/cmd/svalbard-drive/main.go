@@ -151,7 +151,7 @@ func run() error {
 			return runMCPServe(driveRoot)
 		}
 		if item, ok := cfg.FindItemByAlias(os.Args[1]); ok {
-			runner := actions.NewRunnerWithWorkDir(driveRoot, workDir)
+			runner := actions.NewRunner(driveRoot, workDir)
 			resolved, err := runner.Resolve(item.Action)
 			if err != nil {
 				return err

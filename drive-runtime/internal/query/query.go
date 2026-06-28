@@ -43,6 +43,12 @@ func Execute(driveRoot, database, sqlQuery string) ([]map[string]any, error) {
 	}
 	defer rows.Close()
 
+	return scanRowsIntoMaps(rows)
+}
+
+// scanRowsIntoMaps reads every row into a column→value map, converting []byte
+// values to string for JSON-friendliness.
+func scanRowsIntoMaps(rows *sql.Rows) ([]map[string]any, error) {
 	cols, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("reading columns: %w", err)
@@ -61,7 +67,6 @@ func Execute(driveRoot, database, sqlQuery string) ([]map[string]any, error) {
 
 		row := make(map[string]any, len(cols))
 		for i, col := range cols {
-			// Convert []byte values to string for JSON-friendliness.
 			if b, ok := values[i].([]byte); ok {
 				row[col] = string(b)
 			} else {
@@ -70,11 +75,7 @@ func Execute(driveRoot, database, sqlQuery string) ([]map[string]any, error) {
 		}
 		results = append(results, row)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating rows: %w", err)
-	}
-
-	return results, nil
+	return results, rows.Err()
 }
 
 // Describe returns schema information for a database. If table is non-empty,
@@ -250,31 +251,5 @@ func sampleRows(db *sql.DB, table string) ([]map[string]any, error) {
 	}
 	defer rows.Close()
 
-	cols, err := rows.Columns()
-	if err != nil {
-		return nil, fmt.Errorf("reading sample columns: %w", err)
-	}
-
-	var samples []map[string]any
-	for rows.Next() {
-		values := make([]any, len(cols))
-		ptrs := make([]any, len(cols))
-		for i := range values {
-			ptrs[i] = &values[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, fmt.Errorf("scanning sample row: %w", err)
-		}
-
-		row := make(map[string]any, len(cols))
-		for i, col := range cols {
-			if b, ok := values[i].([]byte); ok {
-				row[col] = string(b)
-			} else {
-				row[col] = values[i]
-			}
-		}
-		samples = append(samples, row)
-	}
-	return samples, rows.Err()
+	return scanRowsIntoMaps(rows)
 }

@@ -56,7 +56,7 @@ func TestCommandUsesDriveRootAndExportsDriveRootEnv(t *testing.T) {
 }
 
 func TestCommandCanUseExplicitWorkDir(t *testing.T) {
-	runner := actions.NewRunnerWithWorkDir("/tmp/drive", "/tmp/workspace")
+	runner := actions.NewRunner("/tmp/drive", "/tmp/workspace")
 
 	resolved, err := runner.Resolve(config.BuiltinAction("agent", map[string]string{"client": "opencode"}))
 	if err != nil {

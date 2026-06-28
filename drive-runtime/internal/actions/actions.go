@@ -46,15 +46,14 @@ type Runner struct {
 	workDir   string
 }
 
-func NewRunner(driveRoot string) Runner {
-	return Runner{driveRoot: driveRoot, workDir: driveRoot}
-}
-
-func NewRunnerWithWorkDir(driveRoot, workDir string) Runner {
-	if workDir == "" {
-		workDir = driveRoot
+// NewRunner builds a Runner rooted at driveRoot. An optional workDir overrides
+// the working directory for exec actions; empty or omitted defaults to driveRoot.
+func NewRunner(driveRoot string, workDir ...string) Runner {
+	wd := driveRoot
+	if len(workDir) > 0 && workDir[0] != "" {
+		wd = workDir[0]
 	}
-	return Runner{driveRoot: driveRoot, workDir: workDir}
+	return Runner{driveRoot: driveRoot, workDir: wd}
 }
 
 func (r Runner) Resolve(action config.ActionSpec) (ResolvedAction, error) {
