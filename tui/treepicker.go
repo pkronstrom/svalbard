@@ -385,11 +385,7 @@ func (tp *TreePicker) MaxVisible() int {
 	if reserve == 0 {
 		reserve = 10
 	}
-	v := tp.Height - reserve
-	if v < 4 {
-		v = 4
-	}
-	return v
+	return MaxVisibleRows(tp.Height, reserve, 4)
 }
 
 // EnsureVisible adjusts ScrollOffset so the cursor stays in view.
@@ -431,11 +427,6 @@ func (tp *TreePicker) TotalCheckedGB() float64 {
 		}
 	}
 	return total
-}
-
-// TotalCheckedCount returns the number of unique checked source IDs.
-func (tp *TreePicker) TotalCheckedCount() int {
-	return len(tp.CheckedIDs)
 }
 
 // CheckedIDSlice returns the checked IDs as a slice.

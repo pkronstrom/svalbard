@@ -172,9 +172,9 @@ func processFile(input, output string, maxWidth uint, numColors int, algorithm s
 
 	var result image.Image
 	if algorithm == "none" {
-		result = imaging.ResizeOnly(img, maxWidth)
+		result = imaging.Resize(img, maxWidth)
 	} else {
-		result = imaging.Process(img, maxWidth, numColors, algorithm)
+		result = imaging.Process(img, maxWidth, numColors)
 	}
 
 	out, err := os.Create(output)

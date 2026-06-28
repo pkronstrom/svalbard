@@ -213,7 +213,7 @@ func (m Model) View() string {
 		body.WriteString(m.picker.Theme.Base.Render("  y = save   n = discard   esc = cancel"))
 	}
 
-	header := fmt.Sprintf("Browse  %d selected  %.1f GB", m.picker.TotalCheckedCount(), totalGB)
+	header := fmt.Sprintf("Browse  %d selected  %.1f GB", len(m.picker.CheckedIDs), totalGB)
 	if m.presetIdx >= 0 && m.presetIdx < len(m.presets) {
 		header += "  preset: " + m.presets[m.presetIdx].Name
 	}

@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -336,12 +338,12 @@ func downloadPlatformItems(ctx context.Context, root, id string, recipe catalog.
 			}
 		}
 		if !downloaded {
-			slog.Debug("no platform URL", "id", id, "platform", platform, "available", platformKeys(recipe.Platforms))
+			slog.Debug("no platform URL", "id", id, "platform", platform, "available", slices.Collect(maps.Keys(recipe.Platforms)))
 		}
 	}
 
 	if len(entries) == 0 {
-		return nil, fmt.Errorf("no download URL for %s on any target platform %v (available: %v)", id, targets, platformKeys(recipe.Platforms))
+		return nil, fmt.Errorf("no download URL for %s on any target platform %v (available: %v)", id, targets, slices.Collect(maps.Keys(recipe.Platforms)))
 	}
 	return entries, nil
 }
@@ -386,14 +388,6 @@ func hostPlatformCandidates() []string {
 		}
 	}
 	return candidates
-}
-
-func platformKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }
 
 // fetchAndRecord downloads a file and returns a RealizedEntry.

@@ -8,6 +8,17 @@ const (
 	subIndent  = "  "
 )
 
+// MaxVisibleRows returns how many rows fit in a viewport of the given height
+// after reserving `reserve` lines for surrounding chrome, never dropping below
+// floor.
+func MaxVisibleRows(height, reserve, floor int) int {
+	v := height - reserve
+	if v < floor {
+		return floor
+	}
+	return v
+}
+
 // NavItem represents a single entry in a navigation list.
 type NavItem struct {
 	ID          string

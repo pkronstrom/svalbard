@@ -196,8 +196,8 @@ func (m Model) updateRebuilding(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateStep(ev IndexEvent) {
 	if ev.File == "" {
-		if ev.detailOrStatus() != "" {
-			m.globalStep = ev.detailOrStatus()
+		if s := ev.detailOrStatus(); s != "" {
+			m.globalStep = s
 		}
 		return
 	}
@@ -371,14 +371,10 @@ func (m Model) viewRebuilding() string {
 		}
 	}
 
-	maxVis := m.height - 8
-	if maxVis < 5 {
-		maxVis = 5
-	}
 	pv := tui.ProgressView{
 		Theme:        m.theme,
 		Steps:        steps,
-		MaxVisible:   maxVis,
+		MaxVisible:   tui.MaxVisibleRows(m.height, 8, 5),
 		ScrollToTail: true,
 	}
 

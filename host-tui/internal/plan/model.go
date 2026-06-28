@@ -351,7 +351,10 @@ func (m Model) viewPlan() string {
 			prefix = "> "
 		}
 
-		sym := actionSymbol(it.Action)
+		sym := "+"
+		if it.Action == "remove" {
+			sym = "-"
+		}
 		line := fmt.Sprintf("%s %s %s  %s", prefix, sym, it.ID, tui.FormatSize(it.SizeGB))
 
 		if i == m.cursor {
@@ -465,21 +468,11 @@ func (m Model) applyProgressView() tui.ProgressView {
 			Error:      s.err,
 		}
 	}
-	maxVis := m.height - 12
-	if maxVis < 4 {
-		maxVis = 4
-	}
 	return tui.ProgressView{
 		Theme:      m.theme,
 		Steps:      steps,
-		MaxVisible: maxVis,
+		MaxVisible: tui.MaxVisibleRows(m.height, 12, 4),
 	}
 }
 
 
-func actionSymbol(action string) string {
-	if action == "remove" {
-		return "-"
-	}
-	return "+"
-}
