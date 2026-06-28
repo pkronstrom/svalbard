@@ -6,10 +6,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 )
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
-	listener, port, err := listenOnAvailablePort("0.0.0.0", 8080)
+	listener, port, err := netutil.Listen("0.0.0.0", 8080)
 	if err != nil {
 		return err
 	}
@@ -47,20 +49,6 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
 
 func Handler(driveRoot string) http.Handler {
 	return http.FileServer(http.Dir(driveRoot))
-}
-
-func listenOnAvailablePort(host string, preferred int) (net.Listener, int, error) {
-	for port := preferred; port < preferred+20; port++ {
-		listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
-		if err == nil {
-			return listener, port, nil
-		}
-	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
-	if err != nil {
-		return nil, 0, err
-	}
-	return listener, listener.Addr().(*net.TCPAddr).Port, nil
 }
 
 func lanIP() string {

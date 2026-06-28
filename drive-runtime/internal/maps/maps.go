@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 )
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot string, opener func(string) error) error {
@@ -17,7 +17,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot string, opener func(st
 		opener = browser.Open
 	}
 
-	listener, port, err := listenOnAvailablePort("127.0.0.1", 8081)
+	listener, port, err := netutil.Listen("127.0.0.1", 8081)
 	if err != nil {
 		return err
 	}
@@ -52,18 +52,4 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot string, opener func(st
 	case err := <-errCh:
 		return err
 	}
-}
-
-func listenOnAvailablePort(host string, preferred int) (net.Listener, int, error) {
-	for port := preferred; port < preferred+20; port++ {
-		listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
-		if err == nil {
-			return listener, port, nil
-		}
-	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
-	if err != nil {
-		return nil, 0, err
-	}
-	return listener, listener.Addr().(*net.TCPAddr).Port, nil
 }
