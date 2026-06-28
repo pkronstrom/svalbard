@@ -10,20 +10,6 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/agent"
 )
 
-func TestResolveModelSkipsMacResourceForks(t *testing.T) {
-	driveRoot := t.TempDir()
-	mustWriteModel(t, driveRoot, "._qwen.gguf")
-	mustWriteModel(t, driveRoot, "qwen.gguf")
-
-	got, err := agent.ResolveModel(driveRoot, "")
-	if err != nil {
-		t.Fatalf("ResolveModel() error = %v", err)
-	}
-	if want := filepath.Join(driveRoot, "models", "qwen.gguf"); got != want {
-		t.Fatalf("ResolveModel() = %q, want %q", got, want)
-	}
-}
-
 func TestClientEnvironmentUsesLocalOpenAICompatibilityVars(t *testing.T) {
 	env := agent.ClientEnvironment("http://127.0.0.1:8082/v1", "gemma")
 	for key, want := range map[string]string{
@@ -258,16 +244,5 @@ func TestPrepareClientLaunchConfigGooseIncludesMCPServers(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Fatalf("config.yaml missing %q:\n%s", want, content)
 		}
-	}
-}
-
-func mustWriteModel(t *testing.T, driveRoot, name string) {
-	t.Helper()
-	path := filepath.Join(driveRoot, "models", name)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-	if err := os.WriteFile(path, []byte("model"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
 	}
 }

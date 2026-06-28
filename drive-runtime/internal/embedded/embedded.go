@@ -66,7 +66,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
 		_ = os.Symlink(driveLib, filepath.Join(pioCache, "lib"))
 	}
 
-	env := append(os.Environ(), envMapToList(Environment(pioCache))...)
+	env := append(os.Environ(), platform.EnvList(Environment(pioCache))...)
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, "Embedded dev shell ready.")
 	fmt.Fprintf(stdout, "  Toolchains: %s\n", pkgDir)
@@ -250,12 +250,4 @@ func extractZipInto(archivePath, dest string) error {
 		}
 	}
 	return nil
-}
-
-func envMapToList(values map[string]string) []string {
-	out := make([]string, 0, len(values))
-	for key, value := range values {
-		out = append(out, key+"="+value)
-	}
-	return out
 }

@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
@@ -18,44 +15,11 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
-func ResolveModel(driveRoot, selected string) (string, error) {
-	if selected != "" {
-		// Try as-is first (absolute path), then resolve relative to models dir.
-		if info, err := os.Stat(selected); err == nil && !info.IsDir() {
-			return selected, nil
-		}
-		path := filepath.Join(driveRoot, "models", selected)
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			return path, nil
-		}
-		return "", fmt.Errorf("model not found: %s", selected)
-	}
-
-	pattern := filepath.Join(driveRoot, "models", "*.gguf")
-	models, err := filepath.Glob(pattern)
-	if err != nil {
-		return "", err
-	}
-	filtered := models[:0]
-	for _, model := range models {
-		base := filepath.Base(model)
-		if strings.HasPrefix(base, "._") {
-			continue
-		}
-		filtered = append(filtered, model)
-	}
-	sort.Strings(filtered)
-	if len(filtered) == 0 {
-		return "", fmt.Errorf("no GGUF model found in models/")
-	}
-	return filtered[0], nil
-}
-
 func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, opener func(string) error) error {
 	if opener == nil {
 		opener = browser.Open
 	}
-	model, err := ResolveModel(driveRoot, selected)
+	model, err := llamaserve.ResolveModel(driveRoot, selected)
 	if err != nil {
 		return err
 	}

@@ -3,7 +3,19 @@ package platform
 import (
 	"fmt"
 	"runtime"
+	"sort"
 )
+
+// EnvList turns a key→value map into a sorted "KEY=value" slice suitable for
+// exec.Cmd.Env. Sorted so the result is deterministic.
+func EnvList(values map[string]string) []string {
+	out := make([]string, 0, len(values))
+	for key, value := range values {
+		out = append(out, key+"="+value)
+	}
+	sort.Strings(out)
+	return out
+}
 
 func Detect() (string, error) {
 	switch runtime.GOOS + "/" + runtime.GOARCH {

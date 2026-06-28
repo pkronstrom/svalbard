@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -22,39 +21,6 @@ import (
 type LaunchConfig struct {
 	Args []string
 	Env  map[string]string
-}
-
-func ResolveModel(driveRoot, selected string) (string, error) {
-	if selected != "" {
-		// Try as-is first (absolute path), then resolve relative to models dir.
-		if info, err := os.Stat(selected); err == nil && !info.IsDir() {
-			return selected, nil
-		}
-		path := filepath.Join(driveRoot, "models", selected)
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			return path, nil
-		}
-		return "", fmt.Errorf("model not found: %s", selected)
-	}
-
-	pattern := filepath.Join(driveRoot, "models", "*.gguf")
-	models, err := filepath.Glob(pattern)
-	if err != nil {
-		return "", err
-	}
-	filtered := models[:0]
-	for _, model := range models {
-		base := filepath.Base(model)
-		if strings.HasPrefix(base, "._") {
-			continue
-		}
-		filtered = append(filtered, model)
-	}
-	sort.Strings(filtered)
-	if len(filtered) == 0 {
-		return "", fmt.Errorf("no chat-capable GGUF models found in models/")
-	}
-	return filtered[0], nil
 }
 
 func ClientEnvironment(baseURL, modelName string) map[string]string {
@@ -228,7 +194,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	if err != nil {
 		return fmt.Errorf("llama-server not found")
 	}
-	model, err := ResolveModel(driveRoot, selectedModel)
+	model, err := llamaserve.ResolveModel(driveRoot, selectedModel)
 	if err != nil {
 		return err
 	}
@@ -275,22 +241,13 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	clientCmd.Stdin = os.Stdin
 	clientCmd.Stdout = os.Stdout
 	clientCmd.Stderr = os.Stderr
-	clientCmd.Env = append(os.Environ(), envMapToList(ClientEnvironment(baseURL, modelName))...)
-	clientCmd.Env = append(clientCmd.Env, envMapToList(launchCfg.Env)...)
+	clientCmd.Env = append(os.Environ(), platform.EnvList(ClientEnvironment(baseURL, modelName))...)
+	clientCmd.Env = append(clientCmd.Env, platform.EnvList(launchCfg.Env)...)
 	clientCmd.Dir = driveRoot
 	if workDir, err := os.Getwd(); err == nil && workDir != "" {
 		clientCmd.Dir = workDir
 	}
 	return clientCmd.Run()
-}
-
-func envMapToList(values map[string]string) []string {
-	out := make([]string, 0, len(values))
-	for key, value := range values {
-		out = append(out, key+"="+value)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func ensureGooseStdioExtension(configPath, mcpBinary, driveRoot string) error {

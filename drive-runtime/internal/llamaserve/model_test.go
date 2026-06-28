@@ -1,11 +1,11 @@
-package chat_test
+package llamaserve_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/chat"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 )
 
 func TestResolveModelSkipsMacResourceForks(t *testing.T) {
@@ -13,7 +13,7 @@ func TestResolveModelSkipsMacResourceForks(t *testing.T) {
 	mustWriteModel(t, driveRoot, "._gemma.gguf")
 	mustWriteModel(t, driveRoot, "gemma.gguf")
 
-	got, err := chat.ResolveModel(driveRoot, "")
+	got, err := llamaserve.ResolveModel(driveRoot, "")
 	if err != nil {
 		t.Fatalf("ResolveModel() error = %v", err)
 	}
@@ -26,7 +26,7 @@ func TestResolveModelUsesExplicitSelection(t *testing.T) {
 	driveRoot := t.TempDir()
 	mustWriteModel(t, driveRoot, "gemma.gguf")
 
-	got, err := chat.ResolveModel(driveRoot, filepath.Join(driveRoot, "models", "gemma.gguf"))
+	got, err := llamaserve.ResolveModel(driveRoot, filepath.Join(driveRoot, "models", "gemma.gguf"))
 	if err != nil {
 		t.Fatalf("ResolveModel() error = %v", err)
 	}
