@@ -46,6 +46,13 @@ func sampleGroupedConfig() config.RuntimeConfig {
 	}
 }
 
+// withWindowSize feeds the model an initial WindowSizeMsg; the ShellLayout
+// renders nothing until it knows the terminal size.
+func withWindowSize(m Model) Model {
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	return updated.(Model)
+}
+
 func TestEnterOpensGroupScreen(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	m.SetSelected(1)
@@ -111,6 +118,7 @@ func TestEscAtRootQuits(t *testing.T) {
 
 func TestRootViewShowsSelectedDescriptionInDetailPane(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	m = withWindowSize(m)
 
 	view := m.View()
 	if !strings.Contains(view, "Search") {
@@ -137,6 +145,7 @@ func TestSubmenuViewShowsSelectedDescriptionOnlyInFooter(t *testing.T) {
 
 func TestRootViewShowsFooterLegend(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	m = withWindowSize(m)
 
 	view := m.View()
 	if !strings.Contains(view, "j/k: move | Enter: open | Esc: back | q: quit") {
