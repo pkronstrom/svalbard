@@ -1,0 +1,37 @@
+id: opensourcelowtech
+type: zim
+display_group: practical
+tags:
+- diy
+- energy-power
+- water
+- civil-construction
+- communications
+depth: overview
+size_gb: 0.2
+description: Open Source Low Tech construction tutorials for simple infrastructure
+strategy: build
+build:
+  family: zimit
+  source_url: https://opensourcelowtech.org/
+  output: opensourcelowtech.zim
+  steps:
+  - exec: zimit
+    docker_image: ghcr.io/openzim/zimit:latest
+    args:
+    - --seeds
+    - "{source_url}"
+    - --name
+    - opensourcelowtech
+    - --zim-file
+    - opensourcelowtech.zim
+    - --output
+    - "{vault}/zim"
+    - --waitUntil
+    - domcontentloaded
+  - verify: "{output}"
+    min_size: 1000000
+license:
+  id: license-free
+  attribution: Daniel Connell / OpenSourceLowTech.org
+  url: https://opensourcelowtech.org/

@@ -533,6 +533,48 @@ func TestDefaultCatalogRecipeHasRealFields(t *testing.T) {
 	}
 }
 
+func TestEmbeddedCatalogParsesOpenSourceLowTechBuildRecipe(t *testing.T) {
+	cat, err := NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatalf("NewEmbeddedCatalog: %v", err)
+	}
+
+	item, ok := cat.RecipeByID("opensourcelowtech")
+	if !ok {
+		t.Fatal("expected opensourcelowtech recipe")
+	}
+	if item.Type != "zim" {
+		t.Errorf("Type: expected %q, got %q", "zim", item.Type)
+	}
+	if item.Strategy != "build" {
+		t.Errorf("Strategy: expected %q, got %q", "build", item.Strategy)
+	}
+	if item.Build == nil {
+		t.Fatal("Build: expected non-nil")
+	}
+	if item.Build.SourceURL != "https://opensourcelowtech.org/" {
+		t.Errorf("Build.SourceURL: unexpected value %q", item.Build.SourceURL)
+	}
+	if item.Build.Output != "opensourcelowtech.zim" {
+		t.Errorf("Build.Output: unexpected value %q", item.Build.Output)
+	}
+	if len(item.Build.Steps) != 2 {
+		t.Fatalf("Build.Steps: expected 2, got %d", len(item.Build.Steps))
+	}
+	if item.Build.Steps[0].Exec != "zimit" {
+		t.Errorf("first build step should invoke zimit, got %q", item.Build.Steps[0].Exec)
+	}
+	if item.Build.Steps[0].DockerImage != "ghcr.io/openzim/zimit:latest" {
+		t.Errorf("zimit Docker image: unexpected value %q", item.Build.Steps[0].DockerImage)
+	}
+	if item.Build.Steps[1].Verify != "{output}" {
+		t.Errorf("verify step: unexpected path %q", item.Build.Steps[1].Verify)
+	}
+	if item.License == nil || item.License.Attribution != "Daniel Connell / OpenSourceLowTech.org" {
+		t.Fatalf("License attribution: unexpected value %#v", item.License)
+	}
+}
+
 func TestEmbeddedCatalogLoadsRealRecipes(t *testing.T) {
 	cat, err := NewEmbeddedCatalog()
 	if err != nil {
