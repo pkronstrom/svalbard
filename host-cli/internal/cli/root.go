@@ -174,6 +174,7 @@ func NewRootCommand() *cobra.Command {
 		applyCmd,
 		statusCmd,
 		newImportCommand(),
+		newZimCommand(),
 		newPresetCommand(),
 		indexCmd,
 	)
@@ -274,6 +275,37 @@ func newImportCommand() *cobra.Command {
 
 	cmd.Flags().Bool("add", false, "also add the imported item to the desired state")
 	cmd.Flags().String("name", "", "override the output name (used to derive the local: id)")
+
+	return cmd
+}
+
+func newZimCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "zim <url>",
+		Short: "Crawl a website into a ZIM on the vault (runs the zimit container, needs Docker)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			vaultFlag, _ := cmd.Flags().GetString("vault")
+			vaultRoot, err := ResolveVaultRoot(vaultFlag)
+			if err != nil {
+				return err
+			}
+			nameFlag, _ := cmd.Flags().GetString("name")
+
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "Crawling %s — this can take a while\n", args[0])
+			id, err := commands.BuildZim(cmd.Context(), vaultRoot, args[0], nameFlag, func(step string) {
+				fmt.Fprintf(out, "  %s\n", step)
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "Built %s.zim and added %q to the vault\n", id, id)
+			return nil
+		},
+	}
+
+	cmd.Flags().String("name", "", "item id / output name (default: derived from the URL host)")
 
 	return cmd
 }
