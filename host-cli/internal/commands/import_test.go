@@ -83,4 +83,17 @@ func TestImportAndMaybeAddWithAdd(t *testing.T) {
 	if !found {
 		t.Errorf("expected manifest items to contain %q, got %v", "local:guide", reloaded.Desired.Items)
 	}
+
+	// The import must also be realized, otherwise plan keeps it in ToDownload
+	// and every apply fails with "recipe not found".
+	if len(reloaded.Realized.Entries) != 1 {
+		t.Fatalf("expected 1 realized entry, got %d", len(reloaded.Realized.Entries))
+	}
+	e := reloaded.Realized.Entries[0]
+	if e.ID != "local:guide" || e.Type != "pdf" || e.RelativePath != filepath.Join("library", "guide.pdf") {
+		t.Errorf("unexpected realized entry: %+v", e)
+	}
+	if e.SizeBytes != int64(len("pdf-data")) || e.SourceStrategy != "local" {
+		t.Errorf("unexpected realized entry metadata: %+v", e)
+	}
 }

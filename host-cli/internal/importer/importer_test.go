@@ -17,7 +17,7 @@ func TestImportLocalFileCopiesIntoWorkspaceLibrary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := ImportLocalFile(workspace, srcPath, "")
+	id, dest, err := ImportLocalFile(workspace, srcPath, "")
 	if err != nil {
 		t.Fatalf("ImportLocalFile returned error: %v", err)
 	}
@@ -27,6 +27,9 @@ func TestImportLocalFileCopiesIntoWorkspaceLibrary(t *testing.T) {
 	}
 
 	destPath := filepath.Join(workspace, "library", "my-notes.pdf")
+	if dest != destPath {
+		t.Errorf("expected returned dest %q, got %q", destPath, dest)
+	}
 	if _, err := os.Stat(destPath); os.IsNotExist(err) {
 		t.Fatalf("expected file at %s but it does not exist", destPath)
 	}
@@ -49,7 +52,7 @@ func TestImportLocalFileUsesCustomName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := ImportLocalFile(workspace, srcPath, "my-doc")
+	id, _, err := ImportLocalFile(workspace, srcPath, "my-doc")
 	if err != nil {
 		t.Fatalf("ImportLocalFile returned error: %v", err)
 	}
