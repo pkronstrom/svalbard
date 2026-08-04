@@ -8,7 +8,7 @@ tags:
 - civil-construction
 - communications
 depth: overview
-size_gb: 0.2
+size_gb: 0.35
 description: Open Source Low Tech construction tutorials for simple infrastructure
 strategy: build
 build:
