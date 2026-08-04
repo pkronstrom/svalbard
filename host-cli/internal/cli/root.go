@@ -291,10 +291,13 @@ func newZimCommand() *cobra.Command {
 				return err
 			}
 			nameFlag, _ := cmd.Flags().GetString("name")
+			videosFlag, _ := cmd.Flags().GetBool("videos")
+			qualityFlag, _ := cmd.Flags().GetString("quality")
 
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "Crawling %s — this can take a while\n", args[0])
-			id, err := commands.BuildZim(cmd.Context(), vaultRoot, args[0], nameFlag, func(step string) {
+			opts := commands.ZimOptions{Name: nameFlag, Videos: videosFlag, Quality: qualityFlag}
+			id, err := commands.BuildZim(cmd.Context(), vaultRoot, args[0], opts, func(step string) {
 				fmt.Fprintf(out, "  %s\n", step)
 			})
 			if err != nil {
@@ -306,6 +309,8 @@ func newZimCommand() *cobra.Command {
 	}
 
 	cmd.Flags().String("name", "", "item id / output name (default: derived from the URL host)")
+	cmd.Flags().Bool("videos", false, "download embedded YouTube videos and rewrite them to play offline")
+	cmd.Flags().String("quality", "480p", "max video height when --videos is set")
 
 	return cmd
 }

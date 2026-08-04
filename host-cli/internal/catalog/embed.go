@@ -127,3 +127,10 @@ func LoadDepDefaultsAuto() (DepDefaults, error) {
 	}
 	return nil, fmt.Errorf("embedded dep-defaults: %w; fallback: %v", err, fallbackErr)
 }
+
+// BuilderScript returns an embedded builder script from recipes/builders.
+// Builders ship inside the binary so they can be mounted into the tools
+// container without needing the source repo on disk.
+func BuilderScript(name string) ([]byte, error) {
+	return embeddedData.ReadFile("embedded/recipes/builders/" + name)
+}

@@ -1,14 +1,18 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/url"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/builder"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
+	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
@@ -59,10 +63,18 @@ func zimRecipe(name, sourceURL string) catalog.Item {
 	}
 }
 
-// BuildZim crawls a website into a ZIM in the vault via the zimit container
-// and records it in the manifest as a desired + realized item, so plan/apply
-// treat it as already reconciled.
-func BuildZim(ctx context.Context, vaultRoot, sourceURL, name string, onStatus func(string)) (string, error) {
+// ZimOptions tunes how a site is turned into a ZIM.
+type ZimOptions struct {
+	Name    string // item id / output name; derived from the URL when empty
+	Videos  bool   // mirror the site and pull embedded videos local
+	Quality string // max video height for Videos builds, e.g. "480p"
+}
+
+// BuildZim crawls a website into a ZIM in the vault and records it in the
+// manifest as a desired + realized item, so plan/apply treat it as already
+// reconciled.
+func BuildZim(ctx context.Context, vaultRoot, sourceURL string, opts ZimOptions, onStatus func(string)) (string, error) {
+	name := opts.Name
 	if name == "" {
 		var err error
 		if name, err = DefaultZimName(sourceURL); err != nil {
@@ -70,9 +82,15 @@ func BuildZim(ctx context.Context, vaultRoot, sourceURL, name string, onStatus f
 		}
 	}
 
-	item := zimRecipe(name, sourceURL)
-	fn, _ := builder.Dispatch(item) // always dispatches: item has explicit steps
-	entries, err := fn(vaultRoot, item, nil, builder.Options{Ctx: ctx, OnStatus: onStatus})
+	var entries []manifest.RealizedEntry
+	var err error
+	if opts.Videos {
+		entries, err = buildWithVideos(ctx, vaultRoot, sourceURL, name, opts.Quality, onStatus)
+	} else {
+		item := zimRecipe(name, sourceURL)
+		fn, _ := builder.Dispatch(item) // always dispatches: item has explicit steps
+		entries, err = fn(vaultRoot, item, nil, builder.Options{Ctx: ctx, OnStatus: onStatus})
+	}
 	if err != nil {
 		return "", err
 	}
@@ -88,4 +106,94 @@ func BuildZim(ctx context.Context, vaultRoot, sourceURL, name string, onStatus f
 		return "", err
 	}
 	return name, nil
+}
+
+// buildWithVideos runs the embedded web-video-zim builder in the tools
+// container: it mirrors the site, downloads embedded videos, rewrites the
+// embeds to play locally, and packs the result into one ZIM.
+func buildWithVideos(ctx context.Context, vaultRoot, sourceURL, name, quality string, onStatus func(string)) ([]manifest.RealizedEntry, error) {
+	if quality == "" {
+		quality = "480p"
+	}
+	script, err := catalog.BuilderScript(builderScriptName)
+	if err != nil {
+		return nil, fmt.Errorf("loading builder: %w", err)
+	}
+
+	// The workdir holds the builder and the site mirror; it is mounted as /work.
+	workdir, err := os.MkdirTemp("", "svalbard-webvideo-"+name+"-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(workdir)
+	if err := os.WriteFile(filepath.Join(workdir, builderScriptName), script, 0o755); err != nil {
+		return nil, err
+	}
+
+	outFile := name + ".zim"
+	destPath := filepath.Join(vaultRoot, "zim", outFile)
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return nil, err
+	}
+
+	if onStatus != nil {
+		onStatus("mirroring site and downloading videos")
+	}
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm",
+		"-v", vaultRoot+":/vault",
+		"-v", workdir+":/work",
+		builder.DefaultDockerImage,
+		"python3", "/work/"+builderScriptName,
+		"--source-url", sourceURL,
+		"--output", "/vault/zim/"+outFile,
+		"--workdir", "/work",
+		"--title", name,
+		"--quality", quality,
+	)
+	// Stream builder progress; it reports per-video and per-phase lines.
+	if onStatus != nil {
+		cmd.Stdout = statusWriter{onStatus}
+	}
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("web-video build: %w\n%s", err, tailOf(errBuf.String(), 500))
+	}
+
+	info, err := os.Stat(destPath)
+	if err != nil {
+		return nil, fmt.Errorf("no ZIM produced at %s", destPath)
+	}
+	sha, _ := downloader.ComputeSHA256(destPath)
+	return []manifest.RealizedEntry{{
+		ID:             name,
+		Type:           "zim",
+		Filename:       outFile,
+		RelativePath:   filepath.Join("zim", outFile),
+		SizeBytes:      info.Size(),
+		ChecksumSHA256: sha,
+		SourceStrategy: "build",
+	}}, nil
+}
+
+const builderScriptName = "web-video-zim.py"
+
+// statusWriter forwards each line the builder prints to the progress callback.
+type statusWriter struct{ onStatus func(string) }
+
+func (w statusWriter) Write(p []byte) (int, error) {
+	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			w.onStatus(line)
+		}
+	}
+	return len(p), nil
+}
+
+func tailOf(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return "..." + s[len(s)-n:]
 }
