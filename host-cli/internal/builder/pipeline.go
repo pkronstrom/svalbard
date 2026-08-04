@@ -47,6 +47,12 @@ func buildPipeline(root string, recipe catalog.Item, _ *catalog.Catalog, opts Op
 		// Cache entry invalid — rebuild.
 	}
 
+	// Create the output directory up front — tools like zimit write temp state
+	// into it and fail if it does not already exist.
+	if err := os.MkdirAll(filepath.Dir(outputFile), 0o755); err != nil {
+		return nil, err
+	}
+
 	workdir, err := os.MkdirTemp("", "svalbard-build-"+recipe.ID+"-*")
 	if err != nil {
 		return nil, err
@@ -229,10 +235,20 @@ func stepExec(ctx context.Context, root, workdir, tool string, args []string, do
 	cmd.Stderr = &buf
 	cmd.Stdout = &buf
 	if err := cmd.Run(); err != nil {
-		slog.Warn("docker exec failed", "tool", tool, "image", image, "output", truncate(buf.String(), 200))
-		return err
+		slog.Warn("docker exec failed", "tool", tool, "image", image, "output", tailOf(buf.String(), 2000))
+		// Tail, not head: the actionable part of a traceback is at the end.
+		return fmt.Errorf("%w\n%s", err, tailOf(buf.String(), 500))
 	}
 	return nil
+}
+
+// tailOf returns the last n characters of s.
+func tailOf(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return "..." + s[len(s)-n:]
 }
 
 // stepVerify checks that a path exists and optionally validates size/contents.
