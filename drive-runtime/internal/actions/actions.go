@@ -36,6 +36,136 @@ const (
 	NativeMCPSubcommand      = "__native-mcp-serve"
 )
 
+// NativeInvocation is the stable built-in action ID and its named arguments.
+// Its positional representation is private to this package.
+type NativeInvocation struct {
+	ActionID string
+	Args     map[string]string
+}
+
+type nativeArgument struct {
+	name         string
+	required     bool
+	defaultValue string
+}
+
+type nativeActionSpec struct {
+	actionID   string
+	subcommand string
+	args       []nativeArgument
+}
+
+var nativeActionSpecs = []nativeActionSpec{
+	{actionID: "inspect", subcommand: NativeInspectSubcommand},
+	{actionID: "verify", subcommand: NativeVerifySubcommand},
+	{actionID: "share", subcommand: NativeShareSubcommand},
+	{actionID: "browse", subcommand: NativeBrowseSubcommand, args: []nativeArgument{{name: "zim"}}},
+	{actionID: "apps", subcommand: NativeAppsSubcommand, args: []nativeArgument{{name: "app", required: true}}},
+	{actionID: "maps", subcommand: NativeMapsSubcommand},
+	{actionID: "chat", subcommand: NativeChatSubcommand, args: []nativeArgument{{name: "model"}}},
+	{actionID: "agent", subcommand: NativeAgentSubcommand, args: []nativeArgument{{name: "client", required: true}, {name: "model"}}},
+	{actionID: "serve-all", subcommand: NativeServeAllSubcommand, args: []nativeArgument{{name: "bind", defaultValue: "127.0.0.1"}}},
+	{actionID: "search", subcommand: NativeSearchSubcommand, args: []nativeArgument{{name: "query"}}},
+	{actionID: "embedded-shell", subcommand: NativeEmbeddedSubcommand},
+	{actionID: "activate-shell", subcommand: NativeActivateSubcommand},
+	{actionID: "mcp-serve", subcommand: NativeMCPSubcommand},
+}
+
+// EncodeNativeInvocation converts a stable action ID and named arguments into
+// the hidden native subcommand argv.
+func EncodeNativeInvocation(invocation NativeInvocation) ([]string, error) {
+	spec, ok := nativeActionByID(invocation.ActionID)
+	if !ok {
+		return nil, fmt.Errorf("unknown action: %s", invocation.ActionID)
+	}
+	for key := range invocation.Args {
+		if !spec.hasArgument(key) {
+			return nil, fmt.Errorf("unknown argument %q for action %q", key, invocation.ActionID)
+		}
+	}
+
+	argv := make([]string, 1, len(spec.args)+1)
+	argv[0] = spec.subcommand
+	for _, argument := range spec.args {
+		value := invocation.Args[argument.name]
+		if value == "" {
+			if argument.required {
+				return nil, fmt.Errorf("%s required", argument.name)
+			}
+			continue
+		}
+		argv = append(argv, value)
+	}
+	return argv, nil
+}
+
+// DecodeNativeInvocation parses hidden native subcommand argv. known is false
+// when argv does not name a native subcommand, allowing normal action aliases
+// to continue through their existing dispatch path.
+func DecodeNativeInvocation(argv []string) (invocation NativeInvocation, known bool, err error) {
+	if len(argv) == 0 {
+		return NativeInvocation{}, false, nil
+	}
+	spec, known := nativeActionBySubcommand(argv[0])
+	if !known {
+		if strings.HasPrefix(argv[0], "__native-") {
+			return NativeInvocation{}, true, fmt.Errorf("unknown native subcommand: %s", argv[0])
+		}
+		return NativeInvocation{}, false, nil
+	}
+	if len(argv)-1 > len(spec.args) {
+		return NativeInvocation{}, true, fmt.Errorf("too many arguments for %s", spec.subcommand)
+	}
+
+	args := make(map[string]string, len(spec.args))
+	for index, argument := range spec.args {
+		if index < len(argv)-1 {
+			value := argv[index+1]
+			if value == "" && argument.required {
+				return NativeInvocation{}, true, fmt.Errorf("%s required", argument.name)
+			}
+			if value != "" {
+				args[argument.name] = value
+			}
+			continue
+		}
+		if argument.required {
+			return NativeInvocation{}, true, fmt.Errorf("%s required", argument.name)
+		}
+		if argument.defaultValue != "" {
+			args[argument.name] = argument.defaultValue
+		}
+	}
+	return NativeInvocation{ActionID: spec.actionID, Args: args}, true, nil
+}
+
+func nativeActionByID(actionID string) (nativeActionSpec, bool) {
+	for _, spec := range nativeActionSpecs {
+		if spec.actionID == actionID {
+			return spec, true
+		}
+	}
+	return nativeActionSpec{}, false
+}
+
+func nativeActionBySubcommand(subcommand string) (nativeActionSpec, bool) {
+	for _, spec := range nativeActionSpecs {
+		if spec.subcommand == subcommand {
+			return spec, true
+		}
+	}
+	return nativeActionSpec{}, false
+}
+
+func (spec nativeActionSpec) hasArgument(name string) bool {
+	for _, argument := range spec.args {
+		if argument.name == name {
+			return true
+		}
+	}
+	return false
+}
+
 type ResolvedAction struct {
 	Mode Mode
 	Cmd  *exec.Cmd
@@ -75,45 +205,8 @@ func (r Runner) Resolve(action config.ActionSpec) (ResolvedAction, error) {
 	}
 }
 
-func nativeSubcommandForAction(actionID string) (string, bool) {
-	switch actionID {
-	case "inspect":
-		return NativeInspectSubcommand, true
-	case "verify":
-		return NativeVerifySubcommand, true
-	case "share":
-		return NativeShareSubcommand, true
-	case "browse":
-		return NativeBrowseSubcommand, true
-	case "apps":
-		return NativeAppsSubcommand, true
-	case "maps":
-		return NativeMapsSubcommand, true
-	case "chat":
-		return NativeChatSubcommand, true
-	case "agent":
-		return NativeAgentSubcommand, true
-	case "serve-all":
-		return NativeServeAllSubcommand, true
-	case "search":
-		return NativeSearchSubcommand, true
-	case "embedded-shell":
-		return NativeEmbeddedSubcommand, true
-	case "activate-shell":
-		return NativeActivateSubcommand, true
-	case "mcp-serve":
-		return NativeMCPSubcommand, true
-	default:
-		return "", false
-	}
-}
-
 func (r Runner) resolveBuiltinAction(actionID string, args map[string]string) (ResolvedAction, error) {
-	subcommand, ok := nativeSubcommandForAction(actionID)
-	if !ok {
-		return ResolvedAction{}, fmt.Errorf("unknown action: %s", actionID)
-	}
-	return r.resolveNativeAction(subcommand, actionID, args)
+	return r.resolveNativeAction(NativeInvocation{ActionID: actionID, Args: args})
 }
 
 func shouldCaptureNativeAction(actionID string) bool {
@@ -125,43 +218,20 @@ func shouldCaptureNativeAction(actionID string) bool {
 	}
 }
 
-func (r Runner) resolveNativeAction(subcommand, actionID string, args map[string]string) (ResolvedAction, error) {
+func (r Runner) resolveNativeAction(invocation NativeInvocation) (ResolvedAction, error) {
+	argv, err := EncodeNativeInvocation(invocation)
+	if err != nil {
+		return ResolvedAction{}, err
+	}
 	bin, err := os.Executable()
 	if err != nil {
 		return ResolvedAction{}, err
 	}
 
-	argv := []string{subcommand}
-	switch actionID {
-	case "browse":
-		if zim := args["zim"]; zim != "" {
-			argv = append(argv, zim)
-		}
-	case "apps":
-		if app := args["app"]; app != "" {
-			argv = append(argv, app)
-		}
-	case "chat":
-		if model := args["model"]; model != "" {
-			argv = append(argv, model)
-		}
-	case "agent":
-		if client := args["client"]; client != "" {
-			argv = append(argv, client)
-		}
-		if model := args["model"]; model != "" {
-			argv = append(argv, model)
-		}
-	case "search":
-		if query := args["query"]; query != "" {
-			argv = append(argv, query)
-		}
-	}
-
 	cmd := exec.Command(bin, argv...)
 	cmd.Dir = r.workDir
 	cmd.Env = append(os.Environ(), "DRIVE_ROOT="+r.driveRoot)
-	if shouldCaptureNativeAction(actionID) {
+	if shouldCaptureNativeAction(invocation.ActionID) {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
 		cmd.Stdout = &stdout

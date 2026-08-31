@@ -141,59 +141,6 @@ func TestNavListMoveUpDown(t *testing.T) {
 	}
 }
 
-func TestNavListMoveSkipsDisabled(t *testing.T) {
-	nl := tui.NavList{
-		Items: []tui.NavItem{
-			{ID: "a", Label: "Alpha"},
-			{ID: "b", Label: "Beta", Disabled: true},
-			{ID: "c", Label: "Gamma"},
-		},
-		Selected: 0,
-		Theme:    tui.DefaultTheme(),
-	}
-
-	nl.MoveDown()
-	if nl.Selected != 2 {
-		t.Errorf("MoveDown should skip disabled item, expected Selected=2, got %d", nl.Selected)
-	}
-
-	nl.MoveUp()
-	if nl.Selected != 0 {
-		t.Errorf("MoveUp should skip disabled item, expected Selected=0, got %d", nl.Selected)
-	}
-}
-
-func TestNavListDisabledItemRendering(t *testing.T) {
-	theme := tui.DefaultTheme()
-	nl := tui.NavList{
-		Items: []tui.NavItem{
-			{ID: "a", Label: "Alpha"},
-			{ID: "b", Label: "Beta", Disabled: true},
-		},
-		Selected: 0,
-		Theme:    theme,
-	}
-
-	out := nl.Render()
-
-	// Disabled item should still be rendered (visible)
-	if !strings.Contains(out, "Beta") {
-		t.Errorf("disabled item 'Beta' should still be rendered in output:\n%s", out)
-	}
-
-	// Disabled item should use muted style — verify it's styled differently
-	// by checking that the disabled item's line contains ANSI codes from Muted style
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Beta") {
-			mutedRendered := theme.Muted.Render("Beta")
-			if !strings.Contains(line, mutedRendered) {
-				t.Errorf("disabled item should use Muted style, line: %q", line)
-			}
-		}
-	}
-}
-
 func TestNavListSelectedItem(t *testing.T) {
 	nl := tui.NavList{
 		Items: []tui.NavItem{
@@ -239,53 +186,6 @@ func TestNavListClamp(t *testing.T) {
 	nl.Clamp()
 	if nl.Selected != 0 {
 		t.Errorf("Clamp should bring negative Selected to 0, got %d", nl.Selected)
-	}
-}
-
-func TestNavListClampSkipsDisabled(t *testing.T) {
-	// Clamp forward: selected lands on disabled item at start
-	nl := tui.NavList{
-		Items: []tui.NavItem{
-			{ID: "a", Label: "Alpha", Disabled: true},
-			{ID: "b", Label: "Beta"},
-			{ID: "c", Label: "Gamma"},
-		},
-		Selected: -1,
-		Theme:    tui.DefaultTheme(),
-	}
-	nl.Clamp()
-	if nl.Selected != 1 {
-		t.Errorf("Clamp should skip disabled first item, expected 1, got %d", nl.Selected)
-	}
-
-	// Clamp backward: selected lands on disabled item at end
-	nl2 := tui.NavList{
-		Items: []tui.NavItem{
-			{ID: "a", Label: "Alpha"},
-			{ID: "b", Label: "Beta"},
-			{ID: "c", Label: "Gamma", Disabled: true},
-		},
-		Selected: 10,
-		Theme:    tui.DefaultTheme(),
-	}
-	nl2.Clamp()
-	if nl2.Selected != 1 {
-		t.Errorf("Clamp should skip disabled last item, expected 1, got %d", nl2.Selected)
-	}
-
-	// Clamp when item in the middle is disabled and selected is set there
-	nl3 := tui.NavList{
-		Items: []tui.NavItem{
-			{ID: "a", Label: "Alpha"},
-			{ID: "b", Label: "Beta", Disabled: true},
-			{ID: "c", Label: "Gamma"},
-		},
-		Selected: 1,
-		Theme:    tui.DefaultTheme(),
-	}
-	nl3.Clamp()
-	if nl3.Selected != 2 {
-		t.Errorf("Clamp should skip disabled middle item forward, expected 2, got %d", nl3.Selected)
 	}
 }
 

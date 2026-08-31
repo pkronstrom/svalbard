@@ -2,6 +2,9 @@ package menu
 
 import (
 	"context"
+	"database/sql"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,6 +13,8 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/tui"
+
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 func sampleGroupedConfig() config.RuntimeConfig {
@@ -581,4 +586,70 @@ func TestSearchViewHighlightsSelectedTitleText(t *testing.T) {
 	if !strings.Contains(view, selectedTitle) {
 		t.Fatalf("View() missing selected-row background on title text: %q", view)
 	}
+}
+
+func TestMenuSearchUsesRealSession(t *testing.T) {
+	root := newMenuSearchDrive(t)
+	m := NewModel(sampleGroupedConfig(), root)
+	if err := m.openSearchSession(); err != nil {
+		t.Fatalf("openSearchSession() error = %v", err)
+	}
+	t.Cleanup(m.closeSearchSession)
+	m.searchQuery.SetValue("water")
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("search command = nil")
+	}
+	updated, _ = updated.(Model).Update(cmd())
+	got := updated.(Model)
+	if len(got.searchResults) != 1 {
+		t.Fatalf("results = %+v, want one water result", got.searchResults)
+	}
+	if got.searchResults[0].Title != "Water purification" {
+		t.Fatalf("result title = %q", got.searchResults[0].Title)
+	}
+}
+
+func newMenuSearchDrive(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "search.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	const schema = `
+		CREATE TABLE sources (id INTEGER PRIMARY KEY, filename TEXT NOT NULL);
+		CREATE TABLE articles (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL, path TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '');
+		CREATE VIRTUAL TABLE articles_fts USING fts5(title, body, content='articles', content_rowid='id');
+		CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+	`
+	if _, err := db.Exec(schema); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	source, err := db.Exec("INSERT INTO sources (filename) VALUES ('wiki.zim')")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, err := source.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	article, err := db.Exec("INSERT INTO articles (source_id, path, title, body) VALUES (?, '/Water_purification', 'Water purification', 'Water is essential.')", sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	articleID, err := article.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO articles_fts (rowid, title, body) VALUES (?, 'Water purification', 'Water is essential.')", articleID); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }

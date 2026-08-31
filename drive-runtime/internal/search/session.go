@@ -17,6 +17,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
 )
 
 type SessionInfo struct {
@@ -161,12 +162,12 @@ func (s *Session) Close() error {
 
 	if s.embedServer != nil && s.embedServer.Process != nil {
 		_ = s.embedServer.Process.Kill()
-		_, _ = s.embedServer.Process.Wait()
+		_ = s.embedServer.Wait()
 		s.embedServer = nil
 	}
 	if s.kiwixServer != nil && s.kiwixServer.Process != nil {
 		_ = s.kiwixServer.Process.Kill()
-		_, _ = s.kiwixServer.Process.Wait()
+		_ = s.kiwixServer.Wait()
 		s.kiwixServer = nil
 	}
 	if s.db != nil {
@@ -179,17 +180,7 @@ func (s *Session) Close() error {
 func (s *Session) EnsureKiwix(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.kiwixServer != nil {
-		return nil
-	}
-	port, _ := netutil.FindAvailablePort("127.0.0.1", 8080)
-	cmd, err := startKiwix(ctx, s.driveRoot, port)
-	if err != nil {
-		return err
-	}
-	s.kiwixServer = cmd
-	s.kiwixPort = port
-	return nil
+	return s.ensureKiwix(ctx)
 }
 
 // KiwixPort returns the port the kiwix-serve process is listening on.
@@ -213,18 +204,17 @@ func (s *Session) ensureEmbedServer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cmd, err := startEmbeddingServer(ctx, mustResolveLlamaServer(s.driveRoot), s.caps.EmbeddingModel, port)
+	llamaBin, err := drivebinary.Resolve("llama-server", s.driveRoot, platform.Detect)
+	if err != nil {
+		return err
+	}
+	cmd, err := server.StartEmbedding(ctx, llamaBin, s.caps.EmbeddingModel, port)
 	if err != nil {
 		return err
 	}
 	s.embedPort = port
 	s.embedServer = cmd
 	return nil
-}
-
-func mustResolveLlamaServer(driveRoot string) string {
-	path, _ := drivebinary.Resolve("llama-server", driveRoot, platform.Detect)
-	return path
 }
 
 func (s *Session) ensureKiwix(ctx context.Context) error {
@@ -238,7 +228,15 @@ func (s *Session) ensureKiwix(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cmd, err := startKiwix(ctx, s.driveRoot, port)
+	kiwixBin, err := drivebinary.Resolve("kiwix-serve", s.driveRoot, platform.Detect)
+	if err != nil {
+		return err
+	}
+	zims, err := filepath.Glob(filepath.Join(s.driveRoot, "zim", "*.zim"))
+	if err != nil {
+		return err
+	}
+	cmd, err := server.StartKiwix(ctx, kiwixBin, zims, port)
 	if err != nil {
 		return err
 	}

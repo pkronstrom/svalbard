@@ -11,13 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
+	searchserver "github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
 )
 
 // SearchCapability exposes search and read functionality via the MCP "search" tool.
@@ -94,11 +94,11 @@ func (c *SearchCapability) Close() error {
 	}
 	if c.embedCmd != nil && c.embedCmd.Process != nil {
 		_ = c.embedCmd.Process.Kill()
-		_, _ = c.embedCmd.Process.Wait()
+		_ = c.embedCmd.Wait()
 	}
 	if c.kiwixCmd != nil && c.kiwixCmd.Process != nil {
 		_ = c.kiwixCmd.Process.Kill()
-		_, _ = c.kiwixCmd.Process.Wait()
+		_ = c.kiwixCmd.Wait()
 	}
 	return nil
 }
@@ -296,7 +296,7 @@ func (c *SearchCapability) ensureEmbedServer() error {
 			return
 		}
 
-		modelPath := findEmbeddingModel(c.driveRoot)
+		modelPath := searchserver.FindEmbeddingModel(c.driveRoot)
 		if modelPath == "" {
 			c.embedErr = fmt.Errorf("no embedding model found")
 			return
@@ -312,47 +312,15 @@ func (c *SearchCapability) ensureEmbedServer() error {
 			c.embedErr = err
 			return
 		}
-
-		cmd := exec.Command(llamaBin, "--model", modelPath, "--port", fmt.Sprintf("%d", port), "--host", "127.0.0.1", "--embedding")
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
-		if err := cmd.Start(); err != nil {
-			c.embedErr = fmt.Errorf("starting llama-server: %w", err)
+		cmd, err := searchserver.StartEmbedding(context.Background(), llamaBin, modelPath, port)
+		if err != nil {
+			c.embedErr = err
 			return
 		}
-
-		healthURL := fmt.Sprintf("http://127.0.0.1:%d/health", port)
-		deadline := time.Now().Add(30 * time.Second)
-		for time.Now().Before(deadline) {
-			resp, err := http.Get(healthURL)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				resp.Body.Close()
-				c.embedCmd = cmd
-				c.embedPort = port
-				return
-			}
-			if resp != nil {
-				resp.Body.Close()
-			}
-			time.Sleep(500 * time.Millisecond)
-		}
-
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		c.embedErr = fmt.Errorf("llama-server did not become healthy on port %d", port)
+		c.embedCmd = cmd
+		c.embedPort = port
 	})
 	return c.embedErr
-}
-
-func findEmbeddingModel(driveRoot string) string {
-	matches, _ := filepath.Glob(filepath.Join(driveRoot, "models", "embed", "*.gguf"))
-	for _, m := range matches {
-		if !strings.HasPrefix(filepath.Base(m), "._") {
-			return m
-		}
-	}
-	return ""
 }
 
 // ensureKiwix starts kiwix-serve lazily. Handles the case where the binary
@@ -365,9 +333,9 @@ func (c *SearchCapability) ensureKiwix() error {
 			return
 		}
 
-		zims, _ := filepath.Glob(filepath.Join(c.driveRoot, "zim", "*.zim"))
-		if len(zims) == 0 {
-			c.kiwixErr = fmt.Errorf("no ZIM files found")
+		zims, err := filepath.Glob(filepath.Join(c.driveRoot, "zim", "*.zim"))
+		if err != nil {
+			c.kiwixErr = err
 			return
 		}
 
@@ -376,37 +344,13 @@ func (c *SearchCapability) ensureKiwix() error {
 			c.kiwixErr = err
 			return
 		}
-
-		args := []string{"--port", fmt.Sprintf("%d", port), "--address", "127.0.0.1"}
-		args = append(args, zims...)
-
-		cmd := exec.Command(kiwixBin, args...)
-		if err := cmd.Start(); err != nil {
-			c.kiwixErr = fmt.Errorf("starting kiwix-serve: %w", err)
+		cmd, err := searchserver.StartKiwix(context.Background(), kiwixBin, zims, port)
+		if err != nil {
+			c.kiwixErr = err
 			return
 		}
-
-		// Health check
-		healthURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
-		deadline := time.Now().Add(10 * time.Second)
-		for time.Now().Before(deadline) {
-			resp, err := http.Get(healthURL)
-			if err == nil {
-				resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					c.kiwixCmd = cmd
-					c.kiwixPort = port
-					return
-				}
-			}
-			time.Sleep(500 * time.Millisecond)
-		}
-
-		// Timeout — kill orphan
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		c.kiwixErr = fmt.Errorf("kiwix-serve did not become healthy on port %d", port)
+		c.kiwixCmd = cmd
+		c.kiwixPort = port
 	})
 	return c.kiwixErr
 }

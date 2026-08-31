@@ -96,14 +96,54 @@ func TestPackPickerTogglePack(t *testing.T) {
 	// now on pack "core", toggle with Space => check all
 	m = sendKey(m, " ")
 
-	if !m.picker.CheckedIDs["wikiciv"] || !m.picker.CheckedIDs["permacomputing"] {
-		t.Error("Space on pack should check all sources; got:", m.picker.CheckedIDs)
+	if !containsID(m.picker.CheckedIDSlice(), "wikiciv") || !containsID(m.picker.CheckedIDSlice(), "permacomputing") {
+		t.Error("Space on pack should check all sources; got:", m.picker.CheckedIDSlice())
 	}
 
 	// Space again => uncheck all
 	m = sendKey(m, " ")
-	if m.picker.CheckedIDs["wikiciv"] || m.picker.CheckedIDs["permacomputing"] {
-		t.Error("Second Space on pack should uncheck all; got:", m.picker.CheckedIDs)
+	if containsID(m.picker.CheckedIDSlice(), "wikiciv") || containsID(m.picker.CheckedIDSlice(), "permacomputing") {
+		t.Error("Second Space on pack should uncheck all; got:", m.picker.CheckedIDSlice())
+	}
+}
+
+func TestPackPickerReconcilesAutomaticDependencies(t *testing.T) {
+	resolveDeps := func(selected map[string]bool) map[string]bool {
+		if selected["wikiciv"] {
+			return map[string]bool{"permacomputing": true}
+		}
+		return map[string]bool{}
+	}
+	m := newPackPicker(packPickerConfig{
+		groups:      samplePackGroups(),
+		freeGB:      64,
+		resolveDeps: resolveDeps,
+	})
+	m = sendKey(m, "j")
+	m = sendKey(m, "enter")
+	m = sendKey(m, "j")
+	m = sendKey(m, " ")
+	if !containsID(m.picker.CheckedIDSlice(), "wikiciv") || !containsID(m.picker.CheckedIDSlice(), "permacomputing") {
+		t.Fatalf("automatic dependency selection = %v", m.picker.CheckedIDSlice())
+	}
+
+	m = sendKey(m, " ")
+	if containsID(m.picker.CheckedIDSlice(), "permacomputing") {
+		t.Fatalf("stale automatic dependency remained selected: %v", m.picker.CheckedIDSlice())
+	}
+
+	m = newPackPicker(packPickerConfig{
+		groups:      samplePackGroups(),
+		checkedIDs:  map[string]bool{"wikiciv": true, "permacomputing": true},
+		freeGB:      64,
+		resolveDeps: resolveDeps,
+	})
+	m = sendKey(m, "j")
+	m = sendKey(m, "enter")
+	m = sendKey(m, "j")
+	m = sendKey(m, " ")
+	if !containsID(m.picker.CheckedIDSlice(), "permacomputing") {
+		t.Fatalf("explicit dependency was removed: %v", m.picker.CheckedIDSlice())
 	}
 }
 
@@ -162,8 +202,8 @@ func TestPackPickerPreChecked(t *testing.T) {
 		freeGB:     64,
 	})
 
-	if !m.picker.CheckedIDs["wikiciv"] || !m.picker.CheckedIDs["permacomputing"] {
-		t.Error("Constructor should pre-select items from checked map; got:", m.picker.CheckedIDs)
+	if !containsID(m.picker.CheckedIDSlice(), "wikiciv") || !containsID(m.picker.CheckedIDSlice(), "permacomputing") {
+		t.Error("Constructor should pre-select items from checked map; got:", m.picker.CheckedIDSlice())
 	}
 
 	out := m.View()
@@ -202,7 +242,7 @@ func TestPackPickerSizeTotal(t *testing.T) {
 
 func TestPackPickerOverBudget(t *testing.T) {
 	checked := map[string]bool{
-		"osm-finland":    true,
+		"osm-finland":   true,
 		"natural-earth": true,
 	}
 	// Only 1 GB free but selected 3.3 GB
@@ -264,4 +304,13 @@ func TestPackPickerCancel(t *testing.T) {
 	if _, ok := msg.(packCancelMsg); !ok {
 		t.Fatalf("expected packCancelMsg, got %T", msg)
 	}
+}
+
+func containsID(ids []string, want string) bool {
+	for _, id := range ids {
+		if id == want {
+			return true
+		}
+	}
+	return false
 }

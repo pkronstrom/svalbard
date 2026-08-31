@@ -31,7 +31,7 @@ type PackSource struct {
 
 // Row kinds for the flattened tree display.
 const (
-	RowGroup  = iota
+	RowGroup = iota
 	RowPack
 	RowItem
 	RowAction // optional action row at the bottom
@@ -59,9 +59,9 @@ type TreePickerConfig struct {
 // TreePicker is a collapsible tree view with checkboxes for selecting pack sources.
 type TreePicker struct {
 	Groups          []PackGroup
-	CheckedIDs      map[string]bool
-	AutoDepIDs      map[string]bool // IDs auto-included as deps
-	UserCheckedIDs  map[string]bool // IDs the user explicitly toggled on
+	checkedIDs      map[string]bool
+	autoDepIDs      map[string]bool // IDs auto-included as dependencies
+	userCheckedIDs  map[string]bool // IDs explicitly selected by the user
 	CollapsedGroups map[string]bool
 	CollapsedPacks  map[string]bool
 	Rows            []PickerRow
@@ -82,9 +82,9 @@ type TreePicker struct {
 func NewTreePicker(cfg TreePickerConfig) TreePicker {
 	tp := TreePicker{
 		Groups:          cfg.Groups,
-		CheckedIDs:      make(map[string]bool),
-		AutoDepIDs:      make(map[string]bool),
-		UserCheckedIDs:  make(map[string]bool),
+		checkedIDs:      make(map[string]bool),
+		autoDepIDs:      make(map[string]bool),
+		userCheckedIDs:  make(map[string]bool),
 		CollapsedGroups: make(map[string]bool),
 		CollapsedPacks:  make(map[string]bool),
 		FreeGB:          cfg.FreeGB,
@@ -97,8 +97,8 @@ func NewTreePicker(cfg TreePickerConfig) TreePicker {
 
 	for id, v := range cfg.CheckedIDs {
 		if v {
-			tp.CheckedIDs[id] = true
-			tp.UserCheckedIDs[id] = true
+			tp.checkedIDs[id] = true
+			tp.userCheckedIDs[id] = true
 		}
 	}
 
@@ -209,10 +209,68 @@ func (tp *TreePicker) UpdateWithResult(msg tea.KeyMsg) UpdateResult {
 	return UpdateNone
 }
 
-// IsAutoDep returns true if the given ID is an auto-included dep that was not
-// manually selected by the user.
+// IsAutoDep returns true if the given ID is an auto-included dependency that
+// was not explicitly selected by the user.
 func (tp *TreePicker) IsAutoDep(id string) bool {
-	return tp.AutoDepIDs[id] && !tp.UserCheckedIDs[id]
+	return tp.autoDepIDs[id] && !tp.userCheckedIDs[id]
+}
+
+// ReplaceUserSelection replaces explicit selection and clears automatic
+// dependencies left over from the previous selection.
+func (tp *TreePicker) ReplaceUserSelection(ids []string) {
+	tp.checkedIDs = make(map[string]bool, len(ids))
+	tp.userCheckedIDs = make(map[string]bool, len(ids))
+	tp.autoDepIDs = make(map[string]bool)
+	for _, id := range ids {
+		tp.checkedIDs[id] = true
+		tp.userCheckedIDs[id] = true
+	}
+}
+
+// UserSelection returns a copy of the IDs explicitly selected by the user.
+func (tp *TreePicker) UserSelection() map[string]bool {
+	selection := make(map[string]bool, len(tp.userCheckedIDs))
+	for id := range tp.userCheckedIDs {
+		selection[id] = true
+	}
+	return selection
+}
+
+// SetAutoDependencies reconciles effective selection with the supplied
+// dependency set while preserving explicit user choices.
+func (tp *TreePicker) SetAutoDependencies(ids map[string]bool) {
+	autoDeps := make(map[string]bool, len(ids))
+	for id, selected := range ids {
+		if selected {
+			autoDeps[id] = true
+		}
+	}
+	for id := range tp.autoDepIDs {
+		if !autoDeps[id] && !tp.userCheckedIDs[id] {
+			delete(tp.checkedIDs, id)
+		}
+	}
+	tp.autoDepIDs = autoDeps
+	for id := range tp.autoDepIDs {
+		tp.checkedIDs[id] = true
+	}
+}
+
+// CheckedCount returns the number of effectively selected IDs.
+func (tp *TreePicker) CheckedCount() int {
+	return len(tp.checkedIDs)
+}
+
+func (tp *TreePicker) setUserChecked(id string, checked bool) {
+	if checked {
+		tp.userCheckedIDs[id] = true
+		tp.checkedIDs[id] = true
+		return
+	}
+	delete(tp.userCheckedIDs, id)
+	if !tp.autoDepIDs[id] {
+		delete(tp.checkedIDs, id)
+	}
 }
 
 // CursorRow returns the row at the current cursor, or nil.
@@ -234,7 +292,7 @@ func (tp *TreePicker) ToggleAtCursor() {
 		allChecked := true
 		for _, p := range row.GroupPacks {
 			for _, s := range p.Sources {
-				if !tp.CheckedIDs[s.ID] {
+				if !tp.checkedIDs[s.ID] {
 					allChecked = false
 					break
 				}
@@ -245,29 +303,15 @@ func (tp *TreePicker) ToggleAtCursor() {
 		}
 		for _, p := range row.GroupPacks {
 			for _, s := range p.Sources {
-				if allChecked {
-					delete(tp.CheckedIDs, s.ID)
-					delete(tp.UserCheckedIDs, s.ID)
-				} else {
-					tp.CheckedIDs[s.ID] = true
-					tp.UserCheckedIDs[s.ID] = true
-				}
+				tp.setUserChecked(s.ID, !allChecked)
 			}
 		}
 
 	case RowPack:
 		pack := row.Pack
-		checked, total := PackCheckState(pack, tp.CheckedIDs)
-		if checked == total && total > 0 {
-			for _, s := range pack.Sources {
-				delete(tp.CheckedIDs, s.ID)
-				delete(tp.UserCheckedIDs, s.ID)
-			}
-		} else {
-			for _, s := range pack.Sources {
-				tp.CheckedIDs[s.ID] = true
-				tp.UserCheckedIDs[s.ID] = true
-			}
+		checked, total := PackCheckState(pack, tp.checkedIDs)
+		for _, s := range pack.Sources {
+			tp.setUserChecked(s.ID, checked != total || total == 0)
 		}
 
 	case RowItem:
@@ -275,13 +319,7 @@ func (tp *TreePicker) ToggleAtCursor() {
 		if tp.IsAutoDep(src.ID) {
 			return
 		}
-		if tp.CheckedIDs[src.ID] {
-			delete(tp.CheckedIDs, src.ID)
-			delete(tp.UserCheckedIDs, src.ID)
-		} else {
-			tp.CheckedIDs[src.ID] = true
-			tp.UserCheckedIDs[src.ID] = true
-		}
+		tp.setUserChecked(src.ID, !tp.userCheckedIDs[src.ID])
 	}
 }
 
@@ -419,7 +457,7 @@ func (tp *TreePicker) TotalCheckedGB() float64 {
 	for _, g := range tp.Groups {
 		for _, p := range g.Packs {
 			for _, s := range p.Sources {
-				if tp.CheckedIDs[s.ID] && !seen[s.ID] {
+				if tp.checkedIDs[s.ID] && !seen[s.ID] {
 					seen[s.ID] = true
 					total += s.SizeGB
 				}
@@ -431,8 +469,8 @@ func (tp *TreePicker) TotalCheckedGB() float64 {
 
 // CheckedIDSlice returns the checked IDs as a slice.
 func (tp *TreePicker) CheckedIDSlice() []string {
-	ids := make([]string, 0, len(tp.CheckedIDs))
-	for id := range tp.CheckedIDs {
+	ids := make([]string, 0, len(tp.checkedIDs))
+	for id := range tp.checkedIDs {
 		ids = append(ids, id)
 	}
 	return ids
@@ -440,10 +478,10 @@ func (tp *TreePicker) CheckedIDSlice() []string {
 
 // IsDirty returns true if the checked state differs from the given initial state.
 func (tp *TreePicker) IsDirty(initialIDs map[string]bool) bool {
-	if len(tp.CheckedIDs) != len(initialIDs) {
+	if len(tp.checkedIDs) != len(initialIDs) {
 		return true
 	}
-	for id := range tp.CheckedIDs {
+	for id := range tp.checkedIDs {
 		if !initialIDs[id] {
 			return true
 		}
@@ -529,7 +567,7 @@ func (tp *TreePicker) RenderTree() string {
 
 		case RowPack:
 			pack := row.Pack
-			checked, total := PackCheckState(pack, tp.CheckedIDs)
+			checked, total := PackCheckState(pack, tp.checkedIDs)
 			mark := "·"
 			if checked == total && total > 0 {
 				mark = "✓"
@@ -555,7 +593,7 @@ func (tp *TreePicker) RenderTree() string {
 			src := row.Source
 			isAutoDep := tp.IsAutoDep(src.ID)
 			mark := "·"
-			if tp.CheckedIDs[src.ID] {
+			if tp.checkedIDs[src.ID] {
 				mark = "✓"
 			}
 			strat := StrategySymbol(src.Strategy)
@@ -572,7 +610,7 @@ func (tp *TreePicker) RenderTree() string {
 				} else {
 					b.WriteString(tp.Theme.Selected.Render(line))
 				}
-			} else if tp.CheckedIDs[src.ID] {
+			} else if tp.checkedIDs[src.ID] {
 				if isAutoDep {
 					b.WriteString(tp.Theme.Muted.Render(line))
 				} else {
@@ -620,8 +658,8 @@ func (tp *TreePicker) RenderDetail() string {
 
 	case RowPack:
 		pack := row.Pack
-		checked, total := PackCheckState(pack, tp.CheckedIDs)
-		size := PackCheckedSizeGB(pack, tp.CheckedIDs)
+		checked, total := PackCheckState(pack, tp.checkedIDs)
+		size := PackCheckedSizeGB(pack, tp.checkedIDs)
 		info := tp.Theme.Muted.Render(fmt.Sprintf("  %d/%d selected · %s", checked, total, FormatSizeGB(size)))
 		if pack.Description != "" {
 			info += "\n" + tp.Theme.Muted.Render("  "+pack.Description)

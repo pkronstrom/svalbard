@@ -60,10 +60,10 @@ func New(cfg Config) Model {
 	}
 
 	tp := tui.NewTreePicker(tui.TreePickerConfig{
-		Groups:     cfg.PackGroups,
-		CheckedIDs: checkedIDs,
-		FreeGB:     cfg.FreeGB,
-		ReadOnly:   cfg.SaveDesired == nil,
+		Groups:      cfg.PackGroups,
+		CheckedIDs:  checkedIDs,
+		FreeGB:      cfg.FreeGB,
+		ReadOnly:    cfg.SaveDesired == nil,
 		ShowAction:  cfg.SaveDesired != nil,
 		ActionLabel: "Save & review plan →",
 	})
@@ -174,11 +174,7 @@ func (m Model) saveAndPlan() tea.Cmd {
 
 func (m *Model) cyclePreset() {
 	m.presetIdx = (m.presetIdx + 1) % len(m.presets)
-	preset := m.presets[m.presetIdx]
-	m.picker.CheckedIDs = make(map[string]bool)
-	for _, id := range preset.SourceIDs {
-		m.picker.CheckedIDs[id] = true
-	}
+	m.picker.ReplaceUserSelection(m.presets[m.presetIdx].SourceIDs)
 }
 
 // View renders the browse screen.
@@ -213,7 +209,7 @@ func (m Model) View() string {
 		body.WriteString(m.picker.Theme.Base.Render("  y = save   n = discard   esc = cancel"))
 	}
 
-	header := fmt.Sprintf("Browse  %d selected  %.1f GB", len(m.picker.CheckedIDs), totalGB)
+	header := fmt.Sprintf("Browse  %d selected  %.1f GB", m.picker.CheckedCount(), totalGB)
 	if m.presetIdx >= 0 && m.presetIdx < len(m.presets) {
 		header += "  preset: " + m.presets[m.presetIdx].Name
 	}
@@ -245,4 +241,3 @@ func (m Model) View() string {
 
 	return shell.Render()
 }
-

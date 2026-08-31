@@ -11,8 +11,7 @@ type PaletteCloseMsg struct{}
 
 // PaletteSelectMsg is sent when a palette entry is selected.
 type PaletteSelectMsg struct {
-	Entry       PaletteEntry
-	FreeformArg string
+	Entry PaletteEntry
 }
 
 // PaletteModel is the Bubble Tea model for the command palette overlay.
@@ -56,10 +55,7 @@ func (m PaletteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.filtered) > 0 {
 				entry := m.filtered[m.selected]
 				return m, func() tea.Msg {
-					return PaletteSelectMsg{
-						Entry:       entry.PaletteEntry,
-						FreeformArg: entry.FreeformArg,
-					}
+					return PaletteSelectMsg{Entry: entry.PaletteEntry}
 				}
 			}
 			return m, nil

@@ -4,7 +4,7 @@
 //
 // Build dispatch order:
 //  1. If recipe.Build.Steps is non-empty → pipeline executor
-//  2. If family matches a native handler → special handler (python-venv)
+//  2. If family is "python-venv" → custom native handler
 //  3. If family is "app-bundle" → converted to pipeline internally
 //  4. Otherwise → not handled (caller falls back to Docker)
 package builder
@@ -30,14 +30,8 @@ type Options struct {
 // Func is the signature for a native builder.
 type Func func(root string, recipe catalog.Item, cat *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error)
 
-// special maps build family names to handlers that need custom orchestration
-// beyond the generic pipeline (e.g. python-venv collects sibling recipes).
-var special = map[string]Func{
-	"python-venv": buildPythonVenv,
-}
-
 // Dispatch returns a native builder for the recipe, if one can handle it.
-// Priority: explicit steps → special handler → app-bundle conversion.
+// Priority: explicit steps → python-venv handler → app-bundle conversion.
 func Dispatch(recipe catalog.Item) (Func, bool) {
 	if recipe.Build == nil {
 		return nil, false
@@ -48,9 +42,9 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 		return buildPipeline, true
 	}
 
-	// 2. Special handlers (python-venv, etc.).
-	if fn, ok := special[recipe.Build.Family]; ok {
-		return fn, ok
+	// 2. python-venv needs custom orchestration to collect sibling recipes.
+	if recipe.Build.Family == "python-venv" {
+		return buildPythonVenv, true
 	}
 
 	// 3. App-bundle with source_url: convert to pipeline internally.

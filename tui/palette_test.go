@@ -31,7 +31,7 @@ func TestPaletteMatchesAlias(t *testing.T) {
 		},
 	}
 
-	results := p.Match("wiki")
+	results := p.Match("WIKI")
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -54,44 +54,6 @@ func TestPaletteMatchesFuzzy(t *testing.T) {
 	}
 	if results[0].ID != "add-content" {
 		t.Errorf("expected ID=add-content, got %q", results[0].ID)
-	}
-}
-
-func TestPaletteMatchesVerbPrefix(t *testing.T) {
-	p := tui.Palette{
-		Entries: []tui.PaletteEntry{
-			{ID: "wikipedia", Label: "Wikipedia", Verbs: []string{"browse", "open"}},
-		},
-	}
-
-	results := p.Match("browse wikipedia")
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].ID != "wikipedia" {
-		t.Errorf("expected ID=wikipedia, got %q", results[0].ID)
-	}
-	if results[0].FreeformArg != "" {
-		t.Errorf("expected empty FreeformArg, got %q", results[0].FreeformArg)
-	}
-}
-
-func TestPaletteImportPrefill(t *testing.T) {
-	p := tui.Palette{
-		Entries: []tui.PaletteEntry{
-			{ID: "import", Label: "Import", Verbs: []string{"import"}, AcceptsFreeform: true},
-		},
-	}
-
-	results := p.Match("import /path/to/file.pdf")
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].ID != "import" {
-		t.Errorf("expected ID=import, got %q", results[0].ID)
-	}
-	if results[0].FreeformArg != "/path/to/file.pdf" {
-		t.Errorf("expected FreeformArg=/path/to/file.pdf, got %q", results[0].FreeformArg)
 	}
 }
 

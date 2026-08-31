@@ -3,6 +3,7 @@ package imaging
 import (
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 	"math/rand"
 	"sort"
@@ -26,11 +27,7 @@ func ToRGBA(img image.Image) *image.RGBA {
 	}
 	bounds := img.Bounds()
 	out := image.NewRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			out.Set(x, y, img.At(x, y))
-		}
-	}
+	draw.Draw(out, bounds, img, bounds.Min, draw.Src)
 	return out
 }
 

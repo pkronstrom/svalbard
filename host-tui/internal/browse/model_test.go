@@ -98,7 +98,7 @@ func TestBrowseToggleItem(t *testing.T) {
 	m = result.(Model)
 
 	// Verify the item is not checked initially.
-	if m.picker.CheckedIDs["osm-planet"] {
+	if containsID(m.picker.CheckedIDSlice(), "osm-planet") {
 		t.Fatal("osm-planet should not be checked initially")
 	}
 
@@ -106,7 +106,7 @@ func TestBrowseToggleItem(t *testing.T) {
 	result, _ = m.Update(space)
 	m = result.(Model)
 
-	if !m.picker.CheckedIDs["osm-planet"] {
+	if !containsID(m.picker.CheckedIDSlice(), "osm-planet") {
 		t.Error("osm-planet should be checked after space toggle")
 	}
 
@@ -114,12 +114,42 @@ func TestBrowseToggleItem(t *testing.T) {
 	result, _ = m.Update(space)
 	m = result.(Model)
 
-	if m.picker.CheckedIDs["osm-planet"] {
+	if containsID(m.picker.CheckedIDSlice(), "osm-planet") {
 		t.Error("osm-planet should be unchecked after second space toggle")
 	}
 
 	if saveCalled {
 		t.Error("save should not have been called by toggle alone")
+	}
+}
+
+func TestBrowseCyclesPresetsThroughTreePicker(t *testing.T) {
+	m := sizedBrowse(Config{
+		PackGroups:   samplePackGroups(),
+		DesiredItems: []string{"osm-planet"},
+		Presets: []PresetOption{
+			{Name: "reference", SourceIDs: []string{"wiki-en"}},
+			{Name: "maps", SourceIDs: []string{"osm-planet"}},
+		},
+		SaveDesired: func([]string) error { return nil },
+	})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = updated.(Model)
+	if got, want := m.picker.CheckedIDSlice(), []string{"wiki-en"}; !sameIDs(got, want) {
+		t.Fatalf("first preset selection = %v, want %v", got, want)
+	}
+	if !m.picker.IsDirty(m.initialIDs) {
+		t.Fatal("preset selection should be dirty relative to initial selection")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = updated.(Model)
+	if got, want := m.picker.CheckedIDSlice(), []string{"osm-planet"}; !sameIDs(got, want) {
+		t.Fatalf("second preset selection = %v, want %v", got, want)
+	}
+	if m.picker.IsDirty(m.initialIDs) {
+		t.Fatal("matching initial selection should not be dirty")
 	}
 }
 
@@ -151,8 +181,8 @@ func TestBrowseEscWithChanges(t *testing.T) {
 	}
 	m := sizedBrowse(cfg)
 
-	// Make a change: directly toggle an ID so the model becomes dirty.
-	m.picker.CheckedIDs["osm-planet"] = true
+	// Make a change so the model becomes dirty.
+	m.picker.ReplaceUserSelection([]string{"osm-planet"})
 
 	esc := tea.KeyMsg{Type: tea.KeyEscape}
 	result, cmd := m.Update(esc)
@@ -191,7 +221,7 @@ func TestBrowseSave(t *testing.T) {
 	m := sizedBrowse(cfg)
 
 	// Make a change.
-	m.picker.CheckedIDs["wiki-en"] = true
+	m.picker.ReplaceUserSelection([]string{"wiki-en"})
 
 	// Press esc to trigger save prompt.
 	esc := tea.KeyMsg{Type: tea.KeyEscape}
@@ -259,7 +289,7 @@ func TestBrowseReadOnly(t *testing.T) {
 	result, _ = m.Update(space)
 	m = result.(Model)
 
-	if m.picker.CheckedIDs["osm-planet"] {
+	if containsID(m.picker.CheckedIDSlice(), "osm-planet") {
 		t.Error("toggle should be ignored in read-only mode")
 	}
 
@@ -274,4 +304,25 @@ func TestBrowseReadOnly(t *testing.T) {
 	if _, ok := msg.(BackMsg); !ok {
 		t.Errorf("esc in read-only mode should emit BackMsg, got %T", msg)
 	}
+}
+
+func containsID(ids []string, want string) bool {
+	for _, id := range ids {
+		if id == want {
+			return true
+		}
+	}
+	return false
+}
+
+func sameIDs(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for _, id := range want {
+		if !containsID(got, id) {
+			return false
+		}
+	}
+	return true
 }

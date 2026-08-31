@@ -26,7 +26,6 @@ type NavItem struct {
 	Description string // short description shown alongside label
 	Subheader   string // optional — groups items under a section header
 	Separator   bool   // render a separator line before this item
-	Disabled    bool   // visible but not activatable
 }
 
 // NavList is a navigable list of items used in the left pane of dashboards and pickers.
@@ -38,35 +37,23 @@ type NavList struct {
 	Width       int  // available width for rendering (0 = use default separator)
 }
 
-// MoveDown increments Selected, clamping to bounds and skipping disabled items.
+// MoveDown increments Selected, clamping to bounds.
 func (nl *NavList) MoveDown() {
-	if len(nl.Items) == 0 {
-		return
+	nl.Clamp()
+	if nl.Selected < len(nl.Items)-1 {
+		nl.Selected++
 	}
-	for i := nl.Selected + 1; i < len(nl.Items); i++ {
-		if !nl.Items[i].Disabled {
-			nl.Selected = i
-			return
-		}
-	}
-	// No non-disabled item found below; stay put.
 }
 
-// MoveUp decrements Selected, clamping to bounds and skipping disabled items.
+// MoveUp decrements Selected, clamping to bounds.
 func (nl *NavList) MoveUp() {
-	if len(nl.Items) == 0 {
-		return
+	nl.Clamp()
+	if nl.Selected > 0 {
+		nl.Selected--
 	}
-	for i := nl.Selected - 1; i >= 0; i-- {
-		if !nl.Items[i].Disabled {
-			nl.Selected = i
-			return
-		}
-	}
-	// No non-disabled item found above; stay put.
 }
 
-// Clamp ensures Selected is within bounds and not on a disabled item.
+// Clamp ensures Selected is within bounds.
 func (nl *NavList) Clamp() {
 	if len(nl.Items) == 0 {
 		nl.Selected = 0
@@ -77,23 +64,6 @@ func (nl *NavList) Clamp() {
 	}
 	if nl.Selected >= len(nl.Items) {
 		nl.Selected = len(nl.Items) - 1
-	}
-	// If clamped to a disabled item, find nearest enabled
-	if nl.Items[nl.Selected].Disabled {
-		// Try forward first
-		for i := nl.Selected; i < len(nl.Items); i++ {
-			if !nl.Items[i].Disabled {
-				nl.Selected = i
-				return
-			}
-		}
-		// Then backward
-		for i := nl.Selected; i >= 0; i-- {
-			if !nl.Items[i].Disabled {
-				nl.Selected = i
-				return
-			}
-		}
 	}
 }
 
@@ -177,12 +147,9 @@ func (nl *NavList) Render() string {
 
 		// Label with appropriate style
 		label := item.Label
-		switch {
-		case item.Disabled:
-			line.WriteString(nl.Theme.Muted.Render(prefix + label))
-		case i == nl.Selected:
+		if i == nl.Selected {
 			line.WriteString(nl.Theme.Selected.Render(prefix + label))
-		default:
+		} else {
 			line.WriteString(nl.Theme.Base.Render(prefix + label))
 		}
 

@@ -76,79 +76,12 @@ func run() error {
 	}
 
 	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case actions.NativeInspectSubcommand:
-			return inspect.Run(os.Stdout, driveRoot)
-		case actions.NativeVerifySubcommand:
-			return verify.Run(os.Stdout, driveRoot)
-		case actions.NativeShareSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			return share.Run(ctx, os.Stdout, driveRoot)
-		case actions.NativeBrowseSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			selected := ""
-			if len(os.Args) > 2 {
-				selected = os.Args[2]
-			}
-			return browse.Run(ctx, os.Stdout, driveRoot, selected, nil)
-		case actions.NativeAppsSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			if len(os.Args) < 3 {
-				return fmt.Errorf("app name required")
-			}
-			return apps.Run(ctx, os.Stdout, driveRoot, os.Args[2], nil)
-		case actions.NativeMapsSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			return maps.Run(ctx, os.Stdout, driveRoot, nil)
-		case actions.NativeChatSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			selected := ""
-			if len(os.Args) > 2 {
-				selected = os.Args[2]
-			}
-			return chat.Run(ctx, os.Stdout, driveRoot, selected, nil)
-		case actions.NativeAgentSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			if len(os.Args) < 3 {
-				return fmt.Errorf("client name required")
-			}
-			selectedModel := ""
-			if len(os.Args) > 3 {
-				selectedModel = os.Args[3]
-			}
-			return agent.Run(ctx, os.Stdout, driveRoot, os.Args[2], selectedModel)
-		case actions.NativeServeAllSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			bind := "127.0.0.1"
-			if len(os.Args) > 2 {
-				bind = os.Args[2]
-			}
-			return serveall.Run(ctx, os.Stdout, driveRoot, bind)
-		case actions.NativeSearchSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			query := ""
-			if len(os.Args) > 2 {
-				query = os.Args[2]
-			}
-			return search.Run(ctx, os.Stdin, os.Stdout, driveRoot, query, nil)
-		case actions.NativeEmbeddedSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			return embedded.Run(ctx, os.Stdout, driveRoot)
-		case actions.NativeActivateSubcommand:
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			return shell.Run(ctx, os.Stdout, driveRoot)
-		case actions.NativeMCPSubcommand:
-			return runMCPServe(driveRoot)
+		invocation, known, err := actions.DecodeNativeInvocation(os.Args[1:])
+		if err != nil {
+			return err
+		}
+		if known {
+			return runNativeInvocation(invocation, driveRoot)
 		}
 		if item, ok := cfg.FindItemByAlias(os.Args[1]); ok {
 			runner := actions.NewRunner(driveRoot, workDir)
@@ -164,6 +97,45 @@ func run() error {
 	p := tea.NewProgram(menu.NewModel(cfg, driveRoot, workDir), tea.WithAltScreen())
 	_, err = p.Run()
 	return err
+}
+
+func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) error {
+	switch invocation.ActionID {
+	case "inspect":
+		return inspect.Run(os.Stdout, driveRoot)
+	case "verify":
+		return verify.Run(os.Stdout, driveRoot)
+	case "mcp-serve":
+		return runMCPServe(driveRoot)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	switch invocation.ActionID {
+	case "share":
+		return share.Run(ctx, os.Stdout, driveRoot)
+	case "browse":
+		return browse.Run(ctx, os.Stdout, driveRoot, invocation.Args["zim"], nil)
+	case "apps":
+		return apps.Run(ctx, os.Stdout, driveRoot, invocation.Args["app"], nil)
+	case "maps":
+		return maps.Run(ctx, os.Stdout, driveRoot, nil)
+	case "chat":
+		return chat.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
+	case "agent":
+		return agent.Run(ctx, os.Stdout, driveRoot, invocation.Args["client"], invocation.Args["model"])
+	case "serve-all":
+		return serveall.Run(ctx, os.Stdout, driveRoot, invocation.Args["bind"])
+	case "search":
+		return search.Run(ctx, os.Stdin, os.Stdout, driveRoot, invocation.Args["query"], nil)
+	case "embedded-shell":
+		return embedded.Run(ctx, os.Stdout, driveRoot)
+	case "activate-shell":
+		return shell.Run(ctx, os.Stdout, driveRoot)
+	default:
+		return fmt.Errorf("unknown native action: %s", invocation.ActionID)
+	}
 }
 
 func runResolvedAction(resolved actions.ResolvedAction) error {

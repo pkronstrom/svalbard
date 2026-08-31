@@ -50,22 +50,7 @@ func (m *packPickerModel) recalcDeps() {
 	if m.resolveDeps == nil {
 		return
 	}
-
-	autoDeps := m.resolveDeps(m.picker.UserCheckedIDs)
-
-	// Remove old auto-deps that are no longer needed
-	for id := range m.picker.AutoDepIDs {
-		if !autoDeps[id] && !m.picker.UserCheckedIDs[id] {
-			delete(m.picker.CheckedIDs, id)
-		}
-	}
-
-	// Add new auto-deps
-	for id := range autoDeps {
-		m.picker.CheckedIDs[id] = true
-	}
-
-	m.picker.AutoDepIDs = autoDeps
+	m.picker.SetAutoDependencies(m.resolveDeps(m.picker.UserSelection()))
 }
 
 // Init satisfies tea.Model.
@@ -97,24 +82,12 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Enter on action row → done.
 		case m.picker.Keys.Enter.Matches(msg):
 			if row := m.picker.CursorRow(); row != nil && row.Kind == tui.RowAction {
-				selected := make(map[string]bool, len(m.picker.CheckedIDs))
-				for id, v := range m.picker.CheckedIDs {
-					if v {
-						selected[id] = true
-					}
-				}
-				return m, func() tea.Msg { return packDoneMsg{selectedIDs: selected} }
+				return m, func() tea.Msg { return packDoneMsg{selectedIDs: pickerSelection(&m.picker)} }
 			}
 
 		// 'a' shortcut → done.
 		case tui.MatchRune(msg, 'a'):
-			selected := make(map[string]bool, len(m.picker.CheckedIDs))
-			for id, v := range m.picker.CheckedIDs {
-				if v {
-					selected[id] = true
-				}
-			}
-			return m, func() tea.Msg { return packDoneMsg{selectedIDs: selected} }
+			return m, func() tea.Msg { return packDoneMsg{selectedIDs: pickerSelection(&m.picker)} }
 
 		// Cancel.
 		case m.picker.Keys.Quit.Matches(msg):
@@ -127,6 +100,14 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func pickerSelection(picker *tui.TreePicker) map[string]bool {
+	ids := picker.CheckedIDSlice()
+	selected := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		selected[id] = true
+	}
+	return selected
+}
 
 // View renders the pack picker.
 func (m packPickerModel) View() string {
