@@ -11,12 +11,14 @@ _Ideas in `openspec/explorations/`. Not yet committed to a change._
 _Active `openspec/changes/<id>/`. Branch + tasks.md status._
 
 
-- **Heavy build family handlers** — planned after foundation review, `openspec/changes/implement-heavy-build-families/`
+- **OSM, raster, and MML map builders** — awaiting source-contract review, `openspec/changes/implement-map-build-families/`
 - **Make It Yourself Go builder** — planned after ZIM/browser seams, `openspec/changes/port-miy-go-builder/`
 
 ## Shipped
 
 _Archived in `openspec/changes/archive/`. Newest first._
+
+- **Reference, compact-ZIM, zimit routing, and vector handlers** — shipped 2026-09-01, `openspec/changes/archive/2026-09-01-implement-heavy-build-families/`
 
 - **Content-addressed builder blocks** — shipped 2026-09-01, `openspec/changes/archive/2026-09-01-content-addressed-builder-blocks/`
 

@@ -55,6 +55,18 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 		return buildPythonVenv, true
 	}
 
+	if recipe.Build.Family == "reference-static" {
+		return buildReferenceStatic, true
+	}
+	if recipe.Build.Family == "zim-compact" {
+		return buildZIMCompact, true
+	}
+	switch recipe.Build.Family {
+	case "vector-static":
+		return buildVectorStatic, true
+	case "vector-service":
+		return buildVectorService, true
+	}
 	// 3. App bundles use the shared Go download/extract pipeline.
 	if recipe.Build.Family == "app-bundle" {
 		return buildAppBundleAsPipeline, true

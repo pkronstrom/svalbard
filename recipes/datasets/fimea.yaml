@@ -9,7 +9,8 @@ strategy: build
 
 build:
   family: reference-static
-  source_url: https://www.fimea.fi
+  source_url: https://data.pilvi.fimea.fi/avoin-data/Perusrekisteri.xml
+  network: true
   source_format: xml
   tables:
     - name: medicines

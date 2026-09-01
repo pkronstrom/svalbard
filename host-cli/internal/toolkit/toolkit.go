@@ -59,6 +59,7 @@ var TypeDirs = map[string]string{
 	"binary":         "bin",
 	"app":            "apps",
 	"dataset":        "data",
+	"sqlite":         "data",
 	"python-venv":    "runtime/python",
 	"python-package": "runtime/python",
 }
