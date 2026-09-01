@@ -75,8 +75,6 @@ func (b *BuildSpec) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// BuildStep is one linear action in a build pipeline.
-// Exactly one of Download, Extract, Exec, Tool, or Verify should be set.
 type BuildStep struct {
 	Download    string   `yaml:"download,omitempty"`
 	Extract     string   `yaml:"extract,omitempty"`
@@ -84,6 +82,8 @@ type BuildStep struct {
 	Tool        string   `yaml:"tool,omitempty"`
 	Verify      string   `yaml:"verify,omitempty"`
 	Args        []string `yaml:"args,omitempty"`
+	Inputs      []string `yaml:"inputs,omitempty"`
+	Outputs     []string `yaml:"outputs,omitempty"`
 	Dest        string   `yaml:"dest,omitempty"`
 	NotEmpty    bool     `yaml:"not_empty,omitempty"`
 	MinSize     int64    `yaml:"min_size,omitempty"`

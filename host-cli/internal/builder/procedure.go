@@ -21,6 +21,8 @@ type Procedure struct {
 	Destination string
 	Tool        string
 	Args        []string
+	Inputs      []string
+	Outputs     []string
 	NotEmpty    bool
 	MinSize     int64
 	Image       string

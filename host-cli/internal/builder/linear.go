@@ -23,7 +23,29 @@ func RunLinear(ctx context.Context, root, workdir, recipeID string, procedures [
 			return err
 		}
 		emit(opts, BuildEvent{RecipeID: recipeID, Procedure: procedure.ID, State: EventQueued})
-		if procedureReusable(procedure, filepath.Join(markerDir, procedure.ID)) {
+		var cacheKey string
+		var inputDigests map[string]string
+		if len(procedure.Outputs) > 1 {
+			return fmt.Errorf("%s: cacheable procedure must declare one output directory", procedure.ID)
+		}
+		if len(procedure.Outputs) == 1 && !pathWithin(procedure.Outputs[0], workdir) {
+			return fmt.Errorf("%s: cacheable output must be inside recipe staging", procedure.ID)
+		}
+		if len(procedure.Outputs) == 1 {
+			var err error
+			cacheKey, inputDigests, err = blockCacheKey(procedure)
+			if err != nil {
+				return fmt.Errorf("%s: %w", procedure.ID, err)
+			}
+			hit, err := restoreBlockCache(root, cacheKey, procedure.Outputs[0])
+			if err != nil {
+				return fmt.Errorf("%s cache restore: %w", procedure.ID, err)
+			}
+			if hit {
+				emit(opts, BuildEvent{RecipeID: recipeID, Procedure: procedure.ID, State: EventSkipped, Message: "cache hit " + procedure.ID})
+				continue
+			}
+		} else if procedureReusable(procedure, filepath.Join(markerDir, procedure.ID)) {
 			emit(opts, BuildEvent{RecipeID: recipeID, Procedure: procedure.ID, State: EventSkipped, Message: "reusing " + procedure.ID})
 			continue
 		}
@@ -32,7 +54,11 @@ func RunLinear(ctx context.Context, root, workdir, recipeID string, procedures [
 			emit(opts, BuildEvent{RecipeID: recipeID, Procedure: procedure.ID, State: EventFailed, Error: err.Error()})
 			return fmt.Errorf("%s: %w", procedure.ID, err)
 		}
-		if err := os.WriteFile(filepath.Join(markerDir, procedure.ID), []byte(procedure.Fingerprint+"\n"), 0o644); err != nil {
+		if len(procedure.Outputs) == 1 {
+			if err := storeBlockCache(root, cacheKey, procedure, inputDigests, procedure.Outputs[0]); err != nil {
+				return fmt.Errorf("%s cache store: %w", procedure.ID, err)
+			}
+		} else if err := os.WriteFile(filepath.Join(markerDir, procedure.ID), []byte(procedure.Fingerprint+"\n"), 0o644); err != nil {
 			return err
 		}
 		emit(opts, BuildEvent{RecipeID: recipeID, Procedure: procedure.ID, State: EventCompleted})
@@ -47,6 +73,9 @@ func executeProcedure(ctx context.Context, root, workdir string, procedure Proce
 	case ProcedureExtract:
 		return stepExtract(procedure.Source, procedure.Destination)
 	case ProcedureTool:
+		if len(procedure.Outputs) > 0 {
+			return stepExecBlock(ctx, root, workdir, procedure)
+		}
 		return stepExec(ctx, root, workdir, procedure.Tool, procedure.Args, procedure.Image)
 	case ProcedureVerify:
 		return stepVerify(procedure.Source, procedure.NotEmpty, procedure.MinSize)
@@ -54,7 +83,6 @@ func executeProcedure(ctx context.Context, root, workdir string, procedure Proce
 		return fmt.Errorf("unknown procedure kind %q", procedure.Kind)
 	}
 }
-
 func procedureReusable(procedure Procedure, marker string) bool {
 	data, err := os.ReadFile(marker)
 	if err != nil || strings.TrimSpace(string(data)) != procedure.Fingerprint {

@@ -14,7 +14,7 @@ func TestCompileProceduresPreservesLinearActions(t *testing.T) {
 	vars := map[string]string{"workdir": "/tmp/work", "output": "/vault/out.zim"}
 	got, err := CompileProcedures([]catalog.BuildStep{
 		{Download: "https://example.test/source", Dest: "{workdir}/source"},
-		{Tool: "zimwriterfs", Args: []string{"{workdir}/site", "{output}"}},
+		{Tool: "zimwriterfs", Args: []string{"{workdir}/site", "{output}"}, Inputs: []string{"{workdir}/site"}, Outputs: []string{"{workdir}/packed"}},
 		{Verify: "{output}", MinSize: 1},
 	}, vars)
 	if err != nil {
@@ -28,6 +28,9 @@ func TestCompileProceduresPreservesLinearActions(t *testing.T) {
 	}
 	if want := []string{"/tmp/work/site", "/vault/out.zim"}; !reflect.DeepEqual(got[1].Args, want) {
 		t.Fatalf("tool args = %v, want %v", got[1].Args, want)
+	}
+	if got[1].Inputs[0] != "/tmp/work/site" || got[1].Outputs[0] != "/tmp/work/packed" {
+		t.Fatalf("tool edges = inputs:%v outputs:%v", got[1].Inputs, got[1].Outputs)
 	}
 	if got[0].Fingerprint == "" || got[1].Fingerprint == "" {
 		t.Fatal("procedure fingerprint is empty")

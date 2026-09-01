@@ -18,6 +18,8 @@ _Active `openspec/changes/<id>/`. Branch + tasks.md status._
 
 _Archived in `openspec/changes/archive/`. Newest first._
 
+- **Content-addressed builder blocks** — shipped 2026-09-01, `openspec/changes/archive/2026-09-01-content-addressed-builder-blocks/`
+
 - **Go builder pipeline foundation** — shipped 2026-09-01, `openspec/changes/archive/2026-09-01-go-builder-pipeline/`
 
 - **Action alias generation** — shipped 2026-08-31, `openspec/changes/archive/2026-08-31-support-action-aliases/`

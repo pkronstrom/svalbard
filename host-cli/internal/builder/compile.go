@@ -21,10 +21,20 @@ func CompileProcedures(steps []catalog.BuildStep, vars map[string]string) ([]Pro
 		for i, arg := range step.Args {
 			args[i] = resolve(arg, vars)
 		}
+		inputs := make([]string, len(step.Inputs))
+		for i, input := range step.Inputs {
+			inputs[i] = resolve(input, vars)
+		}
+		outputs := make([]string, len(step.Outputs))
+		for i, output := range step.Outputs {
+			outputs[i] = resolve(output, vars)
+		}
 		procedure := Procedure{
 			ID:       fmt.Sprintf("%03d-%s", index+1, kind),
 			Kind:     kind,
 			Args:     args,
+			Inputs:   inputs,
+			Outputs:  outputs,
 			NotEmpty: step.NotEmpty,
 			MinSize:  step.MinSize,
 			Image:    step.DockerImage,
