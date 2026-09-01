@@ -117,8 +117,8 @@ tools-base
   ffmpeg, pmtiles, Go build helpers
 
 tools-browser
-  FROM tools-base
-  Browsertrix, Chromium, zimit
+  pinned official zimit/Browsertrix base
+  Chromium, WARC tooling, zimit
 ```
 
 Both publish to GHCR with semver, SHA, and digest references. Recipes select a named tool capability; Go maps that capability to base or browser. Recipes cannot supply arbitrary image names or commands.
@@ -152,7 +152,7 @@ CLI and TUI consume the same event fields. Logs remain representable as events r
 4. Recipe dependency ordering, first proving `uv -> python-venv -> python-package`.
 5. JSONL event contract shared by CLI and TUI.
 6. Go-only app-bundle and reference-static handlers.
-7. Pinned, layered ToolRunner images and python-venv migration.
+7. Pinned base/browser ToolRunner targets and python-venv migration.
 8. ZIM, zimit, and geodata family handlers.
 9. Make It Yourself Go-controller spike after PDF/HTML/ZIM seams exist.
 10. Consider DAG execution only if a concrete recipe demonstrates branching or parallelism value.
@@ -175,7 +175,7 @@ Failure coverage includes malformed procedures, missing tools, cycles in recipe 
 
 ## Risks / Trade-offs
 
-- One base image still carries substantial native tooling; browser dependencies are isolated in a layered target.
+- The browser target uses the maintained upstream zimit/Browsertrix base rather than inheriting the Alpine tools-base runtime; both are built and published from one workflow.
 - Resource sizes are estimates and must be presented as such.
 - Porting MIY orchestration to Go is significant; it must not block fixing simpler families.
 - Linear execution may leave parallelism unused initially; this is intentional until measurements justify a scheduler.

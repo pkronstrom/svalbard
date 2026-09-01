@@ -41,7 +41,7 @@ Non-Go provisioning dependencies SHALL run only through Svalbard-controlled pinn
 
 #### Scenario: Execute browser tool
 - **WHEN** a procedure requires zimit or browser crawling
-- **THEN** Go invokes the pinned browser image layered on the same base
+- **THEN** Go invokes the pinned browser specialist target published by Svalbard
 
 #### Scenario: Consume completed drive
 - **WHEN** the finished drive is used on a supported host
