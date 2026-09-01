@@ -50,6 +50,7 @@ func TestOpenVaultQEmitsBack(t *testing.T) {
 
 func TestOpenVaultShowsCurrentDirectory(t *testing.T) {
 	m := sizedModel()
+	m.picker.CurrentDirectory = "/tmp"
 	out := stripAnsi(m.View())
 
 	// The view should show the current directory path.

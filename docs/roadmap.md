@@ -11,10 +11,14 @@ _Ideas in `openspec/explorations/`. Not yet committed to a change._
 _Active `openspec/changes/<id>/`. Branch + tasks.md status._
 
 
+- **Heavy build family handlers** — planned after foundation review, `openspec/changes/implement-heavy-build-families/`
+- **Make It Yourself Go builder** — planned after ZIM/browser seams, `openspec/changes/port-miy-go-builder/`
 
 ## Shipped
 
 _Archived in `openspec/changes/archive/`. Newest first._
+
+- **Go builder pipeline foundation** — shipped 2026-09-01, `openspec/changes/archive/2026-09-01-go-builder-pipeline/`
 
 - **Action alias generation** — shipped 2026-08-31, `openspec/changes/archive/2026-08-31-support-action-aliases/`
 

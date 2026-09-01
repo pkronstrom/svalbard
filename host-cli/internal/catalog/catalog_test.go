@@ -3,6 +3,8 @@ package catalog
 import (
 	"reflect"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func assertRealCatalog(t *testing.T, cat *Catalog) {
@@ -579,8 +581,8 @@ func TestEmbeddedCatalogParsesOpenSourceLowTechBuildRecipe(t *testing.T) {
 	if item.Build.Steps[0].Exec != "zimit" {
 		t.Errorf("first build step should invoke zimit, got %q", item.Build.Steps[0].Exec)
 	}
-	if item.Build.Steps[0].DockerImage != "ghcr.io/openzim/zimit:latest" {
-		t.Errorf("zimit Docker image: unexpected value %q", item.Build.Steps[0].DockerImage)
+	if item.Build.Steps[0].DockerImage != "" {
+		t.Errorf("recipe should not select a Docker image, got %q", item.Build.Steps[0].DockerImage)
 	}
 	if item.Build.Steps[1].Verify != "{output}" {
 		t.Errorf("verify step: unexpected path %q", item.Build.Steps[1].Verify)
@@ -825,5 +827,72 @@ func TestLoadCatalogSourceRemovalWithDash(t *testing.T) {
 		if item.ID == "wikipedia-en-top-nopic" {
 			t.Error("expected wikipedia-en-top-nopic to be removed by dash prefix in default-64")
 		}
+	}
+}
+
+func TestBuildSpecPreservesStructuredFields(t *testing.T) {
+	var item Item
+	err := yaml.Unmarshal([]byte(`
+id: structured
+type: app
+strategy: build
+build:
+  family: app-bundle
+  network: true
+  estimated_download_gb: 1.5
+  estimated_work_gb: 3
+  requires: [zimwriterfs]
+  assets:
+    - url: https://example.test/app.js
+      dest: app.js
+  tables:
+    - name: medicines
+      fts: true
+      fts_columns: [name, ingredient]
+  layers:
+    - name: source:points
+      label: Points
+      filter: kind = 1
+`), &item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := item.Build
+	if build == nil {
+		t.Fatal("build spec is nil")
+	}
+	if !build.Network || build.EstimatedDownloadGB != 1.5 || build.EstimatedWorkGB != 3 {
+		t.Fatalf("resources = network:%t download:%g work:%g", build.Network, build.EstimatedDownloadGB, build.EstimatedWorkGB)
+	}
+	if got, want := build.Requires, []string{"zimwriterfs"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("requires = %v, want %v", got, want)
+	}
+	if got, want := build.Assets, []BuildAsset{{URL: "https://example.test/app.js", Dest: "app.js"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("assets = %#v, want %#v", got, want)
+	}
+	if got, want := build.Tables, []BuildTable{{Name: "medicines", FTS: true, FTSColumns: []string{"name", "ingredient"}}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("tables = %#v, want %#v", got, want)
+	}
+	if got, want := build.Layers, []BuildLayer{{Name: "source:points", Label: "Points", Filter: "kind = 1"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("layers = %#v, want %#v", got, want)
+	}
+}
+
+func TestEmbeddedCatalogPreservesCurrentBuildArrays(t *testing.T) {
+	cat, err := NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets, ok := cat.RecipeByID("mml-map-sheets")
+	if !ok || assets.Build == nil || len(assets.Build.Assets) == 0 {
+		t.Fatal("mml-map-sheets assets were not preserved")
+	}
+	tables, ok := cat.RecipeByID("fimea")
+	if !ok || tables.Build == nil || len(tables.Build.Tables) == 0 {
+		t.Fatal("fimea tables were not preserved")
+	}
+	layers, ok := cat.RecipeByID("lipas-recreation")
+	if !ok || layers.Build == nil || len(layers.Build.Layers) == 0 {
+		t.Fatal("lipas layers were not preserved")
 	}
 }

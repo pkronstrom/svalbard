@@ -64,11 +64,11 @@ const (
 
 // appModel is a top-level Bubble Tea model that manages screen transitions.
 type appModel struct {
-	screen       screen
-	prevScreen   screen // where to return when wizard/sub-screen emits BackMsg
-	vaultPath    string
-	deps         *DashboardDeps
-	wizardConfig *WizardConfig
+	screen        screen
+	prevScreen    screen // where to return when wizard/sub-screen emits BackMsg
+	vaultPath     string
+	deps          *DashboardDeps
+	wizardConfig  *WizardConfig
 	width, height int
 
 	welcome   welcome.Model
@@ -421,11 +421,16 @@ func (m *appModel) newPlan() plan.Model {
 		if summary, err := m.deps.LoadPlan(); err == nil {
 			cfg.DownloadGB = summary.DownloadGB
 			cfg.RemoveGB = summary.RemoveGB
+			cfg.BuildDownloadGB = summary.BuildDownloadGB
+			cfg.BuildWorkGB = summary.BuildWorkGB
+			cfg.ToolsRequired = summary.ToolsRequired
 			cfg.FreeAfterGB = summary.FreeAfterGB
 			for _, item := range summary.ToDownload {
 				cfg.Items = append(cfg.Items, plan.PlanItem{
 					ID: item.ID, Type: item.Type, SizeGB: item.SizeGB,
 					Description: item.Description, Action: item.Action,
+					Network: item.Network, BuildDownloadGB: item.BuildDownloadGB,
+					BuildWorkGB: item.BuildWorkGB, Requires: append([]string(nil), item.Requires...),
 				})
 			}
 			for _, item := range summary.ToRemove {
@@ -439,9 +444,9 @@ func (m *appModel) newPlan() plan.Model {
 			cfg.RunApply = func(ctx context.Context, onProgress func(plan.ApplyEvent)) error {
 				return m.deps.RunApply(ctx, func(ev ApplyEvent) {
 					onProgress(plan.ApplyEvent{
-						ID: ev.ID, Status: ev.Status, Step: ev.Step,
-						Downloaded: ev.Downloaded, Total: ev.Total,
-						Error: ev.Error,
+						ID: ev.ID, Procedure: ev.Procedure, State: ev.State,
+						Status: ev.Status, Step: ev.Step, Message: ev.Message,
+						Downloaded: ev.Downloaded, Total: ev.Total, Error: ev.Error,
 					})
 				})
 			}

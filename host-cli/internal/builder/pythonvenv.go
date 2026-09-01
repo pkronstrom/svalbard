@@ -195,16 +195,13 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 	return entries, nil
 }
 
-// uvRunner abstracts uv execution — either local binary or Docker.
+// uvRunner executes uv inside the pinned base tools image so provisioning
+// never depends on or modifies host Python tooling.
 type uvRunner struct {
-	ctx   context.Context
-	local string // path to local uv binary, empty = use Docker
-	root  string // vault root (for Docker volume mount)
+	ctx  context.Context
+	root string
 }
 
-// toContainerPath translates a host absolute path under the vault root
-// to the corresponding /vault/... path inside the Docker container.
-// Non-vault paths are returned unchanged.
 func (u uvRunner) toContainerPath(hostPath string) string {
 	if strings.HasPrefix(hostPath, u.root+string(filepath.Separator)) {
 		rel, err := filepath.Rel(u.root, hostPath)
@@ -212,51 +209,33 @@ func (u uvRunner) toContainerPath(hostPath string) string {
 			return "/vault/" + filepath.ToSlash(rel)
 		}
 	}
-	// Also handle exact match (root itself).
 	if hostPath == u.root {
 		return "/vault"
 	}
 	return hostPath
 }
 
-// findUV locates uv: drive → PATH → Docker fallback.
 func findUV(ctx context.Context, root string) uvRunner {
-	platform := hostPlatformStr()
-	drivePath := filepath.Join(root, "bin", platform, "uv")
-	if _, err := os.Stat(drivePath); err == nil {
-		return uvRunner{ctx: ctx, local: drivePath, root: root}
-	}
-	if path, err := exec.LookPath("uv"); err == nil {
-		return uvRunner{ctx: ctx, local: path, root: root}
-	}
-	// Docker fallback — svalbard-tools container has uv installed.
 	return uvRunner{ctx: ctx, root: root}
 }
 
-// run executes a uv subcommand via local binary or Docker.
 func (u uvRunner) run(args ...string) error {
-	var cmd *exec.Cmd
 	ctx := u.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if u.local != "" {
-		cmd = exec.CommandContext(ctx, u.local, args...)
-	} else {
-		// Translate host paths under vault root to /vault/... for the container.
-		translated := make([]string, len(args))
-		for i, arg := range args {
-			translated[i] = u.toContainerPath(arg)
-		}
-		dockerArgs := []string{
-			"run", "--rm",
-			"-v", u.root + ":/vault",
-			DefaultDockerImage,
-			"uv",
-		}
-		dockerArgs = append(dockerArgs, translated...)
-		cmd = exec.CommandContext(ctx, "docker", dockerArgs...)
+	translated := make([]string, len(args))
+	for i, arg := range args {
+		translated[i] = u.toContainerPath(arg)
 	}
+	dockerArgs := []string{
+		"run", "--rm",
+		"-v", u.root + ":/vault",
+		BaseToolsImage,
+		"uv",
+	}
+	dockerArgs = append(dockerArgs, translated...)
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
 	var buf bytes.Buffer
 	cmd.Stderr = &buf
 	cmd.Stdout = &buf

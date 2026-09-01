@@ -30,14 +30,17 @@ import (
 
 const maxWorkers = 4
 
-// ProgressEvent reports per-item progress during apply.
+// ProgressEvent is JSON Lines-compatible and reports item or procedure progress.
 type ProgressEvent struct {
-	ID         string
-	Status     string // tui.Status* constants
-	Step       string // current build step (e.g. "wget", "warc2zim")
-	Downloaded int64  // bytes so far (only meaningful during StatusActive)
-	Total      int64  // total bytes (-1 if unknown)
-	Error      string
+	ID         string `json:"id"`
+	Procedure  string `json:"procedure_id,omitempty"`
+	State      string `json:"state,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Step       string `json:"step,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Downloaded int64  `json:"downloaded,omitempty"`
+	Total      int64  `json:"total,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // ProgressFunc reports per-item progress during apply.
@@ -120,104 +123,30 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 		}
 	}
 
-	// Run all jobs (downloads + builds) in a shared worker pool.
 	allJobs := append(httpJobs, buildJobs...)
+	levels, err := jobLevels(allJobs, m.Realized.Entries)
+	if err != nil {
+		return err
+	}
 
-	var mu sync.Mutex
 	var applyErrors []string
-
-	results := make(chan downloadResult, len(allJobs))
-	jobs := make(chan downloadJob, len(allJobs))
-
-	var wg sync.WaitGroup
-	workerCount := maxWorkers
-	if workerCount > len(allJobs) {
-		workerCount = len(allJobs)
-	}
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for job := range jobs {
-				progress(ProgressEvent{ID: job.id, Status: tui.StatusActive})
-
-				var entries []manifest.RealizedEntry
-				var err error
-
-				// Throttled progress: report at most every 250ms to avoid flooding TUI.
-				var lastReport time.Time
-				dlProgress := func(downloaded, total int64) {
-					now := time.Now()
-					if now.Sub(lastReport) < 250*time.Millisecond {
-						return
-					}
-					lastReport = now
-					progress(ProgressEvent{
-						ID: job.id, Status: tui.StatusActive,
-						Downloaded: downloaded, Total: total,
-					})
-				}
-
-				switch {
-				case job.recipe.URL != "" || job.recipe.URLPattern != "":
-					var entry manifest.RealizedEntry
-					entry, err = downloadItem(ctx, root, job.id, job.recipe, dlProgress)
-					if err == nil {
-						entries = []manifest.RealizedEntry{entry}
-						writeEmbeddingSidecar(root, entry, job.recipe)
-					}
-
-				case len(job.recipe.Platforms) > 0:
-					entries, err = downloadPlatformItems(ctx, root, job.id, job.recipe, m.Desired.Options.HostPlatforms, dlProgress)
-
-				case job.recipe.Strategy == "build" && job.recipe.Build != nil:
-					jobID := job.id
-					if nativeFn, ok := builder.Dispatch(job.recipe); ok {
-						entries, err = nativeFn(root, job.recipe, cat, builder.Options{
-							Ctx:        ctx,
-							Platforms:  m.Desired.Options.HostPlatforms,
-							DesiredIDs: desiredIDs,
-							OnStatus: func(step string) {
-								progress(ProgressEvent{ID: jobID, Status: tui.StatusActive, Step: step})
-							},
-						})
-					} else {
-						var entry manifest.RealizedEntry
-						entry, err = buildItem(ctx, root, job.id, job.recipe)
-						if err == nil {
-							entries = []manifest.RealizedEntry{entry}
-						}
-					}
-				}
-
-				results <- downloadResult{id: job.id, entries: entries, err: err}
+	for _, level := range levels {
+		results := runJobBatch(ctx, root, level, cat, m.Desired.Options.HostPlatforms, desiredIDs, progress)
+		levelFailed := false
+		for _, res := range results {
+			if res.err != nil {
+				progress(ProgressEvent{ID: res.id, Status: tui.StatusFailed, Error: res.err.Error()})
+				slog.Warn("job failed", "id", res.id, "error", res.err)
+				applyErrors = append(applyErrors, fmt.Sprintf("%s: %s", res.id, res.err))
+				levelFailed = true
+				continue
 			}
-		}()
-	}
-
-	for _, job := range allJobs {
-		jobs <- job
-	}
-	close(jobs)
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	for res := range results {
-		if res.err != nil {
-			progress(ProgressEvent{ID: res.id, Status: tui.StatusFailed, Error: res.err.Error()})
-			slog.Warn("job failed", "id", res.id, "error", res.err)
-			mu.Lock()
-			applyErrors = append(applyErrors, fmt.Sprintf("%s: %s", res.id, res.err))
-			mu.Unlock()
-			continue
+			m.Realized.Entries = append(m.Realized.Entries, res.entries...)
+			progress(ProgressEvent{ID: res.id, Status: tui.StatusDone})
 		}
-		mu.Lock()
-		m.Realized.Entries = append(m.Realized.Entries, res.entries...)
-		mu.Unlock()
-		progress(ProgressEvent{ID: res.id, Status: tui.StatusDone})
+		if levelFailed {
+			break
+		}
 	}
 
 	// Collect env vars and menu specs from all realized recipes.
@@ -262,6 +191,107 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 
 	slog.Info("apply completed", "realized", len(m.Realized.Entries))
 	return nil
+}
+
+func runJobBatch(
+	ctx context.Context,
+	root string,
+	batch []downloadJob,
+	cat *catalog.Catalog,
+	platforms []string,
+	desiredIDs map[string]bool,
+	progress ProgressFunc,
+) []downloadResult {
+	results := make(chan downloadResult, len(batch))
+	jobs := make(chan downloadJob, len(batch))
+	var wg sync.WaitGroup
+	workerCount := min(maxWorkers, len(batch))
+	for range workerCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				results <- executeJob(ctx, root, job, cat, platforms, desiredIDs, progress)
+			}
+		}()
+	}
+	for _, job := range batch {
+		jobs <- job
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	out := make([]downloadResult, 0, len(batch))
+	for result := range results {
+		out = append(out, result)
+	}
+	slices.SortFunc(out, func(a, b downloadResult) int {
+		return strings.Compare(a.id, b.id)
+	})
+	return out
+}
+
+func executeJob(
+	ctx context.Context,
+	root string,
+	job downloadJob,
+	cat *catalog.Catalog,
+	platforms []string,
+	desiredIDs map[string]bool,
+	progress ProgressFunc,
+) downloadResult {
+	progress(ProgressEvent{ID: job.id, Status: tui.StatusActive})
+	var lastReport time.Time
+	dlProgress := func(downloaded, total int64) {
+		now := time.Now()
+		if now.Sub(lastReport) < 250*time.Millisecond {
+			return
+		}
+		lastReport = now
+		progress(ProgressEvent{ID: job.id, Status: tui.StatusActive, Downloaded: downloaded, Total: total})
+	}
+
+	var entries []manifest.RealizedEntry
+	var err error
+	switch {
+	case job.recipe.URL != "" || job.recipe.URLPattern != "":
+		var entry manifest.RealizedEntry
+		entry, err = downloadItem(ctx, root, job.id, job.recipe, dlProgress)
+		if err == nil {
+			entries = []manifest.RealizedEntry{entry}
+			writeEmbeddingSidecar(root, entry, job.recipe)
+		}
+	case len(job.recipe.Platforms) > 0:
+		entries, err = downloadPlatformItems(ctx, root, job.id, job.recipe, platforms, dlProgress)
+	case job.recipe.Strategy == "build" && job.recipe.Build != nil:
+		if nativeFn, ok := builder.Dispatch(job.recipe); ok {
+			entries, err = nativeFn(root, job.recipe, cat, builder.Options{
+				Ctx:        ctx,
+				Platforms:  platforms,
+				DesiredIDs: desiredIDs,
+				OnEvent: func(event builder.BuildEvent) {
+					status := tui.StatusActive
+					if event.State == builder.EventFailed {
+						status = tui.StatusFailed
+					}
+					message := event.Message
+					if message == "" {
+						message = event.Procedure
+					}
+					progress(ProgressEvent{
+						ID: job.id, Procedure: event.Procedure, State: string(event.State),
+						Status: status, Step: message, Message: event.Message, Error: event.Error,
+					})
+				},
+			})
+		} else {
+			err = fmt.Errorf("unsupported build family %q for recipe %s", job.recipe.Build.Family, job.id)
+		}
+	default:
+		err = fmt.Errorf("no acquisition strategy")
+	}
+	return downloadResult{id: job.id, entries: entries, err: err}
 }
 
 func syncMapViewer(root string, entries []manifest.RealizedEntry) error {

@@ -10,15 +10,15 @@ import (
 	"strconv"
 	"strings"
 
-	hosttui "github.com/pkronstrom/svalbard/host-tui"
 	"github.com/pkronstrom/svalbard/host-cli/internal/apply"
-	"github.com/pkronstrom/svalbard/tui"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 	"github.com/pkronstrom/svalbard/host-cli/internal/volumes"
+	hosttui "github.com/pkronstrom/svalbard/host-tui"
+	"github.com/pkronstrom/svalbard/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -581,6 +581,15 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 				item.Type = recipe.Type
 				item.SizeGB = recipe.SizeGB
 				item.Description = recipe.Description
+				if recipe.Build != nil {
+					item.Network = recipe.Build.Network
+					item.BuildDownloadGB = recipe.Build.EstimatedDownloadGB
+					item.BuildWorkGB = recipe.Build.EstimatedWorkGB
+					item.Requires = append([]string(nil), recipe.Build.Requires...)
+					summary.BuildDownloadGB += item.BuildDownloadGB
+					summary.BuildWorkGB += item.BuildWorkGB
+					summary.ToolsRequired = summary.ToolsRequired || len(item.Requires) > 0
+				}
 			}
 			summary.ToDownload = append(summary.ToDownload, item)
 			summary.DownloadGB += item.SizeGB
@@ -627,12 +636,9 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		}
 		progress := apply.ProgressFunc(func(ev apply.ProgressEvent) {
 			onProgress(hosttui.ApplyEvent{
-				ID:         ev.ID,
-				Status:     ev.Status,
-				Step:       ev.Step,
-				Downloaded: ev.Downloaded,
-				Total:      ev.Total,
-				Error:      ev.Error,
+				ID: ev.ID, Procedure: ev.Procedure, State: ev.State,
+				Status: ev.Status, Step: ev.Step, Message: ev.Message,
+				Downloaded: ev.Downloaded, Total: ev.Total, Error: ev.Error,
 			})
 		})
 		return commands.ApplyVault(ctx, root, cat, progress)

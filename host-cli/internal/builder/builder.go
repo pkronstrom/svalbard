@@ -11,20 +11,28 @@ package builder
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
-// DefaultDockerImage is the default Docker image for build fallbacks.
-const DefaultDockerImage = "ghcr.io/pkronstrom/svalbard-tools:latest"
+const (
+	ToolsImageVersion  = "0.2.0"
+	BaseToolsImage     = "ghcr.io/pkronstrom/svalbard-tools:" + ToolsImageVersion
+	BrowserToolsImage  = "ghcr.io/pkronstrom/svalbard-tools:" + ToolsImageVersion + "-browser"
+	DefaultDockerImage = BaseToolsImage
+)
 
 // Options provides context from the apply layer to builders.
 type Options struct {
-	Ctx        context.Context   // cancellation context — child processes are killed on cancel
-	Platforms  []string          // target platforms (from manifest HostPlatforms)
-	DesiredIDs map[string]bool   // item IDs the user selected (from plan.ToDownload)
-	OnStatus   func(step string) // optional: report current build step (e.g. "wget", "warc2zim")
+	Ctx        context.Context
+	Platforms  []string
+	DesiredIDs map[string]bool
+	OnStatus   func(step string) // legacy status adapter
+	OnEvent    func(BuildEvent)
 }
 
 // Func is the signature for a native builder.
@@ -47,9 +55,8 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 		return buildPythonVenv, true
 	}
 
-	// 3. App-bundle with source_url: convert to pipeline internally.
-	//    Asset-based app-bundles (no source_url) fall through to Docker.
-	if recipe.Build.Family == "app-bundle" && recipe.Build.SourceURL != "" {
+	// 3. App bundles use the shared Go download/extract pipeline.
+	if recipe.Build.Family == "app-bundle" {
 		return buildAppBundleAsPipeline, true
 	}
 
@@ -60,12 +67,36 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 // and executes it. This provides backward compatibility for existing recipes
 // that use family: app-bundle with source_url or assets.
 func buildAppBundleAsPipeline(root string, recipe catalog.Item, cat *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
-	if recipe.Build.SourceURL != "" {
+	switch {
+	case recipe.Build.SourceURL != "":
 		recipe.Build.Steps = []catalog.BuildStep{
 			{Download: "{source_url}", Dest: "{workdir}/archive"},
 			{Extract: "{workdir}/archive", Dest: "{output_dir}"},
 			{Verify: "{output_dir}", NotEmpty: true},
 		}
+	case len(recipe.Build.Assets) > 0:
+		steps := make([]catalog.BuildStep, 0, len(recipe.Build.Assets)+1)
+		for _, asset := range recipe.Build.Assets {
+			dest, err := safeAssetDestination(asset.Dest)
+			if err != nil {
+				return nil, fmt.Errorf("app-bundle %s: %w", recipe.ID, err)
+			}
+			steps = append(steps, catalog.BuildStep{
+				Download: asset.URL,
+				Dest:     filepath.Join("{output_dir}", dest),
+			})
+		}
+		recipe.Build.Steps = append(steps, catalog.BuildStep{Verify: "{output_dir}", NotEmpty: true})
+	default:
+		return nil, fmt.Errorf("app-bundle %s: source_url or assets required", recipe.ID)
 	}
 	return buildPipeline(root, recipe, cat, opts)
+}
+
+func safeAssetDestination(dest string) (string, error) {
+	clean := filepath.Clean(filepath.FromSlash(dest))
+	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid asset destination %q", dest)
+	}
+	return clean, nil
 }

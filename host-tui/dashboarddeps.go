@@ -45,29 +45,39 @@ type VaultStatus struct {
 
 // PlanSummary describes pending reconciliation changes for the Plan screen.
 type PlanSummary struct {
-	ToDownload  []PlanItem
-	ToRemove    []PlanItem
-	DownloadGB  float64
-	RemoveGB    float64
-	FreeAfterGB float64
+	ToDownload      []PlanItem
+	ToRemove        []PlanItem
+	DownloadGB      float64
+	RemoveGB        float64
+	BuildDownloadGB float64
+	BuildWorkGB     float64
+	ToolsRequired   bool
+	FreeAfterGB     float64
 }
 
 // PlanItem is a single entry in a reconciliation plan.
 type PlanItem struct {
-	ID          string
-	Type        string
-	SizeGB      float64
-	Description string
-	Action      string // "download" or "remove"
+	ID              string
+	Type            string
+	SizeGB          float64
+	Description     string
+	Action          string
+	Network         bool
+	BuildDownloadGB float64
+	BuildWorkGB     float64
+	Requires        []string
 }
 
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
 	ID         string
-	Status     string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
-	Step       string // current build step (e.g. "wget", "warc2zim")
-	Downloaded int64  // bytes downloaded so far
-	Total      int64  // total bytes (-1 if unknown)
+	Procedure  string
+	State      string
+	Status     string
+	Step       string
+	Message    string
+	Downloaded int64
+	Total      int64
 	Error      string
 }
 

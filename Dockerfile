@@ -1,3 +1,4 @@
+ARG ZIMIT_VERSION=3.1.3
 FROM python:3.12-alpine3.21 AS builder
 
 RUN apk add --no-cache build-base sqlite-dev zlib-dev curl bash
@@ -47,7 +48,7 @@ WORKDIR /src
 RUN go build -o /usr/local/bin/zim-dither ./cmd/zim-dither/ \
     && go build -o /usr/local/bin/zim-compact ./cmd/zim-compact/
 
-FROM python:3.12-alpine3.21
+FROM python:3.12-alpine3.21 AS tools-base
 
 RUN apk add --no-cache \
     ca-certificates \
@@ -68,7 +69,7 @@ ENV MAGIC=/usr/share/misc/magic.mgc
 COPY --from=go-builder /usr/local/bin/zim-dither /usr/local/bin/
 COPY --from=go-builder /usr/local/bin/zim-compact /usr/local/bin/
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
 
 RUN apk add --no-cache --virtual .build-deps gcc g++ musl-dev python3-dev \
     && pip install --no-cache-dir \
@@ -80,3 +81,9 @@ RUN apk add --no-cache --virtual .build-deps gcc g++ musl-dev python3-dev \
     && apk del .build-deps
 
 COPY recipes/builders/media-zim.py /usr/local/bin/build-media-zim.py
+
+# Browser-heavy website crawling is published as a separate target so ordinary
+# builders do not pull Chromium/Browsertrix layers.
+FROM ghcr.io/openzim/zimit:${ZIMIT_VERSION} AS tools-browser
+LABEL org.opencontainers.image.source="https://github.com/pkronstrom/svalbard"
+LABEL org.opencontainers.image.description="Svalbard browser build appliance"

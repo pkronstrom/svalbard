@@ -16,30 +16,40 @@ import (
 
 // PlanItem is a single entry in a reconciliation plan.
 type PlanItem struct {
-	ID          string
-	Type        string
-	SizeGB      float64
-	Description string
-	Action      string // "download" or "remove"
+	ID              string
+	Type            string
+	SizeGB          float64
+	Description     string
+	Action          string
+	Network         bool
+	BuildDownloadGB float64
+	BuildWorkGB     float64
+	Requires        []string
 }
 
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
 	ID         string
-	Status     string // tui.StatusQueued, tui.StatusActive, tui.StatusDone, tui.StatusFailed
-	Step       string // current build step (e.g. "wget", "warc2zim")
-	Downloaded int64  // bytes downloaded so far
-	Total      int64  // total bytes (-1 if unknown)
+	Procedure  string
+	State      string
+	Status     string
+	Step       string
+	Message    string
+	Downloaded int64
+	Total      int64
 	Error      string
 }
 
 // Config holds everything the plan screen needs from its parent.
 type Config struct {
-	Items       []PlanItem
-	DownloadGB  float64
-	RemoveGB    float64
-	FreeAfterGB float64
-	RunApply    func(ctx context.Context, onProgress func(ApplyEvent)) error // nil if apply not available
+	Items           []PlanItem
+	DownloadGB      float64
+	RemoveGB        float64
+	BuildDownloadGB float64
+	BuildWorkGB     float64
+	ToolsRequired   bool
+	FreeAfterGB     float64
+	RunApply        func(ctx context.Context, onProgress func(ApplyEvent)) error
 }
 
 // ---------------------------------------------------------------------------
@@ -74,22 +84,24 @@ type applyStep struct {
 
 // Model is the bubbletea model for the Plan + Apply screen.
 type Model struct {
-	items       []PlanItem
-	downloadGB  float64
-	removeGB    float64
-	freeAfterGB float64
-	runApply    func(ctx context.Context, onProgress func(ApplyEvent)) error
-
-	cursor       int
-	scrollOffset int
+	items           []PlanItem
+	downloadGB      float64
+	removeGB        float64
+	buildDownloadGB float64
+	buildWorkGB     float64
+	toolsRequired   bool
+	freeAfterGB     float64
+	runApply        func(ctx context.Context, onProgress func(ApplyEvent)) error
+	cursor          int
+	scrollOffset    int
 
 	// Apply sub-state
-	applying     bool
-	applyItems   []applyStep
-	applyCh      <-chan ApplyEvent
-	applyDone    bool
-	applyErr     string
-	applyCancel  context.CancelFunc
+	applying    bool
+	applyItems  []applyStep
+	applyCh     <-chan ApplyEvent
+	applyDone   bool
+	applyErr    string
+	applyCancel context.CancelFunc
 
 	width, height int
 	theme         tui.Theme
@@ -99,13 +111,16 @@ type Model struct {
 // New creates a Model from the given Config.
 func New(cfg Config) Model {
 	return Model{
-		items:       cfg.Items,
-		downloadGB:  cfg.DownloadGB,
-		removeGB:    cfg.RemoveGB,
-		freeAfterGB: cfg.FreeAfterGB,
-		runApply:    cfg.RunApply,
-		theme:       tui.DefaultTheme(),
-		keys:        tui.DefaultKeyMap(),
+		items:           cfg.Items,
+		downloadGB:      cfg.DownloadGB,
+		removeGB:        cfg.RemoveGB,
+		buildDownloadGB: cfg.BuildDownloadGB,
+		buildWorkGB:     cfg.BuildWorkGB,
+		toolsRequired:   cfg.ToolsRequired,
+		freeAfterGB:     cfg.FreeAfterGB,
+		runApply:        cfg.RunApply,
+		theme:           tui.DefaultTheme(),
+		keys:            tui.DefaultKeyMap(),
 	}
 }
 
@@ -381,6 +396,23 @@ func (m Model) viewPlan() string {
 			b.WriteString("\n")
 			b.WriteString(m.theme.Muted.Render("  " + it.Description))
 		}
+		var buildDetails []string
+		if it.Network {
+			buildDetails = append(buildDetails, "network")
+		}
+		if it.BuildDownloadGB > 0 {
+			buildDetails = append(buildDetails, fmt.Sprintf("~%.1f GB source", it.BuildDownloadGB))
+		}
+		if it.BuildWorkGB > 0 {
+			buildDetails = append(buildDetails, fmt.Sprintf("~%.1f GB staging", it.BuildWorkGB))
+		}
+		if len(it.Requires) > 0 {
+			buildDetails = append(buildDetails, "tools: "+strings.Join(it.Requires, ", "))
+		}
+		if len(buildDetails) > 0 {
+			b.WriteString("\n")
+			b.WriteString(m.theme.Warning.Render("  Build: " + strings.Join(buildDetails, " · ")))
+		}
 	}
 
 	// Summary
@@ -389,6 +421,17 @@ func (m Model) viewPlan() string {
 		"  Download: %s  |  Remove: %s",
 		tui.FormatSize(m.downloadGB), tui.FormatSize(m.removeGB),
 	)))
+	if m.buildDownloadGB > 0 || m.buildWorkGB > 0 || m.toolsRequired {
+		tools := "no tools image"
+		if m.toolsRequired {
+			tools = "tools image required"
+		}
+		b.WriteString("\n")
+		b.WriteString(m.theme.Warning.Render(fmt.Sprintf(
+			"  Build sources: ~%.1f GB  |  Staging: ~%.1f GB  |  %s",
+			m.buildDownloadGB, m.buildWorkGB, tools,
+		)))
+	}
 
 	// Footer
 	enterLabel := tui.KeyBinding{Key: "enter", Label: "Enter: apply"}
@@ -413,7 +456,6 @@ func (m Model) viewPlan() string {
 	}
 	return shell.Render()
 }
-
 
 func (m Model) viewApply() string {
 	pv := m.applyProgressView()
@@ -474,5 +516,3 @@ func (m Model) applyProgressView() tui.ProgressView {
 		MaxVisible: tui.MaxVisibleRows(m.height, 12, 4),
 	}
 }
-
-

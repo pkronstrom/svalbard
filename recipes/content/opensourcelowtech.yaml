@@ -17,7 +17,6 @@ build:
   output: opensourcelowtech.zim
   steps:
   - exec: zimit
-    docker_image: ghcr.io/openzim/zimit:latest
     args:
     - --seeds
     - "{source_url}"

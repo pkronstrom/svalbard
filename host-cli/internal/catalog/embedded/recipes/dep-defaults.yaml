@@ -5,3 +5,5 @@
 gguf: [llama-server]
 pmtiles: [go-pmtiles, maplibre-vendor, dufs]
 zim: [kiwix-serve]
+python-package: [svalbard-python]
+python-venv: [uv]

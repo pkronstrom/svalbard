@@ -53,49 +53,19 @@ func buildPipeline(root string, recipe catalog.Item, _ *catalog.Catalog, opts Op
 		return nil, err
 	}
 
-	workdir, err := os.MkdirTemp("", "svalbard-build-"+recipe.ID+"-*")
-	if err != nil {
+	workdir := filepath.Join(root, ".staging", "build", recipe.ID)
+	if err := os.MkdirAll(workdir, 0o755); err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(workdir)
 
 	// Build template vars from recipe build config + well-known paths.
 	vars := buildTemplateVars(root, recipe, workdir, outputDir, outputFile)
-
-	report := func(step string) {
-		if opts.OnStatus != nil {
-			opts.OnStatus(step)
-		}
+	procedures, err := CompileProcedures(recipe.Build.Steps, vars)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline %s: %w", recipe.ID, err)
 	}
-
-	for i, step := range recipe.Build.Steps {
-		switch {
-		case step.Download != "":
-			report(fmt.Sprintf("downloading %s", filepath.Base(resolve(step.Dest, vars))))
-			if err := stepDownload(ctx, resolve(step.Download, vars), resolve(step.Dest, vars)); err != nil {
-				return nil, fmt.Errorf("step %d (download): %w", i+1, err)
-			}
-		case step.Extract != "":
-			report("extracting")
-			if err := stepExtract(resolve(step.Extract, vars), resolve(step.Dest, vars)); err != nil {
-				return nil, fmt.Errorf("step %d (extract): %w", i+1, err)
-			}
-		case step.Exec != "":
-			report(step.Exec)
-			resolvedArgs := make([]string, len(step.Args))
-			for j, arg := range step.Args {
-				resolvedArgs[j] = resolve(arg, vars)
-			}
-			if err := stepExec(ctx, root, workdir, step.Exec, resolvedArgs, step.DockerImage); err != nil {
-				return nil, fmt.Errorf("step %d (exec %s): %w", i+1, step.Exec, err)
-			}
-		case step.Verify != "":
-			if err := stepVerify(resolve(step.Verify, vars), step.NotEmpty, step.MinSize); err != nil {
-				return nil, fmt.Errorf("step %d (verify): %w", i+1, err)
-			}
-		default:
-			return nil, fmt.Errorf("step %d: no action specified", i+1)
-		}
+	if err := RunLinear(ctx, root, workdir, recipe.ID, procedures, opts); err != nil {
+		return nil, fmt.Errorf("pipeline %s: %w", recipe.ID, err)
 	}
 
 	// Determine what was produced and record it.
@@ -196,10 +166,9 @@ func stepExec(ctx context.Context, root, workdir, tool string, args []string, do
 		return nil
 	}
 
-	// Docker fallback.
-	image := DefaultDockerImage
-	if dockerImage != "" {
-		image = dockerImage
+	image, err := toolsImage(tool, dockerImage)
+	if err != nil {
+		return err
 	}
 	// Translate host paths to container paths:
 	//   vault root → /vault
@@ -236,7 +205,6 @@ func stepExec(ctx context.Context, root, workdir, tool string, args []string, do
 	cmd.Stdout = &buf
 	if err := cmd.Run(); err != nil {
 		slog.Warn("docker exec failed", "tool", tool, "image", image, "output", tailOf(buf.String(), 2000))
-		// Tail, not head: the actionable part of a traceback is at the end.
 		return fmt.Errorf("%w\n%s", err, tailOf(buf.String(), 500))
 	}
 	return nil
@@ -270,6 +238,21 @@ func stepVerify(path string, notEmpty bool, minSize int64) error {
 		}
 	}
 	return nil
+}
+
+func toolsImage(tool, requested string) (string, error) {
+	if requested != "" && requested != BaseToolsImage && requested != BrowserToolsImage {
+		return "", fmt.Errorf("tool %s requests unsupported image %s", tool, requested)
+	}
+	if requested != "" {
+		return requested, nil
+	}
+	switch tool {
+	case "zimit", "warc2zim", "browsertrix-crawler":
+		return BrowserToolsImage, nil
+	default:
+		return BaseToolsImage, nil
+	}
 }
 
 // findTool looks for a tool binary on the drive, then on PATH.

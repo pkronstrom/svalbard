@@ -281,3 +281,29 @@ func TestApplyPerItemErrorThenGlobalError(t *testing.T) {
 		t.Error("expected at least one item to have an error message")
 	}
 }
+
+func TestPlanShowsBuildResourceRequirements(t *testing.T) {
+	m := New(Config{
+		Items: []PlanItem{{
+			ID:              "compact-zim",
+			Type:            "zim",
+			SizeGB:          1.2,
+			Action:          "download",
+			Network:         true,
+			BuildDownloadGB: 2.4,
+			BuildWorkGB:     4,
+			Requires:        []string{"zimwriterfs"},
+		}},
+		BuildDownloadGB: 2.4,
+		BuildWorkGB:     4,
+		ToolsRequired:   true,
+	})
+	m.width = 100
+	m.height = 40
+	view := stripAnsi(m.View())
+	for _, want := range []string{"network", "~2.4 GB source", "~4.0 GB staging", "tools: zimwriterfs", "tools image required"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("View() missing %q:\\n%s", want, view)
+		}
+	}
+}
