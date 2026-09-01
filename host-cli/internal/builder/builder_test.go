@@ -38,6 +38,12 @@ func TestDispatchPrecedence(t *testing.T) {
 			ok:     true,
 		},
 		{
+			name:   "content archive",
+			recipe: catalog.Item{Build: &catalog.BuildSpec{Family: "content-archive"}},
+			want:   "buildContentArchive",
+			ok:     true,
+		},
+		{
 			name:   "unsupported family",
 			recipe: catalog.Item{Build: &catalog.BuildSpec{Family: "unknown"}},
 			ok:     false,

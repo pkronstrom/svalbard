@@ -66,6 +66,8 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 		return buildVectorStatic, true
 	case "vector-service":
 		return buildVectorService, true
+	case "content-archive":
+		return buildContentArchive, true
 	}
 	// 3. App bundles use the shared Go download/extract pipeline.
 	if recipe.Build.Family == "app-bundle" {

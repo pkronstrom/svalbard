@@ -3,11 +3,13 @@ module github.com/pkronstrom/svalbard/host-cli
 go 1.25.6
 
 require (
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/ncruces/go-sqlite3 v0.33.3
 	github.com/pkronstrom/svalbard/host-tui v0.0.0-00010101000000-000000000000
 	github.com/pkronstrom/svalbard/tui v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.9.1
 	github.com/stazelabs/gozim v0.1.0
+	golang.org/x/net v0.48.0
 	golang.org/x/sys v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
