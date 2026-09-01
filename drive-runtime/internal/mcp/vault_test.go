@@ -15,9 +15,6 @@ func TestVaultCapabilityToolName(t *testing.T) {
 	if cap.Tool() != "vault" {
 		t.Errorf("expected tool name 'vault', got %q", cap.Tool())
 	}
-	if cap.Description() == "" {
-		t.Error("expected non-empty description")
-	}
 	actions := cap.Actions()
 	if len(actions) != 4 {
 		t.Fatalf("expected 4 actions, got %d", len(actions))

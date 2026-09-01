@@ -1,20 +1,17 @@
 package welcome_test
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pkronstrom/svalbard/host-tui/internal/welcome"
+	"github.com/pkronstrom/svalbard/tui"
 )
 
 // stripAnsi removes ANSI escape sequences so tests can assert on plain text.
-func stripAnsi(s string) string {
-	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	return re.ReplaceAllString(s, "")
-}
+func stripAnsi(s string) string { return tui.StripAnsi(s) }
 
 // sizedModel returns a welcome.Model after processing a WindowSizeMsg.
 func sizedModel(w, h int) tea.Model {

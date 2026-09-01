@@ -62,7 +62,7 @@ func TestDeleteSourceRemovesArticles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	count, err := db.ArticleCount()
+	_, count, err := db.Stats()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestDeleteSourceRemovesArticles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	count, err = db.ArticleCount()
+	_, count, err = db.Stats()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,39 +165,6 @@ func TestIndexedFilenames(t *testing.T) {
 	}
 }
 
-func TestDeleteSource(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	sid, err := db.UpsertSource("wiki.zim", "Wikipedia")
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = db.InsertArticles(sid, []Article{
-		{Path: "A/Test", Title: "Test", Body: "test content"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = db.DeleteSource(sid)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Source should be gone
-	fns, err := db.IndexedFilenames()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(fns) != 0 {
-		t.Errorf("expected 0 filenames after delete, got %d", len(fns))
-	}
-}
-
 func TestUpsertSourceUpdatesTitle(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -263,7 +230,7 @@ func TestChunkEmbeddings(t *testing.T) {
 	}
 
 	// Initially no embeddings.
-	count, err := db.EmbeddingCount()
+	count, err := db.EmbeddingCountBySource(sid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +239,7 @@ func TestChunkEmbeddings(t *testing.T) {
 	}
 
 	// Get unembedded articles.
-	unembedded, err := db.UnembeddedArticles(0, 10)
+	unembedded, err := db.UnembeddedArticlesBySource(sid, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +257,7 @@ func TestChunkEmbeddings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	count, err = db.EmbeddingCount()
+	count, err = db.EmbeddingCountBySource(sid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +266,7 @@ func TestChunkEmbeddings(t *testing.T) {
 	}
 
 	// Only one article should remain unembedded.
-	remaining, err := db.UnembeddedArticles(0, 10)
+	remaining, err := db.UnembeddedArticlesBySource(sid, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +303,8 @@ func TestInsertChunkEmbeddingsMultipleChunksPerArticle(t *testing.T) {
 	}
 
 	// Total rows in embeddings should be 3.
-	count, err := db.EmbeddingCount()
+	var count int64
+	err = db.db.QueryRow("SELECT COUNT(*) FROM embeddings").Scan(&count)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +313,7 @@ func TestInsertChunkEmbeddingsMultipleChunksPerArticle(t *testing.T) {
 	}
 
 	// Article should NOT appear as unembedded (it has chunks).
-	unembedded, err := db.UnembeddedArticles(0, 10)
+	unembedded, err := db.UnembeddedArticlesBySource(sid, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +356,8 @@ func TestInsertChunkEmbeddingsInsertOrReplace(t *testing.T) {
 	}
 
 	// Should still be exactly 1 row (replaced, not duplicated).
-	count, err := db.EmbeddingCount()
+	var count int64
+	err = db.db.QueryRow("SELECT COUNT(*) FROM embeddings").Scan(&count)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,30 +433,5 @@ func TestUnembeddedArticlesBySourceReturnsSections(t *testing.T) {
 	// Second article should have empty sections.
 	if articles[1].Sections != "" {
 		t.Errorf("article 2 sections = %q, want empty", articles[1].Sections)
-	}
-}
-
-func TestUnembeddedArticlesReturnsSections(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	sid, _ := db.UpsertSource("test.zim", "Test")
-	sectionsJSON := `[{"heading":"A","body":"aaa"}]`
-	db.InsertArticles(sid, []Article{
-		{Path: "/A/One", Title: "One", Body: "first", Sections: sectionsJSON},
-	})
-
-	articles, err := db.UnembeddedArticles(0, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(articles) != 1 {
-		t.Fatalf("unembedded = %d, want 1", len(articles))
-	}
-	if articles[0].Sections != sectionsJSON {
-		t.Errorf("sections = %q, want %q", articles[0].Sections, sectionsJSON)
 	}
 }

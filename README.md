@@ -84,7 +84,8 @@ The built binary is at `bin/svalbard`.
 | `make build` | Cross-compile drive-runtime for 4 platforms, embed into svalbard binary |
 | `make build-dev` | Quick build without embedding (requires Go at apply-time) |
 | `make build-drive-runtime` | Only cross-compile drive-runtime binaries |
-| `make test` | Run all tests |
+| `make test` / `make verify` | Check catalog parity and test all five Go modules |
+| `scripts/sync-catalog.sh` | Regenerate the embedded catalog after editing `recipes/` or `presets/` |
 | `make clean` | Remove build artifacts |
 
 ## Architecture

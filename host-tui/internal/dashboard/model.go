@@ -27,9 +27,6 @@ var hostDestinations = []destination{
 	{destNewVault, "New Vault", "init wizard"},
 }
 
-// separatorBefore lists destination IDs that should have a separator above them.
-var separatorBefore = map[string]bool{destNewVault: true}
-
 // NewVaultMsg is sent when the user selects "New Vault" from the dashboard.
 type NewVaultMsg struct{}
 
@@ -137,12 +134,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.keys.MoveDown.Matches(msg):
 			if m.selected < len(hostDestinations)-1 {
 				m.selected++
-				}
+			}
 			return m, nil
 		case m.keys.MoveUp.Matches(msg):
 			if m.selected > 0 {
 				m.selected--
-				}
+			}
 			return m, nil
 		case m.keys.Enter.Matches(msg):
 			return m, m.selectCurrent()

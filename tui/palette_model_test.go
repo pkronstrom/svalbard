@@ -50,7 +50,7 @@ func TestPaletteModelFiltersOnType(t *testing.T) {
 	if !strings.Contains(out2, "Plan") {
 		t.Errorf("expected 'Plan' in filtered view for 'plan', got:\n%s", out2)
 	}
-	if strings.Contains(stripANSI(out2), "Apply") {
+	if strings.Contains(stripAnsi(out2), "Apply") {
 		t.Errorf("expected 'Apply' to be filtered out for query 'plan', got:\n%s", out2)
 	}
 }

@@ -4,19 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
-
-// ToolInfo describes a registered MCP tool for introspection / testing.
-type ToolInfo struct {
-	Name        string
-	Description string
-	InputSchema gomcp.ToolInputSchema
-	Annotations gomcp.ToolAnnotation
-}
 
 // Server wraps an mcp-go MCPServer and routes calls to Capability instances.
 type Server struct {
@@ -93,27 +84,6 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 		}
 		return gomcp.NewToolResultText(result.Text), nil
 	}
-}
-
-// Tools returns information about every registered tool (for testing).
-func (s *Server) Tools() []ToolInfo {
-	tools := s.inner.ListTools()
-	out := make([]ToolInfo, 0, len(tools))
-	names := make([]string, 0, len(tools))
-	for name := range tools {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		st := tools[name]
-		out = append(out, ToolInfo{
-			Name:        name,
-			Description: st.Tool.Description,
-			InputSchema: st.Tool.InputSchema,
-			Annotations: st.Tool.Annotations,
-		})
-	}
-	return out
 }
 
 func toolName(prefix, action string) string {

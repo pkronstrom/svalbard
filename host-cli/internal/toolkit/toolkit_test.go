@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
@@ -33,6 +35,7 @@ type testMenuItem struct {
 	Label       string         `json:"label"`
 	Description string         `json:"description"`
 	Order       int            `json:"order"`
+	Aliases     []string       `json:"aliases,omitempty"`
 	Action      testActionSpec `json:"action"`
 }
 
@@ -99,7 +102,9 @@ func TestGenerateCreatesActionsJSON(t *testing.T) {
 		{ID: "wikipedia-en-nopic", Type: "zim", Filename: "wikipedia-en-nopic.zim", RelativePath: "zim/wikipedia-en-nopic.zim"},
 		{ID: "ifixit", Type: "zim", Filename: "ifixit.zim", RelativePath: "zim/ifixit.zim"},
 	}
-	if err := Generate(root, entries, "default-32"); err != nil {
+	if err := Generate(root, entries, "default-32", GenerateOpts{Menus: map[string]catalog.MenuSpec{
+		"ifixit": {Aliases: []string{"repair", "fix"}},
+	}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,6 +137,19 @@ func TestGenerateCreatesActionsJSON(t *testing.T) {
 	}
 	if len(library.Items) != 2 {
 		t.Errorf("library items = %d, want 2", len(library.Items))
+	}
+	var ifixit *testMenuItem
+	for i := range library.Items {
+		if library.Items[i].ID == "ifixit" {
+			ifixit = &library.Items[i]
+			break
+		}
+	}
+	if ifixit == nil {
+		t.Fatal("missing ifixit item")
+	}
+	if got, want := ifixit.Aliases, []string{"repair", "fix"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ifixit aliases = %v, want %v", got, want)
 	}
 
 	// Verify first library item (ordered by order field).

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 	searchserver "github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
@@ -50,9 +48,6 @@ func NewSearchCapability(driveRoot string, meta DriveMetadata) *SearchCapability
 }
 
 func (c *SearchCapability) Tool() string { return "search" }
-func (c *SearchCapability) Description() string {
-	return "Search and read offline ZIM archives on this drive. IMPORTANT: First call vault_sources to see what archives are available — searches only work against indexed content. Use specific terms matching the archive topics, not generic web-style queries."
-}
 
 func (c *SearchCapability) Actions() []ActionDef {
 	return []ActionDef{
@@ -290,7 +285,7 @@ func normalizeSourceName(source string) string {
 // hybrid search request. Uses the same sync.Once pattern as ensureKiwix.
 func (c *SearchCapability) ensureEmbedServer() error {
 	c.embedOnce.Do(func() {
-		llamaBin, err := binary.Resolve("llama-server", c.driveRoot, platform.Detect)
+		llamaBin, err := binary.Resolve("llama-server", c.driveRoot)
 		if err != nil {
 			c.embedErr = fmt.Errorf("llama-server not found: %w", err)
 			return
@@ -323,11 +318,10 @@ func (c *SearchCapability) ensureEmbedServer() error {
 	return c.embedErr
 }
 
-// ensureKiwix starts kiwix-serve lazily. Handles the case where the binary
-// is inside a subdirectory (e.g. bin/macos-arm64/kiwix-serve/kiwix-serve).
+// ensureKiwix starts kiwix-serve lazily.
 func (c *SearchCapability) ensureKiwix() error {
 	c.kiwixOnce.Do(func() {
-		kiwixBin, err := resolveKiwixBinary(c.driveRoot)
+		kiwixBin, err := binary.Resolve("kiwix-serve", c.driveRoot)
 		if err != nil {
 			c.kiwixErr = fmt.Errorf("kiwix-serve not found: %w", err)
 			return
@@ -353,34 +347,6 @@ func (c *SearchCapability) ensureKiwix() error {
 		c.kiwixPort = port
 	})
 	return c.kiwixErr
-}
-
-// resolveKiwixBinary handles the case where bin/platform/kiwix-serve is a
-// directory containing the actual binary (common after archive extraction).
-func resolveKiwixBinary(driveRoot string) (string, error) {
-	path, err := binary.Resolve("kiwix-serve", driveRoot, platform.Detect)
-	if err != nil {
-		return "", err
-	}
-	// Check if resolved path is a directory (extracted archive)
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	if info.IsDir() {
-		// Look for the binary inside the directory
-		inner := filepath.Join(path, "kiwix-serve")
-		if fi, err := os.Stat(inner); err == nil && !fi.IsDir() {
-			return inner, nil
-		}
-		// Try to find any executable named kiwix-serve inside subdirs
-		matches, _ := filepath.Glob(filepath.Join(path, "*", "kiwix-serve"))
-		if len(matches) > 0 {
-			return matches[0], nil
-		}
-		return "", fmt.Errorf("kiwix-serve directory found but no binary inside: %s", path)
-	}
-	return path, nil
 }
 
 func (c *SearchCapability) fetchPage(source, path string) (search.Page, error) {

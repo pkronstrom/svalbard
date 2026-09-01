@@ -186,11 +186,11 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 }
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedModel string) error {
-	clientBin, err := binary.Resolve(clientName, driveRoot, platform.Detect)
+	clientBin, err := binary.Resolve(clientName, driveRoot)
 	if err != nil {
 		return fmt.Errorf("%s not found", clientName)
 	}
-	llamaBin, err := binary.Resolve("llama-server", driveRoot, platform.Detect)
+	llamaBin, err := binary.Resolve("llama-server", driveRoot)
 	if err != nil {
 		return fmt.Errorf("llama-server not found")
 	}

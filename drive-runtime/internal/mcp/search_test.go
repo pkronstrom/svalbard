@@ -13,9 +13,6 @@ func TestSearchCapabilityToolName(t *testing.T) {
 	if cap.Tool() != "search" {
 		t.Errorf("expected tool name 'search', got %q", cap.Tool())
 	}
-	if cap.Description() == "" {
-		t.Error("expected non-empty description")
-	}
 }
 
 func TestSearchCapabilityActions(t *testing.T) {

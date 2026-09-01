@@ -15,7 +15,6 @@ import (
 	drivebinary "github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
 )
@@ -204,7 +203,7 @@ func (s *Session) ensureEmbedServer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	llamaBin, err := drivebinary.Resolve("llama-server", s.driveRoot, platform.Detect)
+	llamaBin, err := drivebinary.Resolve("llama-server", s.driveRoot)
 	if err != nil {
 		return err
 	}
@@ -228,7 +227,7 @@ func (s *Session) ensureKiwix(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	kiwixBin, err := drivebinary.Resolve("kiwix-serve", s.driveRoot, platform.Detect)
+	kiwixBin, err := drivebinary.Resolve("kiwix-serve", s.driveRoot)
 	if err != nil {
 		return err
 	}

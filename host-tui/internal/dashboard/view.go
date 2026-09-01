@@ -34,7 +34,7 @@ func (m Model) View() string {
 			ID:          d.id,
 			Label:       d.label,
 			Description: d.desc,
-			Separator:   separatorBefore[d.id],
+			Separator:   d.id == destNewVault,
 		}
 	}
 
@@ -64,15 +64,15 @@ func (m Model) View() string {
 	)
 
 	shell := tui.ShellLayout{
-		Theme:        m.theme,
-		AppName:      "Svalbard",
-		Identity:     filepath.Base(m.vaultPath),
-		Status:       m.ambientStatus(),
-		Left:   nav.Render(),
-		Right:  detail.Render(),
-		Footer: footer,
-		Width:        m.width,
-		Height:       m.height,
+		Theme:    m.theme,
+		AppName:  "Svalbard",
+		Identity: filepath.Base(m.vaultPath),
+		Status:   m.ambientStatus(),
+		Left:     nav.Render(),
+		Right:    detail.Render(),
+		Footer:   footer,
+		Width:    m.width,
+		Height:   m.height,
 	}
 
 	return shell.Render()

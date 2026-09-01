@@ -171,24 +171,6 @@ func (d *DB) UpsertSource(filename, title string) (int64, error) {
 	return id, nil
 }
 
-// DeleteSource removes a source and all its articles from the database.
-func (d *DB) DeleteSource(sourceID int64) error {
-	tx, err := d.db.Begin()
-	if err != nil {
-		return fmt.Errorf("searchdb: begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.Exec("DELETE FROM articles WHERE source_id = ?", sourceID); err != nil {
-		return fmt.Errorf("searchdb: delete articles: %w", err)
-	}
-	if _, err := tx.Exec("DELETE FROM sources WHERE id = ?", sourceID); err != nil {
-		return fmt.Errorf("searchdb: delete source: %w", err)
-	}
-
-	return tx.Commit()
-}
-
 // IndexedFilenames returns all filenames currently indexed.
 func (d *DB) IndexedFilenames() ([]string, error) {
 	rows, err := d.db.Query("SELECT filename FROM sources ORDER BY filename")
@@ -242,13 +224,6 @@ func (d *DB) DeleteSourceArticles(sourceID int64) error {
 		return fmt.Errorf("searchdb: delete source articles: %w", err)
 	}
 	return nil
-}
-
-// ArticleCount returns the total number of articles in the database.
-func (d *DB) ArticleCount() (int64, error) {
-	var count int64
-	err := d.db.QueryRow("SELECT COUNT(*) FROM articles").Scan(&count)
-	return count, err
 }
 
 // Search performs an FTS5 MATCH query and returns ranked results.
@@ -318,32 +293,6 @@ func (d *DB) InsertChunkEmbeddings(chunks []ChunkEmbedding) error {
 	return tx.Commit()
 }
 
-// UnembeddedArticles returns articles without embeddings, ordered by ID,
-// starting after afterID, limited to limit rows.
-func (d *DB) UnembeddedArticles(afterID int64, limit int) ([]UnembeddedArticle, error) {
-	rows, err := d.db.Query(
-		`SELECT a.id, a.title, a.body, COALESCE(a.sections, '') FROM articles a
-		 LEFT JOIN embeddings e ON e.article_id = a.id
-		 WHERE e.article_id IS NULL AND a.id > ?
-		 ORDER BY a.id LIMIT ?`,
-		afterID, limit,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("searchdb: query unembedded: %w", err)
-	}
-	defer rows.Close()
-
-	var articles []UnembeddedArticle
-	for rows.Next() {
-		var a UnembeddedArticle
-		if err := rows.Scan(&a.ID, &a.Title, &a.Body, &a.Sections); err != nil {
-			return nil, fmt.Errorf("searchdb: scan unembedded: %w", err)
-		}
-		articles = append(articles, a)
-	}
-	return articles, rows.Err()
-}
-
 // DeleteAllEmbeddings removes all stored embeddings.
 func (d *DB) DeleteAllEmbeddings() error {
 	_, err := d.db.Exec("DELETE FROM embeddings")
@@ -358,13 +307,6 @@ func (d *DB) EmbeddingDims() (int, error) {
 		return 0, err
 	}
 	return blobLen / 4, nil
-}
-
-// EmbeddingCount returns the number of articles with embeddings.
-func (d *DB) EmbeddingCount() (int64, error) {
-	var count int64
-	err := d.db.QueryRow("SELECT COUNT(*) FROM embeddings").Scan(&count)
-	return count, err
 }
 
 // SourceInfo holds a source's ID, filename, and article count.

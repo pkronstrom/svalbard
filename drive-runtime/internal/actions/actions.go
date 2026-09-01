@@ -308,13 +308,9 @@ func resolveExecutable(executable, resolveFrom, driveRoot, platformName string) 
 	case "", "path":
 		return resolveFromPath(executable)
 	case "drive-bin":
-		return binary.Resolve(executable, driveRoot, func() (string, error) {
-			return platformName, nil
-		})
+		return binary.Resolve(executable, driveRoot)
 	case "drive-bin-or-path":
-		if path, err := binary.Resolve(executable, driveRoot, func() (string, error) {
-			return platformName, nil
-		}); err == nil {
+		if path, err := binary.Resolve(executable, driveRoot); err == nil {
 			return path, nil
 		}
 		return resolveFromPath(executable)

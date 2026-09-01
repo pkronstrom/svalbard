@@ -19,9 +19,6 @@ func NewQueryCapability(driveRoot string, meta DriveMetadata) *QueryCapability {
 }
 
 func (c *QueryCapability) Tool() string { return "query" }
-func (c *QueryCapability) Description() string {
-	return "Query structured SQLite databases on this drive (pharmaceutical registries, nutrition data, etc.)"
-}
 
 func (c *QueryCapability) Actions() []ActionDef {
 	return []ActionDef{

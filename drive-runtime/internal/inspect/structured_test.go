@@ -17,7 +17,7 @@ func TestSourcesReturnsZIMAndSQLiteFiles(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "data", "library.sqlite"), []byte("db-data"))
 	mustWriteFile(t, filepath.Join(dir, "maps", "world.pmtiles"), []byte("map-data"))
 
-	sources, err := inspect.Sources(dir)
+	sources, err := inspect.Sources(dir, "")
 	if err != nil {
 		t.Fatalf("Sources() error = %v", err)
 	}
@@ -67,7 +67,7 @@ func TestSourcesFiltersByType(t *testing.T) {
 
 func TestSourcesEmptyDrive(t *testing.T) {
 	dir := t.TempDir()
-	sources, err := inspect.Sources(dir)
+	sources, err := inspect.Sources(dir, "")
 	if err != nil {
 		t.Fatalf("Sources() error = %v", err)
 	}

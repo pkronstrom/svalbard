@@ -39,9 +39,6 @@ func TestQueryCapabilityToolName(t *testing.T) {
 	if cap.Tool() != "query" {
 		t.Errorf("expected tool name 'query', got %q", cap.Tool())
 	}
-	if cap.Description() == "" {
-		t.Error("expected non-empty description")
-	}
 	actions := cap.Actions()
 	if len(actions) != 2 {
 		t.Fatalf("expected 2 actions, got %d", len(actions))

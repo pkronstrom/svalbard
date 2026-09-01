@@ -187,7 +187,7 @@ func renderTopLevelView(b *strings.Builder, m Model) {
 			Theme:    m.theme,
 			AppName:  "Svalbard",
 			Identity: m.cfg.Preset,
-			Left:     m.theme.Help.Render("No groups match the current filter."),
+			Left:     m.theme.Help.Render("No groups available."),
 			Right:    "",
 			Footer:   footer,
 			Width:    m.width,
@@ -247,7 +247,7 @@ func renderGroupView(b *strings.Builder, m Model) {
 
 	visible := m.VisibleItems()
 	if len(visible) == 0 {
-		b.WriteString(m.theme.Help.Render("No items match the current filter."))
+		b.WriteString(m.theme.Help.Render("No items available."))
 		b.WriteString("\n")
 		return
 	}

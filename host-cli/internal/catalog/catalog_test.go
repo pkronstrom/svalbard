@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -475,6 +476,20 @@ func TestRecipeByIDFindsKnown(t *testing.T) {
 	}
 	if item.Description != "English Wikipedia without images" {
 		t.Errorf("expected description %q, got %q", "English Wikipedia without images", item.Description)
+	}
+}
+
+func TestRecipeMenuAliases(t *testing.T) {
+	cat := NewTestCatalog(t)
+	item, ok := cat.RecipeByID("ifixit")
+	if !ok {
+		t.Fatal("expected to find recipe ifixit")
+	}
+	if item.Menu == nil {
+		t.Fatal("expected ifixit menu metadata")
+	}
+	if got, want := item.Menu.Aliases, []string{"repair", "fix"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("menu aliases = %v, want %v", got, want)
 	}
 }
 

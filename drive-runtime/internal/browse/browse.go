@@ -15,7 +15,6 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
 func ResolveTargets(driveRoot, selected string) ([]string, error) {
@@ -55,7 +54,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if err != nil {
 		return err
 	}
-	kiwixBin, err := binary.Resolve("kiwix-serve", driveRoot, platform.Detect)
+	kiwixBin, err := binary.Resolve("kiwix-serve", driveRoot)
 	if err != nil {
 		return fmt.Errorf("kiwix-serve not found")
 	}
@@ -139,4 +138,3 @@ func buildKiwixArgs(port int, targets []string) []string {
 	args = append(args, targets...)
 	return args
 }
-

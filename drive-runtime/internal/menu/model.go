@@ -523,10 +523,6 @@ func (m Model) View() string {
 	return renderView(m)
 }
 
-func (m *Model) SetFilter(value string) {
-	_ = value
-}
-
 func (m *Model) SetSelected(index int) {
 	if m.inGroup {
 		m.itemSelected = index
@@ -544,7 +540,7 @@ func (m Model) SelectedIndex() int {
 }
 
 func (m *Model) MoveDown() {
-	visibleCount := len(m.visibleEntries())
+	visibleCount := m.visibleCount()
 	if visibleCount == 0 {
 		m.SetSelected(0)
 		return
@@ -583,7 +579,7 @@ func (m Model) SelectedItem() (config.MenuItem, bool) {
 }
 
 func (m *Model) clampSelection() {
-	visibleCount := len(m.visibleEntries())
+	visibleCount := m.visibleCount()
 	if visibleCount == 0 {
 		if m.inGroup {
 			m.itemSelected = 0
@@ -637,20 +633,20 @@ func (m Model) VisibleItems() []config.MenuItem {
 	return append([]config.MenuItem(nil), group.Items...)
 }
 
-func (m Model) visibleEntries() []string {
+func (m Model) visibleCount() int {
 	if m.inGroup {
-		items := m.VisibleItems()
-		result := make([]string, 0, len(items))
-		for _, item := range items {
-			result = append(result, item.ID)
+		group, ok := m.CurrentGroup()
+		if !ok {
+			return 0
 		}
-		return result
+		return len(group.Items)
 	}
 
-	groups := m.VisibleGroups()
-	result := make([]string, 0, len(groups))
-	for _, group := range groups {
-		result = append(result, group.ID)
+	count := 0
+	for _, group := range m.cfg.Groups {
+		if len(group.Items) > 0 {
+			count++
+		}
 	}
-	return result
+	return count
 }

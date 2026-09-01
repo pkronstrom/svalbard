@@ -57,12 +57,8 @@ var knownSourceDirs = []struct {
 }
 
 // Sources scans known content directories for files with recognized extensions.
-// If filterType is provided, only sources matching that type are returned.
-func Sources(driveRoot string, filterType ...string) ([]SourceInfo, error) {
-	var filter string
-	if len(filterType) > 0 {
-		filter = filterType[0]
-	}
+// A non-empty filter limits results to that source type.
+func Sources(driveRoot, filter string) ([]SourceInfo, error) {
 
 	var sources []SourceInfo
 	for _, sd := range knownSourceDirs {

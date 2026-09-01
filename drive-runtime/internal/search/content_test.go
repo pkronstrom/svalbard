@@ -1,6 +1,7 @@
 package search
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -22,13 +23,13 @@ func TestExtractTextReturnsPlainTextFromHTML(t *testing.T) {
 		t.Fatal("expected non-empty body")
 	}
 	// Should contain plain text, not HTML tags.
-	if contains(page.Body, "<p>") || contains(page.Body, "<b>") {
+	if strings.Contains(page.Body, "<p>") || strings.Contains(page.Body, "<b>") {
 		t.Errorf("body should not contain HTML tags: %q", page.Body)
 	}
-	if !contains(page.Body, "This is a paragraph.") {
+	if !strings.Contains(page.Body, "This is a paragraph.") {
 		t.Errorf("body should contain paragraph text, got: %q", page.Body)
 	}
-	if !contains(page.Body, "bold") {
+	if !strings.Contains(page.Body, "bold") {
 		t.Errorf("body should contain bold text content, got: %q", page.Body)
 	}
 }
@@ -98,16 +99,16 @@ func TestExtractTextStripsKiwixChrome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractText error = %v", err)
 	}
-	if contains(page.Body, "Taskbar content") {
+	if strings.Contains(page.Body, "Taskbar content") {
 		t.Error("body should not contain kiwix taskbar content")
 	}
-	if contains(page.Body, "Header content") {
+	if strings.Contains(page.Body, "Header content") {
 		t.Error("body should not contain kiwix header content")
 	}
-	if contains(page.Body, "Search bar") {
+	if strings.Contains(page.Body, "Search bar") {
 		t.Error("body should not contain kiwix searchbar content")
 	}
-	if !contains(page.Body, "Actual article content.") {
+	if !strings.Contains(page.Body, "Actual article content.") {
 		t.Errorf("body should contain article content, got: %q", page.Body)
 	}
 }
@@ -170,26 +171,13 @@ func TestExtractTextSkipsScriptAndStyleContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractText error = %v", err)
 	}
-	if contains(page.Body, "alert") {
+	if strings.Contains(page.Body, "alert") {
 		t.Error("body should not contain script content")
 	}
-	if contains(page.Body, "color: red") {
+	if strings.Contains(page.Body, "color: red") {
 		t.Error("body should not contain style content")
 	}
-	if !contains(page.Body, "Visible content.") {
+	if !strings.Contains(page.Body, "Visible content.") {
 		t.Errorf("body should contain visible content, got: %q", page.Body)
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
-}
-
-func containsSubstr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

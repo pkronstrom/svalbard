@@ -14,7 +14,6 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
 type Service struct {
@@ -42,10 +41,10 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 		bind = "127.0.0.1"
 	}
 	binaries := map[string]string{}
-	if path, err := binary.Resolve("kiwix-serve", driveRoot, platform.Detect); err == nil {
+	if path, err := binary.Resolve("kiwix-serve", driveRoot); err == nil {
 		binaries["kiwix-serve"] = path
 	}
-	if path, err := binary.Resolve("llama-server", driveRoot, platform.Detect); err == nil {
+	if path, err := binary.Resolve("llama-server", driveRoot); err == nil {
 		binaries["llama-server"] = path
 	}
 	plan := PlanServices(driveRoot, binaries)

@@ -1,18 +1,15 @@
 package wizard
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/pkronstrom/svalbard/tui"
 )
 
 // stripAnsi removes ANSI escape sequences for assertions on rendered output.
-func stripAnsi(s string) string {
-	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	return re.ReplaceAllString(s, "")
-}
+func stripAnsi(s string) string { return tui.StripAnsi(s) }
 
 func testConfig() WizardConfig {
 	return WizardConfig{

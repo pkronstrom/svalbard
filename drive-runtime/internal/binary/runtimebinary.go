@@ -15,12 +15,8 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
-func Resolve(name, driveRoot string, detectPlatform func() (string, error)) (string, error) {
-	if detectPlatform == nil {
-		detectPlatform = platform.Detect
-	}
-
-	platformName, err := detectPlatform()
+func Resolve(name, driveRoot string) (string, error) {
+	platformName, err := platform.Detect()
 	if err != nil {
 		return "", err
 	}

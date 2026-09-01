@@ -12,7 +12,6 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/contextpicker"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, opener func(string) error) error {
@@ -23,7 +22,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if err != nil {
 		return err
 	}
-	llamaBin, err := binary.Resolve("llama-server", driveRoot, platform.Detect)
+	llamaBin, err := binary.Resolve("llama-server", driveRoot)
 	if err != nil {
 		return fmt.Errorf("llama-server not found")
 	}

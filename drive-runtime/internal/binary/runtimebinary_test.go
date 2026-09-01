@@ -10,11 +10,21 @@ import (
 	"testing"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
+
+func currentPlatform(t *testing.T) string {
+	t.Helper()
+	name, err := platform.Detect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
 
 func TestResolveExtractsTarGzBinaryFromPlatformBinDir(t *testing.T) {
 	driveRoot := t.TempDir()
-	binDir := filepath.Join(driveRoot, "bin", "macos-arm64")
+	binDir := filepath.Join(driveRoot, "bin", currentPlatform(t))
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -26,9 +36,7 @@ func TestResolveExtractsTarGzBinaryFromPlatformBinDir(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	got, err := binary.Resolve("kiwix-serve", driveRoot, func() (string, error) {
-		return "macos-arm64", nil
-	})
+	got, err := binary.Resolve("kiwix-serve", driveRoot)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -46,7 +54,7 @@ func TestResolveExtractsTarGzBinaryFromPlatformBinDir(t *testing.T) {
 
 func TestResolvePrefersToolSpecificPlatformDir(t *testing.T) {
 	driveRoot := t.TempDir()
-	toolDir := filepath.Join(driveRoot, "bin", "macos-arm64", "kiwix-serve")
+	toolDir := filepath.Join(driveRoot, "bin", currentPlatform(t), "kiwix-serve")
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -55,9 +63,7 @@ func TestResolvePrefersToolSpecificPlatformDir(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	got, err := binary.Resolve("kiwix-serve", driveRoot, func() (string, error) {
-		return "macos-arm64", nil
-	})
+	got, err := binary.Resolve("kiwix-serve", driveRoot)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -68,7 +74,7 @@ func TestResolvePrefersToolSpecificPlatformDir(t *testing.T) {
 
 func TestResolveExtractsTarBz2BinaryFromPlatformBinDir(t *testing.T) {
 	driveRoot := t.TempDir()
-	toolDir := filepath.Join(driveRoot, "bin", "macos-arm64", "goose")
+	toolDir := filepath.Join(driveRoot, "bin", currentPlatform(t), "goose")
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -80,9 +86,7 @@ func TestResolveExtractsTarBz2BinaryFromPlatformBinDir(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	got, err := binary.Resolve("goose", driveRoot, func() (string, error) {
-		return "macos-arm64", nil
-	})
+	got, err := binary.Resolve("goose", driveRoot)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -93,7 +97,7 @@ func TestResolveExtractsTarBz2BinaryFromPlatformBinDir(t *testing.T) {
 
 func TestResolveKeepsExtractedBinaryInPlaceWhenNestedLibrariesMayExist(t *testing.T) {
 	driveRoot := t.TempDir()
-	toolDir := filepath.Join(driveRoot, "bin", "macos-arm64", "llama-server")
+	toolDir := filepath.Join(driveRoot, "bin", currentPlatform(t), "llama-server")
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -107,9 +111,7 @@ func TestResolveKeepsExtractedBinaryInPlaceWhenNestedLibrariesMayExist(t *testin
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	got, err := binary.Resolve("llama-server", driveRoot, func() (string, error) {
-		return "macos-arm64", nil
-	})
+	got, err := binary.Resolve("llama-server", driveRoot)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -125,7 +127,7 @@ func TestResolveKeepsExtractedBinaryInPlaceWhenNestedLibrariesMayExist(t *testin
 
 func TestResolveExtractsTarSymlinkedLibraries(t *testing.T) {
 	driveRoot := t.TempDir()
-	toolDir := filepath.Join(driveRoot, "bin", "macos-arm64", "llama-server")
+	toolDir := filepath.Join(driveRoot, "bin", currentPlatform(t), "llama-server")
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -143,9 +145,7 @@ func TestResolveExtractsTarSymlinkedLibraries(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	got, err := binary.Resolve("llama-server", driveRoot, func() (string, error) {
-		return "macos-arm64", nil
-	})
+	got, err := binary.Resolve("llama-server", driveRoot)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -250,7 +250,7 @@ func buildTarBz2(t *testing.T, files map[string]string) []byte {
 
 func TestResolveBareGzExtraction(t *testing.T) {
 	driveRoot := t.TempDir()
-	binDir := filepath.Join(driveRoot, "bin", "linux-x86_64", "chisel")
+	binDir := filepath.Join(driveRoot, "bin", currentPlatform(t), "chisel")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -271,9 +271,7 @@ func TestResolveBareGzExtraction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := binary.Resolve("chisel", driveRoot, func() (string, error) {
-		return "linux-x86_64", nil
-	})
+	got, err := binary.Resolve("chisel", driveRoot)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -305,7 +303,7 @@ func TestResolveBareGzExtraction(t *testing.T) {
 func TestResolveBareGzInPlatformDir(t *testing.T) {
 	// Test .gz directly in bin/<platform>/ (no tool-specific subdir).
 	driveRoot := t.TempDir()
-	binDir := filepath.Join(driveRoot, "bin", "linux-x86_64")
+	binDir := filepath.Join(driveRoot, "bin", currentPlatform(t))
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -320,9 +318,7 @@ func TestResolveBareGzInPlatformDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := binary.Resolve("mytool", driveRoot, func() (string, error) {
-		return "linux-x86_64", nil
-	})
+	got, err := binary.Resolve("mytool", driveRoot)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}

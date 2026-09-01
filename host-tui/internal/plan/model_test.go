@@ -3,7 +3,6 @@ package plan
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -12,10 +11,7 @@ import (
 )
 
 // stripAnsi removes ANSI escape sequences for plain-text assertions.
-func stripAnsi(s string) string {
-	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	return re.ReplaceAllString(s, "")
-}
+func stripAnsi(s string) string { return tui.StripAnsi(s) }
 
 func sampleItems() []PlanItem {
 	return []PlanItem{

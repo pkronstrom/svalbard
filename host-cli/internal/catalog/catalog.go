@@ -107,10 +107,10 @@ type BuildStep struct {
 	Extract     string   `yaml:"extract,omitempty"`      // archive path to unpack
 	Exec        string   `yaml:"exec,omitempty"`         // tool name to run
 	Verify      string   `yaml:"verify,omitempty"`       // path to check exists
-	Args        []string `yaml:"args,omitempty"`          // arguments for exec
-	Dest        string   `yaml:"dest,omitempty"`          // destination for download/extract
-	NotEmpty    bool     `yaml:"not_empty,omitempty"`     // verify: directory must have files
-	MinSize     int64    `yaml:"min_size,omitempty"`      // verify: minimum file size in bytes
+	Args        []string `yaml:"args,omitempty"`         // arguments for exec
+	Dest        string   `yaml:"dest,omitempty"`         // destination for download/extract
+	NotEmpty    bool     `yaml:"not_empty,omitempty"`    // verify: directory must have files
+	MinSize     int64    `yaml:"min_size,omitempty"`     // verify: minimum file size in bytes
 	DockerImage string   `yaml:"docker_image,omitempty"` // exec: override Docker image (default: svalbard-tools)
 }
 
@@ -129,11 +129,12 @@ type LicenseSpec struct {
 
 // MenuSpec defines how a recipe appears in the user-facing menu.
 type MenuSpec struct {
-	Group       string `yaml:"group"`
-	Subheader   string `yaml:"subheader"`
-	Label       string `yaml:"label"`
-	Description string `yaml:"description"`
-	Order       int    `yaml:"order"`
+	Group       string   `yaml:"group"`
+	Subheader   string   `yaml:"subheader"`
+	Label       string   `yaml:"label"`
+	Description string   `yaml:"description"`
+	Aliases     []string `yaml:"aliases,omitempty"`
+	Order       int      `yaml:"order"`
 }
 
 // Preset represents a named collection of source references.

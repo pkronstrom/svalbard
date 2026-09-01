@@ -86,6 +86,7 @@ type menuItem struct {
 	Label       string     `json:"label"`
 	Description string     `json:"description"`
 	Subheader   string     `json:"subheader,omitempty"`
+	Aliases     []string   `json:"aliases,omitempty"`
 	Order       int        `json:"order"`
 	Action      actionSpec `json:"action"`
 }
@@ -311,6 +312,7 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 		subheader := td.Subheader
 		label := humanize(e.ID)
 		desc := ""
+		var aliases []string
 		order := (i + 1) * 100
 		actionID := td.ActionID
 
@@ -330,6 +332,7 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			if m.Order != 0 {
 				order = m.Order
 			}
+			aliases = append([]string(nil), m.Aliases...)
 		}
 
 		// For binary entries in local-ai group, use agent action.
@@ -366,6 +369,7 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			Label:       label,
 			Description: desc,
 			Subheader:   subheader,
+			Aliases:     aliases,
 			Order:       order,
 			Action:      builtinAction(actionID, args),
 		})

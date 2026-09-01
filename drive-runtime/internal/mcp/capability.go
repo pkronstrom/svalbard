@@ -28,7 +28,6 @@ type ActionResult struct {
 // Capability is the interface that every MCP-exposed drive feature must implement.
 type Capability interface {
 	Tool() string
-	Description() string
 	Actions() []ActionDef
 	Handle(ctx context.Context, action string, params map[string]any) (ActionResult, error)
 	Close() error

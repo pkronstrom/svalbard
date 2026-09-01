@@ -48,7 +48,7 @@ func TestNavListRendersCaretOnSelected(t *testing.T) {
 	}
 
 	// Line 2 (Gamma) should NOT have caret
-	if strings.HasPrefix(stripANSI(nonEmpty[2]), "> ") {
+	if strings.HasPrefix(stripAnsi(nonEmpty[2]), "> ") {
 		t.Errorf("line 2 should not have caret, got: %q", nonEmpty[2])
 	}
 }
@@ -79,7 +79,7 @@ func TestNavListSubheaderGrouping(t *testing.T) {
 	// Items under subheaders should be indented with subIndent ("  ")
 	lines := strings.Split(out, "\n")
 	for _, line := range lines {
-		stripped := stripANSI(line)
+		stripped := stripAnsi(line)
 		// Lines containing item labels (not subheader lines, not blank) should start with subIndent
 		if strings.Contains(stripped, "Alpha") || strings.Contains(stripped, "Beta") || strings.Contains(stripped, "Gamma") {
 			if !strings.HasPrefix(stripped, "  ") {
@@ -187,24 +187,4 @@ func TestNavListClamp(t *testing.T) {
 	if nl.Selected != 0 {
 		t.Errorf("Clamp should bring negative Selected to 0, got %d", nl.Selected)
 	}
-}
-
-// stripANSI removes ANSI escape codes for testing plain text content.
-func stripANSI(s string) string {
-	var result strings.Builder
-	inEscape := false
-	for _, r := range s {
-		if r == '\033' {
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEscape = false
-			}
-			continue
-		}
-		result.WriteRune(r)
-	}
-	return result.String()
 }

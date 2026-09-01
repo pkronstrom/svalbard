@@ -11,9 +11,17 @@ _Ideas in `openspec/explorations/`. Not yet committed to a change._
 _Active `openspec/changes/<id>/`. Branch + tasks.md status._
 
 
+
 ## Shipped
 
 _Archived in `openspec/changes/archive/`. Newest first._
+
+- **Action alias generation** — shipped 2026-08-31, `openspec/changes/archive/2026-08-31-support-action-aliases/`
+
+- **Catalog synchronization guard** — shipped 2026-08-31, `openspec/changes/archive/2026-08-31-canonicalize-catalog-source/`
+- **Canonical repository verification** — shipped 2026-08-31, `openspec/changes/archive/2026-08-31-unify-repo-verification/`
+- **Binary resolver contract cleanup** — shipped 2026-08-31, `openspec/changes/archive/2026-08-31-narrow-runtime-contracts/`
+- **Dead runtime API pruning** — shipped 2026-08-31, `openspec/changes/archive/2026-08-31-prune-dead-runtime-apis/`
 
 - **Review StripAnsi API** — shipped 2026-08-27, `openspec/changes/archive/2026-08-27-review-strip-ansi-api/`
 - **Consolidate search launchers** — shipped 2026-08-27, `openspec/changes/archive/2026-08-27-consolidate-search-launchers/`

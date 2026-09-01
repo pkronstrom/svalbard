@@ -12,7 +12,6 @@ import (
 	_ "github.com/ncruces/go-sqlite3/driver"
 
 	drivebinary "github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
 )
@@ -182,7 +181,7 @@ func detectCapabilities(driveRoot string, db *sql.DB) (Capabilities, int, int, e
 		caps.QueryPrefix = queryPrefix.String
 	}
 
-	if _, err := drivebinary.Resolve("llama-server", driveRoot, platform.Detect); err == nil {
+	if _, err := drivebinary.Resolve("llama-server", driveRoot); err == nil {
 		caps.HasLlamaServer = true
 	}
 	caps.EmbeddingModel = server.FindEmbeddingModel(driveRoot)
