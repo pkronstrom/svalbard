@@ -201,12 +201,15 @@ func archiveSite(ctx context.Context, client *http.Client, source *url.URL, outp
 				continue
 			}
 			htmlPages++
-			body, title, queue = archiveHTML(body, current, source, local, queue, rule)
+			body, title, queue = archiveHTML(body, current, source, local, queue, strictLimit, rule)
 		}
 		if err := os.WriteFile(destination, body, 0o644); err != nil {
 			return nil, err
 		}
 		pages = append(pages, archivedPage{URL: current.String(), Path: local, Title: title, HTML: isHTML})
+	}
+	if err := pruneMissingArchiveResources(output, pages, !strictLimit); err != nil {
+		return nil, err
 	}
 	return pages, nil
 }
@@ -235,7 +238,7 @@ func archiveFetch(ctx context.Context, client *http.Client, target *url.URL) ([]
 	return body, response.Header.Get("Content-Type"), nil
 }
 
-func archiveHTML(body []byte, current, source *url.URL, currentPath string, queue []*url.URL, rule *compiledArchiveRule) ([]byte, string, []*url.URL) {
+func archiveHTML(body []byte, current, source *url.URL, currentPath string, queue []*url.URL, rewritePages bool, rule *compiledArchiveRule) ([]byte, string, []*url.URL) {
 	document, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
 		return body, "", queue
@@ -251,9 +254,18 @@ func archiveHTML(body []byte, current, source *url.URL, currentPath string, queu
 				if attribute.Key != "href" && attribute.Key != "src" {
 					continue
 				}
+				if attribute.Key == "href" {
+					if node.Data != "a" {
+						continue
+					}
+					if !rewritePages {
+						node.Attr = append(node.Attr[:index], node.Attr[index+1:]...)
+						break
+					}
+				}
 				target, err := current.Parse(attribute.Val)
 				if err != nil || target.Scheme != source.Scheme || target.Host != source.Host {
-					if attribute.Key == "src" || node.Data == "link" {
+					if attribute.Key == "src" {
 						remove = true
 						break
 					}
@@ -287,7 +299,7 @@ func archiveHTML(body []byte, current, source *url.URL, currentPath string, queu
 func pruneArchiveElements(node *html.Node) {
 	for child := node.FirstChild; child != nil; {
 		next := child.NextSibling
-		if child.Type == html.ElementNode && (child.Data == "script" || child.Data == "noscript" || child.Data == "iframe" || child.Data == "object") {
+		if child.Type == html.ElementNode && (child.Data == "script" || child.Data == "noscript" || child.Data == "iframe" || child.Data == "object" || child.Data == "link" || child.Data == "base") {
 			node.RemoveChild(child)
 		} else {
 			pruneArchiveElements(child)

@@ -18,7 +18,7 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 		writer.Header().Set("Content-Type", "text/html")
 		switch request.URL.Path {
 		case "/":
-			_, _ = writer.Write([]byte(`<html><body><nav class="promo">ad</nav><script>track()</script><a href="/about">About</a><img src="/assets/logo.png"><img src="https://cdn.example.test/logo.png"></body></html>`))
+			_, _ = writer.Write([]byte(`<html><body><nav class="promo">ad</nav><script>track()</script><a href="/about">About</a><img src="/assets/logo.png"><img src="/missing.png"><img src="https://cdn.example.test/logo.png"></body></html>`))
 		case "/about":
 			_, _ = writer.Write([]byte(`<html><title>About</title><body>offline</body></html>`))
 		case "/assets/logo.png":
@@ -72,7 +72,7 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 	if !strings.Contains(string(index), `href="about.html"`) || !strings.Contains(string(index), `src="assets/logo.png"`) {
 		t.Fatalf("index did not rewrite local links: %s", index)
 	}
-	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") || strings.Contains(string(index), "cdn.example.test") {
+	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") || strings.Contains(string(index), "cdn.example.test") || strings.Contains(string(index), "missing.png") {
 		t.Fatalf("index retained an offline dependency: %s", index)
 	}
 }
@@ -86,7 +86,7 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 			_, _ = writer.Write(sourcePDF)
 		case "/project":
 			writer.Header().Set("Content-Type", "text/html")
-			_, _ = writer.Write([]byte(`<html><head><title>DIY Plan</title></head><body><img src="/assets/plan.png"></body></html>`))
+			_, _ = writer.Write([]byte(`<html><head><title>DIY Plan</title><link rel="alternate" href="/feed.rss"></head><body><a href="/category">Category</a><img src="/assets/plan.png"></body></html>`))
 		case "/assets/plan.png":
 			writer.Header().Set("Content-Type", "image/png")
 			_, _ = writer.Write([]byte("png"))
@@ -138,5 +138,12 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 	}
 	if !strings.Contains(string(projectRecord), `"title": "DIY Plan"`) {
 		t.Fatalf("project record lost page title: %s", projectRecord)
+	}
+	projectHTML, err := os.ReadFile(filepath.Join(site, "project.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projectHTML), `<a>Category</a>`) || strings.Contains(string(projectHTML), "href=\"/category\"") || strings.Contains(string(projectHTML), "feed.rss") {
+		t.Fatalf("bounded archive retained broken local links: %s", projectHTML)
 	}
 }
