@@ -11,6 +11,7 @@ build:
   source_url: https://makeityourself.org/MIY.pdf
   archive_rules:
     - domain: learn.adafruit.com
+      content: main
       remove: [nav.skip-links, "#adafruit-header", "#adafruit-footer"]
     - domain: github.com
       remove: ['header[role="banner"]', 'nav[aria-label="Repository"]', footer]

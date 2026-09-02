@@ -855,6 +855,7 @@ build:
       filter: kind = 1
   archive_rules:
     - domain: example.test
+      content: main
       remove: [script, ".promo"]
 `), &item)
 	if err != nil {
@@ -879,7 +880,7 @@ build:
 	if got, want := build.Layers, []BuildLayer{{Name: "source:points", Label: "Points", Filter: "kind = 1"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("layers = %#v, want %#v", got, want)
 	}
-	if got, want := build.ArchiveRules, []ArchiveRule{{Domain: "example.test", Remove: []string{"script", ".promo"}}}; !reflect.DeepEqual(got, want) {
+	if got, want := build.ArchiveRules, []ArchiveRule{{Domain: "example.test", Content: "main", Remove: []string{"script", ".promo"}}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("archive rules = %#v, want %#v", got, want)
 	}
 }

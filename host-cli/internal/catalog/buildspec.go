@@ -42,11 +42,12 @@ type BuildLayer struct {
 	Filter string `yaml:"filter,omitempty"`
 }
 
-// ArchiveRule applies CSS removals to pages from one domain. Rules stay data;
+// ArchiveRule selects and cleans pages from one domain. Rules stay data;
 // API, authentication, or browser work remains an explicit builder seam.
 type ArchiveRule struct {
-	Domain string   `yaml:"domain"`
-	Remove []string `yaml:"remove,omitempty"`
+	Domain  string   `yaml:"domain"`
+	Content string   `yaml:"content,omitempty"`
+	Remove  []string `yaml:"remove,omitempty"`
 }
 
 // UnmarshalYAML captures unknown scalar fields in Config while preserving all
