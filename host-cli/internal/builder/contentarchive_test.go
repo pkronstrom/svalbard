@@ -18,7 +18,7 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 		writer.Header().Set("Content-Type", "text/html")
 		switch request.URL.Path {
 		case "/":
-			_, _ = writer.Write([]byte(`<html><body><nav class="promo">ad</nav><script>track()</script><a href="/about">About</a><img src="/assets/logo.png"></body></html>`))
+			_, _ = writer.Write([]byte(`<html><body><nav class="promo">ad</nav><script>track()</script><a href="/about">About</a><img src="/assets/logo.png"><img src="https://cdn.example.test/logo.png"></body></html>`))
 		case "/about":
 			_, _ = writer.Write([]byte(`<html><title>About</title><body>offline</body></html>`))
 		case "/assets/logo.png":
@@ -72,8 +72,8 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 	if !strings.Contains(string(index), `href="about.html"`) || !strings.Contains(string(index), `src="assets/logo.png"`) {
 		t.Fatalf("index did not rewrite local links: %s", index)
 	}
-	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") {
-		t.Fatalf("index did not apply cleanup rule: %s", index)
+	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") || strings.Contains(string(index), "cdn.example.test") {
+		t.Fatalf("index retained an offline dependency: %s", index)
 	}
 }
 

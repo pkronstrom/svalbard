@@ -7,6 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -62,6 +66,9 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		return nil, err
 	}
 
+	if err := writeArchiveFavicon(filepath.Join(site, "favicon.png")); err != nil {
+		return nil, err
+	}
 	sources, err := archiveSources(ctx, recipe.Build, workdir)
 	if err != nil {
 		return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
@@ -134,8 +141,10 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		return nil, err
 	}
 	args := []string{
-		"--welcome=index.html", "--language=eng", "--title=" + archiveMetadata(recipe, "title", recipe.ID),
+		"--welcome=index.html", "--illustration=favicon.png", "--language=eng",
+		"--title=" + archiveMetadata(recipe, "title", recipe.ID),
 		"--description=" + archiveMetadata(recipe, "description", recipe.Description),
+		"--creator=" + archiveMetadata(recipe, "creator", "svalbard"),
 		"--publisher=Svalbard", "--name=" + recipe.ID, "--withFullTextIndex",
 		fmt.Sprintf("--threads=%d", runtime.NumCPU()), site, output,
 	}
@@ -231,10 +240,12 @@ func archiveHTML(body []byte, current, source *url.URL, currentPath string, queu
 	if err != nil {
 		return body, "", queue
 	}
+	pruneArchiveElements(document)
 	applyArchiveRule(document, rule)
 	var rewrite func(*html.Node)
 	rewrite = func(node *html.Node) {
 		if node.Type == html.ElementNode {
+			remove := false
 			for index := range node.Attr {
 				attribute := &node.Attr[index]
 				if attribute.Key != "href" && attribute.Key != "src" {
@@ -242,6 +253,10 @@ func archiveHTML(body []byte, current, source *url.URL, currentPath string, queu
 				}
 				target, err := current.Parse(attribute.Val)
 				if err != nil || target.Scheme != source.Scheme || target.Host != source.Host {
+					if attribute.Key == "src" || node.Data == "link" {
+						remove = true
+						break
+					}
 					continue
 				}
 				target.Fragment = ""
@@ -251,6 +266,10 @@ func archiveHTML(body []byte, current, source *url.URL, currentPath string, queu
 				if err == nil {
 					attribute.Val = filepath.ToSlash(relative)
 				}
+			}
+			if remove {
+				node.Parent.RemoveChild(node)
+				return
 			}
 		}
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
@@ -263,6 +282,18 @@ func archiveHTML(body []byte, current, source *url.URL, currentPath string, queu
 		return body, "", queue
 	}
 	return rendered.Bytes(), archiveDocumentTitle(document), queue
+}
+
+func pruneArchiveElements(node *html.Node) {
+	for child := node.FirstChild; child != nil; {
+		next := child.NextSibling
+		if child.Type == html.ElementNode && (child.Data == "script" || child.Data == "noscript" || child.Data == "iframe" || child.Data == "object") {
+			node.RemoveChild(child)
+		} else {
+			pruneArchiveElements(child)
+		}
+		child = next
+	}
 }
 
 func archiveDocumentTitle(document *html.Node) string {
@@ -315,6 +346,17 @@ func archiveNodeText(node *html.Node) string {
 	}
 	walk(node)
 	return text.String()
+}
+
+func writeArchiveFavicon(path string) error {
+	icon := image.NewRGBA(image.Rect(0, 0, 48, 48))
+	draw.Draw(icon, icon.Bounds(), &image.Uniform{C: color.RGBA{R: 0x27, G: 0x40, B: 0x57, A: 0xff}}, image.Point{}, draw.Src)
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return png.Encode(file, icon)
 }
 
 func archiveURL(raw string) (*url.URL, error) {
