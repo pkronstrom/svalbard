@@ -73,3 +73,25 @@ func TestDispatchPrecedence(t *testing.T) {
 		})
 	}
 }
+
+func TestEmbeddedMakeItYourselfUsesContentArchive(t *testing.T) {
+	cat, err := catalog.NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe, ok := cat.RecipeByID("makeityourself")
+	if !ok || recipe.Build == nil {
+		t.Fatal("makeityourself build recipe not found")
+	}
+	if recipe.Build.Family != "content-archive" {
+		t.Fatalf("makeityourself family = %q", recipe.Build.Family)
+	}
+	fn, ok := Dispatch(recipe)
+	if !ok {
+		t.Fatal("makeityourself dispatch was not handled")
+	}
+	name := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name()
+	if !strings.HasSuffix(name, ".buildContentArchive") {
+		t.Fatalf("makeityourself dispatch = %s", name)
+	}
+}

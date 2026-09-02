@@ -28,7 +28,10 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/toolkit"
 )
 
-const maxArchiveResponseBytes = 32 << 20
+const (
+	maxArchiveResponseBytes = 32 << 20
+	archiveUserAgent        = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 
 type archivedPage struct {
 	URL        string `json:"url"`
@@ -59,9 +62,6 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 	}
 	workdir := filepath.Join(root, ".staging", "build", recipe.ID)
 	site := filepath.Join(workdir, "site")
-	if err := os.RemoveAll(site); err != nil {
-		return nil, err
-	}
 	if err := os.MkdirAll(site, 0o755); err != nil {
 		return nil, err
 	}
@@ -96,20 +96,39 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		if pdfLinks || len(sources) > 1 {
 			prefix = filepath.Join("projects", source.ID)
 		}
-		copied, err := archiveSite(ctx, client, source.URL, filepath.Join(site, prefix), limit, !pdfLinks, rule)
-		if err != nil {
-			return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
-		}
+		var copied []archivedPage
 		if prefix != "" {
-			entry := archivedPage{Path: archiveLocalPath(source.URL, "")}
-			for _, page := range copied {
-				if page.URL == source.URL.String() {
-					entry = page
-					break
+			projectPath := filepath.Join(site, prefix, "project.json")
+			if project, err := readArchiveProject(projectPath); err == nil && project.SourceURL == source.URL.String() && len(project.Pages) > 0 {
+				if _, err := os.Stat(filepath.Join(site, prefix, filepath.FromSlash(project.EntryPath))); err == nil {
+					copied = project.Pages
 				}
 			}
-			if err := writeArchiveProject(filepath.Join(site, prefix, "project.json"), source, entry); err != nil {
-				return nil, err
+		}
+		if copied == nil {
+			failure := ""
+			copied, err = archiveSite(ctx, client, source.URL, filepath.Join(site, prefix), limit, !pdfLinks, rule)
+			if err != nil {
+				if !pdfLinks {
+					return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
+				}
+				failure = err.Error()
+				copied, err = writeArchiveFailure(filepath.Join(site, prefix), source.URL, err)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if prefix != "" {
+				entry := archivedPage{Path: archiveLocalPath(source.URL, "")}
+				for _, page := range copied {
+					if page.URL == source.URL.String() {
+						entry = page
+						break
+					}
+				}
+				if err := writeArchiveProject(filepath.Join(site, prefix, "project.json"), source, entry, copied, failure); err != nil {
+					return nil, err
+				}
 			}
 		}
 		for index := range copied {
@@ -120,7 +139,7 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		pages = append(pages, copied...)
 	}
 	if pdfLinks || len(sources) > 1 {
-		if err := writeArchiveIndex(filepath.Join(site, "index.html"), sources); err != nil {
+		if err := writeArchiveIndex(filepath.Join(site, "index.html"), site, sources); err != nil {
 			return nil, err
 		}
 	}
@@ -219,7 +238,7 @@ func archiveFetch(ctx context.Context, client *http.Client, target *url.URL) ([]
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("User-Agent", "svalbard-content-archive/1")
+	req.Header.Set("User-Agent", archiveUserAgent)
 	response, err := client.Do(req)
 	if err != nil {
 		return nil, "", err
@@ -299,7 +318,7 @@ func archiveHTML(body []byte, current, source *url.URL, currentPath string, queu
 func pruneArchiveElements(node *html.Node) {
 	for child := node.FirstChild; child != nil; {
 		next := child.NextSibling
-		if child.Type == html.ElementNode && (child.Data == "script" || child.Data == "noscript" || child.Data == "iframe" || child.Data == "object" || child.Data == "link" || child.Data == "base") {
+		if child.Type == html.ElementNode && (child.Data == "script" || child.Data == "noscript" || child.Data == "iframe" || child.Data == "object" || child.Data == "link" || child.Data == "base" || child.Data == "use") {
 			node.RemoveChild(child)
 		} else {
 			pruneArchiveElements(child)
@@ -307,7 +326,6 @@ func pruneArchiveElements(node *html.Node) {
 		child = next
 	}
 }
-
 func archiveDocumentTitle(document *html.Node) string {
 	var title string
 	var walk func(*html.Node)

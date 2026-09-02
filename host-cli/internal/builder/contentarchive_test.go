@@ -16,9 +16,12 @@ import (
 func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "text/html")
+		if request.UserAgent() != archiveUserAgent {
+			t.Errorf("User-Agent = %q", request.UserAgent())
+		}
 		switch request.URL.Path {
 		case "/":
-			_, _ = writer.Write([]byte(`<html><body><header>site chrome</header><main><nav class="promo">ad</nav><script>track()</script><a href="/about">About</a><img src="/assets/logo.png"><img src="/missing.png"><img src="https://cdn.example.test/logo.png"></main><footer>site footer</footer></body></html>`))
+			_, _ = writer.Write([]byte(`<html><body><header>site chrome</header><main><nav class="promo">ad</nav><script>track()</script><a href="/about">About</a><img src="/assets/logo.png"><img src="/missing.png"><img src="https://cdn.example.test/logo.png"><svg><use href="/icons.svg#home"></use></svg></main><footer>site footer</footer></body></html>`))
 		case "/about":
 			_, _ = writer.Write([]byte(`<html><title>About</title><body>offline</body></html>`))
 		case "/assets/logo.png":
@@ -72,19 +75,21 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 	if !strings.Contains(string(index), `href="about.html"`) || !strings.Contains(string(index), `src="assets/logo.png"`) {
 		t.Fatalf("index did not rewrite local links: %s", index)
 	}
-	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") || strings.Contains(string(index), "cdn.example.test") || strings.Contains(string(index), "missing.png") || strings.Contains(string(index), "site chrome") || strings.Contains(string(index), "site footer") {
+	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") || strings.Contains(string(index), "cdn.example.test") || strings.Contains(string(index), "missing.png") || strings.Contains(string(index), "icons.svg") || strings.Contains(string(index), "site chrome") || strings.Contains(string(index), "site footer") {
 		t.Fatalf("index retained an offline dependency: %s", index)
 	}
 }
 
 func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 	var sourcePDF []byte
+	projectRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/source.pdf":
 			writer.Header().Set("Content-Type", "application/pdf")
 			_, _ = writer.Write(sourcePDF)
 		case "/project":
+			projectRequests++
 			writer.Header().Set("Content-Type", "text/html")
 			_, _ = writer.Write([]byte(`<html><head><title>DIY Plan</title><link rel="alternate" href="/feed.rss"></head><body><a href="/category">Category</a><img src="/assets/plan.png"></body></html>`))
 		case "/assets/plan.png":
@@ -125,6 +130,13 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, ".staging", "build", recipe.ID, "site", "index.html")); err != nil {
 		t.Errorf("missing archive index: %v", err)
 	}
+	index, err := os.ReadFile(filepath.Join(root, ".staging", "build", recipe.ID, "site", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(index), "DIY Plan") {
+		t.Fatalf("archive index lost project title: %s", index)
+	}
 	manifest, err := os.ReadFile(filepath.Join(root, ".staging", "build", recipe.ID, "site", "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -145,5 +157,12 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 	}
 	if !strings.Contains(string(projectHTML), `<a>Category</a>`) || strings.Contains(string(projectHTML), "href=\"/category\"") || strings.Contains(string(projectHTML), "feed.rss") {
 		t.Fatalf("bounded archive retained broken local links: %s", projectHTML)
+	}
+	projectRequests = 0
+	if _, err := buildContentArchive(root, recipe, nil, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if projectRequests != 0 {
+		t.Fatalf("resumed archive fetched completed project %d times", projectRequests)
 	}
 }

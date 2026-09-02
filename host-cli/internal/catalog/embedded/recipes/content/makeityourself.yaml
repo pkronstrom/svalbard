@@ -6,9 +6,13 @@ size_gb: 14
 description: "1000+ curated DIY projects archived from makeityourself.org"
 strategy: build
 build:
-  family: custom
-  builder: makeityourself-zim.py
+  family: content-archive
   source_url: https://makeityourself.org/MIY.pdf
+  source_format: pdf-links
+  max_pages: 1
+  network: true
+  title: "Make It Yourself"
+  creator: "NODE / makeityourself.org"
   archive_rules:
     - domain: learn.adafruit.com
       content: main

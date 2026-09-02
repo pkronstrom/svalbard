@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net/url"
 	"os"
@@ -27,11 +28,14 @@ type archiveSource struct {
 }
 
 type archiveProject struct {
-	ID         string `json:"id"`
-	SourceURL  string `json:"source_url"`
-	SourcePage int    `json:"source_page,omitempty"`
-	EntryPath  string `json:"entry_path"`
-	Title      string `json:"title,omitempty"`
+	ID         string         `json:"id"`
+	SourceURL  string         `json:"source_url"`
+	SourcePage int            `json:"source_page,omitempty"`
+	EntryPath  string         `json:"entry_path"`
+	Title      string         `json:"title,omitempty"`
+	Pages      []archivedPage `json:"pages"`
+	Status     string         `json:"status"`
+	Error      string         `json:"error,omitempty"`
 }
 
 func archiveSources(ctx context.Context, build *catalog.BuildSpec, workdir string) ([]archiveSource, error) {
@@ -142,23 +146,49 @@ func archiveHostPath(host string) string {
 	return strings.NewReplacer(":", "_", "/", "_").Replace(host)
 }
 
-func writeArchiveIndex(path string, sources []archiveSource) error {
+func writeArchiveIndex(path, root string, sources []archiveSource) error {
 	var page strings.Builder
 	page.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>Archive</title></head><body><h1>Archive</h1><ul>")
 	for _, source := range sources {
 		local := filepath.ToSlash(filepath.Join("projects", source.ID, archiveLocalPath(source.URL, "")))
-		fmt.Fprintf(&page, "<li><a href=%q>%s</a></li>", local, source.URL.String())
+		title := source.URL.String()
+		status := ""
+		if project, err := readArchiveProject(filepath.Join(root, "projects", source.ID, "project.json")); err == nil {
+			if project.Title != "" {
+				title = project.Title
+			}
+			if project.Status == "unavailable" {
+				status = " (unavailable)"
+			}
+		}
+		fmt.Fprintf(&page, "<li><a href=\"%s\">%s</a>%s</li>", template.HTMLEscapeString(local), template.HTMLEscapeString(title), status)
 	}
 	page.WriteString("</ul></body></html>")
 	return os.WriteFile(path, []byte(page.String()), 0o644)
 }
 
-func writeArchiveProject(path string, source archiveSource, entry archivedPage) error {
+func writeArchiveProject(path string, source archiveSource, entry archivedPage, pages []archivedPage, failure string) error {
+	status := "archived"
+	if failure != "" {
+		status = "unavailable"
+	}
 	data, err := json.MarshalIndent(archiveProject{
-		ID: source.ID, SourceURL: source.URL.String(), SourcePage: source.Page, EntryPath: entry.Path, Title: entry.Title,
+		ID: source.ID, SourceURL: source.URL.String(), SourcePage: source.Page, EntryPath: entry.Path, Title: entry.Title, Pages: pages, Status: status, Error: failure,
 	}, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+func readArchiveProject(path string) (archiveProject, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return archiveProject{}, err
+	}
+	var project archiveProject
+	if err := json.Unmarshal(data, &project); err != nil {
+		return archiveProject{}, err
+	}
+	return project, nil
 }
