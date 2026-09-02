@@ -29,6 +29,14 @@ func TestArchiveURLsFromTextDeduplicatesAndTrimsPunctuation(t *testing.T) {
 	}
 }
 
+func TestLimitArchiveSourcesPreservesSourceOrder(t *testing.T) {
+	sources := []archiveSource{{ID: "first"}, {ID: "second"}, {ID: "third"}}
+	got := limitArchiveSources(sources, 2)
+	if len(got) != 2 || got[0].ID != "first" || got[1].ID != "second" {
+		t.Fatalf("limitArchiveSources() = %#v", got)
+	}
+}
+
 func minimalTextPDF(text string) []byte {
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R >>",

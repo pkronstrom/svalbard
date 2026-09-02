@@ -18,7 +18,7 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 		writer.Header().Set("Content-Type", "text/html")
 		switch request.URL.Path {
 		case "/":
-			_, _ = writer.Write([]byte(`<html><body><a href="/about">About</a><img src="/assets/logo.png"></body></html>`))
+			_, _ = writer.Write([]byte(`<html><body><nav class="promo">ad</nav><script>track()</script><a href="/about">About</a><img src="/assets/logo.png"></body></html>`))
 		case "/about":
 			_, _ = writer.Write([]byte(`<html><title>About</title><body>offline</body></html>`))
 		case "/assets/logo.png":
@@ -29,6 +29,7 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	source, _ := archiveURL(server.URL)
 
 	root := t.TempDir()
 	previous := runToolCommand
@@ -47,7 +48,10 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 
 	recipe := catalog.Item{
 		ID: "archive", Type: "zim", Description: "test archive",
-		Build: &catalog.BuildSpec{Family: "content-archive", SourceURL: server.URL + "/", Config: map[string]string{"max_pages": "3"}},
+		Build: &catalog.BuildSpec{
+			Family: "content-archive", SourceURL: server.URL + "/", Config: map[string]string{"max_pages": "3"},
+			ArchiveRules: []catalog.ArchiveRule{{Domain: source.Host, Remove: []string{"script", ".promo"}}},
+		},
 	}
 	entries, err := buildContentArchive(root, recipe, nil, Options{})
 	if err != nil {
@@ -67,6 +71,9 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 	}
 	if !strings.Contains(string(index), `href="about.html"`) || !strings.Contains(string(index), `src="assets/logo.png"`) {
 		t.Fatalf("index did not rewrite local links: %s", index)
+	}
+	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") {
+		t.Fatalf("index did not apply cleanup rule: %s", index)
 	}
 }
 

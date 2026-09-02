@@ -65,6 +65,11 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 	if err != nil {
 		return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
 	}
+	rules, err := compileArchiveRules(recipe.Build.ArchiveRules)
+	if err != nil {
+		return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
+	}
+	sources = limitArchiveSources(sources, configInt(recipe.Build.Config, "max_sources", 0))
 	pdfLinks := recipe.Build.Config["source_format"] == "pdf-links"
 	limit := configInt(recipe.Build.Config, "max_pages", 100)
 	if pdfLinks {
@@ -78,11 +83,12 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 			}
 			return nil
 		}}
+		rule := archiveRuleFor(source.URL.Host, rules)
 		prefix := ""
 		if pdfLinks || len(sources) > 1 {
 			prefix = filepath.Join("projects", source.ID)
 		}
-		copied, err := archiveSite(ctx, client, source.URL, filepath.Join(site, prefix), limit, !pdfLinks)
+		copied, err := archiveSite(ctx, client, source.URL, filepath.Join(site, prefix), limit, !pdfLinks, rule)
 		if err != nil {
 			return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
 		}
@@ -143,7 +149,7 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 	}}, nil
 }
 
-func archiveSite(ctx context.Context, client *http.Client, source *url.URL, output string, limit int, strictLimit bool) ([]archivedPage, error) {
+func archiveSite(ctx context.Context, client *http.Client, source *url.URL, output string, limit int, strictLimit bool, rule *compiledArchiveRule) ([]archivedPage, error) {
 	queue := []*url.URL{source}
 	seen := make(map[string]bool)
 	pages := make([]archivedPage, 0, limit)
@@ -177,7 +183,7 @@ func archiveSite(ctx context.Context, client *http.Client, source *url.URL, outp
 				continue
 			}
 			htmlPages++
-			body, queue = archiveHTML(body, current, source, local, queue)
+			body, queue = archiveHTML(body, current, source, local, queue, rule)
 		}
 		if err := os.WriteFile(destination, body, 0o644); err != nil {
 			return nil, err
@@ -211,11 +217,12 @@ func archiveFetch(ctx context.Context, client *http.Client, target *url.URL) ([]
 	return body, response.Header.Get("Content-Type"), nil
 }
 
-func archiveHTML(body []byte, current, source *url.URL, currentPath string, queue []*url.URL) ([]byte, []*url.URL) {
+func archiveHTML(body []byte, current, source *url.URL, currentPath string, queue []*url.URL, rule *compiledArchiveRule) ([]byte, []*url.URL) {
 	document, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
 		return body, queue
 	}
+	applyArchiveRule(document, rule)
 	var rewrite func(*html.Node)
 	rewrite = func(node *html.Node) {
 		if node.Type == html.ElementNode {

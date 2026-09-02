@@ -18,6 +18,7 @@ type BuildSpec struct {
 	EstimatedDownloadGB float64           `yaml:"estimated_download_gb,omitempty"`
 	EstimatedWorkGB     float64           `yaml:"estimated_work_gb,omitempty"`
 	Steps               []BuildStep       `yaml:"steps,omitempty"`
+	ArchiveRules        []ArchiveRule     `yaml:"archive_rules,omitempty"`
 	Config              map[string]string `yaml:"-"`
 }
 
@@ -41,6 +42,13 @@ type BuildLayer struct {
 	Filter string `yaml:"filter,omitempty"`
 }
 
+// ArchiveRule applies CSS removals to pages from one domain. Rules stay data;
+// API, authentication, or browser work remains an explicit builder seam.
+type ArchiveRule struct {
+	Domain string   `yaml:"domain"`
+	Remove []string `yaml:"remove,omitempty"`
+}
+
 // UnmarshalYAML captures unknown scalar fields in Config while preserving all
 // structured fields used by current recipe families.
 func (b *BuildSpec) UnmarshalYAML(value *yaml.Node) error {
@@ -57,7 +65,7 @@ func (b *BuildSpec) UnmarshalYAML(value *yaml.Node) error {
 		"family": true, "source_url": true, "output": true, "builder": true,
 		"assets": true, "tables": true, "layers": true, "requires": true,
 		"network": true, "estimated_download_gb": true, "estimated_work_gb": true,
-		"steps": true,
+		"steps": true, "archive_rules": true,
 	}
 	for key, node := range raw {
 		if known[key] {

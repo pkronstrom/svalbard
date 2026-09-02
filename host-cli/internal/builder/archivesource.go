@@ -59,6 +59,13 @@ func archiveSources(ctx context.Context, build *catalog.BuildSpec, workdir strin
 	}
 }
 
+func limitArchiveSources(sources []archiveSource, maximum int) []archiveSource {
+	if maximum > 0 && len(sources) > maximum {
+		return sources[:maximum]
+	}
+	return sources
+}
+
 func archivePDFURLs(path string) ([]*url.URL, error) {
 	sources, err := archivePDFSources(path)
 	if err != nil {

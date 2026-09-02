@@ -3,6 +3,7 @@ module github.com/pkronstrom/svalbard/host-cli
 go 1.25.6
 
 require (
+	github.com/andybalholm/cascadia v1.3.3
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/ncruces/go-sqlite3 v0.33.3
 	github.com/pkronstrom/svalbard/host-tui v0.0.0-00010101000000-000000000000
