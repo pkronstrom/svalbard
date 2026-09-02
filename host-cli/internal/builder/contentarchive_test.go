@@ -69,3 +69,59 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 		t.Fatalf("index did not rewrite local links: %s", index)
 	}
 }
+
+func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
+	var sourcePDF []byte
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/source.pdf":
+			writer.Header().Set("Content-Type", "application/pdf")
+			_, _ = writer.Write(sourcePDF)
+		case "/project":
+			writer.Header().Set("Content-Type", "text/html")
+			_, _ = writer.Write([]byte(`<html><body><img src="/assets/plan.png"></body></html>`))
+		case "/assets/plan.png":
+			writer.Header().Set("Content-Type", "image/png")
+			_, _ = writer.Write([]byte("png"))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	sourcePDF = minimalTextPDF(server.URL + "/project")
+
+	root := t.TempDir()
+	previous := runToolCommand
+	runToolCommand = func(_ context.Context, _ string, _ string, _ string, tool string, args []string) (string, error) {
+		if tool == "zimwriterfs" {
+			return "", os.WriteFile(args[len(args)-1], []byte("zim"), 0o644)
+		}
+		return "", nil
+	}
+	defer func() { runToolCommand = previous }()
+
+	recipe := catalog.Item{
+		ID: "pdf-archive", Type: "zim",
+		Build: &catalog.BuildSpec{Family: "content-archive", SourceURL: server.URL + "/source.pdf", Config: map[string]string{"source_format": "pdf-links"}},
+	}
+	if _, err := buildContentArchive(root, recipe, nil, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	project, _ := archiveURL(server.URL + "/project")
+	site := filepath.Join(root, ".staging", "build", recipe.ID, "site", archiveHostPath(project.Host))
+	for _, name := range []string{"project.html", "assets/plan.png"} {
+		if _, err := os.Stat(filepath.Join(site, name)); err != nil {
+			t.Errorf("missing %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".staging", "build", recipe.ID, "site", "index.html")); err != nil {
+		t.Errorf("missing archive index: %v", err)
+	}
+	manifest, err := os.ReadFile(filepath.Join(root, ".staging", "build", recipe.ID, "site", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(manifest), `"source_page": 1`) {
+		t.Fatalf("manifest lost PDF source page: %s", manifest)
+	}
+}

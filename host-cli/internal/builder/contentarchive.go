@@ -27,9 +27,10 @@ import (
 const maxArchiveResponseBytes = 32 << 20
 
 type archivedPage struct {
-	URL  string `json:"url"`
-	Path string `json:"path"`
-	HTML bool   `json:"html"`
+	URL        string `json:"url"`
+	Path       string `json:"path"`
+	HTML       bool   `json:"html"`
+	SourcePage int    `json:"source_page,omitempty"`
 }
 
 type archiveManifest struct {
@@ -63,32 +64,34 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 	if err != nil {
 		return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
 	}
+	pdfLinks := recipe.Build.Config["source_format"] == "pdf-links"
 	limit := configInt(recipe.Build.Config, "max_pages", 100)
-	if recipe.Build.Config["source_format"] == "pdf-links" {
+	if pdfLinks {
 		limit = configInt(recipe.Build.Config, "max_pages", 1)
 	}
 	pages := make([]archivedPage, 0)
 	for _, source := range sources {
 		client := &http.Client{CheckRedirect: func(request *http.Request, _ []*http.Request) error {
-			if request.URL.Scheme != source.Scheme || request.URL.Host != source.Host {
+			if request.URL.Scheme != source.URL.Scheme || request.URL.Host != source.URL.Host {
 				return http.ErrUseLastResponse
 			}
 			return nil
 		}}
 		prefix := ""
-		if len(sources) > 1 {
-			prefix = archiveHostPath(source.Host)
+		if pdfLinks || len(sources) > 1 {
+			prefix = archiveHostPath(source.URL.Host)
 		}
-		copied, err := archiveSite(ctx, client, source, filepath.Join(site, prefix), limit, recipe.Build.Config["source_format"] != "pdf-links")
+		copied, err := archiveSite(ctx, client, source.URL, filepath.Join(site, prefix), limit, !pdfLinks)
 		if err != nil {
 			return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
 		}
 		for index := range copied {
 			copied[index].Path = filepath.ToSlash(filepath.Join(prefix, copied[index].Path))
+			copied[index].SourcePage = source.Page
 		}
 		pages = append(pages, copied...)
 	}
-	if len(sources) > 1 {
+	if pdfLinks || len(sources) > 1 {
 		if err := writeArchiveIndex(filepath.Join(site, "index.html"), sources); err != nil {
 			return nil, err
 		}

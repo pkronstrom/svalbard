@@ -17,20 +17,25 @@ import (
 
 var archiveURLPattern = regexp.MustCompile(`https?://[^\s<>()\[\]{}"']+`)
 
-func archiveSources(ctx context.Context, build *catalog.BuildSpec, workdir string) ([]*url.URL, error) {
+type archiveSource struct {
+	URL  *url.URL
+	Page int
+}
+
+func archiveSources(ctx context.Context, build *catalog.BuildSpec, workdir string) ([]archiveSource, error) {
 	switch build.Config["source_format"] {
 	case "", "html":
 		source, err := archiveURL(build.SourceURL)
 		if err != nil {
 			return nil, err
 		}
-		return []*url.URL{source}, nil
+		return []archiveSource{{URL: source}}, nil
 	case "pdf-links":
 		path := filepath.Join(workdir, "source.pdf")
 		if err := stepDownload(ctx, build.SourceURL, path); err != nil {
 			return nil, err
 		}
-		sources, err := archivePDFURLs(path)
+		sources, err := archivePDFSources(path)
 		if err != nil {
 			return nil, err
 		}
@@ -44,11 +49,39 @@ func archiveSources(ctx context.Context, build *catalog.BuildSpec, workdir strin
 }
 
 func archivePDFURLs(path string) ([]*url.URL, error) {
+	sources, err := archivePDFSources(path)
+	if err != nil {
+		return nil, err
+	}
+	urls := make([]*url.URL, len(sources))
+	for index, source := range sources {
+		urls[index] = source.URL
+	}
+	return urls, nil
+}
+
+func archivePDFSources(path string) ([]archiveSource, error) {
 	file, reader, err := pdf.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+	sources := make([]archiveSource, 0)
+	seen := make(map[string]bool)
+	for page := 1; page <= reader.NumPage(); page++ {
+		annotations := reader.Page(page).V.Key("Annots")
+		for index := 0; index < annotations.Len(); index++ {
+			source, err := archiveURL(annotations.Index(index).Key("A").Key("URI").Text())
+			if err != nil || seen[source.String()] {
+				continue
+			}
+			seen[source.String()] = true
+			sources = append(sources, archiveSource{URL: source, Page: page})
+		}
+	}
+	if len(sources) > 0 {
+		return sources, nil
+	}
 	text, err := reader.GetPlainText()
 	if err != nil {
 		return nil, err
@@ -57,7 +90,10 @@ func archivePDFURLs(path string) ([]*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
-	return archiveURLsFromText(string(contents)), nil
+	for _, source := range archiveURLsFromText(string(contents)) {
+		sources = append(sources, archiveSource{URL: source})
+	}
+	return sources, nil
 }
 
 func archiveURLsFromText(text string) []*url.URL {
@@ -78,12 +114,12 @@ func archiveHostPath(host string) string {
 	return strings.NewReplacer(":", "_", "/", "_").Replace(host)
 }
 
-func writeArchiveIndex(path string, sources []*url.URL) error {
+func writeArchiveIndex(path string, sources []archiveSource) error {
 	var page strings.Builder
 	page.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>Archive</title></head><body><h1>Archive</h1><ul>")
 	for _, source := range sources {
-		local := filepath.ToSlash(filepath.Join(archiveHostPath(source.Host), archiveLocalPath(source, "")))
-		fmt.Fprintf(&page, "<li><a href=%q>%s</a></li>", local, source.String())
+		local := filepath.ToSlash(filepath.Join(archiveHostPath(source.URL.Host), archiveLocalPath(source.URL, "")))
+		fmt.Fprintf(&page, "<li><a href=%q>%s</a></li>", local, source.URL.String())
 	}
 	page.WriteString("</ul></body></html>")
 	return os.WriteFile(path, []byte(page.String()), 0o644)

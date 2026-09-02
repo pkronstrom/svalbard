@@ -13,12 +13,12 @@ func TestArchivePDFURLsExtractsHTTPLinks(t *testing.T) {
 	if err := os.WriteFile(path, minimalTextPDF("https://example.test/project"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	urls, err := archivePDFURLs(path)
+	sources, err := archivePDFSources(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(urls) != 1 || urls[0].String() != "https://example.test/project" {
-		t.Fatalf("archivePDFURLs() = %#v", urls)
+	if len(sources) != 1 || sources[0].URL.String() != "https://example.test/project" || sources[0].Page != 1 {
+		t.Fatalf("archivePDFSources() = %#v", sources)
 	}
 }
 
@@ -33,9 +33,10 @@ func minimalTextPDF(text string) []byte {
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R >>",
 		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R /Annots [6 0 R] >>",
 		fmt.Sprintf("<< /Length %d >>\nstream\nBT /F1 12 Tf 72 720 Td (%s) Tj ET\nendstream", len("BT /F1 12 Tf 72 720 Td ("+text+") Tj ET"), text),
 		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+		fmt.Sprintf("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /A << /S /URI /URI (%s) >> >>", text),
 	}
 	var document bytes.Buffer
 	document.WriteString("%PDF-1.4\n")
