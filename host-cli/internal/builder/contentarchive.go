@@ -99,7 +99,7 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		var copied []archivedPage
 		if prefix != "" {
 			projectPath := filepath.Join(site, prefix, "project.json")
-			if project, err := readArchiveProject(projectPath); err == nil && project.SourceURL == source.URL.String() && len(project.Pages) > 0 {
+			if project, err := readArchiveProject(projectPath); err == nil && project.Version == archiveProjectVersion && project.SourceURL == source.URL.String() && len(project.Pages) > 0 {
 				if _, err := os.Stat(filepath.Join(site, prefix, filepath.FromSlash(project.EntryPath))); err == nil {
 					copied = project.Pages
 				}
@@ -318,13 +318,39 @@ func archiveHTML(body []byte, current, source *url.URL, currentPath string, queu
 func pruneArchiveElements(node *html.Node) {
 	for child := node.FirstChild; child != nil; {
 		next := child.NextSibling
-		if child.Type == html.ElementNode && (child.Data == "script" || child.Data == "noscript" || child.Data == "iframe" || child.Data == "object" || child.Data == "link" || child.Data == "base" || child.Data == "use") {
+		if child.Type == html.CommentNode || child.Type == html.ElementNode && archiveUnsafeElement(child) {
 			node.RemoveChild(child)
 		} else {
+			if child.Type == html.ElementNode {
+				child.Attr = archiveSafeAttributes(child)
+			}
 			pruneArchiveElements(child)
 		}
 		child = next
 	}
+}
+
+func archiveUnsafeElement(node *html.Node) bool {
+	switch node.Data {
+	case "script", "noscript", "iframe", "object", "embed", "link", "base", "use", "style":
+		return true
+	}
+	return false
+}
+
+func archiveSafeAttributes(node *html.Node) []html.Attribute {
+	attributes := node.Attr[:0]
+	for _, attribute := range node.Attr {
+		key := strings.ToLower(attribute.Key)
+		if strings.HasPrefix(key, "on") || key == "style" || key == "srcset" || key == "poster" || key == "background" || key == "xlink:href" || key == "href" && node.Data != "a" {
+			continue
+		}
+		if strings.HasPrefix(key, "data-") && (strings.Contains(key, "src") || strings.Contains(key, "href") || strings.Contains(key, "url")) {
+			continue
+		}
+		attributes = append(attributes, attribute)
+	}
+	return attributes
 }
 func archiveDocumentTitle(document *html.Node) string {
 	var title string

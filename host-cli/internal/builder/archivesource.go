@@ -21,6 +21,8 @@ import (
 
 var archiveURLPattern = regexp.MustCompile(`https?://[^\s<>()\[\]{}"']+`)
 
+const archiveProjectVersion = 1
+
 type archiveSource struct {
 	ID   string
 	URL  *url.URL
@@ -28,6 +30,7 @@ type archiveSource struct {
 }
 
 type archiveProject struct {
+	Version    int            `json:"version"`
 	ID         string         `json:"id"`
 	SourceURL  string         `json:"source_url"`
 	SourcePage int            `json:"source_page,omitempty"`
@@ -173,7 +176,7 @@ func writeArchiveProject(path string, source archiveSource, entry archivedPage, 
 		status = "unavailable"
 	}
 	data, err := json.MarshalIndent(archiveProject{
-		ID: source.ID, SourceURL: source.URL.String(), SourcePage: source.Page, EntryPath: entry.Path, Title: entry.Title, Pages: pages, Status: status, Error: failure,
+		Version: archiveProjectVersion, ID: source.ID, SourceURL: source.URL.String(), SourcePage: source.Page, EntryPath: entry.Path, Title: entry.Title, Pages: pages, Status: status, Error: failure,
 	}, "", "  ")
 	if err != nil {
 		return err

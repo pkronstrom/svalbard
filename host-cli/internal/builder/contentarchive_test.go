@@ -21,7 +21,7 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 		}
 		switch request.URL.Path {
 		case "/":
-			_, _ = writer.Write([]byte(`<html><body><header>site chrome</header><main><nav class="promo">ad</nav><script>track()</script><a href="/about">About</a><img src="/assets/logo.png"><img src="/missing.png"><img src="https://cdn.example.test/logo.png"><svg><use href="/icons.svg#home"></use></svg></main><footer>site footer</footer></body></html>`))
+			_, _ = writer.Write([]byte(`<!-- crawler noise --><html><body><header>site chrome</header><main><nav class="promo">ad</nav><script>track()</script><a href="/about">About</a><img src="/assets/logo.png" data-src="https://cdn.example.test/lazy.png"><img src="/missing.png"><img src="https://cdn.example.test/logo.png"><svg><use href="/icons.svg#home"></use></svg><div style="background:url(https://cdn.example.test/bg.png)">content</div></main><footer>site footer</footer></body></html>`))
 		case "/about":
 			_, _ = writer.Write([]byte(`<html><title>About</title><body>offline</body></html>`))
 		case "/assets/logo.png":
@@ -75,7 +75,7 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 	if !strings.Contains(string(index), `href="about.html"`) || !strings.Contains(string(index), `src="assets/logo.png"`) {
 		t.Fatalf("index did not rewrite local links: %s", index)
 	}
-	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") || strings.Contains(string(index), "cdn.example.test") || strings.Contains(string(index), "missing.png") || strings.Contains(string(index), "icons.svg") || strings.Contains(string(index), "site chrome") || strings.Contains(string(index), "site footer") {
+	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") || strings.Contains(string(index), "cdn.example.test") || strings.Contains(string(index), "missing.png") || strings.Contains(string(index), "icons.svg") || strings.Contains(string(index), "site chrome") || strings.Contains(string(index), "site footer") || strings.Contains(string(index), "crawler noise") {
 		t.Fatalf("index retained an offline dependency: %s", index)
 	}
 }
