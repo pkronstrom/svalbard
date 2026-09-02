@@ -86,7 +86,7 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 			_, _ = writer.Write(sourcePDF)
 		case "/project":
 			writer.Header().Set("Content-Type", "text/html")
-			_, _ = writer.Write([]byte(`<html><body><img src="/assets/plan.png"></body></html>`))
+			_, _ = writer.Write([]byte(`<html><head><title>DIY Plan</title></head><body><img src="/assets/plan.png"></body></html>`))
 		case "/assets/plan.png":
 			writer.Header().Set("Content-Type", "image/png")
 			_, _ = writer.Write([]byte("png"))
@@ -131,5 +131,12 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 	}
 	if !strings.Contains(string(manifest), `"source_page": 1`) || !strings.Contains(string(manifest), source.ID) {
 		t.Fatalf("manifest lost PDF project provenance: %s", manifest)
+	}
+	projectRecord, err := os.ReadFile(filepath.Join(site, "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projectRecord), `"title": "DIY Plan"`) {
+		t.Fatalf("project record lost page title: %s", projectRecord)
 	}
 }

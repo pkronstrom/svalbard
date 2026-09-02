@@ -31,6 +31,7 @@ type archiveProject struct {
 	SourceURL  string `json:"source_url"`
 	SourcePage int    `json:"source_page,omitempty"`
 	EntryPath  string `json:"entry_path"`
+	Title      string `json:"title,omitempty"`
 }
 
 func archiveSources(ctx context.Context, build *catalog.BuildSpec, workdir string) ([]archiveSource, error) {
@@ -152,9 +153,9 @@ func writeArchiveIndex(path string, sources []archiveSource) error {
 	return os.WriteFile(path, []byte(page.String()), 0o644)
 }
 
-func writeArchiveProject(path string, source archiveSource, entryPath string) error {
+func writeArchiveProject(path string, source archiveSource, entry archivedPage) error {
 	data, err := json.MarshalIndent(archiveProject{
-		ID: source.ID, SourceURL: source.URL.String(), SourcePage: source.Page, EntryPath: entryPath,
+		ID: source.ID, SourceURL: source.URL.String(), SourcePage: source.Page, EntryPath: entry.Path, Title: entry.Title,
 	}, "", "  ")
 	if err != nil {
 		return err

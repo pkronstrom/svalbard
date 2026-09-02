@@ -29,6 +29,7 @@ const maxArchiveResponseBytes = 32 << 20
 type archivedPage struct {
 	URL        string `json:"url"`
 	Path       string `json:"path"`
+	Title      string `json:"title,omitempty"`
 	HTML       bool   `json:"html"`
 	ProjectID  string `json:"project_id,omitempty"`
 	SourcePage int    `json:"source_page,omitempty"`
@@ -93,7 +94,14 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 			return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
 		}
 		if prefix != "" {
-			if err := writeArchiveProject(filepath.Join(site, prefix, "project.json"), source, archiveLocalPath(source.URL, "")); err != nil {
+			entry := archivedPage{Path: archiveLocalPath(source.URL, "")}
+			for _, page := range copied {
+				if page.URL == source.URL.String() {
+					entry = page
+					break
+				}
+			}
+			if err := writeArchiveProject(filepath.Join(site, prefix, "project.json"), source, entry); err != nil {
 				return nil, err
 			}
 		}
@@ -175,6 +183,7 @@ func archiveSite(ctx context.Context, client *http.Client, source *url.URL, outp
 			return nil, err
 		}
 		isHTML := strings.Contains(contentType, "text/html") || strings.HasSuffix(strings.ToLower(current.Path), ".html") || strings.HasSuffix(current.Path, "/")
+		title := ""
 		if isHTML {
 			if htmlPages >= limit {
 				if strictLimit {
@@ -183,12 +192,12 @@ func archiveSite(ctx context.Context, client *http.Client, source *url.URL, outp
 				continue
 			}
 			htmlPages++
-			body, queue = archiveHTML(body, current, source, local, queue, rule)
+			body, title, queue = archiveHTML(body, current, source, local, queue, rule)
 		}
 		if err := os.WriteFile(destination, body, 0o644); err != nil {
 			return nil, err
 		}
-		pages = append(pages, archivedPage{URL: current.String(), Path: local, HTML: isHTML})
+		pages = append(pages, archivedPage{URL: current.String(), Path: local, Title: title, HTML: isHTML})
 	}
 	return pages, nil
 }
@@ -217,10 +226,10 @@ func archiveFetch(ctx context.Context, client *http.Client, target *url.URL) ([]
 	return body, response.Header.Get("Content-Type"), nil
 }
 
-func archiveHTML(body []byte, current, source *url.URL, currentPath string, queue []*url.URL, rule *compiledArchiveRule) ([]byte, []*url.URL) {
+func archiveHTML(body []byte, current, source *url.URL, currentPath string, queue []*url.URL, rule *compiledArchiveRule) ([]byte, string, []*url.URL) {
 	document, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
-		return body, queue
+		return body, "", queue
 	}
 	applyArchiveRule(document, rule)
 	var rewrite func(*html.Node)
@@ -251,9 +260,61 @@ func archiveHTML(body []byte, current, source *url.URL, currentPath string, queu
 	rewrite(document)
 	var rendered bytes.Buffer
 	if err := html.Render(&rendered, document); err != nil {
-		return body, queue
+		return body, "", queue
 	}
-	return rendered.Bytes(), queue
+	return rendered.Bytes(), archiveDocumentTitle(document), queue
+}
+
+func archiveDocumentTitle(document *html.Node) string {
+	var title string
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if title != "" || node.Type != html.ElementNode {
+			for child := node.FirstChild; child != nil && title == ""; child = child.NextSibling {
+				walk(child)
+			}
+			return
+		}
+		if node.Data == "title" {
+			title = strings.TrimSpace(archiveNodeText(node))
+			return
+		}
+		if node.Data == "meta" {
+			var property, content string
+			for _, attribute := range node.Attr {
+				switch strings.ToLower(attribute.Key) {
+				case "property", "name":
+					property = strings.ToLower(attribute.Val)
+				case "content":
+					content = attribute.Val
+				}
+			}
+			if property == "og:title" {
+				title = strings.TrimSpace(content)
+				return
+			}
+		}
+		for child := node.FirstChild; child != nil && title == ""; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(document)
+	return title
+}
+
+func archiveNodeText(node *html.Node) string {
+	var text strings.Builder
+	var walk func(*html.Node)
+	walk = func(current *html.Node) {
+		if current.Type == html.TextNode {
+			text.WriteString(current.Data)
+		}
+		for child := current.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(node)
+	return text.String()
 }
 
 func archiveURL(raw string) (*url.URL, error) {
