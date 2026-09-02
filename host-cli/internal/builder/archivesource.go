@@ -2,6 +2,9 @@ package builder
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -18,8 +21,16 @@ import (
 var archiveURLPattern = regexp.MustCompile(`https?://[^\s<>()\[\]{}"']+`)
 
 type archiveSource struct {
+	ID   string
 	URL  *url.URL
 	Page int
+}
+
+type archiveProject struct {
+	ID         string `json:"id"`
+	SourceURL  string `json:"source_url"`
+	SourcePage int    `json:"source_page,omitempty"`
+	EntryPath  string `json:"entry_path"`
 }
 
 func archiveSources(ctx context.Context, build *catalog.BuildSpec, workdir string) ([]archiveSource, error) {
@@ -29,7 +40,7 @@ func archiveSources(ctx context.Context, build *catalog.BuildSpec, workdir strin
 		if err != nil {
 			return nil, err
 		}
-		return []archiveSource{{URL: source}}, nil
+		return []archiveSource{newArchiveSource(source, 0)}, nil
 	case "pdf-links":
 		path := filepath.Join(workdir, "source.pdf")
 		if err := stepDownload(ctx, build.SourceURL, path); err != nil {
@@ -76,7 +87,7 @@ func archivePDFSources(path string) ([]archiveSource, error) {
 				continue
 			}
 			seen[source.String()] = true
-			sources = append(sources, archiveSource{URL: source, Page: page})
+			sources = append(sources, newArchiveSource(source, page))
 		}
 	}
 	if len(sources) > 0 {
@@ -91,7 +102,7 @@ func archivePDFSources(path string) ([]archiveSource, error) {
 		return nil, err
 	}
 	for _, source := range archiveURLsFromText(string(contents)) {
-		sources = append(sources, archiveSource{URL: source})
+		sources = append(sources, newArchiveSource(source, 0))
 	}
 	return sources, nil
 }
@@ -110,6 +121,15 @@ func archiveURLsFromText(text string) []*url.URL {
 	return urls
 }
 
+func newArchiveSource(source *url.URL, page int) archiveSource {
+	sum := sha256.Sum256([]byte(source.String()))
+	return archiveSource{
+		ID:   archiveHostPath(source.Host) + "-" + hex.EncodeToString(sum[:6]),
+		URL:  source,
+		Page: page,
+	}
+}
+
 func archiveHostPath(host string) string {
 	return strings.NewReplacer(":", "_", "/", "_").Replace(host)
 }
@@ -118,9 +138,19 @@ func writeArchiveIndex(path string, sources []archiveSource) error {
 	var page strings.Builder
 	page.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>Archive</title></head><body><h1>Archive</h1><ul>")
 	for _, source := range sources {
-		local := filepath.ToSlash(filepath.Join(archiveHostPath(source.URL.Host), archiveLocalPath(source.URL, "")))
+		local := filepath.ToSlash(filepath.Join("projects", source.ID, archiveLocalPath(source.URL, "")))
 		fmt.Fprintf(&page, "<li><a href=%q>%s</a></li>", local, source.URL.String())
 	}
 	page.WriteString("</ul></body></html>")
 	return os.WriteFile(path, []byte(page.String()), 0o644)
+}
+
+func writeArchiveProject(path string, source archiveSource, entryPath string) error {
+	data, err := json.MarshalIndent(archiveProject{
+		ID: source.ID, SourceURL: source.URL.String(), SourcePage: source.Page, EntryPath: entryPath,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }

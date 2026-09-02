@@ -108,8 +108,9 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 		t.Fatal(err)
 	}
 	project, _ := archiveURL(server.URL + "/project")
-	site := filepath.Join(root, ".staging", "build", recipe.ID, "site", archiveHostPath(project.Host))
-	for _, name := range []string{"project.html", "assets/plan.png"} {
+	source := newArchiveSource(project, 1)
+	site := filepath.Join(root, ".staging", "build", recipe.ID, "site", "projects", source.ID)
+	for _, name := range []string{"project.html", "assets/plan.png", "project.json"} {
 		if _, err := os.Stat(filepath.Join(site, name)); err != nil {
 			t.Errorf("missing %s: %v", name, err)
 		}
@@ -121,7 +122,7 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(manifest), `"source_page": 1`) {
-		t.Fatalf("manifest lost PDF source page: %s", manifest)
+	if !strings.Contains(string(manifest), `"source_page": 1`) || !strings.Contains(string(manifest), source.ID) {
+		t.Fatalf("manifest lost PDF project provenance: %s", manifest)
 	}
 }

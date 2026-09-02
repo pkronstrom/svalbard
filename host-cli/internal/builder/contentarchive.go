@@ -30,6 +30,7 @@ type archivedPage struct {
 	URL        string `json:"url"`
 	Path       string `json:"path"`
 	HTML       bool   `json:"html"`
+	ProjectID  string `json:"project_id,omitempty"`
 	SourcePage int    `json:"source_page,omitempty"`
 }
 
@@ -79,15 +80,21 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		}}
 		prefix := ""
 		if pdfLinks || len(sources) > 1 {
-			prefix = archiveHostPath(source.URL.Host)
+			prefix = filepath.Join("projects", source.ID)
 		}
 		copied, err := archiveSite(ctx, client, source.URL, filepath.Join(site, prefix), limit, !pdfLinks)
 		if err != nil {
 			return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
 		}
+		if prefix != "" {
+			if err := writeArchiveProject(filepath.Join(site, prefix, "project.json"), source, archiveLocalPath(source.URL, "")); err != nil {
+				return nil, err
+			}
+		}
 		for index := range copied {
 			copied[index].Path = filepath.ToSlash(filepath.Join(prefix, copied[index].Path))
 			copied[index].SourcePage = source.Page
+			copied[index].ProjectID = source.ID
 		}
 		pages = append(pages, copied...)
 	}
