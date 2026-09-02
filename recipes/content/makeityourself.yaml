@@ -9,6 +9,11 @@ build:
   family: custom
   builder: makeityourself-zim.py
   source_url: https://makeityourself.org/MIY.pdf
+  archive_rules:
+    - domain: learn.adafruit.com
+      remove: [nav.skip-links, "#adafruit-header", "#adafruit-footer"]
+    - domain: github.com
+      remove: ['header[role="banner"]', 'nav[aria-label="Repository"]', footer]
 license:
   id: mixed
   attribution: "Curated by NODE (makeityourself.org). Individual project licenses vary."
