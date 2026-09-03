@@ -37,6 +37,34 @@ func TestLimitArchiveSourcesPreservesSourceOrder(t *testing.T) {
 	}
 }
 
+func TestWriteArchiveIndexEncodesApostrophesInLinks(t *testing.T) {
+	source, err := archiveURL("https://github.com/diysynth/LIL'-MONO-SYNTH")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(t.TempDir(), "index.html")
+	if err := writeArchiveIndex(index, filepath.Dir(index), []archiveSource{newArchiveSource(source, 0)}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte(`href="projects/github.com-574de42a5ac5/diysynth/lil%27-mono-synth.html"`)) {
+		t.Fatalf("index link = %s", body)
+	}
+}
+
+func TestArchiveLocalPathCanonicalizesCase(t *testing.T) {
+	source, err := archiveURL("https://example.test/Pictures/KVM/MegaTimeWatch.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := archiveLocalPath(source, ""), "pictures/kvm/megatimewatch.jpg"; got != want {
+		t.Fatalf("archiveLocalPath() = %q, want %q", got, want)
+	}
+}
+
 func minimalTextPDF(text string) []byte {
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R >>",

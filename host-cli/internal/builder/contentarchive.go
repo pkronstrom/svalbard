@@ -106,6 +106,11 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 			}
 		}
 		if copied == nil {
+			if prefix != "" {
+				if err := os.RemoveAll(filepath.Join(site, prefix)); err != nil {
+					return nil, err
+				}
+			}
 			failure := ""
 			copied, err = archiveSite(ctx, client, source.URL, filepath.Join(site, prefix), limit, !pdfLinks, rule)
 			if err != nil {
@@ -138,6 +143,9 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		}
 		pages = append(pages, copied...)
 	}
+	if err := pruneMissingArchiveResources(site, pages, pdfLinks); err != nil {
+		return nil, err
+	}
 	if pdfLinks || len(sources) > 1 {
 		if err := writeArchiveIndex(filepath.Join(site, "index.html"), site, sources); err != nil {
 			return nil, err
@@ -157,6 +165,9 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 	}
 	output := filepath.Join(root, toolkit.TypeDirs[recipe.Type], outputName)
 	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.Remove(output); err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	args := []string{
@@ -226,9 +237,6 @@ func archiveSite(ctx context.Context, client *http.Client, source *url.URL, outp
 			return nil, err
 		}
 		pages = append(pages, archivedPage{URL: current.String(), Path: local, Title: title, HTML: isHTML})
-	}
-	if err := pruneMissingArchiveResources(output, pages, !strictLimit); err != nil {
-		return nil, err
 	}
 	return pages, nil
 }
@@ -443,7 +451,7 @@ func archiveLocalPath(target *url.URL, _ string) string {
 	if path.Ext(clean) == "" {
 		clean += ".html"
 	}
-	return strings.TrimPrefix(clean, "/")
+	return strings.ToLower(strings.TrimPrefix(clean, "/"))
 }
 
 func archiveMetadata(recipe catalog.Item, key, fallback string) string {

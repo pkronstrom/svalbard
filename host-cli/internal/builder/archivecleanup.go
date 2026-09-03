@@ -81,8 +81,8 @@ func missingArchiveResource(node *html.Node, documentPath, output string) bool {
 			continue
 		}
 		target, err := url.Parse(attribute.Val)
-		if err != nil || target.IsAbs() || target.Path == "" {
-			continue
+		if err != nil || target.IsAbs() || target.Host != "" || target.Path == "" {
+			return true
 		}
 		local := filepath.Join(filepath.Dir(documentPath), filepath.FromSlash(target.Path))
 		if !pathWithin(local, output) {

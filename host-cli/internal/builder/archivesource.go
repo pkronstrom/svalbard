@@ -21,7 +21,7 @@ import (
 
 var archiveURLPattern = regexp.MustCompile(`https?://[^\s<>()\[\]{}"']+`)
 
-const archiveProjectVersion = 1
+const archiveProjectVersion = 4
 
 type archiveSource struct {
 	ID   string
@@ -164,10 +164,14 @@ func writeArchiveIndex(path, root string, sources []archiveSource) error {
 				status = " (unavailable)"
 			}
 		}
-		fmt.Fprintf(&page, "<li><a href=\"%s\">%s</a>%s</li>", template.HTMLEscapeString(local), template.HTMLEscapeString(title), status)
+		fmt.Fprintf(&page, "<li><a href=\"%s\">%s</a>%s</li>", archiveIndexHref(local), template.HTMLEscapeString(title), status)
 	}
 	page.WriteString("</ul></body></html>")
 	return os.WriteFile(path, []byte(page.String()), 0o644)
+}
+
+func archiveIndexHref(local string) string {
+	return template.HTMLEscapeString(strings.ReplaceAll(local, "'", "%27"))
 }
 
 func writeArchiveProject(path string, source archiveSource, entry archivedPage, pages []archivedPage, failure string) error {

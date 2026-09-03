@@ -2,6 +2,8 @@ package builder
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,7 +40,11 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 	previous := runToolCommand
 	runToolCommand = func(_ context.Context, _ string, _ string, _ string, tool string, args []string) (string, error) {
 		if tool == "zimwriterfs" {
-			return "", os.WriteFile(args[len(args)-1], []byte("zim"), 0o644)
+			output := args[len(args)-1]
+			if _, err := os.Stat(output); err == nil {
+				return "", fmt.Errorf("archive already exists: %s", output)
+			}
+			return "", os.WriteFile(output, []byte("zim"), 0o644)
 		}
 		if tool == "zimcheck" {
 			if _, err := os.Stat(args[0]); err != nil {
@@ -77,6 +83,30 @@ func TestBuildContentArchiveCopiesSameOriginSiteAndPackagesZIM(t *testing.T) {
 	}
 	if strings.Contains(string(index), "track()") || strings.Contains(string(index), "ad</nav>") || strings.Contains(string(index), "cdn.example.test") || strings.Contains(string(index), "missing.png") || strings.Contains(string(index), "icons.svg") || strings.Contains(string(index), "site chrome") || strings.Contains(string(index), "site footer") || strings.Contains(string(index), "crawler noise") {
 		t.Fatalf("index retained an offline dependency: %s", index)
+	}
+	if _, err := buildContentArchive(root, recipe, nil, Options{}); err != nil {
+		t.Fatalf("rebuild did not replace archive: %v", err)
+	}
+}
+
+func TestPruneMissingArchiveResourcesRemovesExternalAndMissingSources(t *testing.T) {
+	root := t.TempDir()
+	body := `<html><body><img src="https://cdn.example.test/image.png"><img src="missing.png"><img src="kept.png"></body></html>`
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "kept.png"), []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := pruneMissingArchiveResources(root, []archivedPage{{Path: "index.html", HTML: true}}, false); err != nil {
+		t.Fatal(err)
+	}
+	clean, err := os.ReadFile(filepath.Join(root, "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(clean), "cdn.example.test") || strings.Contains(string(clean), "missing.png") || !strings.Contains(string(clean), "kept.png") {
+		t.Fatalf("pruned archive = %s", clean)
 	}
 }
 
@@ -157,6 +187,31 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 	}
 	if !strings.Contains(string(projectHTML), `<a>Category</a>`) || strings.Contains(string(projectHTML), "href=\"/category\"") || strings.Contains(string(projectHTML), "feed.rss") {
 		t.Fatalf("bounded archive retained broken local links: %s", projectHTML)
+	}
+	recordedProject, err := readArchiveProject(filepath.Join(site, "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordedProject.Version--
+	record, err := json.Marshal(recordedProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(site, "project.json"), record, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(site, "stale.bin"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	projectRequests = 0
+	if _, err := buildContentArchive(root, recipe, nil, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if projectRequests == 0 {
+		t.Fatal("rebuild did not fetch stale project")
+	}
+	if _, err := os.Stat(filepath.Join(site, "stale.bin")); !os.IsNotExist(err) {
+		t.Fatalf("stale project output exists: %v", err)
 	}
 	projectRequests = 0
 	if _, err := buildContentArchive(root, recipe, nil, Options{}); err != nil {
