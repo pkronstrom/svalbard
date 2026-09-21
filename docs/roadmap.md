@@ -12,7 +12,6 @@ _Active `openspec/changes/<id>/`. Branch + tasks.md status._
 
 
 - **OSM, raster, and MML map builders** — awaiting source-contract review, `openspec/changes/implement-map-build-families/`
-- **Generic content archive pipeline** — design ready for review; MIY is first configuration, `openspec/changes/generic-content-archive-pipeline/`
 
 ## Shipped
 
