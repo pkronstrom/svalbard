@@ -467,7 +467,6 @@ func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, d
 	}, nil
 }
 
-// buildItem runs a Docker-based builder for strategy=build recipes.
 func buildItem(ctx context.Context, root, id string, recipe catalog.Item) (manifest.RealizedEntry, error) {
 	family := recipe.Build.Family
 	typeDir := toolkit.TypeDirs[recipe.Type]

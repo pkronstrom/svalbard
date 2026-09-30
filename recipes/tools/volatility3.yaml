@@ -8,7 +8,7 @@ depth: reference-only
 size_gb: 0.03
 venv: svalbard-python
 packages:
-- volatility3==2.7.0
+- volatility3==2.28.2
 entry_points:
 - vol
 description: Memory forensics framework for incident response and malware analysis

@@ -6,7 +6,7 @@ tags:
 - civil-construction
 - energy-power
 depth: comprehensive
-size_gb: 0.5
+size_gb: 0.238
 url_pattern: https://download.kiwix.org/zim/stack_exchange/engineering.stackexchange.com_en_all_{date}.zim
 description: Engineering Stack Exchange
 license:

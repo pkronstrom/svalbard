@@ -5,7 +5,7 @@ tags:
 - computing
 depth: reference-only
 size_gb: 0.03
-python: ">=3.11"
+python: "3.12"
 strategy: build
 build:
   family: python-venv

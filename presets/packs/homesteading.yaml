@@ -14,7 +14,6 @@ sources:
 - permacomputing
 - lowtech-magazine
 - appropedia
-- practical-action
 - cd3wd
 # ── Agriculture & food ──
 - stackexchange-gardening
@@ -47,3 +46,13 @@ sources:
 #
 # ── TODO: Extension publications ──
 # extension-org-pubs        # ~500 MB-2 GB, PDF/zimit, US cooperative extension
+# ── Added 2026-09-30 catalog audit ──
+- gardenology
+- stackexchange-homebrew
+- stackexchange-mechanics
+- stackexchange-bicycles
+- libretexts-workforce
+- ted-farming
+- gutenberg-en-lcc-s
+- wikivet
+- restarters

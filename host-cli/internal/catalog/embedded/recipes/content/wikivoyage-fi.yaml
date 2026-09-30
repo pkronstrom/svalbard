@@ -1,0 +1,13 @@
+id: wikivoyage-fi
+type: zim
+display_group: reference
+tags:
+- navigation
+- language
+depth: overview
+size_gb: 0.02
+url_pattern: https://download.kiwix.org/zim/wikivoyage/wikivoyage_fi_all_maxi_{date}.zim
+description: Finnish Wikivoyage travel guide
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

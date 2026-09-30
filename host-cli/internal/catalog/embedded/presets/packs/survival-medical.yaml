@@ -36,3 +36,6 @@ sources:
 #
 # ── TODO: Large archive ──
 # survivor-library-subset    # ~5-10 GB curated from 235 GB, pre-industrial skills
+# ── Added 2026-09-30 catalog audit ──
+- stackexchange-medicalsciences
+- gutenberg-en-lcc-r

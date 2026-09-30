@@ -32,7 +32,7 @@ func Resolve(staticURL, urlPattern string) (string, error) {
 	filenamePattern := urlPattern[lastSlash+1:]
 
 	// Build regex from the filename pattern, replacing {date} with a capture group.
-	datePattern := strings.ReplaceAll(filenamePattern, "{date}", `(\d{4}-\d{2})`)
+	datePattern := strings.ReplaceAll(filenamePattern, "{date}", `(\d{4}-\d{2}[a-z]?)`)
 	fileRe, err := regexp.Compile("^" + datePattern + "$")
 	if err != nil {
 		return "", fmt.Errorf("compiling pattern: %w", err)

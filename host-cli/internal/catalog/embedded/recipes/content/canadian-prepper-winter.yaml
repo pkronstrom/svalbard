@@ -1,0 +1,13 @@
+id: canadian-prepper-winter
+type: zim
+display_group: video
+tags:
+- fire-shelter
+- cold-weather
+depth: overview
+size_gb: 1.2
+url_pattern: https://download.kiwix.org/zim/videos/canadian-prepper_en_winterprepping_{date}.zim
+description: Canadian Prepper — winter preparedness videos
+license:
+  id: YouTube
+  attribution: Canadian Prepper (YouTube)

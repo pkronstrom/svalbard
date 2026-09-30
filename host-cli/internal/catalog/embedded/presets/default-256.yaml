@@ -1,25 +1,36 @@
 name: default-256
-description: Region-neutral expanded reference and practical archive for a 256GB drive
+description: Region-neutral expanded archive with sciences, video guides, and a local AI starter for a 256GB drive
 target_size_gb: 256
 region: default
 extends:
   - default-128
+  - ai/harnesses
+  - ai/models-8gb-ram
+  - ai/models-16gb-ram
 sources:
-# ── Wikipedia upgrade ──
-- -wikipedia-en-top-maxi
-- wikipedia-en-nopic
-# ── Expanded medical ──
-- medlineplus
-# ── Preparedness ──
-- ready-gov
-- energypedia
-# ── Q&A ──
-- stackexchange-amateur-radio
-- stackexchange-electronics
-- stackexchange-physics
-# ── Education ──
+# ── Books ──
+- gutenberg-en-lcc-t
+- makeityourself
+# ── Sciences ──
 - libretexts-chemistry
 - libretexts-biology
 - libretexts-physics
 - libretexts-math
 - libretexts-statistics
+- stackexchange-math
+- stackexchange-chemistry
+- stackexchange-biology
+- stackexchange-engineering
+# ── Preparedness & video ──
+- urban-prepper
+- s2-underground
+- lrn-self-reliance
+- ted-electricity
+- ted-farming
+# ── Preparedness & sciences (moved up from 128) ──
+- stackexchange-gis
+- trueprepper
+- ready-gov
+- energypedia
+- libretexts-geosciences
+- stackexchange-physics

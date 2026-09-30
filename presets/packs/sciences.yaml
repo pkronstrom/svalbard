@@ -48,3 +48,5 @@ sources:
 # ── TODO: Math ──
 # oeis                  # ~1-2 GB, SQLite, integer sequences
 # project-euler         # ~10 MB, static HTML, math/programming problems
+# ── Added 2026-09-30 catalog audit ──
+- stackexchange-earthscience

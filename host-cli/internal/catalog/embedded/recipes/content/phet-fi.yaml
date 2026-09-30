@@ -1,0 +1,13 @@
+id: phet-fi
+type: zim
+display_group: education
+tags:
+- sciences
+- education
+depth: overview
+size_gb: 0.077
+url_pattern: https://download.kiwix.org/zim/phet/phet_fi_all_{date}.zim
+description: PhET interactive science simulations (Finnish)
+license:
+  id: CC-BY-4.0
+  attribution: PhET Interactive Simulations, University of Colorado Boulder

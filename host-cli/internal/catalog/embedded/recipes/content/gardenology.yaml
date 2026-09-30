@@ -1,0 +1,13 @@
+id: gardenology
+type: zim
+display_group: practical
+tags:
+- agriculture
+- food-foraging
+depth: overview
+size_gb: 0.105
+url_pattern: https://download.kiwix.org/zim/other/gardenology.org_en_all_{date}.zim
+description: Gardenology — plant and gardening encyclopedia
+license:
+  id: CC-BY-SA-3.0
+  attribution: Gardenology.org contributors

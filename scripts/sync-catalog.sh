@@ -21,6 +21,7 @@ mirror_tree() {
     case "$source/$relative" in
       recipes/builders/test_web_video_zim.py) continue ;;
     esac
+    [[ -e $path ]] || continue  # tracked but deleted in the working tree
     mkdir -p "$destination/$(dirname "$relative")"
     cp -p "$path" "$destination/$relative"
   done < <(git ls-files --cached --others --exclude-standard "$source")

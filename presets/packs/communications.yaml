@@ -36,3 +36,6 @@ sources:
 # chirp-docs            # ~10 MB, radio programming software
 # js8call-docs          # ~5 MB, keyboard-to-keyboard HF
 # winlink-guides        # ~5-10 MB, email over radio
+# ── Added 2026-09-30 catalog audit ──
+- stackexchange-dsp
+- openwrt-wiki

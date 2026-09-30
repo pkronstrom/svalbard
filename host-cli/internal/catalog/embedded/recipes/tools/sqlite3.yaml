@@ -5,9 +5,9 @@ tags: [search, database]
 depth: reference-only
 size_gb: 0.002
 platforms:
-  darwin-arm64: https://sqlite.org/2026/sqlite-tools-osx-arm64-3510300.zip
-  darwin-x86_64: https://sqlite.org/2026/sqlite-tools-osx-x64-3510300.zip
-  linux-x86_64: https://sqlite.org/2026/sqlite-tools-linux-x64-3510300.zip
+  macos-arm64: https://sqlite.org/2026/sqlite-tools-osx-arm64-3530400.zip
+  macos-x86_64: https://sqlite.org/2026/sqlite-tools-osx-x64-3530400.zip
+  linux-x86_64: https://sqlite.org/2026/sqlite-tools-linux-x64-3530400.zip
 description: SQLite CLI — required for cross-ZIM search
 license:
   id: blessing

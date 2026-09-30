@@ -4,7 +4,7 @@ display_group: practical
 tags:
 - chemistry
 depth: comprehensive
-size_gb: 1.0
+size_gb: 0.389
 url_pattern: https://download.kiwix.org/zim/stack_exchange/chemistry.stackexchange.com_en_all_{date}.zim
 description: Chemistry Stack Exchange
 license:

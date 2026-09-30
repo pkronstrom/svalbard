@@ -5,6 +5,7 @@ region: finland
 extends:
   - default-2
 sources:
-# ── Finland-specific ──
+# ── Finnish ──
 - fimea
 - mml-map-sheets
+- scoutwiki-fi

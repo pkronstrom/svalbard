@@ -1,13 +1,12 @@
 name: finland-512
-description: Expanded Finnish-first coverage with media and larger reference sets
+description: Expanded Finnish-first archive with Khan Academy, local AI, and Finnish maps for a 512GB drive
 target_size_gb: 512
 region: finland
 extends:
   - default-512
-  - fi-maps
+  - finland-256
 sources:
-# ── Finnish language ──
-- wikipedia-fi-nopic
-- wiktionary-fi
-# ── Finnish-specific ──
-- fimea
+# ── Finnish upgrade ──
+- -wikipedia-fi-nopic
+- -wikipedia-fi-top-maxi
+- wikipedia-fi-all

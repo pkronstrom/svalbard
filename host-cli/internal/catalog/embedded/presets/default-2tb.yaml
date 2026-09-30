@@ -1,14 +1,15 @@
 name: default-2tb
-description: Maximum region-neutral archive with full English references and a full curated local AI ladder
+description: Maximum region-neutral archive with full Gutenberg, Stack Overflow, and the full local AI ladder
 target_size_gb: 2048
 region: default
 extends:
   - default-1tb
-  - ai/models-64gb-ram
 sources:
-# ── Wikipedia upgrade ──
-- -wikipedia-en-maxi
-- wikipedia-en-all
+# ── Archives ──
+- gutenberg
+- stackoverflow
 # ── Q&A ──
 - stackexchange-serverfault
 - stackexchange-superuser
+- stackexchange-askubuntu
+- stackexchange-unix

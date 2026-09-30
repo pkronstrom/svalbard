@@ -1,0 +1,14 @@
+id: wikipedia-fi-top-maxi
+type: zim
+display_group: reference
+tags:
+- general-reference
+- encyclopedia
+- language
+depth: overview
+size_gb: 1.6
+url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_fi_top_maxi_{date}.zim
+description: Finnish Wikipedia — top articles with pictures
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

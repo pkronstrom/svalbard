@@ -9,7 +9,11 @@ strategy: build
 
 build:
   family: vector-static
-  source_url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/luonnonsuojelualueet.zip
+  # SYKE publishes state, private and wilderness areas as separate archives.
+  assets:
+    - url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/luonnonsuojelualueet_valtio.zip
+    - url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/luonnonsuojelualueet_yksityinen.zip
+    - url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/luonnonsuojelualueet_eramaa.zip
   source_format: shapefile
   source_srs: "EPSG:3067"
   layer_name: luonnonsuojelualueet

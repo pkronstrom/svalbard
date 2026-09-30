@@ -48,3 +48,7 @@ sources:
 # openstax-physics      # ~150 MB, CC BY 4.0, mechanics + E&M + optics
 # oer-welding           # ~20-50 MB, CC BY 4.0, Open Oregon guides
 # nist-engineering-stats # ~50-100 MB, public domain, DOE + SPC
+# ── Added 2026-09-30 catalog audit ──
+- libretexts-workforce
+- stackexchange-iot
+- gutenberg-en-lcc-t

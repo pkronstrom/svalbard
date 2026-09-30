@@ -8,7 +8,7 @@ size_gb: 0.005
 description: GTFOBins — Unix binaries that can be exploited for privilege escalation
 strategy: build
 build:
-  source_url: https://gtfobins.github.io
+  source_url: https://gtfobins.org/
   steps:
     - exec: wget
       args: ["--mirror", "--warc-file={workdir}/{id}", "--warc-cdx",

@@ -1,0 +1,13 @@
+id: stackexchange-dsp
+type: zim
+display_group: reference
+tags:
+- communications
+- electronics
+depth: comprehensive
+size_gb: 0.353
+url_pattern: https://download.kiwix.org/zim/stack_exchange/dsp.stackexchange.com_en_all_{date}.zim
+description: Signal Processing Stack Exchange — DSP and SDR fundamentals
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

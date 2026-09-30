@@ -5,7 +5,7 @@ tags:
 - biology
 - agriculture
 depth: comprehensive
-size_gb: 1.0
+size_gb: 0.394
 url_pattern: https://download.kiwix.org/zim/stack_exchange/biology.stackexchange.com_en_all_{date}.zim
 description: Biology Stack Exchange
 license:

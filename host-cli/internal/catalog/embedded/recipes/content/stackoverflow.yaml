@@ -1,0 +1,12 @@
+id: stackoverflow
+type: zim
+display_group: reference
+tags:
+- computing
+depth: comprehensive
+size_gb: 107.0
+url_pattern: https://download.kiwix.org/zim/stack_exchange/stackoverflow.com_en_all_{date}.zim
+description: Stack Overflow — full programming Q&A archive
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

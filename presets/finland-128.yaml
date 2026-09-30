@@ -1,15 +1,10 @@
 name: finland-128
-description: Finnish + English reference and practical guides for a 128GB drive
+description: Finnish + English full-text references, practical guides, and Finnish maps for a 128GB drive
 target_size_gb: 128
 region: finland
 extends:
   - default-128
-  - fi-maps
+  - finland-64
 sources:
-# ── Finnish language ──
-- wikipedia-fi-nopic
-- wiktionary-fi
-# ── Finnish-specific ──
-- fimea
-# ── Early introduction (default gets this at 256) ──
-- stackexchange-amateur-radio
+# ── Drop editions superseded by the default tier ──
+- -wikipedia-en-top-maxi

@@ -22,4 +22,4 @@ sources:
 - uv
 - svalbard-python
 - go-pmtiles
-- zstd
+# zstd requires a source-build handler; not selected until supported.

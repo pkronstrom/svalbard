@@ -14,8 +14,9 @@ sources:
 - wiktionary-en
 - wiktionary-fi
 - wikibooks-en
-- khan-academy
-- gutenberg
+- gutenberg-en-lcc-s
+- gutenberg-en-lcc-r
+- gutenberg-en-lcc-t
 - libretexts-engineering
 - libretexts-medicine
 - libretexts-geosciences
@@ -23,5 +24,12 @@ sources:
 - wikipedia-fi-all
 - wikipedia-en-top-maxi
 - wikipedia-en-top-nopic
-- wikipedia-en-100-maxi
-- wikipedia-en-100-mini
+- wikipedia-en-100
+# ── Added 2026-09-30 catalog audit ──
+- gutenberg-fi
+- wikibooks-fi
+- wikisource-fi
+- wikivoyage-fi
+- phet-fi
+- wikipedia-fi-top-nopic
+- wikipedia-fi-top-maxi

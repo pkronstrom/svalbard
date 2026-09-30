@@ -5,7 +5,7 @@ tags:
 - cooking
 - food-preservation
 depth: comprehensive
-size_gb: 1.5
+size_gb: 0.221
 url_pattern: https://download.kiwix.org/zim/stack_exchange/cooking.stackexchange.com_en_all_{date}.zim
 description: Cooking Stack Exchange
 license:

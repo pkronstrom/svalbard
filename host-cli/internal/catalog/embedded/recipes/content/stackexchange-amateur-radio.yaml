@@ -5,7 +5,7 @@ tags:
 - radio-comms
 - electronics
 depth: comprehensive
-size_gb: 0.5
+size_gb: 0.071
 url_pattern: https://download.kiwix.org/zim/stack_exchange/ham.stackexchange.com_en_all_{date}.zim
 description: Amateur Radio Stack Exchange
 license:

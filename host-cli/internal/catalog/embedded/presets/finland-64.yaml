@@ -1,15 +1,14 @@
 name: finland-64
-description: Broader coverage with Finnish + English reference and practical guides
+description: Finnish + English reference, trades, practical guides, and Finnish maps for a 64GB drive
 target_size_gb: 64
 region: finland
 extends:
   - default-64
-  - fi-maps
+  - finland-32
 sources:
-# ── Finnish language ──
+# ── Finnish reference upgrade ──
+- -wikipedia-fi-top-nopic
 - wikipedia-fi-nopic
-- wiktionary-fi
-# ── Finnish-specific ──
-- fimea
-# ── Early introduction (default gets these at 128) ──
-- stackexchange-gardening
+- gutenberg-fi
+# ── Drop editions superseded by the default tier ──
+- -wikipedia-en-top-nopic

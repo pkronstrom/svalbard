@@ -5,7 +5,7 @@ tags:
 - electronics
 - computing
 depth: comprehensive
-size_gb: 2.0
+size_gb: 3.9
 url_pattern: https://download.kiwix.org/zim/stack_exchange/electronics.stackexchange.com_en_all_{date}.zim
 description: Electronics Stack Exchange
 license:

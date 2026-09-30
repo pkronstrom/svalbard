@@ -9,8 +9,8 @@ size_gb: 0.7
 strategy: build
 build:
   family: app-bundle
-  source_url: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.0.4_build/ghidra_12.0.4_PUBLIC_20260303.zip
-description: NSA reverse engineering framework (requires JDK 17+ on host)
+  source_url: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip
+description: NSA reverse engineering framework (requires JDK 21+ on host)
 license:
   id: Apache-2.0
   attribution: National Security Agency

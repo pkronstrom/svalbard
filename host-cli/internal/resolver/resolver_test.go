@@ -38,6 +38,27 @@ func TestResolvePatternURL(t *testing.T) {
 	}
 }
 
+func TestResolvePatternLetterSuffixRerelease(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<html>
+<a href="data_2025-12.zim">data_2025-12.zim</a>
+<a href="data_2026-09.zim">data_2026-09.zim</a>
+<a href="data_2026-09b.zim">data_2026-09b.zim</a>
+<a href="data_2026-09a.zim">data_2026-09a.zim</a>
+</html>`)
+	}))
+	defer ts.Close()
+
+	url, err := Resolve("", ts.URL+"/data_{date}.zim")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ts.URL + "/data_2026-09b.zim"
+	if url != want {
+		t.Errorf("got %q, want %q", url, want)
+	}
+}
+
 func TestResolvePatternNoMatches(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `<html><a href="unrelated.txt">unrelated</a></html>`)

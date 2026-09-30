@@ -4,7 +4,7 @@ display_group: reference
 tags:
 - language
 depth: comprehensive
-size_gb: 2.0
+size_gb: 0.416
 url_pattern: https://download.kiwix.org/zim/wiktionary/wiktionary_fi_all_nopic_{date}.zim
 description: Finnish Wiktionary
 license:

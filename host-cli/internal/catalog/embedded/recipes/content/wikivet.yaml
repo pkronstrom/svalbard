@@ -1,0 +1,13 @@
+id: wikivet
+type: zim
+display_group: practical
+tags:
+- veterinary
+- agriculture
+depth: comprehensive
+size_gb: 0.053
+url_pattern: https://download.kiwix.org/zim/other/wikivet.net_en_all_maxi_{date}.zim
+description: WikiVet — veterinary encyclopedia for livestock and pets
+license:
+  id: CC-BY-SA-3.0
+  attribution: WikiVet contributors

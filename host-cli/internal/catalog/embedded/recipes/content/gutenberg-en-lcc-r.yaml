@@ -1,0 +1,17 @@
+id: gutenberg-en-lcc-r
+type: zim
+display_group: reference
+tags:
+- medicine
+- general-reference
+depth: overview
+size_gb: 1.9
+url_pattern: https://download.kiwix.org/zim/gutenberg/gutenberg_en_lcc-r_{date}.zim
+description: Project Gutenberg — Medicine (LoC class R) public-domain books
+license:
+  id: PG-License
+  attribution: Project Gutenberg
+  url: https://www.gutenberg.org/policy/license.html
+  note: >
+    Individual texts are in the public domain in the United States.
+    The Project Gutenberg trademark and compilation carry separate terms.

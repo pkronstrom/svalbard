@@ -1,22 +1,22 @@
 name: default-2
-description: Universal bugout kit — core survival, medical, and reference for a 2GB
-  USB stick
+description: Universal bugout kit — core survival, medical, and reference for a 2GB USB stick
 target_size_gb: 2
 region: default
 sources:
-# ── Tools (minimal) ──
+# ── Tools ──
 - kiwix-serve
 - sqlite3
 - 7z
 - toybox
-# ── Reference + Medical (compact — full articles with resized images) ──
-- wikipedia-en-medicine-compact
-- wikipedia-en-100-maxi
+# ── Reference ──
+- wikiciv
+- cd3wd
 # ── Medical ──
 - wikem
 - who-basic-emergency-care
 - zimgit-medicine
 - fas-military-medicine
+- nhs-medicines
 # ── Food & water ──
 - zimgit-water
 - zimgit-food-preparation
@@ -25,5 +25,4 @@ sources:
 - usda-nutrition
 # ── Practical ──
 - zimgit-knots
-- cd3wd
-- wikiciv
+- restarters

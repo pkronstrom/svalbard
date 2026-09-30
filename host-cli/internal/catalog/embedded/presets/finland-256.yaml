@@ -1,13 +1,10 @@
 name: finland-256
-description: Rich coverage with Finnish focus, Nordic languages, and expanded references
+description: Rich Finnish-first coverage with sciences, video guides, local AI, and Finnish maps for a 256GB drive
 target_size_gb: 256
 region: finland
 extends:
   - default-256
-  - fi-maps
+  - finland-128
 sources:
-# ── Finnish language ──
-- wikipedia-fi-nopic
-- wiktionary-fi
-# ── Finnish-specific ──
-- fimea
+# ── Finnish pictured top articles ──
+- wikipedia-fi-top-maxi

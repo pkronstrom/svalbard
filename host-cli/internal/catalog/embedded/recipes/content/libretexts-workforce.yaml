@@ -1,0 +1,14 @@
+id: libretexts-workforce
+type: zim
+display_group: practical
+tags:
+- construction
+- electronics
+- mechanical
+depth: comprehensive
+size_gb: 0.479
+url_pattern: https://download.kiwix.org/zim/libretexts/libretexts.org_en_workforce_{date}.zim
+description: LibreTexts Workforce — trades textbooks (HVAC, welding, electrical, construction)
+license:
+  id: CC-BY-NC-SA-4.0
+  attribution: LibreTexts contributors

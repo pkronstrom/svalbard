@@ -115,3 +115,56 @@ func TestVectorStaticBuildsPMTilesFromShapefileArchive(t *testing.T) {
 		t.Fatalf("calls = %v", calls)
 	}
 }
+
+func TestVectorStaticMergesMultipleShapefileAssets(t *testing.T) {
+	fixtureDir := t.TempDir()
+	archive := filepath.Join(fixtureDir, "source.zip")
+	writeZip(t, archive, "data/layer.shp", "shape")
+	data, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	original := runToolCommand
+	t.Cleanup(func() { runToolCommand = original })
+	ogrCalls := 0
+	var tippecanoeInputs []string
+	runToolCommand = func(_ context.Context, _, _ string, _, tool string, args []string) (string, error) {
+		switch tool {
+		case "ogr2ogr":
+			ogrCalls++
+			return "", os.WriteFile(args[len(args)-2], []byte(`{"type":"FeatureCollection","features":[]}`), 0o644)
+		case "tippecanoe":
+			for index, arg := range args {
+				if arg == "--force" {
+					tippecanoeInputs = args[index+1:]
+				}
+				if arg == "-o" && index+1 < len(args) {
+					if err := os.WriteFile(args[index+1], []byte("pmtiles"), 0o644); err != nil {
+						return "", err
+					}
+				}
+			}
+		}
+		return "", nil
+	}
+	recipe := catalog.Item{
+		ID: "protected", Type: "pmtiles", Strategy: "build",
+		Build: &catalog.BuildSpec{
+			Family: "vector-static",
+			Assets: []catalog.BuildAsset{{URL: server.URL + "/a.zip"}, {URL: server.URL + "/b.zip"}},
+			Config: map[string]string{"source_format": "shapefile"},
+		},
+	}
+	if _, err := buildVectorStatic(root, recipe, nil, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if ogrCalls != 2 || len(tippecanoeInputs) != 2 {
+		t.Fatalf("ogr2ogr calls = %d, tippecanoe inputs = %v", ogrCalls, tippecanoeInputs)
+	}
+}

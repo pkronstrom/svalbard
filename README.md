@@ -6,7 +6,7 @@
 
 Seed vault for human knowledge — civilization on a stick.
 
-> **Alpha (v0.2.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
+> **Alpha (v0.4.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
 >
 > **Heads up:** the codebase was recently rewritten from Python to Go. Not every flow has been re-tested end-to-end on the new code path yet, so expect breakages — please file an issue if you hit one.
 
@@ -24,7 +24,7 @@ The project ships with sanely curated presets built from open recipes, but it's 
 - **Practical knowledge** — iFixit repair guides, Stack Exchange Q&A, Practical Action field guides
 - **Books and courses** — Project Gutenberg, Wikibooks, Khan Academy
 - **Maps** — OpenStreetMap regional extracts, geodata overlays
-- **AI models** — Portable Gemma 4 (QAT) and Qwen 3.5/3.6 GGUFs that run locally from the drive
+- **AI models** — Portable Gemma 4 (QAT), Qwen 3.5 and Qwen 3.8 GGUFs that run locally from the drive; [RAM tiers and optional MTP](docs/plans/2026-09-30-catalog-refresh-results.md)
 - **Search** — Full-text and semantic search across all content — find answers, not just keywords
 - **Tools** — CyberChef, Kiwix server, everything self-contained
 
@@ -107,17 +107,20 @@ Python exists only as a build-worker detail:
 
 Presets scale from pocket-sized emergency kits to full archives:
 
-| Preset | Size | What you get |
-|--------|------|-------------|
-| `default-2` | 2 GB | Universal bugout kit — medical, survival, food/water, practical references |
-| `finland-2` | 2 GB | Finnish emergency field kit — extends default-2 with Finnish pharma registry |
-| `default-32` | 32 GB | Core reference — Wikipedia, WikiMed, survival guides, repair manuals |
-| `default-128` | 128 GB | Broad reference — adds dictionaries, books, Khan Academy, maps |
-| `default-512` | 512 GB | Deep archive — adds full-picture Wikipedia plus a conservative local AI pair (`gemma-4-e2b-it`, `qwen-9b`) |
-| `default-1tb` | 1 TB | Mainstream AI archive — adds stronger Gemma and Qwen options for 16-24 GB RAM hosts |
-| `default-2tb` | 2 TB | Everything — full Wikipedia plus the full curated Gemma/Qwen ladder |
+| Preset | Content | What you get |
+|--------|---------|-------------|
+| `default-2` | ~1.5 GiB | Bugout kit — emergency medicine (WikEM, WHO, field manuals), water/food, knots, appropriate tech |
+| `default-32` | ~17 GiB | Survival core — Wikipedia top 50k, WikiMed, MedlinePlus, iFixit, repair/homesteading guides, practical Q&A |
+| `default-64` | ~40 GiB | Adds pictured top Wikipedia, Wikibooks, Gutenberg agriculture + medicine, trades textbooks, electronics/radio Q&A |
+| `default-128` | ~91 GiB | Full-text English Wikipedia (no pictures), Wiktionary, OSM wiki, DSP/IoT Q&A |
+| `default-256` | ~170 GiB | Sciences, Gutenberg technology, Make It Yourself, prepping videos, and a starter local AI (8–16 GB RAM models) |
+| `default-512` | ~366 GiB | Adds Khan Academy and 24 GB-class local AI |
+| `default-1tb` | ~700 GiB | Pictured English Wikipedia, Survivor Library, 64 GB-class local AI |
+| `default-2tb` | ~1 TiB | Full Gutenberg, Stack Overflow, sysadmin Q&A — everything curated |
 
-Finnish presets (`finland-*`) add Finnish-language Wikipedia, Wiktionary, Finnish maps, open geodata (recreation structures, nature reserves), and Finnish-specific guides on top of the English baseline.
+Sizes are catalog estimates in GiB; every tier leaves at least ~15% of the drive free for search indexes and your own files. Specialization packs (cybersec, computing, sciences, engineering, communications, ESP32 dev, homesteading) are opt-in and not part of the default tiers.
+
+Finnish presets (`finland-*`) extend the same-size default tier plus the next-smaller Finnish tier: Finnish Wikipedia and Wiktionary, Finnish Gutenberg/Wikibooks/Wikisource, partiotaidot (scoutwiki), the Fimea medicine registry, and — from 32 GB up — Finnish maps and open geodata (recreation structures, nature reserves, groundwater).
 
 ## Walkthrough: provision your own stick
 
@@ -147,7 +150,26 @@ svalbard add local:field-manual --vault /Volumes/MyStick
 svalbard apply --vault /Volumes/MyStick
 ```
 
-`preset copy` is available for exporting built-in preset YAML as a starting point, but local custom preset loading is not yet wired into the Go CLI on this branch.
+### Custom presets
+
+A custom preset is a YAML file in `~/.config/svalbard/presets/` (`$XDG_CONFIG_HOME/svalbard/presets/`). It composes built-in presets and packs with the same rules the built-in presets use: `extends` sources are merged in order and deduplicated by id, `sources` adds recipe ids, and `-id` drops an inherited one.
+
+```yaml
+# ~/.config/svalbard/presets/my-256.yaml
+name: my-256                      # optional; defaults to the file name
+description: finland-256 plus Qwen 27B and cybersec
+extends: [finland-256, cybersec, esp32-dev]
+sources: [qwen-27b, -gutenberg-en-lcc-t]
+```
+
+```bash
+svalbard preset copy finland-256 my-256   # writes an extends stub to ~/.config/svalbard/presets/my-256.yaml
+svalbard preset list                      # custom presets are marked "(user: <file>)"
+svalbard init                             # the wizard lists them, marked "(custom)"
+svalbard add cybersec --vault /Volumes/MyStick   # add/remove also accept preset and pack names
+```
+
+Custom presets are checked when the catalog loads, and any command fails with the file name if one is invalid: a custom preset may not reuse a built-in or another custom preset's name, and every `extends` entry and source id (including `-id` removals) must exist. A custom preset without a `region` takes the region of the first preset it extends, or `custom` if that has none. In a development checkout, the gitignored `local/presets/` is also read. `preset copy --flatten` writes the fully resolved source list instead of an `extends` stub.
 
 ## Commands
 
@@ -155,14 +177,14 @@ svalbard apply --vault /Volumes/MyStick
 |---------|-------------|
 | `svalbard` | Launch the interactive TUI (dashboard or wizard) |
 | `svalbard init [path]` | Open the guided wizard to create a vault — preset is chosen interactively |
-| `svalbard add <item...> --vault <path>` | Add catalog or local item ids to desired state |
-| `svalbard remove <item...> --vault <path>` | Remove item ids from desired state |
+| `svalbard add <item...> --vault <path>` | Add catalog or local item ids, or every item of a preset/pack, to desired state |
+| `svalbard remove <item...> --vault <path>` | Remove item ids, or every item of a preset/pack, from desired state |
 | `svalbard plan --vault <path>` | Show the reconciliation plan |
 | `svalbard apply --vault <path>` | Download, materialize, and update the realized state |
 | `svalbard status --vault <path>` | Show desired, realized, and pending items |
 | `svalbard import <file> --vault <path> [--add]` | Import a local file into the vault library |
-| `svalbard preset list` | List built-in presets from the embedded catalog |
-| `svalbard preset copy <source> <target>` | Export a built-in preset YAML file |
+| `svalbard preset list` | List built-in and custom presets |
+| `svalbard preset copy <source> <target> [--flatten]` | Start a custom preset that extends `<source>` (a bare `<target>` name goes to `~/.config/svalbard/presets/`) |
 | `svalbard index --vault <path>` | Build the full-text search index from vault ZIM files |
 
 Set `SVALBARD_DEBUG=1` for verbose structured logging (written to `$TMPDIR/svalbard.log`).
@@ -178,7 +200,7 @@ Set `SVALBARD_CACHE_DIRS=/path/one:/path/two` to reuse already-downloaded files 
 - [x] Drive toolkit — Go launcher, embedded runtime binaries, local map viewer, bundled tools
 - [x] Interactive TUI wizard for guided vault setup
 - [x] Self-contained release binary with embedded drive-runtime and catalog
-- [ ] Local custom preset loading from exported YAML
+- [x] Custom presets composed from built-in presets and packs
 - [ ] Expanded Go-side import flows beyond local-file ingestion
 - [ ] Fully curated and verified presets — every source checked, sized, and tested across tiers
 - [ ] Custom Wikipedia ZIM builds — compact/resized images for space-constrained tiers

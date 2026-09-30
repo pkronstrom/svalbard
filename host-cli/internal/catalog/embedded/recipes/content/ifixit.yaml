@@ -6,8 +6,8 @@ tags:
 - electronics
 - mechanical
 depth: comprehensive
-size_gb: 5.0
-url_pattern: https://download.kiwix.org/zim/other/ifixit_en_all_{date}.zim
+size_gb: 3.3
+url_pattern: https://download.kiwix.org/zim/ifixit/ifixit_en_all_{date}.zim
 description: iFixit repair guides
 license:
   id: CC-BY-NC-SA-3.0

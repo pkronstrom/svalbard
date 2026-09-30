@@ -1,0 +1,12 @@
+id: devhints
+type: zim
+display_group: reference
+tags:
+- computing
+depth: overview
+size_gb: 0.004
+url_pattern: https://download.kiwix.org/zim/zimit/devhints.io_en_all_{date}.zim
+description: Devhints — concise developer cheat sheets
+license:
+  id: MIT
+  attribution: Rico Sta. Cruz and contributors

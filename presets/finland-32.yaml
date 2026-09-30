@@ -1,7 +1,18 @@
 name: finland-32
-description: Survival essentials with Finnish-language support for a 32GB USB stick
+description: Survival essentials with Finnish-language support and Finnish maps for a 32GB USB stick
 target_size_gb: 32
 region: finland
 extends:
   - default-32
-sources: []
+  - fi-maps
+sources:
+# ── Finnish reference ──
+- wikipedia-fi-top-nopic
+- wiktionary-fi
+- wikibooks-fi
+- wikisource-fi
+- wikivoyage-fi
+- phet-fi
+# ── Finnish practical ──
+- fimea
+- scoutwiki-fi

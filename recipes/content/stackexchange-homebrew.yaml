@@ -1,0 +1,13 @@
+id: stackexchange-homebrew
+type: zim
+display_group: practical
+tags:
+- food
+- fermentation
+depth: comprehensive
+size_gb: 0.035
+url_pattern: https://download.kiwix.org/zim/stack_exchange/homebrew.stackexchange.com_en_all_{date}.zim
+description: Homebrewing Stack Exchange — brewing and fermentation
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

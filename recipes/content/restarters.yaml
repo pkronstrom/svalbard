@@ -1,0 +1,13 @@
+id: restarters
+type: zim
+display_group: practical
+tags:
+- repair
+- electronics
+depth: overview
+size_gb: 0.017
+url_pattern: https://download.kiwix.org/zim/other/restarters_en_all_maxi_{date}.zim
+description: Restart Project repair wiki — fixing everyday electronics and appliances
+license:
+  id: CC-BY-SA-4.0
+  attribution: The Restart Project

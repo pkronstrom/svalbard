@@ -5,7 +5,7 @@ tags:
 - emergency-medicine
 - medicine
 depth: comprehensive
-size_gb: 0.042
+size_gb: 0.349
 url_pattern: https://download.kiwix.org/zim/other/wikem_en_all_maxi_{date}.zim
 description: WikEM — concise emergency medicine wiki for clinical decision-making
 license:

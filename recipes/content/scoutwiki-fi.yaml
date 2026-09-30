@@ -1,0 +1,14 @@
+id: scoutwiki-fi
+type: zim
+display_group: practical
+tags:
+- fire-shelter
+- navigation
+- knots
+depth: overview
+size_gb: 0.022
+url_pattern: https://download.kiwix.org/zim/other/scoutwiki.org_fi_all_maxi_{date}.zim
+description: Partiowiki — Finnish scouting and outdoor skills (partiotaidot)
+license:
+  id: CC-BY-SA-4.0
+  attribution: Suomen Partiolaiset contributors

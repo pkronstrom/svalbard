@@ -4,12 +4,12 @@ FROM python:3.12-alpine3.21 AS builder
 RUN apk add --no-cache build-base sqlite-dev zlib-dev curl bash
 
 # Build tippecanoe from source
-ARG TIPPECANOE_VERSION=2.75.0
+ARG TIPPECANOE_VERSION=2.79.0
 RUN curl -fsSL "https://github.com/felt/tippecanoe/archive/refs/tags/${TIPPECANOE_VERSION}.tar.gz" \
     | tar xz && cd tippecanoe-${TIPPECANOE_VERSION} && make -j$(nproc) && make install
 
 # Install go-pmtiles
-ARG PMTILES_VERSION=1.30.1
+ARG PMTILES_VERSION=1.31.2
 RUN ARCH=$(uname -m) && \
     case "$ARCH" in \
       x86_64)  SUFFIX="Linux_x86_64.tar.gz" ;; \
@@ -69,7 +69,7 @@ ENV MAGIC=/usr/share/misc/magic.mgc
 COPY --from=go-builder /usr/local/bin/zim-dither /usr/local/bin/
 COPY --from=go-builder /usr/local/bin/zim-compact /usr/local/bin/
 
-COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.21 /uv /usr/local/bin/uv
 
 RUN apk add --no-cache --virtual .build-deps gcc g++ musl-dev python3-dev \
     && pip install --no-cache-dir \
@@ -79,8 +79,6 @@ RUN apk add --no-cache --virtual .build-deps gcc g++ musl-dev python3-dev \
     yle-dl \
     yt-dlp \
     && apk del .build-deps
-
-COPY recipes/builders/media-zim.py /usr/local/bin/build-media-zim.py
 
 # Browser-heavy website crawling is published as a separate target so ordinary
 # builders do not pull Chromium/Browsertrix layers.

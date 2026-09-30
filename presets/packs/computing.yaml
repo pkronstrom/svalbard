@@ -49,3 +49,6 @@ sources:
 #
 # ── TODO: Big ──
 # stack-overflow        # 75 GB, ZIM — 512 GB+ tier only
+# ── Added 2026-09-30 catalog audit ──
+- devhints
+- openwrt-wiki

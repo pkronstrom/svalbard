@@ -1,0 +1,12 @@
+id: openstreetmap-wiki
+type: zim
+display_group: reference
+tags:
+- maps
+depth: comprehensive
+size_gb: 0.445
+url_pattern: https://download.kiwix.org/zim/other/openstreetmap-wiki_en_all_nopic_{date}.zim
+description: OpenStreetMap Wiki — tagging and tooling reference (no pictures)
+license:
+  id: CC-BY-SA-2.0
+  attribution: OpenStreetMap Wiki contributors

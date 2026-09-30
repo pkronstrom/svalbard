@@ -18,3 +18,6 @@ sources:
 # ── OWASP ──
 - owasp-wstg
 - owasp-cheat-sheets
+# ── Added 2026-09-30 catalog audit ──
+- opsec-bible
+- anonymous-planet

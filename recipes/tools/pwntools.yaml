@@ -8,7 +8,7 @@ depth: reference-only
 size_gb: 0.05
 venv: svalbard-python
 packages:
-- pwntools==4.13.0
+- pwntools==4.15.0
 entry_points:
 - pwn
 - checksec

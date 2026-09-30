@@ -9,7 +9,7 @@ sources:
 - gemma-4-e2b-it
 - nomic-embed-text-v1.5
 # Library — diverse tiny ZIMs for browse + FTS + semantic search
-- wikipedia-en-100-mini
+- wikivoyage-fi
 - based-cooking
 - who-basic-emergency-care
 - ted-3d-printing

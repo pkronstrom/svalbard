@@ -1,22 +1,19 @@
 name: default-128
-description: Region-neutral broad reference, education, and practical guides for a
-  128GB drive
+description: Region-neutral full-text Wikipedia, education, and practical archive for a 128GB drive
 target_size_gb: 128
 region: default
 extends:
   - default-64
 sources:
-# ── Practical ──
-- lowtech-magazine
-- cd3wd
-- appropedia
-- quick-guides-medicine
-# ── Q&A ──
-- stackexchange-gardening
-- stackexchange-cooking
+# ── Wikipedia upgrade ──
+- -wikipedia-en-top-maxi
+- wikipedia-en-nopic
 # ── Education ──
-- khan-academy
-- gutenberg
-- libretexts-engineering
-- libretexts-medicine
-- libretexts-geosciences
+- openstreetmap-wiki
+# ── Preparedness ──
+- canadian-prepper-winter
+# ── Q&A ──
+- stackexchange-dsp
+- stackexchange-iot
+# ── Dictionary ──
+- wiktionary-en

@@ -1,0 +1,14 @@
+id: stackexchange-bicycles
+type: zim
+display_group: practical
+tags:
+- mechanical
+- repair
+- navigation
+depth: comprehensive
+size_gb: 0.457
+url_pattern: https://download.kiwix.org/zim/stack_exchange/bicycles.stackexchange.com_en_all_{date}.zim
+description: Bicycles Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

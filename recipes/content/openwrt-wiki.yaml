@@ -1,0 +1,13 @@
+id: openwrt-wiki
+type: zim
+display_group: reference
+tags:
+- computing
+- communications
+depth: comprehensive
+size_gb: 0.484
+url_pattern: https://download.kiwix.org/zim/zimit/openwrt.org_en_all_{date}.zim
+description: OpenWrt documentation — routers, mesh and embedded Linux networking
+license:
+  id: CC-BY-SA-4.0
+  attribution: OpenWrt contributors

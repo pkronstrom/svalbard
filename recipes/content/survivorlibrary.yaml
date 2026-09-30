@@ -1,0 +1,15 @@
+id: survivorlibrary
+type: zim
+display_group: reference
+tags:
+- agriculture
+- mechanical
+- medicine
+- general-reference
+depth: comprehensive
+size_gb: 205.0
+url_pattern: https://download.kiwix.org/zim/zimit/survivorlibrary.com_en_all_{date}.zim
+description: Survivor Library — pre-industrial technology books and manuals (scans)
+license:
+  id: public-domain
+  attribution: Survivor Library

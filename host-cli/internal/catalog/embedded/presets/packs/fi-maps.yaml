@@ -19,6 +19,8 @@ sources:
 - lipas-recreation
 - maplibre-vendor
 - dufs
-- foraging-habitats-fi
+# foraging-habitats-fi: re-add once its builder is wired (recipe has no URL; see catalog update audit §5)
 - mml-map-sheets
 - osm-uusimaa
+# ── Added 2026-09-30 catalog audit ──
+- openstreetmap-wiki

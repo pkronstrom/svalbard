@@ -9,7 +9,7 @@ tags:
 - first-aid
 - self-defense
 depth: comprehensive
-size_gb: 0.5
+size_gb: 0.132
 url_pattern: https://download.kiwix.org/zim/stack_exchange/outdoors.stackexchange.com_en_all_{date}.zim
 description: Outdoors & Survival Stack Exchange
 license:

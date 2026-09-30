@@ -1,0 +1,12 @@
+id: anonymous-planet
+type: zim
+display_group: reference
+tags:
+- cybersec
+depth: overview
+size_gb: 0.026
+url_pattern: https://download.kiwix.org/zim/zimit/anonymousplanet.org_en_all_{date}.zim
+description: Anonymous Planet — guide to online anonymity
+license:
+  id: CC-BY-NC-4.0
+  attribution: Anonymous Planet contributors

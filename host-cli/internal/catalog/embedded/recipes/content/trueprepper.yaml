@@ -1,0 +1,14 @@
+id: trueprepper
+type: zim
+display_group: practical
+tags:
+- fire-shelter
+- water
+- food-foraging
+depth: overview
+size_gb: 1.3
+url_pattern: https://download.kiwix.org/zim/other/trueprepper.com_en_all_{date}.zim
+description: TruePrepper — preparedness guides and checklists
+license:
+  id: license-free
+  attribution: TruePrepper.com

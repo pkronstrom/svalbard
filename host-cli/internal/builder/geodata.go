@@ -15,41 +15,56 @@ import (
 )
 
 func buildVectorStatic(root string, recipe catalog.Item, _ *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
-	if recipe.Build == nil || recipe.Build.SourceURL == "" {
-		return nil, fmt.Errorf("vector-static %s: source_url required", recipe.ID)
+	if recipe.Build == nil {
+		return nil, fmt.Errorf("vector-static %s: source_url or assets required", recipe.ID)
+	}
+	// One shapefile archive via source_url, or several merged into one layer via assets.
+	sources := []string{recipe.Build.SourceURL}
+	if recipe.Build.SourceURL == "" {
+		sources = nil
+		for _, asset := range recipe.Build.Assets {
+			sources = append(sources, asset.URL)
+		}
+	}
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("vector-static %s: source_url or assets required", recipe.ID)
 	}
 	if format := recipe.Build.Config["source_format"]; format != "shapefile" {
 		return nil, fmt.Errorf("vector-static %s: unsupported source_format %q", recipe.ID, format)
 	}
 	ctx := builderContext(opts)
 	workdir := filepath.Join(root, ".staging", "build", recipe.ID)
-	archive := filepath.Join(workdir, "source.zip")
-	extracted := filepath.Join(workdir, "source")
 	if err := os.MkdirAll(workdir, 0o755); err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(archive); os.IsNotExist(err) {
-		if err := stepDownload(ctx, recipe.Build.SourceURL, archive); err != nil {
+	var geojsons []string
+	for index, source := range sources {
+		archive := filepath.Join(workdir, fmt.Sprintf("source-%02d.zip", index+1))
+		extracted := filepath.Join(workdir, fmt.Sprintf("source-%02d", index+1))
+		if _, err := os.Stat(archive); os.IsNotExist(err) {
+			if err := stepDownload(ctx, source, archive); err != nil {
+				return nil, err
+			}
+		}
+		if err := stepExtract(archive, extracted); err != nil {
 			return nil, err
 		}
+		shape, err := firstFileWithExtension(extracted, ".shp")
+		if err != nil {
+			return nil, err
+		}
+		geojson := filepath.Join(workdir, fmt.Sprintf("layer-%02d.geojson", index+1))
+		ogrArgs := []string{"-f", "GeoJSON", "-t_srs", "EPSG:4326"}
+		if sourceSRS := recipe.Build.Config["source_srs"]; sourceSRS != "" {
+			ogrArgs = append(ogrArgs, "-s_srs", sourceSRS)
+		}
+		ogrArgs = append(ogrArgs, geojson, shape)
+		if _, err := runToolCommand(ctx, root, workdir, BaseToolsImage, "ogr2ogr", ogrArgs); err != nil {
+			return nil, err
+		}
+		geojsons = append(geojsons, geojson)
 	}
-	if err := stepExtract(archive, extracted); err != nil {
-		return nil, err
-	}
-	shape, err := firstFileWithExtension(extracted, ".shp")
-	if err != nil {
-		return nil, err
-	}
-	geojson := filepath.Join(workdir, "layer.geojson")
-	ogrArgs := []string{"-f", "GeoJSON", "-t_srs", "EPSG:4326"}
-	if sourceSRS := recipe.Build.Config["source_srs"]; sourceSRS != "" {
-		ogrArgs = append(ogrArgs, "-s_srs", sourceSRS)
-	}
-	ogrArgs = append(ogrArgs, geojson, shape)
-	if _, err := runToolCommand(ctx, root, workdir, BaseToolsImage, "ogr2ogr", ogrArgs); err != nil {
-		return nil, err
-	}
-	return buildPMTilesFromGeoJSON(ctx, root, workdir, recipe, []string{geojson})
+	return buildPMTilesFromGeoJSON(ctx, root, workdir, recipe, geojsons)
 }
 
 func buildVectorService(root string, recipe catalog.Item, _ *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {

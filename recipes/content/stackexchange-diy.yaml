@@ -7,7 +7,7 @@ tags:
 - mechanical
 - repair
 depth: comprehensive
-size_gb: 3.0
+size_gb: 1.9
 url_pattern: https://download.kiwix.org/zim/stack_exchange/diy.stackexchange.com_en_all_{date}.zim
 description: DIY & Home Improvement Stack Exchange
 license:

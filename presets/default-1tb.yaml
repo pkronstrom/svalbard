@@ -1,20 +1,13 @@
 name: default-1tb
-description: Region-neutral full reference archive with mainstream and higher-tier local AI options
+description: Region-neutral full reference archive with pictured Wikipedia, Survivor Library, and 64GB-class local AI
 target_size_gb: 1024
 region: default
 extends:
   - default-512
-  - ai/models-16gb-ram
-  - ai/models-24gb-ram
+  - ai/models-64gb-ram
 sources:
 # ── Wikipedia upgrade ──
 - -wikipedia-en-nopic
 - wikipedia-en-maxi
-# ── Q&A ──
-- stackexchange-chemistry
-- stackexchange-biology
-- stackexchange-engineering
-# ── Preparedness ──
-- lrn-self-reliance
-# ── Curated AI matrix ──
-- -gemma-4-e2b-it
+# ── Archives ──
+- survivorlibrary

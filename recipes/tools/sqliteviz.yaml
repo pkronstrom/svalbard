@@ -15,7 +15,7 @@ strategy: build
 
 build:
   family: app-bundle
-  source_url: https://github.com/lana-k/sqliteviz/releases/latest/download/dist.zip
+  source_url: https://github.com/lana-k/sqliteviz/releases/download/0.31.0/dist.zip
 
 license:
   id: Apache-2.0

@@ -1,14 +1,10 @@
 name: default-512
-description: Region-neutral large reference archive with a conservative local AI pair
+description: Region-neutral large archive with Khan Academy and 24GB-class local AI for a 512GB drive
 target_size_gb: 512
 region: default
 extends:
   - default-256
-  - ai/harnesses
-  - ai/models-8gb-ram
+  - ai/models-24gb-ram
 sources:
-# ── Q&A ──
-- stackexchange-math
-# ── Preparedness media ──
-- urban-prepper
-- s2-underground
+# ── Education ──
+- khan-academy

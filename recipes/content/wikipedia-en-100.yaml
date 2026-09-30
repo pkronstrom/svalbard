@@ -1,12 +1,12 @@
-id: wikipedia-en-100-maxi
+id: wikipedia-en-100
 type: zim
 display_group: reference
 tags:
 - general-reference
 - encyclopedia
 depth: overview
-size_gb: 0.046
-url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_100_maxi_{date}.zim
+size_gb: 0.31
+url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_100_{date}.zim
 description: English Wikipedia Top 100 — the 100 most vital articles with full images
   (Vital Articles Level 2)
 license:

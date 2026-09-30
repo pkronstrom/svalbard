@@ -1,0 +1,13 @@
+id: wikibooks-fi
+type: zim
+display_group: reference
+tags:
+- general-reference
+- language
+depth: overview
+size_gb: 0.081
+url_pattern: https://download.kiwix.org/zim/wikibooks/wikibooks_fi_all_maxi_{date}.zim
+description: Finnish Wikibooks (Wikikirjasto)
+license:
+  id: CC-BY-SA-3.0
+  attribution: Wikimedia Foundation contributors

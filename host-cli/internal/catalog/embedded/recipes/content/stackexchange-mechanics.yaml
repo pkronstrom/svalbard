@@ -1,0 +1,13 @@
+id: stackexchange-mechanics
+type: zim
+display_group: practical
+tags:
+- mechanical
+- repair
+depth: comprehensive
+size_gb: 0.316
+url_pattern: https://download.kiwix.org/zim/stack_exchange/mechanics.stackexchange.com_en_all_{date}.zim
+description: Motor Vehicle Maintenance & Repair Stack Exchange
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

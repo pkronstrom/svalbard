@@ -6,8 +6,8 @@ tags:
 - emergency-medicine
 - first-aid
 depth: comprehensive
-size_gb: 0.078
-url_pattern: https://download.kiwix.org/zim/zimit/fas-military-medicine_en_{date}.zim
+size_gb: 0.072
+url_pattern: https://download.kiwix.org/zim/zimit/irp.fas.org_en_military-medicine_{date}.zim
 description: FAS Military Medicine library — US military field medicine manuals and references
 license:
   id: public-domain

@@ -1,0 +1,12 @@
+id: opsec-bible
+type: zim
+display_group: reference
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.162
+url_pattern: https://download.kiwix.org/zim/zimit/privacydefence.org_en_opsecbible_{date}.zim
+description: OPSEC Bible — operational security and privacy guides
+license:
+  id: license-free
+  attribution: privacydefence.org
