@@ -8,10 +8,10 @@ depth: reference-only
 size_gb: 0.01
 venv: svalbard-python
 packages:
-- binwalk==2.4.3
+- binwalk @ https://github.com/ReFirmLabs/binwalk/archive/refs/tags/v2.3.4.tar.gz
 entry_points:
 - binwalk
-description: Firmware analysis and extraction tool
+description: Binwalk 2.3.4 legacy Python source — firmware analysis; provisioning needs source-wheel support (Rust v3 has no portable release binaries)
 license:
   id: MIT
   attribution: Craig Heffner and binwalk contributors
