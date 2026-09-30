@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	ToolsImageVersion  = "0.2.0"
+	ToolsImageVersion  = "0.4.0"
 	BaseToolsImage     = "ghcr.io/pkronstrom/svalbard-tools:" + ToolsImageVersion
 	BrowserToolsImage  = "ghcr.io/pkronstrom/svalbard-tools:" + ToolsImageVersion + "-browser"
 	DefaultDockerImage = BaseToolsImage
