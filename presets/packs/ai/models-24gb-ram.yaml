@@ -1,9 +1,9 @@
 name: ai/models-24gb-ram
 kind: pack
 display_group: AI
-description: General and coding models sized for 24 GB RAM class hosts
-target_size_gb: 40
+description: General and coding GGUF choices for 24 GB RAM hosts — load one model
+  at a time; context and OS need extra headroom
+target_size_gb: 27
 sources:
 - gemma-4-26b-a4b-it
-- qwen-35b-a3b
-
+- qwen-27b

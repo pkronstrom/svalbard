@@ -4,11 +4,11 @@ display_group: models
 tags:
 - computing
 - coding
-- agentic
-depth: overview
-size_gb: 5.9
-url: https://huggingface.co/bartowski/Qwen_Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf
-description: Qwen3.5 9B Instruct (Q4_K_M) — conservative coding model for 8-24 GB RAM hosts
+size_gb: 5.56
+filename: Qwen3.5-9B-UD-Q4_K_XL.gguf
+url: https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-UD-Q4_K_XL.gguf
+description: Qwen3.5 9B (Unsloth UD-Q4_K_XL) — coding/tool-use model for 16 GB hosts;
+  text-only runtime
 license:
   id: Apache-2.0
-  attribution: Alibaba Cloud / Qwen Team
+  attribution: Alibaba Cloud / Qwen Team / Unsloth

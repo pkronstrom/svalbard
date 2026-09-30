@@ -1,0 +1,14 @@
+id: qwen-27b-hq
+type: gguf
+display_group: models
+tags:
+- computing
+- coding
+size_gb: 23.56
+filename: Qwen3.8-27B-UD-Q6_K_XL.gguf
+url: https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-Q6_K_XL.gguf
+description: Qwen3.8 27B (Unsloth UD-Q6_K_XL) — higher-precision dense coding model
+  for 64 GB hosts; optional MTP via ai/mtp; text-only runtime
+license:
+  id: Apache-2.0
+  attribution: Alibaba Cloud / Qwen Team / Unsloth

@@ -7,9 +7,9 @@ tags:
 - tool-calling
 depth: overview
 size_gb: 3.93
-url: https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF/resolve/main/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
-description: Gemma 4 E4B IT (QAT UD-Q4_K_XL) — mainstream general/tool-call model for 16-24 GB RAM hosts; QAT 4-bit (≈6-bit quality at 4-bit size)
+url: https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF/resolve/8c5a9e4fd5482e2be20fe0bf013b4c262a8f4265/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
+description: Gemma 4 E4B IT (QAT UD-Q4_K_XL) — general/tool-call model for 8 GB RAM
+  hosts; text-only runtime
 license:
   id: Apache-2.0
   attribution: Google DeepMind / Unsloth
-

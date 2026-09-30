@@ -6,9 +6,10 @@ tags:
 - coding
 - agentic
 depth: comprehensive
-size_gb: 20.6
-url: https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf
-description: Qwen3.6 35B-A3B (UD-Q4_K_M) — stronger MoE coding/agentic model for 24-64 GB RAM hosts
+size_gb: 20.61
+url: https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/a483e9e6cbd595906af30beda3187c2663a1118c/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf
+description: Qwen3.6 35B-A3B (Unsloth UD-Q4_K_M) — fast MoE coding alternative for
+  64 GB hosts; text-only runtime
 license:
   id: Apache-2.0
   attribution: Alibaba Cloud / Qwen Team / Unsloth

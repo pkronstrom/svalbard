@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -82,7 +83,7 @@ func TestPrepareClientLaunchConfigForPi(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
 	}
-	if len(cfg.Args) != 2 || cfg.Args[0] != "--model" || cfg.Args[1] != "llama.cpp/qwen" {
+	if len(cfg.Args) != 2 || cfg.Args[0] != "--model" || cfg.Args[1] != "svalbard/qwen" {
 		t.Fatalf("Args = %v, want pi model args", cfg.Args)
 	}
 	piDir := cfg.Env["PI_CODING_AGENT_DIR"]
@@ -145,6 +146,207 @@ func TestPrepareClientLaunchConfigForPi(t *testing.T) {
 	args, ok := svalbard["args"].([]any)
 	if !ok || len(args) != 3 || args[0] != "mcp" || args[1] != "--drive" || args[2] != driveRoot {
 		t.Errorf("svalbard args = %v, want [mcp --drive %s]", svalbard["args"], driveRoot)
+	}
+}
+
+func TestPrepareClientLaunchConfigForPiQwen38UsesNativeDefaults(t *testing.T) {
+	driveRoot := filepath.Join(t.TempDir(), "drive with spaces")
+	modelName := "Qwen3.8-27B-UD-Q4_K_M"
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", modelName, 8192)
+	if err != nil {
+		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+	}
+	if got := cfg.Env["PI_OFFLINE"]; got != "1" {
+		t.Fatalf("PI_OFFLINE = %q, want 1", got)
+	}
+
+	models := readJSON(t, filepath.Join(cfg.Env["PI_CODING_AGENT_DIR"], "models.json"))
+	provider := models["providers"].(map[string]any)["svalbard"].(map[string]any)
+	model := provider["models"].([]any)[0].(map[string]any)
+	if got := model["maxTokens"]; got != float64(4096) {
+		t.Errorf("maxTokens = %v, want 4096 for an 8K context", got)
+	}
+	if got := model["reasoning"]; got != true {
+		t.Errorf("reasoning = %v, want true", got)
+	}
+	if got := model["cost"]; !reflect.DeepEqual(got, map[string]any{"input": 0.0, "output": 0.0, "cacheRead": 0.0, "cacheWrite": 0.0}) {
+		t.Errorf("cost = %#v, want zero rates for input, output, cache read, and cache write", got)
+	}
+	compat := model["compat"].(map[string]any)
+	for key, want := range map[string]any{
+		"thinkingFormat": "chat-template", "supportsReasoningEffort": true,
+		"chatTemplateKwargs": map[string]any{
+			"enable_thinking":   map[string]any{"$var": "thinking.enabled"},
+			"preserve_thinking": true,
+			"reasoning_effort":  map[string]any{"$var": "thinking.effort", "omitWhenOff": true},
+		},
+	} {
+		if got := compat[key]; !reflect.DeepEqual(got, want) {
+			t.Errorf("compat[%q] = %v, want %v", key, got, want)
+		}
+	}
+	wantSampling := map[string]any{
+		"temperature": 1.0, "top_p": 0.95, "top_k": float64(20), "min_p": 0.0,
+		"presence_penalty": 0.0, "repeat_penalty": 1.0,
+	}
+	if got := model["samplingParams"]; !reflect.DeepEqual(got, wantSampling) {
+		t.Errorf("samplingParams = %#v, want %#v", got, wantSampling)
+	}
+
+	settings := readJSON(t, filepath.Join(cfg.Env["PI_CODING_AGENT_DIR"], "settings.json"))
+	if got := settings["modelThinkingLevels"].(map[string]any)["svalbard/"+modelName]; got != "medium" {
+		t.Errorf("Qwen thinking level = %v, want medium", got)
+	}
+	compaction := settings["compaction"].(map[string]any)
+	if got := compaction["reserveTokens"]; got != float64(4096) {
+		t.Errorf("compaction reserveTokens = %v, want 4096", got)
+	}
+	if got := compaction["keepRecentTokens"]; got != float64(2048) {
+		t.Errorf("compaction keepRecentTokens = %v, want 2048", got)
+	}
+
+	mcp := readJSON(t, filepath.Join(cfg.Env["PI_CODING_AGENT_DIR"], "mcp.json"))
+	args := mcp["mcpServers"].(map[string]any)["svalbard"].(map[string]any)["args"].([]any)
+	if got := args[2]; got != driveRoot {
+		t.Errorf("MCP drive arg = %q, want %q", got, driveRoot)
+	}
+}
+
+func TestPrepareClientLaunchConfigForPiPreservesSettings(t *testing.T) {
+	driveRoot := t.TempDir()
+	configRoot := filepath.Join(driveRoot, ".svalbard", "runtime", "pi", "config")
+	if err := os.MkdirAll(configRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(configRoot, "settings.json")
+	const existing = `{"compaction":{"reserveTokens":777},"modelThinkingLevels":{"svalbard/Qwen3.8":"high"},"custom":true}`
+	if err := os.WriteFile(settingsPath, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "Qwen3.8", 8192); err != nil {
+		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+	}
+	settings := readJSON(t, settingsPath)
+	if got := settings["compaction"].(map[string]any)["reserveTokens"]; got != float64(777) {
+		t.Errorf("custom reserveTokens = %v, want 777", got)
+	}
+	if got := settings["compaction"].(map[string]any)["keepRecentTokens"]; got != float64(2048) {
+		t.Errorf("generated keepRecentTokens = %v, want 2048", got)
+	}
+	if got := settings["modelThinkingLevels"].(map[string]any)["svalbard/Qwen3.8"]; got != "high" {
+		t.Errorf("custom thinking level = %v, want high", got)
+	}
+	if got := settings["custom"]; got != true {
+		t.Errorf("custom setting = %v, want true", got)
+	}
+}
+
+func TestPrepareClientLaunchConfigForPiRefreshesGeneratedCompaction(t *testing.T) {
+	driveRoot := t.TempDir()
+	for _, tc := range []struct {
+		name                  string
+		wantReserve, wantKeep int
+	}{
+		{"max", 8192, 20000},
+		{"fast", 4096, 2048},
+		{"max again", 8192, 20000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := 131072
+			if tc.name == "fast" {
+				ctx = 8192
+			}
+			cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "Qwen3.8", ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			compaction := readJSON(t, filepath.Join(cfg.Env["PI_CODING_AGENT_DIR"], "settings.json"))["compaction"].(map[string]any)
+			if got := compaction["reserveTokens"]; got != float64(tc.wantReserve) {
+				t.Errorf("reserveTokens = %v, want %d", got, tc.wantReserve)
+			}
+			if got := compaction["keepRecentTokens"]; got != float64(tc.wantKeep) {
+				t.Errorf("keepRecentTokens = %v, want %d", got, tc.wantKeep)
+			}
+		})
+	}
+}
+
+func TestPrepareClientLaunchConfigForPiPreservesModifiedGeneratedCompactionField(t *testing.T) {
+	driveRoot := t.TempDir()
+	if _, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "Qwen3.8", 131072); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(driveRoot, ".svalbard", "runtime", "pi", "config", "settings.json")
+	settings := readJSON(t, settingsPath)
+	settings["compaction"].(map[string]any)["reserveTokens"] = 333.0
+	writeTestJSON(t, settingsPath, settings)
+
+	if _, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "Qwen3.8", 8192); err != nil {
+		t.Fatal(err)
+	}
+	compaction := readJSON(t, settingsPath)["compaction"].(map[string]any)
+	if got := compaction["reserveTokens"]; got != 333.0 {
+		t.Errorf("user reserveTokens = %v, want 333", got)
+	}
+	if got := compaction["keepRecentTokens"]; got != 2048.0 {
+		t.Errorf("generated keepRecentTokens = %v, want 2048", got)
+	}
+	if _, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "Qwen3.8", 131072); err != nil {
+		t.Fatal(err)
+	}
+	compaction = readJSON(t, settingsPath)["compaction"].(map[string]any)
+	if got := compaction["reserveTokens"]; got != 333.0 {
+		t.Errorf("user reserveTokens after context change = %v, want 333", got)
+	}
+	if got := compaction["keepRecentTokens"]; got != 20000.0 {
+		t.Errorf("generated keepRecentTokens after context change = %v, want 20000", got)
+	}
+}
+
+func TestPrepareClientLaunchConfigForPiFillsMissingCustomCompactionReserve(t *testing.T) {
+	driveRoot := t.TempDir()
+	configRoot := filepath.Join(driveRoot, ".svalbard", "runtime", "pi", "config")
+	if err := os.MkdirAll(configRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(configRoot, "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"compaction":{"keepRecentTokens":111}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "Qwen3.8", 8192); err != nil {
+		t.Fatal(err)
+	}
+	compaction := readJSON(t, settingsPath)["compaction"].(map[string]any)
+	if got := compaction["reserveTokens"]; got != 4096.0 {
+		t.Errorf("generated reserveTokens = %v, want 4096", got)
+	}
+	if got := compaction["keepRecentTokens"]; got != 111.0 {
+		t.Errorf("custom keepRecentTokens = %v, want 111", got)
+	}
+}
+
+func readJSON(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return value
+}
+
+func writeTestJSON(t *testing.T, path string, value map[string]any) {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

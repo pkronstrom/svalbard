@@ -1,8 +1,10 @@
 name: ai/models-64gb-ram
 kind: pack
 display_group: AI
-description: Highest-capability portable general and coding models for 64 GB RAM class hosts
-target_size_gb: 42
+description: General and coding GGUF choices for 64 GB RAM hosts — load one model
+  at a time; context and OS need extra headroom
+target_size_gb: 61
 sources:
 - gemma-4-31b-it
+- qwen-27b-hq
 - qwen-35b-a3b

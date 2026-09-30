@@ -442,3 +442,30 @@ func TestExtractEmbeddedBinariesFallsBackGracefully(t *testing.T) {
 	// Expected: error because only .gitkeep exists
 	t.Logf("extraction correctly failed: %v", err)
 }
+
+func TestDraftModelsAreInstalledSeparatelyWithoutChatActions(t *testing.T) {
+	if got := TypeDirs["gguf-mtp"]; got != "models/draft" {
+		t.Fatalf("draft directory = %q, want models/draft", got)
+	}
+	stubRuntimeBinarySources(t)
+	root := t.TempDir()
+	entries := []manifest.RealizedEntry{{ID: "qwen-27b-mtp", Type: "gguf-mtp", Filename: "mtp-Qwen3.8-27B-Q4_0.gguf"}}
+	if err := Generate(root, entries, "ai/mtp"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".svalbard", "actions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg testRuntimeConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range cfg.Groups {
+		for _, item := range group.Items {
+			if item.ID == "qwen-27b-mtp" || item.ID == "chat-default" {
+				t.Fatalf("drafter must not appear as a selectable chat model: %s", item.ID)
+			}
+		}
+	}
+}

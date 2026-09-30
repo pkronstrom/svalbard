@@ -1,0 +1,14 @@
+id: gemma-4-12b-it
+type: gguf
+display_group: models
+tags:
+- computing
+- general-reference
+size_gb: 6.26
+filename: gemma-4-12B-it-qat-UD-Q4_K_XL.gguf
+url: https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF/resolve/980b060c40a8539ac159e0501a3e0f66a6365af3/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf
+description: Gemma 4 12B IT (QAT UD-Q4_K_XL) — general/tool-use model for 16 GB hosts;
+  text-only runtime
+license:
+  id: Apache-2.0
+  attribution: Google DeepMind / Unsloth

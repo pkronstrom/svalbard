@@ -1,0 +1,8 @@
+name: ai/mtp
+kind: pack
+display_group: AI
+description: Optional Qwen3.8 27B MTP drafter (speculative decoding) for qwen-27b /
+  qwen-27b-hq; extra RAM; no measured gain on Apple Silicon Metal
+target_size_gb: 2
+sources:
+- qwen-27b-mtp

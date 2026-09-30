@@ -56,6 +56,7 @@ var TypeDirs = map[string]string{
 	"epub":           "books",
 	"gguf":           "models",
 	"gguf-embed":     "models/embed",
+	"gguf-mtp":       "models/draft",
 	"binary":         "bin",
 	"app":            "apps",
 	"dataset":        "data",

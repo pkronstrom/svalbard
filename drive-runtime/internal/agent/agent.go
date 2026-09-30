@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -133,56 +134,205 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		// to be followed by an assistant turn; pi needs these per-model compat
 		// flags to round-trip tool calls (mirrors a verified turbollm pi config).
 		// Other families (Qwen) round-trip without them.
-		modelCompat := ""
-		if strings.Contains(strings.ToLower(modelName), "gemma") {
-			modelCompat = `, "compat": { "thinkingFormat": "qwen-chat-template", "requiresToolResultName": true, "requiresAssistantAfterToolResult": true }`
-		}
-		// pi reads models.json + mcp.json from $PI_CODING_AGENT_DIR. Provider
-		// "llama.cpp" points at the local llama-server; the model carries the
-		// resolved context window so pi compacts at the right point.
-		modelsJSON := fmt.Sprintf(`{
-  "providers": {
-    "llama.cpp": {
-      "baseUrl": "%[2]s",
-      "api": "openai-completions",
-      "apiKey": "local",
-      "compat": { "supportsDeveloperRole": false, "supportsReasoningEffort": false },
-      "models": [
-        { "id": "%[1]s", "contextWindow": %[3]d, "maxTokens": 8192, "cost": { "input": 0, "output": 0 }%[4]s }
-      ]
-    }
-  }
-}
-`, modelName, baseURL, ctxSize, modelCompat)
-		if err := os.WriteFile(filepath.Join(configRoot, "models.json"), []byte(modelsJSON), 0o644); err != nil {
+		isGemma := strings.Contains(strings.ToLower(modelName), "gemma")
+		if err := writePiModels(filepath.Join(configRoot, "models.json"), baseURL, modelName, ctxSize, isGemma); err != nil {
 			return LaunchConfig{}, err
 		}
 		// pi supports MCP natively (no plugin) via mcp.json — wire the svalbard
 		// stdio server, at parity with OpenCode/Goose.
-		mcpJSON := fmt.Sprintf(`{
-  "mcpServers": {
-    "svalbard": {
-      "command": "%[1]s",
-      "args": ["mcp", "--drive", "%[2]s"]
-    }
-  }
-}
-`, mcpBinary, driveRoot)
-		if err := os.WriteFile(filepath.Join(configRoot, "mcp.json"), []byte(mcpJSON), 0o644); err != nil {
+		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), map[string]any{
+			"mcpServers": map[string]any{"svalbard": map[string]any{"command": mcpBinary, "args": []string{"mcp", "--drive", driveRoot}}},
+		}); err != nil {
 			return LaunchConfig{}, err
 		}
-		cfg.Args = []string{"--model", "llama.cpp/" + modelName}
+		if err := ensurePiSettings(filepath.Join(configRoot, "settings.json"), modelName, ctxSize); err != nil {
+			return LaunchConfig{}, err
+		}
+		cfg.Args = []string{"--model", piProvider + "/" + modelName}
 		cfg.Env = map[string]string{
 			"HOME":                homeRoot,
 			"XDG_CONFIG_HOME":     configRoot,
 			"XDG_CACHE_HOME":      cacheRoot,
 			"XDG_DATA_HOME":       dataRoot,
 			"PI_CODING_AGENT_DIR": configRoot,
+			"PI_OFFLINE":          "1",
 		}
 	default:
 		cfg.Env = map[string]string{}
 	}
 	return cfg, nil
+}
+
+// piProvider names the local endpoint in Pi's models.json. Pi reserves
+// "llama.cpp" for its built-in router integration and rejects a custom
+// provider with that ID ("Provider is not configured: llama.cpp").
+const piProvider = "svalbard"
+
+func writePiModels(path, baseURL, modelName string, ctxSize int, isGemma bool) error {
+	model := map[string]any{
+		"id": modelName, "contextWindow": ctxSize, "maxTokens": piMaxTokens(ctxSize),
+		"cost": map[string]float64{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+	}
+	if sampling := llamaserve.SamplingParams(modelName); len(sampling) > 0 {
+		model["samplingParams"] = sampling
+	}
+	if strings.Contains(strings.ToLower(modelName), "qwen3.8") {
+		model["reasoning"] = true
+		model["compat"] = map[string]any{
+			"thinkingFormat": "chat-template", "supportsReasoningEffort": true,
+			"chatTemplateKwargs": map[string]any{
+				"enable_thinking":   map[string]string{"$var": "thinking.enabled"},
+				"preserve_thinking": true,
+				"reasoning_effort":  map[string]any{"$var": "thinking.effort", "omitWhenOff": true},
+			},
+		}
+	} else if isGemma {
+		model["compat"] = map[string]any{"thinkingFormat": "qwen-chat-template", "requiresToolResultName": true, "requiresAssistantAfterToolResult": true}
+	}
+	return writeJSON(path, map[string]any{"providers": map[string]any{
+		piProvider: map[string]any{
+			"baseUrl": baseURL, "api": "openai-completions", "apiKey": "local",
+			"compat": map[string]any{"supportsDeveloperRole": false, "supportsReasoningEffort": false}, "models": []any{model},
+		},
+	}})
+}
+
+func piMaxTokens(ctxSize int) int {
+	if ctxSize/2 < 8192 {
+		return ctxSize / 2
+	}
+	return 8192
+}
+
+func ensurePiSettings(path, modelName string, ctxSize int) error {
+	settings := map[string]any{}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return fmt.Errorf("parse Pi settings: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	settingsMissing := os.IsNotExist(err)
+
+	defaults := map[string]int{"reserveTokens": piMaxTokens(ctxSize), "keepRecentTokens": min(ctxSize/4, 20000)}
+	sidecarPath := filepath.Join(filepath.Dir(path), ".svalbard-compaction.json")
+	owned, hasOwned, err := readPiCompactionOwnership(sidecarPath)
+	if err != nil {
+		return err
+	}
+
+	changed := settingsMissing
+	writeSidecar := false
+	compaction, ok := settings["compaction"].(map[string]any)
+	if !ok {
+		if _, exists := settings["compaction"]; !exists {
+			compaction = map[string]any{}
+			settings["compaction"] = compaction
+			changed = true
+		} else {
+			compaction = nil
+		}
+	}
+	if compaction != nil {
+		var compactionChanged, ownershipChanged bool
+		owned, compactionChanged, ownershipChanged = refreshPiCompaction(compaction, owned, hasOwned, defaults)
+		changed = changed || compactionChanged
+		writeSidecar = ownershipChanged
+	}
+	if strings.Contains(strings.ToLower(modelName), "qwen3.8") {
+		modelLevels, ok := settings["modelThinkingLevels"].(map[string]any)
+		if !ok {
+			if _, exists := settings["modelThinkingLevels"]; !exists {
+				modelLevels = map[string]any{}
+				settings["modelThinkingLevels"] = modelLevels
+				changed = true
+			}
+		}
+		if modelLevels != nil {
+			key := piProvider + "/" + modelName
+			if _, ok := modelLevels[key]; !ok {
+				modelLevels[key] = "medium"
+				changed = true
+			}
+		}
+	}
+	if changed {
+		if err := writeJSON(path, settings); err != nil {
+			return err
+		}
+	}
+	if writeSidecar {
+		return writeJSON(sidecarPath, owned)
+	}
+	return nil
+}
+
+func readPiCompactionOwnership(path string) (map[string]int, bool, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	var owned map[string]int
+	if err := json.Unmarshal(data, &owned); err != nil {
+		return nil, false, fmt.Errorf("parse Pi compaction ownership: %w", err)
+	}
+	return owned, true, nil
+}
+
+func refreshPiCompaction(compaction map[string]any, owned map[string]int, hasOwned bool, defaults map[string]int) (map[string]int, bool, bool) {
+	if !hasOwned {
+		owned = map[string]int{}
+	}
+	changed := false
+	ownershipChanged := false
+	for key, value := range defaults {
+		current, exists := compaction[key]
+		lastGenerated, ownedField := owned[key]
+		switch {
+		case !exists:
+			compaction[key] = value
+			owned[key] = value
+			changed = true
+			ownershipChanged = true
+		case ownedField && piCompactionValueMatches(current, lastGenerated):
+			if !piCompactionValueMatches(current, value) {
+				compaction[key] = value
+				changed = true
+			}
+			if lastGenerated != value {
+				owned[key] = value
+				ownershipChanged = true
+			}
+		case ownedField:
+			delete(owned, key)
+			ownershipChanged = true
+		}
+	}
+	return owned, changed, ownershipChanged
+}
+
+func piCompactionValueMatches(value any, want int) bool {
+	switch value := value.(type) {
+	case float64:
+		return value == float64(want)
+	case int:
+		return value == want
+	default:
+		return false
+	}
+}
+
+func writeJSON(path string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedModel string) error {

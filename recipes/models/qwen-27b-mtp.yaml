@@ -1,0 +1,17 @@
+id: qwen-27b-mtp
+type: gguf-mtp
+display_group: models
+tags:
+- computing
+- coding
+size_gb: 1.28
+filename: mtp-Qwen3.8-27B-Q4_0.gguf
+url: https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4ca720788d1e01f1bff70c033e0d0028fd02e502/MTP/mtp-Qwen3.8-27B-Q4_0.gguf
+description: Optional Qwen3.8 27B Q4_0 MTP drafter — companion for qwen-27b/qwen-27b-hq;
+  not a chat model; extra RAM required; speedup is hardware-dependent (none measured
+  on Apple M4 Max Metal)
+license:
+  id: Apache-2.0
+  attribution: Alibaba Cloud / Qwen Team / Unsloth
+deps:
+- llama-server

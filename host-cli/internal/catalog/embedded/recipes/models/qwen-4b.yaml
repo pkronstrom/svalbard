@@ -1,0 +1,13 @@
+id: qwen-4b
+type: gguf
+display_group: models
+tags:
+- computing
+- coding
+size_gb: 2.81
+url: https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf
+description: Qwen3.5 4B (bartowski Q4_K_M) — small coding/tool-use model for 8 GB
+  hosts; text-only runtime
+license:
+  id: Apache-2.0
+  attribution: Alibaba Cloud / Qwen Team / bartowski

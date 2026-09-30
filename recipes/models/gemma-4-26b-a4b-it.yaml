@@ -7,9 +7,9 @@ tags:
 - tool-calling
 depth: comprehensive
 size_gb: 13.27
-url: https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/main/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf
-description: Gemma 4 26B A4B IT (QAT UD-Q4_K_XL) — faster MoE general/tool-call model for higher-RAM hosts; QAT 4-bit (≈6-bit quality at 4-bit size)
+url: https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf
+description: Gemma 4 26B A4B IT (QAT UD-Q4_K_XL) — faster MoE general/tool-call model
+  for higher-RAM hosts; text-only runtime
 license:
   id: Apache-2.0
   attribution: Google DeepMind / Unsloth
-

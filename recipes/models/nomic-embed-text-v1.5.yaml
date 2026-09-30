@@ -1,14 +1,16 @@
 id: nomic-embed-text-v1.5
 type: gguf-embed
 display_group: models
-tags: [embedding, search]
+tags:
+- embedding
+- search
 depth: reference-only
 size_gb: 0.14
-url: https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf
+url: https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/0188c9bf409793f810680a5a431e7b899c46104c/nomic-embed-text-v1.5.Q8_0.gguf
 description: Nomic Embed Text v1.5 — small embedding model for semantic search
 embedding:
-  doc_prefix: "search_document: "
-  query_prefix: "search_query: "
+  doc_prefix: 'search_document: '
+  query_prefix: 'search_query: '
   dims: 256
   matryoshka: true
   max_input_tokens: 2048

@@ -28,8 +28,8 @@ func ContextForHost() int {
 		return CtxFast
 	case gib < 20: // ~16 GB class
 		return CtxBalanced
-	case gib < 40: // ~32 GB class
-		return 65536
+	case gib < 40: // 24/32 GB class
+		return CtxBalanced
 	default: // 64 GB+
 		return CtxMax
 	}
