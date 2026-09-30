@@ -44,8 +44,8 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().String("vault", "", "path to vault root (default: auto-detect from cwd)")
 
 	addCmd := &cobra.Command{
-		Use:   "add <item...>",
-		Short: "Add items to the desired state",
+		Use:   "add <item|preset...>",
+		Short: "Add items (or every item of a preset/pack) to the desired state",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			vaultFlag, _ := cmd.Flags().GetString("vault")
@@ -58,20 +58,28 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := commands.AddItems(&m, args); err != nil {
+			cat, err := catalog.LoadCatalog()
+			if err != nil {
+				return fmt.Errorf("loading catalog: %w", err)
+			}
+			ids, err := commands.ExpandItemRefs(cat, args)
+			if err != nil {
+				return err
+			}
+			if err := commands.AddItems(&m, ids); err != nil {
 				return err
 			}
 			if err := manifest.Save(mPath, m); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Added %d item(s) to desired state\n", len(args))
+			fmt.Fprintf(cmd.OutOrStdout(), "Added %d item(s) to desired state\n", len(ids))
 			return nil
 		},
 	}
 
 	removeCmd := &cobra.Command{
-		Use:   "remove <item...>",
-		Short: "Remove items from the desired state",
+		Use:   "remove <item|preset...>",
+		Short: "Remove items (or every item of a preset/pack) from the desired state",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			vaultFlag, _ := cmd.Flags().GetString("vault")
@@ -84,13 +92,21 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := commands.RemoveItems(&m, args); err != nil {
+			cat, err := catalog.LoadCatalog()
+			if err != nil {
+				return fmt.Errorf("loading catalog: %w", err)
+			}
+			ids, err := commands.ExpandItemRefs(cat, args)
+			if err != nil {
+				return err
+			}
+			if err := commands.RemoveItems(&m, ids); err != nil {
 				return err
 			}
 			if err := manifest.Save(mPath, m); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Removed %d item(s) from desired state\n", len(args))
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed %d item(s) from desired state\n", len(ids))
 			return nil
 		},
 	}
@@ -333,22 +349,31 @@ func newPresetCommand() *cobra.Command {
 		},
 	})
 
-	cmd.AddCommand(&cobra.Command{
+	copyCmd := &cobra.Command{
 		Use:   "copy <source> <target>",
-		Short: "Copy a preset to a local file for customization",
-		Args:  cobra.ExactArgs(2),
+		Short: "Start a user preset that extends <source>",
+		Long: "Writes a preset file that extends <source>. A bare <target> name is written to\n" +
+			"the user preset dir (~/.config/svalbard/presets/<target>.yaml); a path is used as is.",
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cat, err := catalog.LoadCatalog()
 			if err != nil {
 				return fmt.Errorf("loading catalog: %w", err)
 			}
-			if err := commands.CopyPreset(cat, args[0], args[1]); err != nil {
+			target, err := commands.PresetTargetPath(args[1])
+			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Copied preset %q to %s\n", args[0], args[1])
+			flatten, _ := cmd.Flags().GetBool("flatten")
+			if err := commands.CopyPreset(cat, args[0], target, flatten); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Copied preset %q to %s\n", args[0], target)
 			return nil
 		},
-	})
+	}
+	copyCmd.Flags().Bool("flatten", false, "write the fully resolved source list instead of an extends stub")
+	cmd.AddCommand(copyCmd)
 
 	return cmd
 }
@@ -402,6 +427,7 @@ func buildWizardConfig(prefillPath string) (hosttui.WizardConfig, error) {
 				TargetSizeGB: p.TargetSizeGB,
 				Region:       p.Region,
 				SourceIDs:    resolved.Sources,
+				Custom:       p.IsUser(),
 			})
 		}
 	}

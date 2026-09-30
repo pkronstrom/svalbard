@@ -1,6 +1,34 @@
 package commands
 
-import "github.com/pkronstrom/svalbard/host-cli/internal/manifest"
+import (
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
+	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
+)
+
+// ExpandItemRefs replaces each preset or pack name in refs with the recipe ids
+// it resolves to. Recipe ids, local ids and unknown refs pass through
+// unchanged; a recipe id wins over a preset of the same name.
+func ExpandItemRefs(cat *catalog.Catalog, refs []string) ([]string, error) {
+	var ids []string
+	for _, ref := range refs {
+		if _, ok := cat.RecipeByID(ref); ok {
+			ids = append(ids, ref)
+			continue
+		}
+		if _, ok := cat.PresetByName(ref); !ok {
+			ids = append(ids, ref)
+			continue
+		}
+		preset, err := cat.ResolvePreset(ref)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range preset.Items {
+			ids = append(ids, item.ID)
+		}
+	}
+	return ids, nil
+}
 
 // AddItems appends ids to m.Desired.Items, skipping any that are already present.
 // This is a metadata-only operation with no side effects.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -49,11 +50,32 @@ func TestPresetListWritesKnownPresets(t *testing.T) {
 	}
 }
 
-func TestCopyPresetWritesYAMLFile(t *testing.T) {
-	c := catalog.NewTestCatalog(t)
-	target := filepath.Join(t.TempDir(), "my-custom.yaml")
+func TestPresetListMarksUserPresets(t *testing.T) {
+	cat := catalog.NewTestCatalog(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mine.yaml"), []byte("extends: [default-32]\nsources: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cat.LoadUserPresets(dir); err != nil {
+		t.Fatal(err)
+	}
 
-	if err := CopyPreset(c, "default-32", target); err != nil {
+	var buf bytes.Buffer
+	if err := WritePresetList(&buf, cat); err != nil {
+		t.Fatal(err)
+	}
+	want := "mine  (user: " + filepath.Join(dir, "mine.yaml") + ")"
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("expected %q in output, got %q", want, buf.String())
+	}
+}
+
+func TestCopyPresetWritesExtendsStubThatLoadsBack(t *testing.T) {
+	c := catalog.NewTestCatalog(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "my-custom.yaml")
+
+	if err := CopyPreset(c, "default-32", target, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -62,8 +84,58 @@ func TestCopyPresetWritesYAMLFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(raw)
-	if !strings.Contains(content, "default-32") || !strings.Contains(content, "sources") {
-		t.Errorf("copied preset missing expected content: %q", content)
+	for _, want := range []string{"# Custom svalbard preset", "name: my-custom", "extends:\n  - default-32", "sources: []"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("stub missing %q:\n%s", want, content)
+		}
+	}
+
+	if err := c.LoadUserPresets(dir); err != nil {
+		t.Fatalf("stub does not load back: %v", err)
+	}
+	mine, err := c.ResolvePreset("my-custom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig, _ := c.ResolvePreset("default-32")
+	if !reflect.DeepEqual(mine.Sources, orig.Sources) {
+		t.Errorf("stub resolves to %v, want %v", mine.Sources, orig.Sources)
+	}
+}
+
+func TestCopyPresetFlattenListsResolvedSources(t *testing.T) {
+	c := catalog.NewTestCatalog(t)
+	target := filepath.Join(t.TempDir(), "flat.yaml")
+
+	if err := CopyPreset(c, "default-128", target, true); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	if strings.Contains(content, "\nextends:") || !strings.Contains(content, "- wikipedia-en-nopic") || !strings.Contains(content, "name: flat") {
+		t.Errorf("flattened preset unexpected:\n%s", content)
+	}
+}
+
+func TestCopyPresetRefusesNameCollisionAndOverwrite(t *testing.T) {
+	c := catalog.NewTestCatalog(t)
+	dir := t.TempDir()
+
+	if err := CopyPreset(c, "default-32", filepath.Join(dir, "default-128.yaml"), false); err == nil {
+		t.Error("expected error when target name matches an existing preset")
+	}
+	existing := filepath.Join(dir, "taken.yaml")
+	if err := os.WriteFile(existing, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopyPreset(c, "default-32", existing, false); err == nil {
+		t.Error("expected error when target file exists")
+	}
+	if raw, _ := os.ReadFile(existing); string(raw) != "keep" {
+		t.Error("existing file was overwritten")
 	}
 }
 
@@ -71,8 +143,24 @@ func TestCopyPresetErrorsOnUnknown(t *testing.T) {
 	c := catalog.NewTestCatalog(t)
 	target := filepath.Join(t.TempDir(), "bad.yaml")
 
-	err := CopyPreset(c, "nonexistent-preset", target)
+	err := CopyPreset(c, "nonexistent-preset", target, false)
 	if err == nil {
 		t.Fatal("expected error for unknown preset")
+	}
+}
+
+func TestPresetTargetPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/cfg")
+	cases := map[string]string{
+		"my-256":       filepath.Join("/cfg", "svalbard", "presets", "my-256.yaml"),
+		"my-256.yaml":  "my-256.yaml",
+		"./out/my-256": "./out/my-256",
+		"/abs/x.yaml":  "/abs/x.yaml",
+	}
+	for in, want := range cases {
+		got, err := PresetTargetPath(in)
+		if err != nil || got != want {
+			t.Errorf("PresetTargetPath(%q) = %q, %v; want %q", in, got, err, want)
+		}
 	}
 }

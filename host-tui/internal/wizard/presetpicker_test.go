@@ -222,3 +222,17 @@ func TestPresetPickerShowsFreeSpace(t *testing.T) {
 		t.Errorf("View() should show free space, got:\n%s", out)
 	}
 }
+
+func TestPresetPickerMarksCustomPresets(t *testing.T) {
+	presets := samplePresets()
+	presets[1].Name = "my-32"
+	presets[1].Custom = true
+	m := newPresetPicker(presets, []string{"europe"}, 50)
+	m.width = 80
+	m.height = 24
+
+	out := stripAnsi(m.View())
+	if strings.Count(out, "(custom)") != 1 || !strings.Contains(out, "my-32") {
+		t.Errorf("expected exactly my-32 marked (custom), got:\n%s", out)
+	}
+}

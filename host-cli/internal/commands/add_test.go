@@ -1,10 +1,33 @@
 package commands
 
 import (
+	"reflect"
 	"testing"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
+
+func TestExpandItemRefsExpandsPresetsAndKeepsIDs(t *testing.T) {
+	cat := catalog.NewTestCatalog(t)
+
+	got, err := ExpandItemRefs(cat, []string{"local:manual", "default-32", "ifixit", "unknown-id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"local:manual", "ifixit", "wikipedia-en-nopic", "ifixit", "unknown-id"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ExpandItemRefs = %v, want %v", got, want)
+	}
+
+	m := manifest.New("test")
+	if err := AddItems(&m, got); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Desired.Items) != 4 {
+		t.Errorf("expected duplicates collapsed to 4 items, got %v", m.Desired.Items)
+	}
+}
 
 func TestAddItemsDeduplicatesAndPreservesExistingEntries(t *testing.T) {
 	m := manifest.New("test")

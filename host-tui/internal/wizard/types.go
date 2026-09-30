@@ -19,6 +19,7 @@ type PresetOption struct {
 	TargetSizeGB float64
 	Region       string
 	SourceIDs    []string // resolved source IDs (with extends)
+	Custom       bool     // user-defined preset (from the user preset dir)
 }
 
 // Type aliases — pack types now live in tui/ as the shared tree picker data model.

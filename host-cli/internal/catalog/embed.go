@@ -85,17 +85,21 @@ func NewCatalogFromPaths(recipesDir, presetsDir string) (*Catalog, error) {
 }
 
 // LoadCatalog prefers the embedded real catalog and falls back to the repo
-// root during development if the embedded assets are unavailable.
+// root during development if the embedded assets are unavailable. User
+// presets from UserPresetDirs are layered on top.
 func LoadCatalog() (*Catalog, error) {
 	cat, err := NewEmbeddedCatalog()
-	if err == nil {
-		return cat, nil
+	if err != nil {
+		var fallbackErr error
+		cat, fallbackErr = NewDefaultCatalog()
+		if fallbackErr != nil {
+			return nil, fmt.Errorf("embedded catalog: %w; default catalog: %v", err, fallbackErr)
+		}
 	}
-	cat, fallbackErr := NewDefaultCatalog()
-	if fallbackErr == nil {
-		return cat, nil
+	if err := cat.LoadUserPresets(UserPresetDirs()...); err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("embedded catalog: %w; default catalog: %v", err, fallbackErr)
+	return cat, nil
 }
 
 // loadDepDefaultsFromFS reads dep-defaults.yaml from an fs.FS.

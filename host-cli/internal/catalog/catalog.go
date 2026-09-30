@@ -87,7 +87,11 @@ type Preset struct {
 	Extends      []string `yaml:"extends,omitempty"`
 	Sources      []string `yaml:"sources"`
 	Items        []Item   `yaml:"-"` // populated by ResolvePreset
+	Path         string   `yaml:"-"` // source file of a user preset; empty for built-ins
 }
+
+// IsUser reports whether the preset was loaded from a user preset file.
+func (p Preset) IsUser() bool { return p.Path != "" }
 
 // ContentSizeGB returns the sum of SizeGB across all resolved Items.
 func (p Preset) ContentSizeGB() float64 {
@@ -327,6 +331,12 @@ func (c *Catalog) PresetNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// PresetByName looks up a single unresolved preset by name.
+func (c *Catalog) PresetByName(name string) (Preset, bool) {
+	p, ok := c.presets[name]
+	return p, ok
 }
 
 // RecipeByID looks up a single recipe by its ID.

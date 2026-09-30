@@ -186,6 +186,9 @@ func (m presetPickerModel) View() string {
 
 		size := tui.FormatSizeGB(p.ContentGB)
 		line := fmt.Sprintf("%s%-20s %8s", caret, p.Name, size)
+		if p.Custom {
+			line += "  (custom)"
+		}
 
 		if isRecommended && !isCursor {
 			line += "  *"
