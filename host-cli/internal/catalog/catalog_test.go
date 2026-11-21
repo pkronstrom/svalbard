@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"reflect"
+	"regexp"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -859,5 +860,37 @@ func TestEmbeddedCatalogPreservesCurrentBuildArrays(t *testing.T) {
 	layers, ok := cat.RecipeByID("lipas-recreation")
 	if !ok || layers.Build == nil || len(layers.Build.Layers) == 0 {
 		t.Fatal("lipas layers were not preserved")
+	}
+}
+
+func TestEmbeddedChecksumPinsAreWellFormed(t *testing.T) {
+	cat, err := NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatalf("NewEmbeddedCatalog: %v", err)
+	}
+	hex64 := regexp.MustCompile(`^[0-9a-f]{64}$`)
+	pinned := 0
+	for _, item := range cat.AllRecipes() {
+		if item.SHA256 != "" {
+			pinned++
+			if !hex64.MatchString(item.SHA256) {
+				t.Errorf("%s: sha256 %q is not 64 lowercase hex chars", item.ID, item.SHA256)
+			}
+			if item.URL == "" && item.URLPattern == "" {
+				t.Errorf("%s: sha256 set without url/url_pattern", item.ID)
+			}
+		}
+		for platform, sum := range item.PlatformSHA256 {
+			pinned++
+			if !hex64.MatchString(sum) {
+				t.Errorf("%s: platform_sha256[%s] %q is not 64 lowercase hex chars", item.ID, platform, sum)
+			}
+			if _, ok := item.Platforms[platform]; !ok {
+				t.Errorf("%s: platform_sha256 key %q has no matching platforms entry", item.ID, platform)
+			}
+		}
+	}
+	if pinned == 0 {
+		t.Fatal("expected some recipes to carry checksum pins")
 	}
 }

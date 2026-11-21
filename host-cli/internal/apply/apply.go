@@ -342,7 +342,7 @@ func downloadItem(ctx context.Context, root, id string, recipe catalog.Item, onP
 		return manifest.RealizedEntry{}, fmt.Errorf("resolving URL for %s: %w", id, err)
 	}
 	slog.Debug("resolved URL", "id", id, "url", resolvedURL)
-	return fetchAndRecord(ctx, root, id, recipe, resolvedURL, onProgress)
+	return fetchAndRecord(ctx, root, id, recipe, resolvedURL, recipe.SHA256, onProgress)
 }
 
 // downloadPlatformItems downloads platform-specific binaries for all target platforms.
@@ -358,7 +358,7 @@ func downloadPlatformItems(ctx context.Context, root, id string, recipe catalog.
 		var downloaded bool
 		for _, candidate := range candidates {
 			if platformURL, ok := recipe.Platforms[candidate]; ok {
-				entry, err := fetchAndRecord(ctx, root, id, recipe, platformURL, onProgress)
+				entry, err := fetchAndRecord(ctx, root, id, recipe, platformURL, recipe.PlatformSHA256[candidate], onProgress)
 				if err != nil {
 					return nil, err
 				}
@@ -420,8 +420,11 @@ func hostPlatformCandidates() []string {
 	return candidates
 }
 
-// fetchAndRecord downloads a file and returns a RealizedEntry.
-func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, dlURL string, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
+// fetchAndRecord downloads a file and returns a RealizedEntry. A non-empty
+// expectedSHA256 (from the recipe's sha256/platform_sha256) is enforced for
+// both fresh downloads and cache reuse.
+func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, dlURL, expectedSHA256 string, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
+	expectedSHA256 = strings.ToLower(strings.TrimSpace(expectedSHA256))
 	typeDir := toolkit.TypeDirs[recipe.Type]
 	filename := recipe.Filename
 	if filename == "" {
@@ -435,6 +438,9 @@ func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, d
 		if cached, ok := downloader.FindInCache(dirs, filename); ok {
 			if res, used, err := downloader.ReuseFromCache(ctx, cached, dlURL, destPath, onProgress); err != nil {
 				return manifest.RealizedEntry{}, fmt.Errorf("reusing cached %s: %w", id, err)
+			} else if used && expectedSHA256 != "" && res.SHA256 != expectedSHA256 {
+				// Download below sees the mismatching copy and replaces it.
+				slog.Warn("cached copy fails checksum; downloading", "id", id, "src", cached, "sha256", res.SHA256, "want", expectedSHA256)
 			} else if used {
 				result = res
 				slog.Info("reused from cache", "id", id, "src", cached, "dest", destPath, "sha256", res.SHA256)
@@ -443,7 +449,7 @@ func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, d
 	}
 
 	if result.Path == "" {
-		dl, err := downloader.Download(ctx, dlURL, destPath, "", onProgress)
+		dl, err := downloader.Download(ctx, dlURL, destPath, expectedSHA256, onProgress)
 		if err != nil {
 			return manifest.RealizedEntry{}, fmt.Errorf("downloading %s: %w", id, err)
 		}

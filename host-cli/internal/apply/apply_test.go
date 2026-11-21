@@ -3,6 +3,8 @@ package apply
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -323,5 +325,52 @@ func TestApplyRemovesMapViewerWhenNoPMTilesRemain(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(root, "apps", "map", "index.html")); !os.IsNotExist(err) {
 		t.Fatalf("expected map viewer to be removed, got err=%v", err)
+	}
+}
+
+func TestApplyEnforcesPlatformSHA256(t *testing.T) {
+	content := "pinned binary"
+	sum := sha256.Sum256([]byte(content))
+	good := hex.EncodeToString(sum[:])
+	useMockHTTPResponses(t, map[string]string{"/tool-linux-amd64.tar.gz": content})
+
+	for _, tc := range []struct {
+		name    string
+		hash    string
+		wantErr bool
+	}{
+		{"match", good, false},
+		{"mismatch", strings.Repeat("0", 64), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recipeYAML := "id: tool\ntype: binary\nplatforms:\n  linux-x86_64: http://example.test/tool-linux-amd64.tar.gz\n" +
+				"platform_sha256:\n  linux-x86_64: " + tc.hash + "\n"
+			cat, err := catalog.LoadFromFS(fstest.MapFS{"tool.yaml": &fstest.MapFile{Data: []byte(recipeYAML)}}, fstest.MapFS{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			m := manifest.New("test")
+			m.Desired.Items = []string{"tool"}
+			m.Desired.Options.HostPlatforms = []string{"linux-x86_64"}
+
+			err = Run(context.Background(), root, &m, planner.Plan{ToDownload: []string{"tool"}}, cat)
+			dest := filepath.Join(root, "bin", "tool-linux-amd64.tar.gz")
+			if tc.wantErr {
+				if err == nil || len(m.Realized.Entries) != 0 {
+					t.Fatalf("err = %v, realized = %d; want failure with nothing realized", err, len(m.Realized.Entries))
+				}
+				if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+					t.Errorf("mismatching download left on disk: %v", statErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := m.Realized.Entries[0].ChecksumSHA256; got != good {
+				t.Errorf("checksum = %q, want %q", got, good)
+			}
+		})
 	}
 }

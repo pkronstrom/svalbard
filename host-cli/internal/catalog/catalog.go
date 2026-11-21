@@ -21,12 +21,17 @@ type Item struct {
 	URLPattern  string            `yaml:"url_pattern,omitempty"`
 	Filename    string            `yaml:"filename,omitempty"`
 	Platforms   map[string]string `yaml:"platforms,omitempty"`
-	Build       *BuildSpec        `yaml:"build,omitempty"`
-	Viewer      *ViewerSpec       `yaml:"viewer,omitempty"`
-	License     *LicenseSpec      `yaml:"license,omitempty"`
-	Tags        []string          `yaml:"tags,omitempty"`
-	Menu        *MenuSpec         `yaml:"menu,omitempty"`
-	Env         map[string]string `yaml:"env,omitempty"`
+	// Expected artifact checksums (hex SHA-256), verified after download.
+	// SHA256 applies to url/url_pattern; PlatformSHA256 is keyed like Platforms.
+	// These are file-integrity pins, separate from acquisition tracking.
+	SHA256         string            `yaml:"sha256,omitempty"`
+	PlatformSHA256 map[string]string `yaml:"platform_sha256,omitempty"`
+	Build          *BuildSpec        `yaml:"build,omitempty"`
+	Viewer         *ViewerSpec       `yaml:"viewer,omitempty"`
+	License        *LicenseSpec      `yaml:"license,omitempty"`
+	Tags           []string          `yaml:"tags,omitempty"`
+	Menu           *MenuSpec         `yaml:"menu,omitempty"`
+	Env            map[string]string `yaml:"env,omitempty"`
 
 	// Recipe dependency declarations.
 	Deps []string `yaml:"deps,omitempty"`
