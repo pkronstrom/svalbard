@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DuckDB SQL console</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { margin: 0 auto; max-width: 80rem; padding: 1rem; }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  #status { color: GrayText; font-size: .9rem; margin: 0 0 1rem; }
+  textarea { box-sizing: border-box; font: 14px/1.4 ui-monospace, Menlo, monospace; min-height: 8rem; width: 100%; }
+  .bar { align-items: center; display: flex; flex-wrap: wrap; gap: 1rem; margin: .5rem 0; }
+  #files { font-size: .9rem; margin: 0; }
+  #error { color: #d22; font-family: ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+  #error:empty { display: none; }
+  #meta { color: GrayText; font-size: .9rem; }
+  .wrap { max-height: 70vh; overflow: auto; }
+  table { border-collapse: collapse; font: 13px ui-monospace, Menlo, monospace; }
+  th, td { border: 1px solid #8886; padding: .2rem .5rem; text-align: left; white-space: pre; }
+  th { background: Canvas; position: sticky; top: 0; }
+  td.num { text-align: right; }
+  td.null { color: GrayText; }
+</style>
+<!-- Arrow's UMD bundle sets globalThis.Arrow; arrow-shim.mjs re-exports it as
+     the "apache-arrow" module that duckdb-browser.mjs imports. -->
+<script src="arrow/Arrow.esnext.min.js"></script>
+<script type="importmap">{"imports": {"apache-arrow": "./arrow-shim.mjs"}}</script>
+</head>
+<body>
+<h1>DuckDB SQL console</h1>
+<p id="status">Loading DuckDB…</p>
+<textarea id="sql" spellcheck="false" aria-label="SQL">select 42 as answer;</textarea>
+<div class="bar">
+  <button id="run" disabled>Run</button>
+  <small>Ctrl+Enter (⌘+Enter on a Mac)</small>
+  <label>Open a CSV, Parquet or JSON file:
+    <input id="file" type="file" multiple disabled
+           accept=".csv,.tsv,.txt,.parquet,.json,.jsonl,.ndjson"></label>
+</div>
+<p id="files"></p>
+<pre id="error" role="alert"></pre>
+<p id="meta"></p>
+<div class="wrap"><table id="result"></table></div>
+
+<script>
+  // Runs when the module below cannot load its imports.
+  function moduleLoadFailed() {
+    document.getElementById("status").textContent = location.protocol === "file:"
+      ? "This page needs the drive's local web server: browsers do not load modules or workers from file:// pages. Open DuckDB from the drive menu (./run)."
+      : "The DuckDB files are missing from this folder. Re-apply duckdb-wasm with the svalbard CLI.";
+  }
+</script>
+<script type="module" onerror="moduleLoadFailed()">
+import * as duckdb from "./duckdb/duckdb-browser.mjs";
+
+const Arrow = globalThis.Arrow;
+const MAX_ROWS = 1000;
+const $ = (id) => document.getElementById(id);
+const statusLine = $("status"), sql = $("sql"), runButton = $("run"), fileInput = $("file");
+const errorBox = $("error"), meta = $("meta"), table = $("result"), fileList = $("files");
+const opened = [];
+let db, conn;
+
+function message(err) {
+  return err && err.message ? err.message : String(err);
+}
+
+async function start() {
+  try {
+    const base = new URL("./duckdb/", location.href);
+    const worker = new Worker(new URL("duckdb-browser-eh.worker.js", base));
+    db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
+    await db.instantiate(new URL("duckdb-eh.wasm", base).href);
+    await db.open({ query: { castDecimalToDouble: true } });
+    conn = await db.connect();
+    // json and parquet load on first use from the copies bundled in extensions/.
+    const extensions = new URL("./extensions", location.href).href;
+    await conn.query(`set custom_extension_repository = '${extensions}'`);
+    await conn.query(`set autoinstall_extension_repository = '${extensions}'`);
+    statusLine.textContent = `DuckDB ${await db.getVersion()} runs inside this browser. Files you open stay on this computer.`;
+    runButton.disabled = false;
+    fileInput.disabled = false;
+    sql.focus();
+  } catch (err) {
+    statusLine.textContent = "DuckDB did not start.";
+    errorBox.textContent = `Startup error: ${message(err)}`;
+  }
+}
+
+function format(value, type) {
+  if (value === null || value === undefined) return "NULL";
+  if (type.typeId === Arrow.Type.Timestamp) return new Date(Number(value)).toISOString().replace("T", " ").replace("Z", "");
+  if (type.typeId === Arrow.Type.Date) return new Date(Number(value)).toISOString().slice(0, 10);
+  if (typeof value === "object") return JSON.stringify(value, (_, v) => (typeof v === "bigint" ? v.toString() : v));
+  return String(value);
+}
+
+function render(result, ms) {
+  const fields = result.schema.fields;
+  const columns = fields.map((_, i) => result.getChildAt(i));
+  const shown = Math.min(result.numRows, MAX_ROWS);
+  const head = document.createElement("tr");
+  for (const field of fields) {
+    const th = document.createElement("th");
+    th.textContent = field.name;
+    th.title = String(field.type);
+    head.append(th);
+  }
+  const body = document.createElement("tbody");
+  for (let r = 0; r < shown; r++) {
+    const tr = document.createElement("tr");
+    for (let c = 0; c < fields.length; c++) {
+      const value = columns[c].get(r);
+      const td = document.createElement("td");
+      td.textContent = format(value, fields[c].type);
+      if (value === null || value === undefined) td.className = "null";
+      else if (typeof value === "number" || typeof value === "bigint") td.className = "num";
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  const thead = document.createElement("thead");
+  thead.append(head);
+  table.replaceChildren(thead, body);
+  const rows = `${result.numRows} row${result.numRows === 1 ? "" : "s"}`;
+  meta.textContent = `${rows}${shown < result.numRows ? ` (showing the first ${shown})` : ""} in ${Math.round(ms)} ms`;
+}
+
+async function run() {
+  const text = sql.value.trim();
+  if (!conn || !text || runButton.disabled) return;
+  runButton.disabled = true;
+  errorBox.textContent = "";
+  meta.textContent = "Running…";
+  const started = performance.now();
+  try {
+    render(await conn.query(text), performance.now() - started);
+  } catch (err) {
+    meta.textContent = "";
+    table.replaceChildren();
+    errorBox.textContent = `Query error: ${message(err)}`;
+  } finally {
+    runButton.disabled = false;
+  }
+}
+
+async function openFiles() {
+  errorBox.textContent = "";
+  let last = "";
+  for (const file of fileInput.files) {
+    try {
+      await db.registerFileHandle(file.name, file, duckdb.DuckDBDataProtocol.BROWSER_FILEREADER, true);
+      if (!opened.includes(file.name)) opened.push(file.name);
+      last = file.name;
+    } catch (err) {
+      errorBox.textContent = `Could not open ${file.name}: ${message(err)}`;
+    }
+  }
+  fileInput.value = "";
+  fileList.textContent = opened.length ? `Opened: ${opened.map((name) => `'${name}'`).join(", ")}. Query a file by name, for example select * from '${opened[0]}'.` : "";
+  if (last) {
+    sql.value = `select * from '${last.replaceAll("'", "''")}' limit 100;`;
+    await run();
+  }
+}
+
+runButton.addEventListener("click", run);
+fileInput.addEventListener("change", openFiles);
+sql.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    run();
+  }
+});
+start();
+</script>
+</body>
+</html>

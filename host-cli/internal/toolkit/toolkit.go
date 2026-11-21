@@ -178,6 +178,9 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	if err := writePlatformIOExample(root, entries); err != nil {
 		return err
 	}
+	if err := writeAppPages(root, entries); err != nil {
+		return err
+	}
 	var recipes map[string]catalog.Item
 	if len(opts) > 0 {
 		recipes = opts[0].Recipes

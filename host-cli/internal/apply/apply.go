@@ -169,7 +169,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 		}
 
 		switch {
-		case recipe.URL != "" || recipe.URLPattern != "" || len(recipe.Platforms) > 0:
+		case recipe.URL != "" || recipe.URLPattern != "" || len(recipe.Platforms) > 0 || len(recipe.Bundle) > 0:
 			httpJobs = append(httpJobs, downloadJob{id: id, recipe: recipe})
 		case recipe.Strategy == "build" && recipe.Build != nil:
 			if !buildQueued[id] {
@@ -419,6 +419,12 @@ func executeJob(
 	var entries []manifest.RealizedEntry
 	var err error
 	switch {
+	case len(job.recipe.Bundle) > 0:
+		var entry manifest.RealizedEntry
+		entry, err = assembleBundle(ctx, root, job.id, job.recipe, dlProgress)
+		if err == nil {
+			entries = []manifest.RealizedEntry{entry}
+		}
 	case job.recipe.URL != "" || job.recipe.URLPattern != "":
 		var entry manifest.RealizedEntry
 		entry, err = downloadItem(ctx, root, job.id, job.recipe, dlProgress)
@@ -615,26 +621,9 @@ func fetchAndRecordAt(ctx context.Context, root, id string, recipe catalog.Item,
 	}
 	destPath := filepath.Join(root, typeDir, filename)
 
-	// Reuse a locally-cached copy (SVALBARD_CACHE_DIRS) before downloading.
-	var result downloader.Result
-	if dirs := downloader.CacheDirs(); len(dirs) > 0 {
-		if cached, ok := downloader.FindInCache(dirs, filename); ok {
-			if res, used, err := downloader.ReuseFromCacheWithSHA256(ctx, cached, dlURL, destPath, recipe.SHA256, onProgress); err != nil {
-				return manifest.RealizedEntry{}, fmt.Errorf("reusing cached %s: %w", id, err)
-			} else if used {
-				result = res
-				slog.Info("reused from cache", "id", id, "src", cached, "dest", destPath, "sha256", res.SHA256)
-			}
-		}
-	}
-
-	if result.Path == "" {
-		dl, err := downloader.Download(ctx, dlURL, destPath, recipe.SHA256, onProgress)
-		if err != nil {
-			return manifest.RealizedEntry{}, fmt.Errorf("downloading %s: %w", id, err)
-		}
-		result = dl
-		slog.Info("downloaded", "id", id, "path", destPath, "sha256", result.SHA256, "cached", result.Cached)
+	result, err := fetchFile(ctx, id, dlURL, destPath, filename, recipe.SHA256, onProgress)
+	if err != nil {
+		return manifest.RealizedEntry{}, err
 	}
 
 	fileInfo, err := os.Stat(destPath)
@@ -651,6 +640,29 @@ func fetchAndRecordAt(ctx context.Context, root, id string, recipe catalog.Item,
 		ChecksumSHA256: result.SHA256,
 		SourceStrategy: recipe.Strategy,
 	}, nil
+}
+
+// fetchFile downloads dlURL to destPath, reusing a locally cached copy
+// (SVALBARD_CACHE_DIRS) when one matches filename.
+func fetchFile(ctx context.Context, id, dlURL, destPath, filename, sha256 string, onProgress downloader.ProgressFunc) (downloader.Result, error) {
+	if dirs := downloader.CacheDirs(); len(dirs) > 0 {
+		if cached, ok := downloader.FindInCache(dirs, filename); ok {
+			res, used, err := downloader.ReuseFromCacheWithSHA256(ctx, cached, dlURL, destPath, sha256, onProgress)
+			if err != nil {
+				return downloader.Result{}, fmt.Errorf("reusing cached %s: %w", id, err)
+			}
+			if used {
+				slog.Info("reused from cache", "id", id, "src", cached, "dest", destPath, "sha256", res.SHA256)
+				return res, nil
+			}
+		}
+	}
+	result, err := downloader.Download(ctx, dlURL, destPath, sha256, onProgress)
+	if err != nil {
+		return downloader.Result{}, fmt.Errorf("downloading %s: %w", id, err)
+	}
+	slog.Info("downloaded", "id", id, "path", destPath, "sha256", result.SHA256, "cached", result.Cached)
+	return result, nil
 }
 
 func isPlatformIORecipe(recipe catalog.Item) bool {

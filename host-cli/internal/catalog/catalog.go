@@ -32,6 +32,10 @@ type Item struct {
 	Menu           *MenuSpec         `yaml:"menu,omitempty"`
 	Env            map[string]string `yaml:"env,omitempty"`
 
+	// Bundle lists pinned downloads assembled into the item's directory
+	// (<type dir>/<id>/), for example npm package tarballs for a web app.
+	Bundle []BundleSource `yaml:"bundle,omitempty"`
+
 	// Recipe dependency declarations.
 	Deps []string `yaml:"deps,omitempty"`
 
@@ -46,6 +50,22 @@ type Item struct {
 	Venv        string   `yaml:"venv,omitempty"`
 	Packages    []string `yaml:"packages,omitempty"`
 	EntryPoints []string `yaml:"entry_points,omitempty"`
+}
+
+// BundleSource is one pinned download of an item bundle. An archive (.zip, .tgz
+// or .tar.gz) is unpacked into Dest; any other file is saved there under the
+// last segment of its URL. Apply refuses a source without a SHA-256 pin.
+type BundleSource struct {
+	URL    string `yaml:"url"`
+	SHA256 string `yaml:"sha256"`
+	// Dest is the subdirectory of the item directory to write into.
+	Dest string `yaml:"dest,omitempty"`
+	// Strip is the archive directory to unpack from, such as "package/dist" in
+	// an npm tarball. Entries outside it are skipped. Empty means the root.
+	Strip string `yaml:"strip,omitempty"`
+	// Files limits extraction to these archive paths below Strip; each must
+	// exist. Empty extracts every regular file.
+	Files []string `yaml:"files,omitempty"`
 }
 
 // EmbeddingSpec describes how an embedding model should be used at index and

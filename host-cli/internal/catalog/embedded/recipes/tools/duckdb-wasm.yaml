@@ -3,23 +3,43 @@ type: app
 display_group: tools
 tags: [data, database, analytics]
 depth: reference-only
-size_gb: 0.02
-description: DuckDB WASM shell — browser-based analytical SQL engine
-strategy: build
+size_gb: 0.039
+description: DuckDB WASM — in-browser SQL console for CSV, Parquet and JSON files
+menu:
+  group: tools
+  subheader: Apps
+  label: DuckDB
+  description: Query CSV, Parquet and JSON files with SQL in the browser
+  aliases: [duckdb]
+  order: 210
 
-build:
-  family: app-bundle
-  assets:
-    - url: https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@1.32.0/dist/shell.js
-      dest: shell.js
-    - url: https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@1.32.0/dist/shell_bg.wasm
-      dest: shell_bg.wasm
-    - url: https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/dist/duckdb-mvp.wasm
-      dest: duckdb-mvp.wasm
-    - url: https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/dist/duckdb-browser-mvp.worker.js
-      dest: duckdb-browser-mvp.worker.js
+# The npm packages ship no page. svalbard adds index.html from
+# host-cli/internal/toolkit/apppages/duckdb-wasm, which loads the prebuilt ESM
+# bundle (wasm exception-handling build) and maps the "apache-arrow" import to
+# Arrow's self-contained UMD bundle, so no JS build step is needed.
+bundle:
+  - url: https://registry.npmjs.org/@duckdb/duckdb-wasm/-/duckdb-wasm-1.32.0.tgz
+    sha256: 13c29d80888b795cb493b281685d3d3e1738db2fad50d419e2884c6585789722
+    strip: package/dist
+    files: [duckdb-browser.mjs, duckdb-browser-eh.worker.js, duckdb-eh.wasm]
+    dest: duckdb
+  # duckdb-wasm 1.32.0 depends on apache-arrow ^17.0.0.
+  - url: https://registry.npmjs.org/apache-arrow/-/apache-arrow-17.0.0.tgz
+    sha256: 3517f9ef256e9e5bf819f92652028545131660784c68818604e9025ec643b317
+    strip: package
+    files: [Arrow.esnext.min.js, LICENSE.txt, NOTICE.txt]
+    dest: arrow
+  # duckdb-wasm 1.32.0 is DuckDB v1.4.3, which autoloads json and parquet from
+  # an extension repository. The page points that repository at extensions/,
+  # so these paths must follow the DuckDB version when the package is bumped.
+  - url: https://extensions.duckdb.org/v1.4.3/wasm_eh/json.duckdb_extension.wasm
+    sha256: b997276c8e15cc3ebdeda340d73d15dc1c4f4755ad281280451cb0a2f79302e9
+    dest: extensions/v1.4.3/wasm_eh
+  - url: https://extensions.duckdb.org/v1.4.3/wasm_eh/parquet.duckdb_extension.wasm
+    sha256: 22765c8f7dc741cda2b571a66ac7bb355295d7d69a6c37e5315b265672984f55
+    dest: extensions/v1.4.3/wasm_eh
 
 license:
-  id: MIT
-  attribution: DuckDB contributors
+  id: MIT AND Apache-2.0
+  attribution: DuckDB contributors (duckdb-wasm, MIT) / Apache Arrow (Arrow JS, Apache-2.0)
   url: https://github.com/duckdb/duckdb-wasm
