@@ -1,6 +1,6 @@
 # Recipe acquisition tracking
 
-Status: agreed scope 2026-09-30; queued as Phase 7 in MASTERPLAN.md; not implemented.
+Status: agreed scope 2026-09-30; queued as Phase 7 in the task tracker; not implemented.
 
 ## Goal
 

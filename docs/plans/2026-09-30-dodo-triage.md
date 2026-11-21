@@ -4,7 +4,7 @@ Status: reconciled 2026-09-30; the masterplan is ordered around the user paths s
 
 The source export contained **39 pending tasks** (the earlier audit count of 38 was incorrect). Four clearly completed tasks were closed. All remaining entries retain their IDs and pending status, with a masterplan destination and triage metadata; pending no longer means no implementation exists. No task was deleted.
 
-`MASTERPLAN.md` owns the queue and grouped wishlist. This ledger preserves the original task wording and explains partial completion; it is not a second implementation plan. Future features receive their own discovery and plans.
+The task tracker (Aven project `svalbard`) owns the queue and wishlist; the [archived masterplan](archive/2026-11-21-MASTERPLAN.md) holds the 2026-09-30 phase order. This ledger preserves the original task wording and explains partial completion; it is not a second implementation plan. Future features receive their own discovery and plans.
 
 ## Decisions requested
 

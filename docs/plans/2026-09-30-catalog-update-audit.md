@@ -2,6 +2,8 @@
 
 Findings from a full link check (310 URLs / 181 recipes), tool/app release audit, open-data review, and ZIM library scan. Audited against the working tree, i.e. on top of the uncommitted [catalog refresh](2026-09-30-catalog-refresh.md). Raw link-check output (script, `results.json`, full Kiwix index `all.tsv`) was kept only in the session scratchpad — rerun the check before closing this out.
 
+Status 2026-11-21: remaining open items moved to the task tracker; this checklist is the audit record.
+
 User decisions: rebalance presets toward their target size; implement local custom presets; specialization packs (cybersec, computing, sciences, …) stay opt-in but should be offered by a wizard/web "pack builder"; fix all updates and broken pins.
 
 ## Phase 1 reconciliation
@@ -12,7 +14,7 @@ The resumed [catalog refresh results](2026-09-30-catalog-refresh-results.md) sup
 
 - [x] Resolver ignores Kiwix letter-suffixed re-releases (`2026-09b`) — regex now `(\d{4}-\d{2}[a-z]?)`, test added (`host-cli/internal/resolver`). Picks up nhs-medicines 2026-09b, 3dprinting 2026-07a, scoutwiki 2026-08a.
 - [x] `maplibre-vendor`: `maplibre-gl@6.11.2/dist/maplibre-gl.js` 404 — v6 is ESM-only; `mapview/generate.go` loads it as a classic script. Pin **5.24.0** (verified 200) or port viewer to ES modules.
-- [~] `duckdb-wasm`: (css → `shell_bg.wasm` done; launcher page still missing) `shell.css` doesn't exist in `duckdb-wasm-shell@1.32.0`; bundle also lacks `shell_bg.wasm` (1.5 MB) and an index page — nothing on the drive consumes this bundle today. Replace css with `shell_bg.wasm`, add a launcher page, or drop the recipe.
+- `duckdb-wasm`: (css → `shell_bg.wasm` done; launcher page still missing) `shell.css` doesn't exist in `duckdb-wasm-shell@1.32.0`; bundle also lacks `shell_bg.wasm` (1.5 MB) and an index page — nothing on the drive consumes this bundle today. Replace css with `shell_bg.wasm`, add a launcher page, or drop the recipe.
 - [x] **Blocker for all python-package recipes:** `pythonvenv.go` calls `uv pip download`, which does not exist in uv 0.12.21 (Docker image) or 0.11.7 — angr, pwntools, sqlmap, volatility3, binwalk cannot build. Switch to `python -m pip download --only-binary=:all: --platform … --python-version …` in the tools image (or `uv pip install --target` per platform). — fixed: builder now uses `uv python install --no-bin` (python-build-standalone per platform) + `uv pip install --target --python-platform` per package, wheels-only first then source fallback; per-platform skip with warning when no wheels. Linux floor glibc 2.28 (Pi OS bookworm), macOS arm64 14.0 / x86_64 13.0. E2E: all 5 packages × 4 platforms built (~1.8 GB), run on macos-arm64 + linux x64/arm64. Gaps: angr on linux-arm64 (z3 wheel needs glibc 2.38) and macos-x86_64 (no wheel).
 - [x] `binwalk==2.4.3` doesn't exist (PyPI has only 2.1.0; last Python tag is v2.3.4, v3 is Rust with no prebuilt assets). Options: `binwalk @ https://github.com/ReFirmLabs/binwalk/archive/refs/tags/v2.3.4.tar.gz` (sdist — test against the platform-targeted wheel download), or build v3. — now `binwalk @ OSPG/binwalk v2.4.3` tarball (the fork the old pin came from; MIT, archived 2024-11). Upstream 2.3.4 crashes on py3.12; Rust v3 still has no release binaries.
 - [x] `tool-openocd-esp32`: PlatformIO espressif32 v7.1.3 requires `~2.1100.0` → pin **2.1100.20220706** (all 4 platforms verified 200, incl. darwin_x86_64).
@@ -20,7 +22,7 @@ The resumed [catalog refresh results](2026-09-30-catalog-refresh-results.md) sup
 - [x] `angr` 10.0.0 → 10.0.1 (released today).
 - [x] `qwen-9b`: 404 — bartowski renamed to `Qwen_Qwen3.5-9B-Q4_K_M.gguf`.
 - [x] `luonnonsuojelualueet`: SYKE split the zip into `_valtio.zip`, `_yksityinen.zip`, `_eramaa.zip` → `vector-static` needs multi-source support (or three layers). — done: `vector-static` now takes `assets` (one shapefile zip each, merged into one layer); test added.
-- [ ] `mml-maastokartta`: kapsi `maastokartta` tiles gone (kapsi-tiles.y2k.fi 410). Options: MML WMTS with API key from env, or `maastokarttarasteri` sheets / `peruskartta_3067`. Builder family not implemented yet anyway.
+- `mml-maastokartta`: kapsi `maastokartta` tiles gone (kapsi-tiles.y2k.fi 410). Options: MML WMTS with API key from env, or `maastokarttarasteri` sheets / `peruskartta_3067`. Builder family not implemented yet anyway.
 - [x] `opensourcelowtech`: domain lapsed (redirects to DropCatch) — delete recipe (unused).
 - [x] `practical-action`: gone from download.kiwix.org — remove from default-32, fi-survival, homesteading; delete recipe.
 - [x] `{date}` patterns matching nothing:
@@ -47,23 +49,23 @@ The resumed [catalog refresh results](2026-09-30-catalog-refresh-results.md) sup
 ## 3. Tool versions (after today's refresh)
 
 Everything else verified current with all platform assets resolving (see refresh plan). Remaining:
-- [ ] `nmap-static` 7.94SVN — ernw/static-toolbox dead since 2023; find another static source or build.
-- [ ] `zstd` listed in tools-base but deferred (no prebuilt) — build it or drop from the pack.
-- [ ] ESP32: add `macos-x86_64` to xtensa / ulp / openocd (registry has builds); add `toolchain-riscv32-esp` recipe for C3/C6.
-- [ ] Only `framework-espidf` and `tool-esptoolpy` carry sha256 — covered by Phase 2 acquisition tracking.
+- `nmap-static` 7.94SVN — ernw/static-toolbox dead since 2023; find another static source or build.
+- `zstd` listed in tools-base but deferred (no prebuilt) — build it or drop from the pack.
+- ESP32: add `macos-x86_64` to xtensa / ulp / openocd (registry has builds); add `toolchain-riscv32-esp` recipe for C3/C6.
+- Only `framework-espidf` and `tool-esptoolpy` carry sha256 — covered by Phase 2 acquisition tracking.
 
 ### Missing tools (ranked; all 4/4 platforms unless noted)
-- [ ] ripgrep 15.2.0 (tools-base; coding harnesses expect `rg`)
-- [ ] jq 1.8.2 + yq 4.54.1 (tools-base)
-- [ ] duckdb CLI 1.5.6 (tools-base; pre-cache spatial extension)
-- [ ] pandoc 3.12 (computing)
-- [ ] rclone 1.75.1, restic 0.19.1 (tools-base)
-- [ ] arduino-cli 1.5.1 (esp32-dev; cache cores)
-- [ ] meshtastic CLI 2.7.11 (python-package, communications)
-- [ ] syncthing 2.1.5, croc 11.5.4 (communications)
-- [ ] ffmpeg static + yt-dlp (two vendors, pin dated builds)
-- [ ] tealdeer + tldr pages, micro editor
-- [ ] rtl_433 (no mac-x64; check linkage)
+- ripgrep 15.2.0 (tools-base; coding harnesses expect `rg`)
+- jq 1.8.2 + yq 4.54.1 (tools-base)
+- duckdb CLI 1.5.6 (tools-base; pre-cache spatial extension)
+- pandoc 3.12 (computing)
+- rclone 1.75.1, restic 0.19.1 (tools-base)
+- arduino-cli 1.5.1 (esp32-dev; cache cores)
+- meshtastic CLI 2.7.11 (python-package, communications)
+- syncthing 2.1.5, croc 11.5.4 (communications)
+- ffmpeg static + yt-dlp (two vendors, pin dated builds)
+- tealdeer + tldr pages, micro editor
+- rtl_433 (no mac-x64; check linkage)
 - Skipped: whisper.cpp (no release assets — needs a build handler), Piper, GDAL, qsv.
 
 ## 4. New ZIMs (ranked)
@@ -86,24 +88,24 @@ Everything else verified current with all platform assets resolving (see refresh
 ## 5. Open data
 
 Existing recipes — pin by date + sha256 (fits Phase 2):
-- [ ] `osm-finland/uusimaa`: Protomaps dailies are pruned (~62 kept); `osm-extract` family has no Go handler (nor `raster-tms`, `mml-topo`). Pin `build_date` + basemap major v4 + b3sum from builds.json; fall forward on pruning.
-- [ ] `mml-topo-uusimaa`: pulls 22.8 GB all-Finland zip for one region — use MML OGC API bbox. **MML KMTK replaces Maastotietokanta from autumn 2026** — plan migration.
-- [ ] `natural-earth`: add `version: 5.1.2` + sha256.
-- [ ] `fimea` (daily regen), `pohjavesialueet`, `lipas-recreation`: snapshot date + sha256; fimea writes a `meta` table.
-- [ ] `foraging-habitats-fi`: url TBD; `metsa-structures-pmtiles.py` referenced in builders README doesn't exist.
-- [ ] `usda-nutrition` (SR 2015 ZIM) superseded — see FoodData Central below.
+- `osm-finland/uusimaa`: Protomaps dailies are pruned (~62 kept); `osm-extract` family has no Go handler (nor `raster-tms`, `mml-topo`). Pin `build_date` + basemap major v4 + b3sum from builds.json; fall forward on pruning.
+- `mml-topo-uusimaa`: pulls 22.8 GB all-Finland zip for one region — use MML OGC API bbox. **MML KMTK replaces Maastotietokanta from autumn 2026** — plan migration.
+- `natural-earth`: add `version: 5.1.2` + sha256.
+- `fimea` (daily regen), `pohjavesialueet`, `lipas-recreation`: snapshot date + sha256; fimea writes a `meta` table.
+- `foraging-habitats-fi`: url TBD; `metsa-structures-pmtiles.py` referenced in builders README doesn't exist.
+- `usda-nutrition` (SR 2015 ZIM) superseded — see FoodData Central below.
 
 New (ranked):
-- [ ] Hillshade: kapsi `vinovalovarjoste` (small) or Mapterhorn terrain pmtiles (Finland extract)
-- [ ] SYKE lake/river depths (`syvyysalue`, `syvyyskayra`, static since 2016) + `uomaverkosto` river network
-- [ ] Traficom nautical depth/chart data (CC BY 4.0, "not for navigation")
-- [ ] USDA FoodData Central (Foundation 2026-04 + SR Legacy) + **Fineli** (Finnish food composition) → sqlite FTS
-- [ ] OSM survival POIs (water, springs, huts, shelters, fireplaces) from Geofabrik PBF via osmium
-- [ ] Overture places/addresses (DVV addresses ended 2025-02; only latest Overture release kept → mirror)
-- [ ] WHO EML 2025 (CC BY-NC-SA — check fit), openFDA labels subset
-- [ ] FinBIF species checklist v1.36, FMI climate normals, GeoNames / MML place names
-- [ ] Offline routing (Valhalla from pinned PBF) — needs runtime capability; larger project
-- [ ] Metsäkeskus forest GeoPackage (due 2026-09) — input for foraging-habitats-fi
+- Hillshade: kapsi `vinovalovarjoste` (small) or Mapterhorn terrain pmtiles (Finland extract)
+- SYKE lake/river depths (`syvyysalue`, `syvyyskayra`, static since 2016) + `uomaverkosto` river network
+- Traficom nautical depth/chart data (CC BY 4.0, "not for navigation")
+- USDA FoodData Central (Foundation 2026-04 + SR Legacy) + **Fineli** (Finnish food composition) → sqlite FTS
+- OSM survival POIs (water, springs, huts, shelters, fireplaces) from Geofabrik PBF via osmium
+- Overture places/addresses (DVV addresses ended 2025-02; only latest Overture release kept → mirror)
+- WHO EML 2025 (CC BY-NC-SA — check fit), openFDA labels subset
+- FinBIF species checklist v1.36, FMI climate normals, GeoNames / MML place names
+- Offline routing (Valhalla from pinned PBF) — needs runtime capability; larger project
+- Metsäkeskus forest GeoPackage (due 2026-09) — input for foraging-habitats-fi
 - Not viable: väestönsuoja registry (not public), PFAF (license), Digitraffic (real-time), SRAL repeaters (no export).
 
 ## 6. Models
@@ -117,11 +119,11 @@ Done 2026-09-30 (measured on M4 Max / Metal, llama-server b11146):
 - [x] Roster: 8 GB e4b + qwen-4b · 16 GB gemma-4-12b + qwen-9b · 24 GB 26b-a4b + qwen-27b · 64 GB 31b + qwen-27b-hq (+ optional qwen-35b-a3b). All 14 model URLs verified; sizes in GiB; revisions pinned.
 
 Open:
-- [ ] MTP drafter as a real recipe layer (user direction): add `draft_for: [qwen-27b, qwen-27b-hq]` to `qwen-27b-mtp`; planner refuses/warns when no target is selected; runtime reads the pairing from recipe metadata instead of the hard-coded filename in `llamaserve.packagedDraft`, enabling MTP automatically when both are installed. Partly done 2026-11-21: `qwen-27b-mtp` declares `draft_for`; catalog load rejects unknown targets; `svalbard add` warns about a drafter with no selected target (`host-cli/internal/catalog/drafters.go`, `commands.DrafterWarnings`). Still open: the wizard review warning and the runtime reading the pairing (e.g. from `.svalbard/recipes.json`) instead of `packagedDraft`'s hard-coded names; first re-measure MTP/DFlash2 at llama.cpp ≥ b11840 (`docs/plans/research/2026-11-21-model-backend-updates.md`).
-- [ ] Embedder selection picks the first file in `models/embed/` — make it explicit before adding an opt-in multilingual embedder (Qwen3-Embedding-0.6B).
-- [ ] Unverified: Linux x64/arm64 and Intel Mac runs, MTP on CPU, Q6_K_XL live, 8 GB-tier models live, Svalbard MCP tools inside harnesses.
-- [ ] Vision (`--mmproj`) still unsupported in the runtime.
-- [ ] `qwen-0.8b` orphaned — keep or drop.
+- MTP drafter as a real recipe layer (user direction): add `draft_for: [qwen-27b, qwen-27b-hq]` to `qwen-27b-mtp`; planner refuses/warns when no target is selected; runtime reads the pairing from recipe metadata instead of the hard-coded filename in `llamaserve.packagedDraft`, enabling MTP automatically when both are installed. Partly done 2026-11-21: `qwen-27b-mtp` declares `draft_for`; catalog load rejects unknown targets; `svalbard add` warns about a drafter with no selected target (`host-cli/internal/catalog/drafters.go`, `commands.DrafterWarnings`). Still open: the wizard review warning and the runtime reading the pairing (e.g. from `.svalbard/recipes.json`) instead of `packagedDraft`'s hard-coded names; first re-measure MTP/DFlash2 at llama.cpp ≥ b11840 (`docs/plans/research/2026-11-21-model-backend-updates.md`).
+- Embedder selection picks the first file in `models/embed/` — make it explicit before adding an opt-in multilingual embedder (Qwen3-Embedding-0.6B).
+- Unverified: Linux x64/arm64 and Intel Mac runs, MTP on CPU, Q6_K_XL live, 8 GB-tier models live, Svalbard MCP tools inside harnesses.
+- Vision (`--mmproj`) still unsupported in the runtime.
+- `qwen-0.8b` orphaned — keep or drop.
 
 ## 7. Presets and packs
 
@@ -131,24 +133,24 @@ Open:
 - [x] `finland-32` adds nothing over default-32 — add Finnish small ZIMs, fimea, wiktionary-fi, a Finnish Wikipedia flavour.
 - [x] fi-reference pack: khan-academy (168 GB) + gutenberg (206 GB) blow its 30 GB target.
 - [x] `makeityourself` now in default-256.
-- [ ] `open-source-ecology` / `opensource-ecology` are the user's gitignored `.local.yaml` recipes and crawl different sites (WordPress vs the GVCS wiki) — not duplicates; keep the wiki one if trimming.
-- [ ] `qwen-0.8b` orphan (see §6).
-- [ ] Specialization packs (cybersec*, computing, sciences, engineering, communications, esp32-dev, homesteading) offered via wizard / web "pack builder" rather than baked into tiers.
+- `open-source-ecology` / `opensource-ecology` are the user's gitignored `.local.yaml` recipes and crawl different sites (WordPress vs the GVCS wiki) — not duplicates; keep the wiki one if trimming.
+- `qwen-0.8b` orphan (see §6).
+- Specialization packs (cybersec*, computing, sciences, engineering, communications, esp32-dev, homesteading) offered via wizard / web "pack builder" rather than baked into tiers.
 
 ## 7c. Final verification (2026-09-30)
 
 - [x] `make verify` passes (52 packages, catalog in sync).
 - [x] Full link check rerun: every download URL and `{date}` pattern resolves; only `mml-maastokartta` (open, §1) remains broken.
-- [ ] Decide `size_gb` semantics for multi-platform recipes (python packages are per-platform: angr ~0.43 GB, pwntools ~0.15 GB each, recipes say 0.2 / 0.05).
-- [ ] Docker builders write as root on Linux hosts — reinstall after pin change can fail on RemoveAll (pre-existing, all Docker builders).
+- Decide `size_gb` semantics for multi-platform recipes (python packages are per-platform: angr ~0.43 GB, pwntools ~0.15 GB each, recipes say 0.2 / 0.05).
+- Docker builders write as root on Linux hosts — reinstall after pin change can fail on RemoveAll (pre-existing, all Docker builders).
 
 ## 7b. Python builder scripts (`recipes/builders/*.py`)
 
 The Go pipeline now orchestrates every family; remaining Python scripts run in the tools Docker image.
 - [x] `foraging-habitats-fi` removed from `fi-maps`: recipe has no URL and nothing reads its `builder:` field, so every finland-32+ apply ended with "1 item(s) failed".
-- [ ] Port `foraging-habitats-fi-pmtiles.py` to a Go family (raster classify → vector → tippecanoe, like `vector-static`) or wire it as a Docker-script build step; then re-add to fi-maps. Input: LUKE MS-NFI 2023 (watch for a 2025 cycle).
+- Port `foraging-habitats-fi-pmtiles.py` to a Go family (raster classify → vector → tippecanoe, like `vector-static`) or wire it as a Docker-script build step; then re-add to fi-maps. Input: LUKE MS-NFI 2023 (watch for a 2025 cycle).
 - [x] Deleted dead code: `apply.go` `buildItem()` (never called), `wikipedia-compact-zim.py` (superseded by Go `zim-compact`), `media-zim.py` + its Dockerfile COPY (never invoked).
-- [ ] `pinkka-sienet-fi-zim.py` has no recipe — add a Finnish mushroom-course recipe (fits fi-survival) or delete.
+- `pinkka-sienet-fi-zim.py` has no recipe — add a Finnish mushroom-course recipe (fits fi-survival) or delete.
 - Keep `web-video-zim.py` (backs `svalbard zim <url>`; depends on yt-dlp/libzim — Go port has low value).
 
 ## 8. Docs / housekeeping

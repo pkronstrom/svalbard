@@ -1,6 +1,6 @@
 # Runtime and Dodo backlog audit
 
-Date: 2026-09-30. Read-only audit of current implementation; findings below are not fixed.
+Date: 2026-09-30. Read-only audit of current implementation; findings below are not fixed. Open findings (MCP recipes.json, semantic recall, non-ZIM ingestion, ESP32 device check) moved to the task tracker 2026-11-21.
 
 ## Dodo
 

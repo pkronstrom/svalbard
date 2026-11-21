@@ -55,12 +55,12 @@ The real CLI gate exposed that default indexing attempted to scan a nonexistent 
 
 ## Chunk 4 — Actual offline acceptance and final review
 
-Ownership: coordinator docs/state/MASTERPLAN, acceptance scratch scripts; fresh reviewers read all feature deltas.
+Ownership: coordinator docs/state/task tracker, acceptance scratch scripts; fresh reviewers read all feature deltas.
 
 - [ ] Build/provision a disposable native macOS arm64 esp32-dev vault through normal CLI/apply, isolated Docker/uv acquisition as needed; no manual final artifact layout. Verified official cache sources may accelerate downloads, but separately exercise fresh registry mirror fallback. Record actual sizes/version outputs.
 - [ ] Run actual packaged action preparation/build with fresh isolated cache, restricted PATH excluding host Python/PIO, and OS networking denied (`sandbox-exec` deny network on macOS, verify a test socket is blocked). Compile included ESP32/S2/S3 environments, inspect nonempty ELF/bin and run bundled esptool version. Rerun same generation, relocate vault, and cancel/retry preparation; retain working generation and observe no partial ready markers.
 - [ ] Spec compliance review first, then correctness/code quality review; verify findings before fixing. Run fresh `make verify`, affected race suites, `make build-drive-runtime`, `make build` and `git diff --check` once final changes settle.
-- [ ] Record checkpoint with exact evidence, hardware/unexecuted host limitations and remaining items. Mark Phase5 complete only if real offline acceptance succeeds; leave Phase6 untouched. Update `.work/state.yaml` and handoff.
+- [ ] Record checkpoint with exact evidence, hardware/unexecuted host limitations and remaining items. Close the Phase 5 epic in the task tracker only if real offline acceptance succeeds; leave Phase 6 untouched. Update `.work/state.yaml` and handoff.
 
 ## Done condition
 

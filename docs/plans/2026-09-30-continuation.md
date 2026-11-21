@@ -6,7 +6,7 @@ Status: Phase 1 catalog/runtime refresh complete and verified on 2026-09-30. Fin
 
 ## Start here
 
-Read `MASTERPLAN.md`, [refresh results](2026-09-30-catalog-refresh-results.md), the [catalog audit](2026-09-30-catalog-update-audit.md), [Dodo ledger](2026-09-30-dodo-triage.md) and [runtime/backlog audit](2026-09-30-runtime-backlog-audit.md).
+Open work is in the task tracker (Aven project `svalbard`; `aven list --ready`). Background: [refresh results](2026-09-30-catalog-refresh-results.md), the [catalog audit](2026-09-30-catalog-update-audit.md), [Dodo ledger](2026-09-30-dodo-triage.md) and [runtime/backlog audit](2026-09-30-runtime-backlog-audit.md).
 
 The user prioritized full user paths: initial deployment/resume, preset customization, operation of every pack from the stick, installed-recipe updates, and add/remove. Minimal configuration web UI remains queued for design. Phase 1b records remaining catalog curation and operability fixes; do not repeat its completed model/pin work.
 
