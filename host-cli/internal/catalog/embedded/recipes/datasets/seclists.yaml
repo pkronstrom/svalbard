@@ -4,9 +4,11 @@ display_group: tools
 tags:
 - cybersec
 depth: comprehensive
-size_gb: 0.5
+size_gb: 0.71
 description: SecLists — security tester's companion (passwords, fuzzing, discovery)
-url: https://github.com/danielmiessler/SecLists/archive/refs/heads/master.zip
+filename: seclists-2026.2.zip
+url: https://github.com/danielmiessler/SecLists/archive/refs/tags/2026.2.zip
+sha256: 8c225d3a377897021e822d63985a137f7864b71d8aba88cf8698a5aa399a73c8
 license:
   id: MIT
   attribution: Daniel Miessler, Jason Haddix, and SecLists contributors

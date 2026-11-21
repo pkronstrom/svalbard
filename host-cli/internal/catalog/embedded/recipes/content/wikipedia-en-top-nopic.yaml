@@ -5,7 +5,7 @@ tags:
 - general-reference
 - encyclopedia
 depth: standard
-size_gb: 2.1
+size_gb: 2.75
 url_pattern: https://download.kiwix.org/zim/wikipedia/wikipedia_en_top_nopic_{date}.zim
 description: English Wikipedia Top 50k — community-curated most important articles,
   full text without images (Vital Articles Level 5)

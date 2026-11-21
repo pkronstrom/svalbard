@@ -4,7 +4,7 @@ display_group: reference
 tags:
 - computing
 depth: comprehensive
-size_gb: 0.069
+size_gb: 0.092
 url_pattern: https://download.kiwix.org/zim/other/gentoo_en_all_maxi_{date}.zim
 description: Gentoo Wiki — source-based Linux system administration reference
 license:

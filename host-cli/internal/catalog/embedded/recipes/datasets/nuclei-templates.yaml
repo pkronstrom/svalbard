@@ -4,9 +4,12 @@ display_group: tools
 tags:
 - cybersec
 depth: comprehensive
-size_gb: 0.2
+size_gb: 0.02
 description: Nuclei community vulnerability detection templates
-url: https://github.com/projectdiscovery/nuclei-templates/archive/refs/heads/main.zip
+filename: nuclei-templates-10.5.2.zip
+url: https://github.com/projectdiscovery/nuclei-templates/archive/refs/tags/v10.5.2.zip
+# Matches upstream nuclei-templates-10.5.2_checksums.txt.
+sha256: 24551e1ef6a5f99f6a0a3cb98abc4325a1e554367d2a8ce09caaf82d860cd50b
 license:
   id: MIT
   attribution: ProjectDiscovery and nuclei-templates contributors

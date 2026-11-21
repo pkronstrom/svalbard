@@ -4,7 +4,7 @@ display_group: tools
 tags:
 - computing
 depth: reference-only
-size_gb: 0.015
+size_gb: 0.083
 url: https://github.com/gchq/CyberChef/releases/download/v11.5.0/CyberChef_8cd426dd4f40f1423912d5fad91b578a86a65112.zip
 description: CyberChef web-based data analysis tool
 license:
