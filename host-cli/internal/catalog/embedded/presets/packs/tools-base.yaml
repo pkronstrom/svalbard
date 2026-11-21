@@ -14,9 +14,13 @@ sources:
 - cyberchef
 - sqliteviz
 - duckdb-wasm
+- duckdb
 - age
 - 7z
 - fzf
+- ripgrep
+- jq
+- yq
 - toybox
 - dufs
 - uv
