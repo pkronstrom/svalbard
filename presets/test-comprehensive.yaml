@@ -5,8 +5,9 @@ region: finland
 extends:
   - ai/harnesses
 sources:
-# Local AI — chat model + semantic-search embeddings
+# Local AI — chat models + semantic-search embeddings
 - gemma-4-e2b-it
+- qwen-0.8b
 - nomic-embed-text-v1.5
 # Library — diverse tiny ZIMs for browse + FTS + semantic search
 - wikivoyage-fi

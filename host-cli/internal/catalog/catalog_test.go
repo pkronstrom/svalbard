@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -919,5 +920,26 @@ func TestESPIDFPythonPinsSatisfyEsptoolAndBootstrapDependencies(t *testing.T) {
 		if !pins[pin] {
 			t.Errorf("espidf-python must explicitly pin %s for offline esptool/bootstrap", pin)
 		}
+	}
+}
+
+// qwen-0.8b is a smoke-test model: only the test vault preset ships it.
+func TestQwen08bShipsOnlyInTestVault(t *testing.T) {
+	cat, err := NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in []string
+	for _, name := range cat.PresetNames() {
+		p, err := cat.ResolvePreset(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(p.Sources, "qwen-0.8b") {
+			in = append(in, name)
+		}
+	}
+	if !slices.Equal(in, []string{"test-comprehensive"}) {
+		t.Errorf("qwen-0.8b is in %v, want only test-comprehensive", in)
 	}
 }

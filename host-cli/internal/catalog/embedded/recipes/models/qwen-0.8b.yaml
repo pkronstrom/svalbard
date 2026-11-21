@@ -6,8 +6,9 @@ tags:
 - general-reference
 depth: overview
 size_gb: 0.54
-url: https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/main/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf
-description: Qwen3.5 0.8B Instruct (Q4_K_M) — tiny general-purpose local LLM for smoke-test bundles
+url: https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/f36b1ea49a332ede8fe5f389bbf5b3575ef71f48/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf
+sha256: fb044e93939a70469c905781334f5de1e6c8b608ced6cbc8c9249bd4127d9526
+description: Qwen3.5 0.8B Instruct (Q4_K_M) — tiny local LLM for test vaults (test-comprehensive), not for real use
 license:
   id: Apache-2.0
   attribution: Alibaba Cloud / Qwen Team
