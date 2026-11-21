@@ -10,6 +10,11 @@ platforms:
   linux-arm64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.9.2/ligolo-ng_proxy_0.9.2_linux_arm64.tar.gz
   macos-arm64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.9.2/ligolo-ng_proxy_0.9.2_darwin_arm64.tar.gz
   macos-x86_64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.9.2/ligolo-ng_proxy_0.9.2_darwin_amd64.tar.gz
+platform_sha256:
+  linux-x86_64: 6c683c403502d366276595197749e620c975908dae7314c21079ec8ebee4e5d0
+  linux-arm64: 6430178776bb9efc451a62f6c468fa482c2aded84d10f64f637bfabd0fd8e7ac
+  macos-arm64: 00f2a60e6c9ddfaa5c921e86f270ce33a1447ae52d24b35a352143fb529d3e94
+  macos-x86_64: 94f395296b824d2f9e6aa9791f6afab5ae59d0fda62f874f3a22e0cb572ba9d0
 description: ligolo-ng proxy — advanced network pivoting via TUN interfaces
 license:
   id: GPL-3.0-only

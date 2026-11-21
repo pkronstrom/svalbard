@@ -10,6 +10,11 @@ platforms:
   linux-arm64: https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-arm64.tar.gz
   macos-arm64: https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-darwin-arm64.tar.gz
   macos-x86_64: https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-darwin-amd64.tar.gz
+platform_sha256:
+  linux-x86_64: cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10
+  linux-arm64: 6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4
+  macos-arm64: e2020b073c44f692685a24d6abc378817eb81ffaaf49fd0531ef8565f767f2f5
+  macos-x86_64: 1d1e4bc66e1427edad7739ae7616157de0e79db8b6d2a1497d7d9925fb06a539
 description: age — simple, modern file encryption tool (keygen + encrypt/decrypt)
 license:
   id: BSD-3-Clause

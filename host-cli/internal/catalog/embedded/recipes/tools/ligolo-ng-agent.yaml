@@ -10,6 +10,11 @@ platforms:
   linux-arm64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.9.2/ligolo-ng_agent_0.9.2_linux_arm64.tar.gz
   macos-arm64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.9.2/ligolo-ng_agent_0.9.2_darwin_arm64.tar.gz
   macos-x86_64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.9.2/ligolo-ng_agent_0.9.2_darwin_amd64.tar.gz
+platform_sha256:
+  linux-x86_64: 714534917a4a58812669619667cc57dfad03d34d0de5b0d7c468d76819f84111
+  linux-arm64: 94c5d3b1eca9f352a770599c0e4487299d832e6de2dad891dbd2041d56a0fd7d
+  macos-arm64: 9a1c156ba21207d3847b607443e012537d9ec9ea2d353c33a6ade646a323ad10
+  macos-x86_64: 74ac8677b2a4e93bea19d22239d609f542f0892c502e4613921fdd179b94524c
 description: ligolo-ng agent — deploy on target for network pivoting
 license:
   id: GPL-3.0-only

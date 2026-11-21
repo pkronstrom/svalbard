@@ -6,10 +6,15 @@ tags:
 depth: reference-only
 size_gb: 0.005
 platforms:
-  linux-x86_64: https://github.com/peass-ng/PEASS-ng/releases/download/20261021-2fe956c4/linpeas_linux_amd64
-  linux-arm64: https://github.com/peass-ng/PEASS-ng/releases/download/20261021-2fe956c4/linpeas_linux_arm64
-  macos-arm64: https://github.com/peass-ng/PEASS-ng/releases/download/20261021-2fe956c4/linpeas_darwin_arm64
-  macos-x86_64: https://github.com/peass-ng/PEASS-ng/releases/download/20261021-2fe956c4/linpeas_darwin_amd64
+  linux-x86_64: https://github.com/peass-ng/PEASS-ng/releases/download/20261117-8bfcfa5c/linpeas_linux_amd64
+  linux-arm64: https://github.com/peass-ng/PEASS-ng/releases/download/20261117-8bfcfa5c/linpeas_linux_arm64
+  macos-arm64: https://github.com/peass-ng/PEASS-ng/releases/download/20261117-8bfcfa5c/linpeas_darwin_arm64
+  macos-x86_64: https://github.com/peass-ng/PEASS-ng/releases/download/20261117-8bfcfa5c/linpeas_darwin_amd64
+platform_sha256:
+  linux-x86_64: 9d52345f2a863b0d153f56410e8107f95fdece465d115f1079790dbf477b0d91
+  linux-arm64: fe4f1f37f71baf2dcf032d740170833ba108f43fbb9cb5f8c441d365ea6b8d23
+  macos-arm64: c0f44c653ce35f7344969892910afcc7d77f4827c11133a465f4b2ea6d00ca42
+  macos-x86_64: 6ed380d3b66dc66742e78529bed382d27df63614b45e44f5d0fc290f4acbb0ff
 description: Linux privilege escalation enumeration script (compiled binary)
 license:
   id: GPL-3.0-only
