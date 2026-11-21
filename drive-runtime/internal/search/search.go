@@ -13,7 +13,6 @@ import (
 
 	drivebinary "github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
 )
 
 type Mode string
@@ -30,11 +29,14 @@ type Capabilities struct {
 	EmbeddingModel   string // file path from models/embed/
 	EmbeddingModelID string // model ID from search.db meta
 	QueryPrefix      string // prefix for query embedding (from recipe sidecar via meta)
+	SemanticComplete bool   // only completed compatibility contracts may be queried
 }
 
 // Result is an alias for engine.Result so external consumers (menu, mcp) share
 // a single result type across the codebase.
 type Result = engine.Result
+
+var resolveRuntimeBinary = drivebinary.Resolve
 
 // BuildFTSQuery delegates to the engine package.
 func BuildFTSQuery(query string) string {
@@ -42,7 +44,7 @@ func BuildFTSQuery(query string) string {
 }
 
 func BestMode(c Capabilities) Mode {
-	if c.HasEmbeddings && c.HasEmbeddingData && c.HasLlamaServer && c.EmbeddingModel != "" {
+	if c.SemanticComplete && c.HasEmbeddings && c.HasEmbeddingData && c.HasLlamaServer && c.EmbeddingModel != "" {
 		return ModeHybrid
 	}
 	return ModeKeyword
@@ -63,7 +65,7 @@ func RenderResults(w io.Writer, results []Result) {
 }
 
 func Run(ctx context.Context, stdin io.Reader, stdout io.Writer, driveRoot, initialQuery string, opener func(string) error) error {
-	session, err := NewSession(driveRoot, opener)
+	session, err := newSession(ctx, driveRoot, opener)
 	if err != nil {
 		return err
 	}
@@ -75,7 +77,6 @@ func Run(ctx context.Context, stdin io.Reader, stdout io.Writer, driveRoot, init
 func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQuery string, session *Session) error {
 	info := session.Info()
 	mode := info.BestMode
-	bestMode := mode
 
 	fmt.Fprintln(stdout)
 	fmt.Fprintf(stdout, "Cross-ZIM Search (%d sources, %d articles, %s)\n", info.SourceCount, info.ArticleCount, mode)
@@ -102,7 +103,10 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 			query = ""
 			continue
 		case "/sem", "/semantic", "/hybrid", "/full":
-			mode = bestMode
+			// A long-lived session may have opened while semantic indexing was
+			// incomplete.  Ask Search to refresh its completed contract instead
+			// of pinning this command to the startup capability snapshot.
+			mode = ModeHybrid
 			fmt.Fprintf(stdout, "  Switched to %s search\n", mode)
 			query = ""
 			continue
@@ -153,7 +157,13 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 	}
 }
 
-func detectCapabilities(driveRoot string, db *sql.DB) (Capabilities, int, int, error) {
+func detectCapabilities(ctx context.Context, driveRoot string, db *sql.DB) (Capabilities, int, int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return Capabilities{}, 0, 0, err
+	}
 	var caps Capabilities
 	var sourceCount, articleCount int
 
@@ -174,16 +184,27 @@ func detectCapabilities(driveRoot string, db *sql.DB) (Capabilities, int, int, e
 	if modelID.Valid {
 		caps.EmbeddingModelID = modelID.String
 	}
+	contract, complete := LoadCompleteContract(db)
+	caps.SemanticComplete = complete
 
-	var queryPrefix sql.NullString
-	_ = db.QueryRow("SELECT value FROM meta WHERE key='embedding_query_prefix'").Scan(&queryPrefix)
-	if queryPrefix.Valid {
-		caps.QueryPrefix = queryPrefix.String
+	if complete {
+		caps.QueryPrefix = contract.QueryPrefix
 	}
 
-	if _, err := drivebinary.Resolve("llama-server", driveRoot); err == nil {
+	if complete {
+		if model, err := resolveRecordedModel(ctx, driveRoot, contract); err == nil {
+			caps.EmbeddingModel = model
+		} else if ctx.Err() != nil {
+			return Capabilities{}, 0, 0, ctx.Err()
+		} else {
+			caps.SemanticComplete = false
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return Capabilities{}, 0, 0, err
+	}
+	if _, err := resolveRuntimeBinary("llama-server", driveRoot); err == nil {
 		caps.HasLlamaServer = true
 	}
-	caps.EmbeddingModel = server.FindEmbeddingModel(driveRoot)
 	return caps, articleCount, sourceCount, nil
 }

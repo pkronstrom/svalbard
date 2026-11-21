@@ -1,16 +1,13 @@
 package engine
 
 import (
+	"context"
 	"database/sql"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"sort"
 	"strings"
-	"time"
 )
 
 // Result represents a search hit.
@@ -22,22 +19,36 @@ type Result struct {
 	Snippet     string
 	ChunkHeader string
 	Score       float64
+	Body        string
 }
 
 // Engine provides keyword and hybrid search over a search.db.
 type Engine struct {
-	db *sql.DB
+	db Queryer
+}
+
+// Queryer is satisfied by both *sql.DB and *sql.Tx, keeping one read snapshot
+// across all hybrid SQL reads.
+type Queryer interface {
+	Query(string, ...any) (*sql.Rows, error)
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRow(string, ...any) *sql.Row
 }
 
 // New creates a search engine backed by the given database connection.
-func New(db *sql.DB) *Engine {
+func New(db Queryer) *Engine {
 	return &Engine{db: db}
 }
 
 // Keyword runs an FTS5 keyword search.
 func (e *Engine) Keyword(query string, limit int) ([]Result, error) {
+	return e.KeywordContext(context.Background(), query, limit)
+}
+
+// KeywordContext runs FTS5 search with caller cancellation propagated to SQLite.
+func (e *Engine) KeywordContext(ctx context.Context, query string, limit int) ([]Result, error) {
 	ftsQuery := BuildFTSQuery(query)
-	rows, err := e.db.Query(
+	rows, err := e.db.QueryContext(ctx,
 		`SELECT a.id, src.filename, a.path, a.title,
                 snippet(articles_fts, 1, '»', '«', '...', 12)
          FROM articles_fts
@@ -65,14 +76,21 @@ func (e *Engine) Keyword(query string, limit int) ([]Result, error) {
 		}
 		results = append(results, r)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, ctx.Err()
 }
 
 // Hybrid runs FTS5 keyword search, then vector search pre-filtered to FTS
 // candidates, merges with RRF, and applies MMR diversity.
 func (e *Engine) Hybrid(query string, queryVec []float32, limit int) ([]Result, error) {
+	return e.HybridContext(context.Background(), query, queryVec, limit)
+}
+
+func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []float32, limit int) ([]Result, error) {
 	// Step 1: Run FTS5 first to get candidate article IDs for vector pre-filter.
-	ftsResults, ftsErr := e.Keyword(query, 200)
+	ftsResults, ftsErr := e.KeywordContext(ctx, query, 200)
 
 	// Step 2: Run vector search filtered to FTS candidate articles.
 	// This avoids loading ALL embeddings into memory.
@@ -84,11 +102,15 @@ func (e *Engine) Hybrid(query string, queryVec []float32, limit int) ([]Result, 
 	}
 
 	var vecChunks []scoredChunk
+	var vecErr error
 	if len(candidateIDs) > 0 {
-		vecChunks, _ = e.vectorSearchFiltered(queryVec, candidateIDs, 100)
+		vecChunks, vecErr = e.vectorSearchFiltered(queryVec, candidateIDs, 100)
 	} else {
 		// No FTS hits — fall back to full scan (small corpus or unusual query)
-		vecChunks, _ = e.vectorSearch(queryVec, 100)
+		vecChunks, vecErr = e.vectorSearch(queryVec, 100)
+	}
+	if vecErr != nil {
+		return nil, vecErr
 	}
 
 	// Trim FTS results to top 100 for RRF (we fetched 200 for wider pre-filter)
@@ -166,6 +188,9 @@ func (e *Engine) vectorSearch(queryVec []float32, limit int) ([]scoredChunk, err
 }
 
 func (e *Engine) scanAndScoreVectors(rows *sql.Rows, queryVec []float32, limit int) ([]scoredChunk, error) {
+	if err := validVector(queryVec); err != nil {
+		return nil, fmt.Errorf("engine: query vector: %w", err)
+	}
 	var results []scoredChunk
 	for rows.Next() {
 		var articleID int
@@ -175,6 +200,12 @@ func (e *Engine) scanAndScoreVectors(rows *sql.Rows, queryVec []float32, limit i
 			continue
 		}
 		vec := blobToFloat32(vecBlob)
+		if err := validVector(vec); err != nil {
+			return nil, fmt.Errorf("engine: stored vector for article %d: %w", articleID, err)
+		}
+		if len(vec) != len(queryVec) {
+			return nil, fmt.Errorf("engine: vector dimensions differ: query %d, stored %d", len(queryVec), len(vec))
+		}
 		score := DotProduct(queryVec, vec)
 		results = append(results, scoredChunk{
 			articleID: articleID,
@@ -191,6 +222,18 @@ func (e *Engine) scanAndScoreVectors(rows *sql.Rows, queryVec []float32, limit i
 		results = results[:limit]
 	}
 	return results, rows.Err()
+}
+
+func validVector(v []float32) error {
+	if len(v) == 0 {
+		return fmt.Errorf("empty vector")
+	}
+	for _, value := range v {
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return fmt.Errorf("non-finite value")
+		}
+	}
+	return nil
 }
 
 type scoredChunk struct {
@@ -353,45 +396,6 @@ func (e *Engine) fetchDetails(entries []rrfEntry) ([]Result, error) {
 		results = append(results, r)
 	}
 	return results, rows.Err()
-}
-
-// EmbedQuery sends a query to the llama-server embedding endpoint and returns
-// the resulting float32 vector. Includes a 30-second timeout and status check.
-func EmbedQuery(query string, port int) ([]float32, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/embedding", port)
-	payload, _ := json.Marshal(map[string][]string{"content": {query}})
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Post(url, "application/json", strings.NewReader(string(payload)))
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("embed query: server returned %d: %s", resp.StatusCode, body)
-	}
-
-	var data []struct {
-		Embedding json.RawMessage `json:"embedding"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, fmt.Errorf("embed query: decode response: %w", err)
-	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("embed query: empty response")
-	}
-
-	var nested [][]float32
-	if err := json.Unmarshal(data[0].Embedding, &nested); err == nil && len(nested) > 0 {
-		return nested[0], nil
-	}
-	var vec []float32
-	if err := json.Unmarshal(data[0].Embedding, &vec); err != nil {
-		return nil, fmt.Errorf("embed query: unmarshal: %w", err)
-	}
-	return vec, nil
 }
 
 // BuildFTSQuery converts a user query to an FTS5 MATCH expression.

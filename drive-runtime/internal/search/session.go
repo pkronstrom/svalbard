@@ -41,14 +41,25 @@ type Session struct {
 	info      SessionInfo
 	opener    func(string) error
 
-	mu          sync.Mutex
-	embedServer *exec.Cmd
-	embedPort   int
-	kiwixServer *exec.Cmd
-	kiwixPort   int
+	mu           sync.Mutex
+	embedBackend *SemanticBackend
+	kiwixServer  *exec.Cmd
+	kiwixPort    int
 }
 
 func NewSession(driveRoot string, opener func(string) error) (*Session, error) {
+	return newSession(context.Background(), driveRoot, opener)
+}
+
+// newSession keeps the public constructor compatible while allowing Run to
+// stop capability detection before model hashing or binary startup begins.
+func newSession(ctx context.Context, driveRoot string, opener func(string) error) (*Session, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if opener == nil {
 		opener = browser.Open
 	}
@@ -63,7 +74,7 @@ func NewSession(driveRoot string, opener func(string) error) (*Session, error) {
 		return nil, fmt.Errorf("opening search.db: %w", err)
 	}
 
-	caps, articleCount, sourceCount, err := detectCapabilities(driveRoot, db)
+	caps, articleCount, sourceCount, err := detectCapabilities(ctx, driveRoot, db)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -87,9 +98,9 @@ func NewSession(driveRoot string, opener func(string) error) (*Session, error) {
 			HybridEnabled:    bestMode == ModeHybrid,
 			EmbeddingModelID: caps.EmbeddingModelID,
 		},
-		opener:    opener,
-		embedPort: 8085,
-		kiwixPort: 8080,
+		opener:       opener,
+		embedBackend: NewSemanticBackend(driveRoot),
+		kiwixPort:    8080,
 	}, nil
 }
 
@@ -104,6 +115,9 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := ctx.Err(); err != nil {
+		return SearchResponse{}, err
+	}
 
 	effectiveMode := mode
 	status := ""
@@ -111,13 +125,19 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 	var err error
 
 	if effectiveMode == ModeHybrid {
-		if embedErr := s.ensureEmbedServer(ctx); embedErr != nil {
+		contract, complete := LoadCompleteContract(s.db)
+		if !complete {
+			effectiveMode = ModeKeyword
+			status = "Hybrid unavailable, fell back to keyword"
+		} else if queryVec, embedErr := s.embedBackend.Embed(ctx, contract, query); embedErr != nil {
 			effectiveMode = ModeKeyword
 			status = "Hybrid unavailable, fell back to keyword"
 		} else {
-			queryVec, embedErr := engine.EmbedQuery(s.caps.QueryPrefix+query, s.embedPort)
-			if embedErr == nil {
-				results, err = s.eng.Hybrid(query, queryVec, limit)
+			var usable bool
+			results, usable, embedErr = HybridSnapshot(ctx, s.db, contract, query, queryVec, limit)
+			if !usable {
+				effectiveMode = ModeKeyword
+				status = "Hybrid unavailable, fell back to keyword"
 			}
 			if embedErr != nil || err != nil || len(results) == 0 {
 				effectiveMode = ModeKeyword
@@ -127,10 +147,16 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 			}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return SearchResponse{}, err
+	}
 
 	if effectiveMode == ModeKeyword {
-		results, err = s.eng.Keyword(query, limit)
+		results, err = s.eng.KeywordContext(ctx, query, limit)
 		if err != nil {
+			return SearchResponse{}, err
+		}
+		if err := ctx.Err(); err != nil {
 			return SearchResponse{}, err
 		}
 	}
@@ -159,10 +185,8 @@ func (s *Session) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.embedServer != nil && s.embedServer.Process != nil {
-		_ = s.embedServer.Process.Kill()
-		_ = s.embedServer.Wait()
-		s.embedServer = nil
+	if s.embedBackend != nil {
+		_ = s.embedBackend.Close()
 	}
 	if s.kiwixServer != nil && s.kiwixServer.Process != nil {
 		_ = s.kiwixServer.Process.Kill()
@@ -187,33 +211,6 @@ func (s *Session) KiwixPort() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.kiwixPort
-}
-
-func (s *Session) ensureEmbedServer(ctx context.Context) error {
-	if s.embedServer != nil && s.embedServer.Process != nil {
-		if s.embedServer.ProcessState == nil || !s.embedServer.ProcessState.Exited() {
-			return nil
-		}
-		s.embedServer = nil
-	}
-	if !s.caps.HasLlamaServer || s.caps.EmbeddingModel == "" {
-		return fmt.Errorf("hybrid backend unavailable")
-	}
-	port, err := netutil.FindAvailablePort("127.0.0.1", 8085)
-	if err != nil {
-		return err
-	}
-	llamaBin, err := drivebinary.Resolve("llama-server", s.driveRoot)
-	if err != nil {
-		return err
-	}
-	cmd, err := server.StartEmbedding(ctx, llamaBin, s.caps.EmbeddingModel, port)
-	if err != nil {
-		return err
-	}
-	s.embedPort = port
-	s.embedServer = cmd
-	return nil
 }
 
 func (s *Session) ensureKiwix(ctx context.Context) error {

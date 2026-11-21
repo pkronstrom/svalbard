@@ -216,9 +216,9 @@ func TestApplyMMR(t *testing.T) {
 	// Article 1 and 2 have very similar vectors, 3 and 4 are different
 	vectors := map[int][]float32{
 		1: {1.0, 0.0, 0.0},
-		2: {0.99, 0.1, 0.0},  // very similar to 1
-		3: {0.0, 1.0, 0.0},   // orthogonal to 1
-		4: {0.0, 0.0, 1.0},   // orthogonal to both
+		2: {0.99, 0.1, 0.0}, // very similar to 1
+		3: {0.0, 1.0, 0.0},  // orthogonal to 1
+		4: {0.0, 0.0, 1.0},  // orthogonal to both
 	}
 
 	result := applyMMR(candidates, vectors, 0.7, 3)
@@ -356,6 +356,25 @@ func TestBlobToFloat32(t *testing.T) {
 	}
 }
 
+func TestHybridRejectsMalformedOrMismatchedStoredVectors(t *testing.T) {
+	db := setupTestDB(t)
+	source := insertSource(t, db, "wiki.zim")
+	article := insertArticle(t, db, source, "/water", "Water", "water")
+	if _, err := db.Exec("INSERT INTO embeddings (article_id, chunk_header, vector) VALUES (?, '', ?)", article, []byte{1, 2, 3}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(db).Hybrid("water", []float32{1, 0}, 10); err == nil {
+		t.Fatal("malformed stored blob was accepted")
+	}
+	if _, err := db.Exec("DELETE FROM embeddings"); err != nil {
+		t.Fatal(err)
+	}
+	insertEmbedding(t, db, article, "", []float32{1, 0, 0})
+	if _, err := New(db).Hybrid("water", []float32{1, 0}, 10); err == nil {
+		t.Fatal("mismatched dimensions were accepted")
+	}
+}
+
 func TestReadArticle(t *testing.T) {
 	db := setupTestDB(t)
 	srcID := insertSource(t, db, "survival.zim")
@@ -447,5 +466,11 @@ func TestHybridSearch(t *testing.T) {
 	// Water should be the top result since both FTS and vector agree
 	if results[0].Title != "Water purification" {
 		t.Errorf("expected 'Water purification' as top result, got %q", results[0].Title)
+	}
+	if results[0].Snippet == "" {
+		t.Fatal("hybrid metadata result lost its body snippet")
+	}
+	if results[0].Body != "" {
+		t.Fatalf("hybrid metadata result body = %q, want uncaptured body", results[0].Body)
 	}
 }

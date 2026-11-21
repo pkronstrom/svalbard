@@ -80,7 +80,11 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 			if jErr != nil {
 				return nil, fmt.Errorf("marshalling result data: %w", jErr)
 			}
-			return gomcp.NewToolResultText(string(data)), nil
+			toolResult := gomcp.NewToolResultText(string(data))
+			if result.Text != "" {
+				toolResult.Content = append(toolResult.Content, gomcp.TextContent{Type: gomcp.ContentTypeText, Text: result.Text})
+			}
+			return toolResult, nil
 		}
 		return gomcp.NewToolResultText(result.Text), nil
 	}

@@ -21,9 +21,17 @@ func TestBestModeReturnsHybridWhenCapabilitiesAreAvailable(t *testing.T) {
 		HasEmbeddingData: true,
 		HasLlamaServer:   true,
 		EmbeddingModel:   "/tmp/model.gguf",
+		SemanticComplete: true,
 	})
 	if want := search.ModeHybrid; got != want {
 		t.Fatalf("BestMode() = %q, want %q", got, want)
+	}
+}
+
+func TestBestModeFallsBackForBuildingSemanticContract(t *testing.T) {
+	got := search.BestMode(search.Capabilities{HasEmbeddings: true, HasEmbeddingData: true, HasLlamaServer: true, EmbeddingModel: "/tmp/model.gguf"})
+	if got != search.ModeKeyword {
+		t.Fatalf("BestMode() = %q, want keyword", got)
 	}
 }
 

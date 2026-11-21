@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -139,9 +141,15 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 }
 
 func runResolvedAction(resolved actions.ResolvedAction) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runResolvedActionContext(ctx, resolved)
+}
+
+func runResolvedActionContext(ctx context.Context, resolved actions.ResolvedAction) error {
+	err := runActionProcess(ctx, resolved.Cmd)
 	switch resolved.Mode {
 	case actions.ModeCaptureOutput:
-		err := resolved.Cmd.Run()
 		if resolved.Cmd.Stdout != nil {
 			if buf, ok := resolved.Cmd.Stdout.(interface{ String() string }); ok {
 				fmt.Fprint(os.Stdout, buf.String())
@@ -154,9 +162,37 @@ func runResolvedAction(resolved actions.ResolvedAction) error {
 		}
 		return err
 	case actions.ModeExecProcess:
-		return resolved.Cmd.Run()
+		return err
 	default:
 		return fmt.Errorf("unknown action mode: %d", resolved.Mode)
+	}
+}
+
+func runActionProcess(ctx context.Context, cmd *exec.Cmd) error {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		reaped := false
+		select {
+		case <-done:
+			reaped = true
+		case <-time.After(2 * time.Second):
+		}
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+			return err
+		}
+		if !reaped {
+			<-done
+		}
+		return ctx.Err()
 	}
 }
 
@@ -174,7 +210,6 @@ func runMCPServe(driveRoot string) error {
 		return err
 	}
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintf(os.Stdout, "MCP server (SSE) listening on http://%s/sse\n", addr)
 	fmt.Fprintln(os.Stdout, "────────────────────────────────")
@@ -183,7 +218,6 @@ func runMCPServe(driveRoot string) error {
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, "Press Ctrl+C to stop.")
 	fmt.Fprintln(os.Stdout)
-
 	return srv.ServeSSE(addr)
 }
 

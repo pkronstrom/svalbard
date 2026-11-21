@@ -1,15 +1,83 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
+
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/actions"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 )
+
+func TestRunResolvedActionContextReapsChildProcessGroup(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "child.pid")
+	script := filepath.Join(dir, "runner")
+	body := "#!/bin/sh\n(trap '' TERM HUP; while :; do sleep 1; done) &\necho $! > " + shellQuote(pidFile) + "\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	finished := false
+	t.Cleanup(func() {
+		cancel()
+		if !finished {
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Error("cancellation fixture did not reap its process group")
+			}
+		}
+	})
+	go func() {
+		done <- runResolvedActionContext(ctx, actions.ResolvedAction{Mode: actions.ModeExecProcess, Cmd: exec.Command(script)})
+	}()
+
+	var data []byte
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var err error
+		data, err = os.ReadFile(pidFile)
+		if err == nil && strings.TrimSpace(string(data)) != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		t.Fatal("action child did not report its PID before deadline")
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		finished = true
+		if err != context.Canceled {
+			t.Fatalf("runResolvedActionContext() error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("action runner did not reap child process group")
+	}
+	deadline = time.Now().Add(time.Second)
+	for syscall.Kill(pid, 0) == nil && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
+		t.Fatalf("surviving child %d remains: %v", pid, err)
+	}
+}
 
 func TestNativeSearchSubcommand(t *testing.T) {
 	root := newNativeSearchDrive(t)
@@ -104,4 +172,8 @@ func newNativeSearchDrive(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

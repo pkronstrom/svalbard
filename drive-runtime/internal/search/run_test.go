@@ -61,7 +61,7 @@ func TestRunUsesInitialQueryAndPreservesTerminalCommands(t *testing.T) {
 		{
 			name:  "semantic mode command",
 			input: "/sem\nwater\nq\n",
-			want:  []string{"Switched to keyword search", "Searching (keyword): water"},
+			want:  []string{"Switched to hybrid search", "Searching (hybrid): water", "Hybrid unavailable, fell back to keyword"},
 		},
 	}
 
@@ -170,6 +170,44 @@ func TestSessionFallsBackToKeywordWhenHybridUnavailable(t *testing.T) {
 	}
 	if len(response.Results) != 1 || response.Results[0].Title != "Water purification" {
 		t.Errorf("Results = %+v, want water result", response.Results)
+	}
+}
+
+func TestSessionSearchReturnsCancelledContextWithoutKeywordResult(t *testing.T) {
+	root := newSearchDrive(t)
+	session, err := NewSession(root, nil)
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	response, err := session.Search(ctx, ModeKeyword, "water", 20)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Search() error = %v, want context.Canceled", err)
+	}
+	if len(response.Results) != 0 {
+		t.Fatalf("Search() returned keyword results after cancellation: %+v", response.Results)
+	}
+}
+
+func TestRunReturnsCancelledContextBeforeCapabilityStartup(t *testing.T) {
+	root := newSearchDrive(t)
+	oldResolve := resolveRuntimeBinary
+	called := false
+	resolveRuntimeBinary = func(string, string) (string, error) {
+		called = true
+		return "", nil
+	}
+	t.Cleanup(func() { resolveRuntimeBinary = oldResolve })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := Run(ctx, strings.NewReader("water\n"), io.Discard, root, "", nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled", err)
+	}
+	if called {
+		t.Fatal("Run() resolved llama-server after caller cancellation")
 	}
 }
 

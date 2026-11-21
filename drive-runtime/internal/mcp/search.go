@@ -30,11 +30,7 @@ type SearchCapability struct {
 	dbErr  error
 	eng    *engine.Engine
 
-	embedOnce sync.Once
-	embedCmd  *exec.Cmd
-	embedPort int
-	embedErr  error
-	queryPfx  string
+	embedBackend *search.SemanticBackend
 
 	kiwixOnce sync.Once
 	kiwixCmd  *exec.Cmd
@@ -44,7 +40,7 @@ type SearchCapability struct {
 
 // NewSearchCapability creates a search capability for the given drive.
 func NewSearchCapability(driveRoot string, meta DriveMetadata) *SearchCapability {
-	return &SearchCapability{driveRoot: driveRoot, meta: meta}
+	return &SearchCapability{driveRoot: driveRoot, meta: meta, embedBackend: search.NewSemanticBackend(driveRoot)}
 }
 
 func (c *SearchCapability) Tool() string { return "search" }
@@ -73,6 +69,11 @@ func (c *SearchCapability) Actions() []ActionDef {
 }
 
 func (c *SearchCapability) Handle(ctx context.Context, action string, params map[string]any) (ActionResult, error) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return ActionResult{}, err
+		}
+	}
 	switch action {
 	case "search":
 		return c.handleSearch(ctx, params)
@@ -87,9 +88,8 @@ func (c *SearchCapability) Close() error {
 	if c.db != nil {
 		c.db.Close()
 	}
-	if c.embedCmd != nil && c.embedCmd.Process != nil {
-		_ = c.embedCmd.Process.Kill()
-		_ = c.embedCmd.Wait()
+	if c.embedBackend != nil {
+		_ = c.embedBackend.Close()
 	}
 	if c.kiwixCmd != nil && c.kiwixCmd.Process != nil {
 		_ = c.kiwixCmd.Process.Kill()
@@ -119,7 +119,7 @@ func (c *SearchCapability) getDB() (*sql.DB, *engine.Engine, error) {
 	return c.db, c.eng, c.dbErr
 }
 
-func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any) (ActionResult, error) {
+func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]any) (ActionResult, error) {
 	query, _ := params["query"].(string)
 	if query == "" {
 		return ActionResult{}, fmt.Errorf("missing required parameter: query")
@@ -147,7 +147,7 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 		limit = 5
 	}
 
-	_, eng, err := c.getDB()
+	db, eng, err := c.getDB()
 	if err != nil {
 		return ActionResult{}, err
 	}
@@ -159,20 +159,47 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 		fetchLimit = 200
 	}
 
-	// Try hybrid search if embedding server is available.
+	// Building, legacy, and malformed semantic contracts remain keyword-only.
+	contract, semanticComplete := search.LoadCompleteContract(db)
+	// Try hybrid search if a completed semantic contract is available.
 	var results []engine.Result
-	if c.ensureEmbedServer() == nil {
-		queryVec, embedErr := engine.EmbedQuery(c.queryPfx+query, c.embedPort)
+	hybridUsed := false
+	advisory := ""
+	if !semanticComplete {
+		advisory = "Hybrid unavailable, fell back to keyword"
+	}
+	if semanticComplete {
+		queryVec, embedErr := c.embedBackend.Embed(ctx, contract, query)
 		if embedErr == nil {
-			results, _ = eng.Hybrid(query, queryVec, fetchLimit)
+			var usable bool
+			if detail == "full" {
+				results, usable, embedErr = search.HybridSnapshotFull(ctx, db, contract, query, queryVec, limit, sourceFilter)
+			} else {
+				results, usable, embedErr = search.HybridSnapshot(ctx, db, contract, query, queryVec, fetchLimit)
+			}
+			if !usable {
+				results = nil
+			} else {
+				hybridUsed = true
+			}
 		}
+		if embedErr != nil || results == nil {
+			advisory = "Hybrid unavailable, fell back to keyword"
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return ActionResult{}, err
 	}
 
 	// Fallback to keyword search.
 	if results == nil {
-		results, err = eng.Keyword(query, fetchLimit)
+		hybridUsed = false
+		results, err = eng.KeywordContext(ctx, query, fetchLimit)
 		if err != nil {
 			return ActionResult{}, fmt.Errorf("search failed: %w", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return ActionResult{}, err
 		}
 	}
 
@@ -207,7 +234,7 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 		case "snippet":
 			item.Snippet = r.Snippet
 			// If FTS snippet is empty, try article body from DB
-			if item.Snippet == "" {
+			if !hybridUsed && item.Snippet == "" {
 				if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
 					if len(body) > 200 {
 						body = body[:200] + "..."
@@ -217,7 +244,12 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 			}
 		case "full":
 			// Try reading from search.db first (fast, no kiwix needed)
-			if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
+			if hybridUsed {
+				// HybridSnapshot captured this body in its verified read snapshot.
+				item.Body = r.Body
+			} else if r.Body != "" {
+				item.Body = r.Body
+			} else if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
 				item.Body = body
 			} else {
 				// Fallback to kiwix for full HTML content
@@ -233,7 +265,7 @@ func (c *SearchCapability) handleSearch(_ context.Context, params map[string]any
 		items = append(items, item)
 	}
 
-	return ActionResult{Data: items}, nil
+	return ActionResult{Data: items, Text: advisory}, nil
 }
 
 func (c *SearchCapability) handleRead(_ context.Context, params map[string]any) (ActionResult, error) {
@@ -279,43 +311,6 @@ func getString(params map[string]any, key string) string {
 
 func normalizeSourceName(source string) string {
 	return strings.TrimSuffix(source, ".zim")
-}
-
-// ensureEmbedServer starts llama-server for query embedding lazily on first
-// hybrid search request. Uses the same sync.Once pattern as ensureKiwix.
-func (c *SearchCapability) ensureEmbedServer() error {
-	c.embedOnce.Do(func() {
-		llamaBin, err := binary.Resolve("llama-server", c.driveRoot)
-		if err != nil {
-			c.embedErr = fmt.Errorf("llama-server not found: %w", err)
-			return
-		}
-
-		modelPath := searchserver.FindEmbeddingModel(c.driveRoot)
-		if modelPath == "" {
-			c.embedErr = fmt.Errorf("no embedding model found")
-			return
-		}
-
-		// Read query prefix from DB meta.
-		if db, _, err := c.getDB(); err == nil {
-			_ = db.QueryRow("SELECT COALESCE((SELECT value FROM meta WHERE key='embedding_query_prefix'), '')").Scan(&c.queryPfx)
-		}
-
-		port, err := netutil.FindAvailablePort("127.0.0.1", 8085)
-		if err != nil {
-			c.embedErr = err
-			return
-		}
-		cmd, err := searchserver.StartEmbedding(context.Background(), llamaBin, modelPath, port)
-		if err != nil {
-			c.embedErr = err
-			return
-		}
-		c.embedCmd = cmd
-		c.embedPort = port
-	})
-	return c.embedErr
 }
 
 // ensureKiwix starts kiwix-serve lazily.

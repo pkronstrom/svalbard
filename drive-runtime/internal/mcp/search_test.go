@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -87,6 +88,19 @@ func TestSearchCapabilityKeywordRequiresQuery(t *testing.T) {
 	_, err := cap.Handle(context.Background(), "search", map[string]any{})
 	if err == nil {
 		t.Fatal("expected error when query is missing")
+	}
+}
+
+func TestSearchCapabilityHandleReturnsCancelledContextWithoutKeywordResult(t *testing.T) {
+	cap := mcp.NewSearchCapability(t.TempDir(), mcp.DriveMetadata{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err := cap.Handle(ctx, "search", map[string]any{"query": "water"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Handle() error = %v, want context.Canceled", err)
+	}
+	if result.Data != nil || result.Text != "" {
+		t.Fatalf("Handle() returned keyword success after cancellation: %+v", result)
 	}
 }
 

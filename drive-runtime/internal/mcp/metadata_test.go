@@ -129,3 +129,47 @@ func TestLoadMetadataInvalidRecipesJSON(t *testing.T) {
 		t.Fatal("expected error for invalid JSON")
 	}
 }
+
+// TestLoadMetadataReadsHostGeneratedRecipes uses the exact shape that
+// host-cli's toolkit.writeRecipesMetadata produces during apply.
+func TestLoadMetadataReadsHostGeneratedRecipes(t *testing.T) {
+	dir := t.TempDir()
+	svalbardDir := filepath.Join(dir, ".svalbard")
+	if err := os.MkdirAll(svalbardDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	generated := `{
+  "ifixit": {
+    "id": "ifixit",
+    "type": "zim",
+    "description": "Repair guides",
+    "tags": [
+      "repair"
+    ]
+  },
+  "osm-finland": {
+    "id": "osm-finland",
+    "type": "pmtiles",
+    "description": "Finland basemap",
+    "tags": [],
+    "viewer": {
+      "category": "basemap",
+      "name": "OSM Finland"
+    }
+  }
+}
+`
+	if err := os.WriteFile(filepath.Join(svalbardDir, "recipes.json"), []byte(generated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dm, err := mcp.LoadMetadata(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := dm.Recipes["ifixit"]; r.Description != "Repair guides" || len(r.Tags) != 1 || r.Tags[0] != "repair" {
+		t.Errorf("ifixit = %+v", r)
+	}
+	if category, _ := dm.Recipes["osm-finland"].Viewer["category"].(string); category != "basemap" {
+		t.Errorf("osm-finland viewer = %+v", dm.Recipes["osm-finland"].Viewer)
+	}
+}

@@ -38,13 +38,16 @@ func StartEmbedding(ctx context.Context, llamaBin, model string, port int) (*exe
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	cmd := exec.CommandContext(ctx, llamaBin, "--model", model, "--port", fmt.Sprintf("%d", port), "--host", "127.0.0.1", "--embedding")
+	// The backend owns the child after a successful start.  In particular, a
+	// cancelled request which happened to start it must not kill a healthy
+	// shared server.
+	cmd := exec.Command(llamaBin, "--model", model, "--port", fmt.Sprintf("%d", port), "--host", "127.0.0.1", "--embedding")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting llama-server: %w", err)
 	}
-	if err := waitForHealthy(cmd, fmt.Sprintf("http://127.0.0.1:%d/health", port), embeddingStartupTimeout); err != nil {
+	if err := waitForHealthy(ctx, cmd, fmt.Sprintf("http://127.0.0.1:%d/health", port), embeddingStartupTimeout); err != nil {
 		return nil, fmt.Errorf("llama-server failed to become healthy: %w", err)
 	}
 	return cmd, nil
@@ -61,22 +64,31 @@ func StartKiwix(ctx context.Context, kiwixBin string, zims []string, port int) (
 	}
 	args := []string{"--port", fmt.Sprintf("%d", port), "--address", "127.0.0.1"}
 	args = append(args, zims...)
-	cmd := exec.CommandContext(ctx, kiwixBin, args...)
+	cmd := exec.Command(kiwixBin, args...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting kiwix-serve: %w", err)
 	}
-	if err := waitForHealthy(cmd, fmt.Sprintf("http://127.0.0.1:%d/", port), kiwixStartupTimeout); err != nil {
+	if err := waitForHealthy(ctx, cmd, fmt.Sprintf("http://127.0.0.1:%d/", port), kiwixStartupTimeout); err != nil {
 		return nil, fmt.Errorf("kiwix-serve failed to become healthy: %w", err)
 	}
 	return cmd, nil
 }
 
-func waitForHealthy(cmd *exec.Cmd, healthURL string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		resp, err := http.Get(healthURL)
+func waitForHealthy(ctx context.Context, cmd *exec.Cmd, healthURL string, timeout time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	healthCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	for {
+		req, err := http.NewRequestWithContext(healthCtx, http.MethodGet, healthURL, nil)
+		if err != nil {
+			stop(cmd)
+			return err
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
 			return nil
@@ -84,10 +96,16 @@ func waitForHealthy(cmd *exec.Cmd, healthURL string, timeout time.Duration) erro
 		if resp != nil {
 			resp.Body.Close()
 		}
-		time.Sleep(healthPollInterval)
+		select {
+		case <-healthCtx.Done():
+			stop(cmd)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return fmt.Errorf("health check timed out: %w", healthCtx.Err())
+		case <-time.After(healthPollInterval):
+		}
 	}
-	stop(cmd)
-	return fmt.Errorf("health check timed out")
 }
 
 func stop(cmd *exec.Cmd) {

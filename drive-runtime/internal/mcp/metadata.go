@@ -55,7 +55,7 @@ func readRecipes(path string) (map[string]RecipeMeta, error) {
 	}
 
 	// Try object format first ({"recipe-id": {...}, ...}) — this is what
-	// toolkit_generator.py produces.
+	// host-cli's toolkit writes during apply.
 	var obj map[string]RecipeMeta
 	if err := json.Unmarshal(data, &obj); err == nil && len(obj) > 0 {
 		return obj, nil
