@@ -2,6 +2,7 @@ package commands
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
@@ -60,5 +61,19 @@ func TestAddItemsToEmptyManifest(t *testing.T) {
 	}
 	if m.Desired.Items[0] != "ifixit" {
 		t.Errorf("expected item to be %q, got %q", "ifixit", m.Desired.Items[0])
+	}
+}
+
+func TestDrafterWarningsNameUnpairedDrafterAndTargets(t *testing.T) {
+	cat, err := catalog.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	warnings := DrafterWarnings(cat, []string{"qwen-27b-mtp"})
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "qwen-27b-mtp") || !strings.Contains(warnings[0], "qwen-27b-hq") {
+		t.Fatalf("DrafterWarnings(drafter only) = %q", warnings)
+	}
+	if warnings := DrafterWarnings(cat, []string{"qwen-27b-mtp", "qwen-27b"}); len(warnings) != 0 {
+		t.Fatalf("DrafterWarnings(with target) = %q, want none", warnings)
 	}
 }

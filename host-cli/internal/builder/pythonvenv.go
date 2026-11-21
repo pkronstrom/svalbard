@@ -97,6 +97,9 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 	for _, platform := range targets {
 		target, ok := pythonTargets[platform]
 		if !ok {
+			if hasPlatformIOPythonPackage(pkgItems) {
+				return nil, fmt.Errorf("PlatformIO Python closure is unsupported on requested target %s; reprovision with supported targets", platform)
+			}
 			slog.Warn("python tools not supported on platform, skipping", "platform", platform)
 			continue
 		}
@@ -134,7 +137,14 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			toolDir := filepath.Join(platformDir, "tools", pkg.ID)
 			stamp := strings.Join(pkg.Packages, "\n") + "\n"
 			stampPath := toolDir + ".packages"
+			rebuild := false
 			if existing, err := os.ReadFile(stampPath); err != nil || string(existing) != stamp {
+				rebuild = true
+			}
+			if !rebuild && isPlatformIOPythonPackage(pkg) && !platformIOPythonTreeComplete(toolDir, pkg.EntryPoints) {
+				rebuild = true
+			}
+			if rebuild {
 				slog.Info("installing python package", "package", pkg.ID, "platform", platform)
 				emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventProgress, Message: "installing " + pkg.ID + " for " + platform})
 				staging := toolDir + ".partial"
@@ -162,6 +172,9 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				}
 				if err != nil {
 					_ = os.RemoveAll(staging)
+					if isPlatformIOPythonPackage(pkg) {
+						return nil, fmt.Errorf("PlatformIO Python package %s could not be installed for required target %s: %w", pkg.ID, platform, err)
+					}
 					slog.Warn("python package unavailable for platform, skipping", "package", pkg.ID, "platform", platform, "err", truncate(err.Error(), 300))
 					emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventLog, Message: fmt.Sprintf("skipping %s for %s: no compatible wheels", pkg.ID, platform)})
 					for _, ep := range pkg.EntryPoints {
@@ -214,6 +227,33 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 
 	venvEntry.SizeBytes = dirSize(filepath.Join(root, "runtime", "python"))
 	return append(entries, venvEntry), nil
+}
+
+func isPlatformIOPythonPackage(pkg catalog.Item) bool {
+	return pkg.ID == "platformio-core" || pkg.ID == "espidf-python"
+}
+
+func hasPlatformIOPythonPackage(pkgs []catalog.Item) bool {
+	for _, pkg := range pkgs {
+		if isPlatformIOPythonPackage(pkg) {
+			return true
+		}
+	}
+	return false
+}
+
+func platformIOPythonTreeComplete(toolDir string, entryPoints []string) bool {
+	info, err := os.Stat(toolDir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	for _, entryPoint := range entryPoints {
+		info, err := os.Stat(filepath.Join(toolDir, "bin", entryPoint))
+		if err != nil || info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 // findInstalledPython returns the python<version> binary of a uv-managed

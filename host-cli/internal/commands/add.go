@@ -1,6 +1,9 @@
 package commands
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
@@ -44,4 +47,15 @@ func AddItems(m *manifest.Manifest, ids []string) error {
 		}
 	}
 	return nil
+}
+
+// DrafterWarnings describes each selected drafter whose target models are all
+// unselected, so the user can add a target or drop the drafter.
+func DrafterWarnings(cat *catalog.Catalog, ids []string) []string {
+	var warnings []string
+	for _, id := range cat.UnpairedDrafters(ids) {
+		item, _ := cat.RecipeByID(id)
+		warnings = append(warnings, fmt.Sprintf("warning: %s only speeds up %s, and none is selected; it will download unused", id, strings.Join(item.DraftFor, ", ")))
+	}
+	return warnings
 }

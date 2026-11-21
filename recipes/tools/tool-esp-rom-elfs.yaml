@@ -1,0 +1,13 @@
+id: tool-esp-rom-elfs
+type: toolchain
+url: https://dl.registry.platformio.org/download/platformio/tool/tool-esp-rom-elfs/0.0.1+20241011/tool-esp-rom-elfs-0.0.1+20241011.tar.gz
+sha256: 61785e3b655b5aa6e2e1249bb20f804b0a80f6e1f63f94091f4e4681b85a5ddc
+description: ESP ROM ELF symbols
+
+size_gb: 0.003534
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+license:
+  id: Apache-2.0
+  attribution: Espressif Systems

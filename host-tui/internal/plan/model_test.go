@@ -2,9 +2,12 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkronstrom/svalbard/tui"
@@ -40,16 +43,14 @@ func TestPlanShowsItems(t *testing.T) {
 	}
 }
 
-func TestPlanEmptyShowsInSync(t *testing.T) {
+func TestPlanEmptyShowsNoRecipeChanges(t *testing.T) {
 	m := New(Config{})
 	m.width = 80
 	m.height = 24
 
 	out := stripAnsi(m.View())
-	lower := strings.ToLower(out)
-
-	if !strings.Contains(lower, "sync") && !strings.Contains(lower, "in sync") {
-		t.Errorf("View() with no items should contain 'sync' or 'in sync', got:\n%s", out)
+	if !strings.Contains(out, "No recipe downloads or removals pending") {
+		t.Errorf("empty plan should describe recipe work without claiming runtime health: %s", out)
 	}
 }
 
@@ -167,118 +168,192 @@ func TestPlanEnterStartsApply(t *testing.T) {
 	}
 }
 
-func TestApplyGlobalErrorMarksItemsFailed(t *testing.T) {
-	items := sampleItems()
-	m := New(Config{
-		Items:      items,
-		DownloadGB: 2.0,
-		RemoveGB:   0.5,
-		RunApply: func(ctx context.Context, onProgress func(ApplyEvent)) error {
-			return fmt.Errorf("recipe %q not found in catalog", "wiki-physics")
-		},
-	})
-	m.width = 80
-	m.height = 24
-
-	// Press Enter to start apply
-	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
-	result, cmd := m.Update(enterMsg)
-	m = result.(Model)
-
+func executePlanCmd(t *testing.T, cmd tea.Cmd) tea.Msg {
+	t.Helper()
 	if cmd == nil {
-		t.Fatal("expected non-nil command from Enter")
+		t.Fatal("missing apply command")
 	}
-
-	// Execute the command — this spawns the goroutine and returns applyStartedMsg
-	startMsg := cmd()
-	result, cmd = m.Update(startMsg)
-	m = result.(Model)
-
-	if cmd == nil {
-		t.Fatal("expected non-nil command from applyStartedMsg")
-	}
-
-	// First tick: should receive the error event (empty ID, status=failed)
-	tickMsg := cmd()
-	result, cmd = m.Update(tickMsg)
-	m = result.(Model)
-
-	// All items should have the error propagated.
-	for _, step := range m.applyItems {
-		if !strings.Contains(step.err, "not found in catalog") {
-			t.Errorf("item %q should have error containing 'not found in catalog', got %q", step.id, step.err)
-		}
-	}
-
-	// All items should be marked failed
-	for _, step := range m.applyItems {
-		if step.status != tui.StatusFailed {
-			t.Errorf("item %q should be failed, got %q", step.id, step.status)
-		}
-	}
-
-	// View should show the error (text may wrap at terminal width)
-	out := stripAnsi(m.View())
-	if !strings.Contains(out, "not found") {
-		t.Errorf("View() should display error, got:\n%s", out)
+	result := make(chan tea.Msg, 1)
+	go func() { result <- cmd() }()
+	select {
+	case msg := <-result:
+		return msg
+	case <-time.After(3 * time.Second):
+		t.Fatal("apply command stranded")
+		return nil
 	}
 }
 
-func TestApplyPerItemErrorThenGlobalError(t *testing.T) {
-	items := sampleItems()
-	m := New(Config{
-		Items:      items,
-		DownloadGB: 2.0,
-		RemoveGB:   0.5,
-		RunApply: func(ctx context.Context, onProgress func(ApplyEvent)) error {
-			onProgress(ApplyEvent{ID: "wiki-physics", Status: tui.StatusActive})
-			onProgress(ApplyEvent{ID: "wiki-physics", Status: tui.StatusFailed})
-			return fmt.Errorf("download failed for wiki-physics")
-		},
-	})
-	m.width = 80
-	m.height = 24
-
-	// Start apply
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = result.(Model)
-	startMsg := cmd()
-	result, cmd = m.Update(startMsg)
-	m = result.(Model)
-
-	// Drain all events until done
-	for cmd != nil {
-		tickMsg := cmd()
-		tick, ok := tickMsg.(applyTickMsg)
-		if ok && tick.done {
-			result, cmd = m.Update(tickMsg)
-			m = result.(Model)
-			break
-		}
-		result, cmd = m.Update(tickMsg)
-		m = result.(Model)
+func drainPlanApply(t *testing.T, m Model, cmd tea.Cmd) (Model, tea.Cmd) {
+	t.Helper()
+	for !m.applyDone {
+		next, nextCmd := m.Update(executePlanCmd(t, cmd))
+		m, cmd = next.(Model), nextCmd
 	}
+	return m, cmd
+}
 
-	// First item should be failed
-	if m.applyItems[0].status != tui.StatusFailed {
-		t.Errorf("first item should be failed, got %q", m.applyItems[0].status)
-	}
-	// Remaining items should also be failed (from global error)
-	for i := 1; i < len(m.applyItems); i++ {
-		if m.applyItems[i].status != tui.StatusFailed {
-			t.Errorf("item %d (%s) should be failed, got %q", i, m.applyItems[i].id, m.applyItems[i].status)
-		}
-	}
-	// Error message should be visible in item errors
-	hasError := false
+func TestApplyGlobalErrorPreservesPendingRows(t *testing.T) {
+	m := New(Config{Items: sampleItems(), RunApply: func(context.Context, func(ApplyEvent)) error { return errors.New("recipe not found in catalog") }})
+	m.width, m.height = 120, 30
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = drainPlanApply(t, next.(Model), cmd)
 	for _, step := range m.applyItems {
-		if step.err != "" {
-			hasError = true
-			break
+		if step.status != "" {
+			t.Fatalf("untouched row marked attempted: %+v", step)
 		}
 	}
-	if !hasError {
-		t.Error("expected at least one item to have an error message")
+	out := stripAnsi(m.View())
+	for _, want := range []string{"not found", "Pending: 3", "remaining plan"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %s", want, out)
+		}
+	}
+}
+
+func TestApplyPerItemFailureDoesNotFailUntouchedRows(t *testing.T) {
+	m := New(Config{Items: sampleItems(), RunApply: func(ctx context.Context, progress func(ApplyEvent)) error {
+		progress(ApplyEvent{ID: "wiki-physics", Status: tui.StatusFailed, Error: "download failed"})
+		return errors.New("download failed")
+	}})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = drainPlanApply(t, next.(Model), cmd)
+	if m.applyItems[0].status != tui.StatusFailed {
+		t.Fatal("attempted failure missing")
+	}
+	for _, step := range m.applyItems[1:] {
+		if step.status != "" {
+			t.Fatalf("untouched row marked failed: %+v", step)
+		}
+	}
+	if !strings.Contains(m.applyErr, "download failed") {
+		t.Fatal("terminal error lost")
+	}
+}
+
+func TestPlanCancelBeforeStartWaitsForTerminalQuit(t *testing.T) {
+	observed := make(chan error, 1)
+	m := New(Config{Items: sampleItems(), RunApply: func(ctx context.Context, _ func(ApplyEvent)) error { observed <- ctx.Err(); return ctx.Err() }})
+	next, start := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	next, action := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = next.(Model)
+	if action != nil || !m.stopping {
+		t.Fatal("quit before terminal save")
+	}
+	m, action = drainPlanApply(t, m, start)
+	if !errors.Is(<-observed, context.Canceled) {
+		t.Fatal("early cancel was discarded")
+	}
+	if _, ok := executePlanCmd(t, action).(tea.QuitMsg); !ok {
+		t.Fatal("terminal result did not quit")
+	}
+}
+
+func TestPlanBackWaitsForSaveAndReconcilesPostCancelPeer(t *testing.T) {
+	started, saveRelease := make(chan struct{}), make(chan struct{})
+	m := New(Config{Items: []PlanItem{{ID: "peer"}, {ID: "pending"}}, RunApply: func(ctx context.Context, progress func(ApplyEvent)) error {
+		close(started)
+		<-ctx.Done()
+		<-saveRelease
+		progress(ApplyEvent{ID: "peer", Status: tui.StatusDone})
+		return ctx.Err()
+	}})
+	m.width, m.height = 120, 30
+	next, start := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	next, wait := m.Update(executePlanCmd(t, start))
+	m = next.(Model)
+	<-started
+	calls := 0
+	originalCancel := m.applyCancel
+	m.applyCancel = func() { calls++; originalCancel() }
+	for range 2 {
+		next, action := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		m = next.(Model)
+		if action != nil {
+			t.Fatal("back before save")
+		}
+	}
+	if calls != 1 || !strings.Contains(stripAnsi(m.View()), "Stopping") {
+		t.Fatal("cancellation is not idempotent/visible")
+	}
+	close(saveRelease)
+	m, action := drainPlanApply(t, m, wait)
+	if _, ok := executePlanCmd(t, action).(BackMsg); !ok {
+		t.Fatal("saved cancellation did not go back")
+	}
+	if m.applyItems[0].status != tui.StatusDone || m.applyItems[1].status != "" {
+		t.Fatalf("post-cancel checkpoint lost: %+v", m.applyItems)
+	}
+}
+
+func TestPlanSuccessfulTerminalHonorsRecordedBackAndQuitIntent(t *testing.T) {
+	for _, intent := range []string{"back", "quit"} {
+		m := New(Config{})
+		m.applying, m.exitIntent = true, intent
+		_, cmd := m.Update(applyResultMsg{}) // acquisition completed before late cancellation reached its worker
+		if cmd == nil {
+			t.Fatalf("%s intent was ignored by nil-error result", intent)
+		}
+		msg := executePlanCmd(t, cmd)
+		if intent == "back" {
+			if _, ok := msg.(BackMsg); !ok {
+				t.Fatalf("back result = %T", msg)
+			}
+		} else if _, ok := msg.(tea.QuitMsg); !ok {
+			t.Fatalf("quit result = %T", msg)
+		}
+	}
+}
+
+func TestEmptyPlanEnterFinalizesAndBStillBrowses(t *testing.T) {
+	calls := 0
+	cfg := Config{RunApply: func(context.Context, func(ApplyEvent)) error { calls++; return errors.New("finalization failed") }}
+	m := New(cfg)
+	m.width, m.height = 120, 30
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if !m.applying || !strings.Contains(stripAnsi(m.View()), "Applying") {
+		t.Fatal("empty plan cannot enter visible finalization")
+	}
+	m, _ = drainPlanApply(t, m, cmd)
+	if calls != 1 || !strings.Contains(stripAnsi(m.View()), "finalization failed") {
+		t.Fatal("empty finalization outcome lost")
+	}
+	m = New(cfg)
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if _, ok := executePlanCmd(t, cmd).(BrowseMsg); !ok {
+		t.Fatal("existing browse path lost")
+	}
+}
+
+func TestPlanConcurrentProgressSnapshots(t *testing.T) {
+	items := make([]PlanItem, 8)
+	for i := range items {
+		items[i] = PlanItem{ID: fmt.Sprint(i)}
+	}
+	m := New(Config{Items: items, RunApply: func(ctx context.Context, progress func(ApplyEvent)) error {
+		var wg sync.WaitGroup
+		for _, item := range items {
+			wg.Add(1)
+			go func(id string) {
+				defer wg.Done()
+				for range 12 {
+					progress(ApplyEvent{ID: id, Status: tui.StatusActive})
+				}
+				progress(ApplyEvent{ID: id, Status: tui.StatusDone})
+			}(item.ID)
+		}
+		wg.Wait()
+		return nil
+	}})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = drainPlanApply(t, next.(Model), cmd)
+	for _, step := range m.applyItems {
+		if step.status != tui.StatusDone {
+			t.Fatalf("completion lost: %+v", step)
+		}
 	}
 }
 
@@ -304,6 +379,52 @@ func TestPlanShowsBuildResourceRequirements(t *testing.T) {
 	for _, want := range []string{"network", "~2.4 GB source", "~4.0 GB staging", "tools: zimwriterfs", "tools image required"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("View() missing %q:\\n%s", want, view)
+		}
+	}
+}
+
+func TestPlanPendingWithoutReturnedErrorStillShowsIncompleteOutcome(t *testing.T) {
+	m := New(Config{Items: sampleItems(), RunApply: func(context.Context, func(ApplyEvent)) error { return nil }})
+	m.width, m.height = 120, 30
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = drainPlanApply(t, next.(Model), cmd)
+	view := stripAnsi(m.View())
+	if !strings.Contains(view, "Pending: 3") || !strings.Contains(view, "remaining plan") {
+		t.Fatalf("pending result omitted incomplete/resume state: %s", view)
+	}
+}
+
+func TestCompletedPlanCtrlCQuitsWithoutWaitingForAnotherResult(t *testing.T) {
+	m := New(Config{RunApply: func(context.Context, func(ApplyEvent)) error { return nil }})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = drainPlanApply(t, next.(Model), cmd)
+	_, quit := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if quit == nil {
+		t.Fatal("completed apply waits for a terminal result that already arrived")
+	}
+	if _, ok := executePlanCmd(t, quit).(tea.QuitMsg); !ok {
+		t.Fatal("completed apply did not quit")
+	}
+}
+
+func TestEmptyPlanHintsMatchEnterAndBrowseActions(t *testing.T) {
+	for _, available := range []bool{false, true} {
+		cfg := Config{}
+		if available {
+			cfg.RunApply = func(context.Context, func(ApplyEvent)) error { return nil }
+		}
+		m := New(cfg)
+		m.width, m.height = 120, 30
+		view := stripAnsi(m.View())
+		if strings.Contains(view, "Everything in sync") || !strings.Contains(view, "No recipe downloads or removals pending") || !strings.Contains(view, "b: browse") {
+			t.Fatalf("misleading empty state: %s", view)
+		}
+		expected := "Enter: browse"
+		if available {
+			expected = "Enter: apply/finalize"
+		}
+		if !strings.Contains(view, expected) {
+			t.Fatalf("Enter hint does not match action: %s", view)
 		}
 	}
 }

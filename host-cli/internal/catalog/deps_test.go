@@ -3,6 +3,7 @@ package catalog
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -148,5 +149,73 @@ func TestDepsForItemExplicitEmpty(t *testing.T) {
 	deps := depsForItem(item, defaults)
 	if len(deps) != 0 {
 		t.Errorf("expected empty, got %v", deps)
+	}
+}
+
+func TestResolveDepsCheckedReportsMissingExplicitAndTransitiveIDs(t *testing.T) {
+	c := &Catalog{recipes: map[string]Item{
+		"app":   {Type: "app", Deps: []string{"known", "missing-direct", "missing-explicit"}},
+		"known": {Type: "tool", Deps: []string{"missing-transitive"}},
+	}}
+
+	auto, missing := c.ResolveDepsChecked(map[string]bool{
+		"app":              true,
+		"missing-explicit": true,
+	}, nil)
+
+	if !reflect.DeepEqual(auto, map[string]bool{"known": true}) {
+		t.Errorf("auto deps = %v, want known", auto)
+	}
+	if want := []string{"missing-direct", "missing-explicit", "missing-transitive"}; !reflect.DeepEqual(missing, want) {
+		t.Errorf("missing IDs = %v, want %v", missing, want)
+	}
+}
+
+func TestResolveDepsCheckedDeduplicatesMissingIDsAndIgnoresFalseSelections(t *testing.T) {
+	c := &Catalog{recipes: map[string]Item{
+		"one": {Deps: []string{"missing"}},
+		"two": {Deps: []string{"missing"}},
+	}}
+
+	auto, missing := c.ResolveDepsChecked(map[string]bool{
+		"one":         true,
+		"two":         true,
+		"false-entry": false,
+		"missing":     false,
+	}, nil)
+
+	if len(auto) != 0 {
+		t.Errorf("auto deps = %v, want none", auto)
+	}
+	if want := []string{"missing"}; !reflect.DeepEqual(missing, want) {
+		t.Errorf("missing IDs = %v, want %v", missing, want)
+	}
+}
+
+func TestResolveDepsCheckedTerminatesCycleAndKeepsExplicitIDsNonAutomatic(t *testing.T) {
+	c := &Catalog{recipes: map[string]Item{
+		"app":  {Deps: []string{"tool"}},
+		"tool": {Deps: []string{"app", "missing"}},
+	}}
+
+	auto, missing := c.ResolveDepsChecked(map[string]bool{"app": true, "tool": true}, nil)
+
+	if len(auto) != 0 {
+		t.Errorf("auto deps = %v, want none", auto)
+	}
+	if want := []string{"missing"}; !reflect.DeepEqual(missing, want) {
+		t.Errorf("missing IDs = %v, want %v", missing, want)
+	}
+}
+
+func TestResolveDepsRemainsTolerantOfMissingIDs(t *testing.T) {
+	c := &Catalog{recipes: map[string]Item{
+		"app": {Deps: []string{"missing"}},
+	}}
+
+	auto := c.ResolveDeps(map[string]bool{"app": true, "missing-explicit": true}, nil)
+
+	if len(auto) != 0 {
+		t.Errorf("auto deps = %v, want none", auto)
 	}
 }

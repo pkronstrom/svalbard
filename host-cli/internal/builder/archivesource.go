@@ -21,12 +21,70 @@ import (
 
 var archiveURLPattern = regexp.MustCompile(`https?://[^\s<>()\[\]{}"']+`)
 
-const archiveProjectVersion = 4
+const archiveProjectVersion = 5
 
 type archiveSource struct {
 	ID   string
 	URL  *url.URL
 	Page int
+	// Category, Label, and Author come from the list that links to the source.
+	Category string
+	Label    string
+	Author   string
+}
+
+type archiveListing struct {
+	label  string
+	author string
+}
+
+var (
+	archiveListingHeading    = regexp.MustCompile(`^\s*(?:\d{3}\s+)?([A-Z](?:[A-Z &/,'’.+\-]|[23]D)*)`)
+	archiveListingCredit     = regexp.MustCompile(`(?s)^(.*?)\s*(?:-\s*|\s)by\s+(.*?)\s*\(via [^)]*\)`)
+	archiveListingPageNumber = regexp.MustCompile(`^\s*\d{3}`)
+	archiveListingByline     = regexp.MustCompile(`^(.*?)\s*-\s*by\s+([^\n]*)`)
+)
+
+// archivePDFListing reads a catalog page laid out as a heading followed by
+// numbered entries: "GAMING / CONSOLES 01 Name blurb - by Author (via Site). 02 …".
+func archivePDFListing(text string) (string, []archiveListing) {
+	match := archiveListingHeading.FindStringSubmatch(text)
+	if match == nil {
+		return "", nil
+	}
+	category := strings.Trim(strings.Join(strings.Fields(match[1]), " "), " /&+-.,")
+	if len(category) < 3 {
+		return "", nil
+	}
+	items := make([]archiveListing, 0)
+	rest := archiveListingPageNumber.ReplaceAllString(text[len(match[0]):], "")
+	marker := func(number int) int {
+		location := regexp.MustCompile(fmt.Sprintf(`(?:^|[\s.)A-Z])%02d [^\s]`, number)).FindStringIndex(rest)
+		if location == nil {
+			return -1
+		}
+		return strings.Index(rest[location[0]:], fmt.Sprintf("%02d ", number)) + location[0]
+	}
+	start := marker(1)
+	for number := 1; start >= 0; number++ {
+		rest = rest[start+3:]
+		entry := rest
+		if start = marker(number + 1); start >= 0 {
+			entry = rest[:start]
+		}
+		item := archiveListing{label: entry}
+		if credit := archiveListingCredit.FindStringSubmatch(entry); credit != nil {
+			item.label, item.author = credit[1], credit[2]
+		} else if credit := archiveListingByline.FindStringSubmatch(entry); credit != nil {
+			item.label, item.author = credit[1], credit[2]
+		} else if line := strings.Index(entry, "\n"); line >= 0 {
+			item.label = entry[:line]
+		}
+		item.label = strings.Trim(strings.Join(strings.Fields(item.label), " "), " .-")
+		item.author = strings.Trim(strings.Join(strings.Fields(item.author), " "), " .")
+		items = append(items, item)
+	}
+	return category, items
 }
 
 type archiveProject struct {
@@ -36,6 +94,7 @@ type archiveProject struct {
 	SourcePage int            `json:"source_page,omitempty"`
 	EntryPath  string         `json:"entry_path"`
 	Title      string         `json:"title,omitempty"`
+	Thumbnail  string         `json:"thumbnail,omitempty"`
 	Pages      []archivedPage `json:"pages"`
 	Status     string         `json:"status"`
 	Error      string         `json:"error,omitempty"`
@@ -96,13 +155,39 @@ func archivePDFSources(path string) ([]archiveSource, error) {
 	seen := make(map[string]bool)
 	for page := 1; page <= reader.NumPage(); page++ {
 		annotations := reader.Page(page).V.Key("Annots")
+		first := len(sources)
+		onPage := make(map[string]bool)
+		position := 0
+		positions := make([]int, 0)
 		for index := 0; index < annotations.Len(); index++ {
 			source, err := archiveURL(annotations.Index(index).Key("A").Key("URI").Text())
-			if err != nil || seen[source.String()] {
+			if err != nil {
+				continue
+			}
+			if !onPage[source.String()] {
+				onPage[source.String()] = true
+				position++
+			}
+			if seen[source.String()] {
 				continue
 			}
 			seen[source.String()] = true
 			sources = append(sources, newArchiveSource(source, page))
+			positions = append(positions, position)
+		}
+		if len(sources) == first {
+			continue
+		}
+		text, err := reader.Page(page).GetPlainText(nil)
+		if err != nil {
+			continue
+		}
+		category, items := archivePDFListing(text)
+		for offset, position := range positions {
+			sources[first+offset].Category = category
+			if len(items) == len(onPage) {
+				sources[first+offset].Label, sources[first+offset].Author = items[position-1].label, items[position-1].author
+			}
 		}
 	}
 	if len(sources) > 0 {
@@ -149,38 +234,17 @@ func archiveHostPath(host string) string {
 	return strings.NewReplacer(":", "_", "/", "_").Replace(host)
 }
 
-func writeArchiveIndex(path, root string, sources []archiveSource) error {
-	var page strings.Builder
-	page.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>Archive</title></head><body><h1>Archive</h1><ul>")
-	for _, source := range sources {
-		local := filepath.ToSlash(filepath.Join("projects", source.ID, archiveLocalPath(source.URL, "")))
-		title := source.URL.String()
-		status := ""
-		if project, err := readArchiveProject(filepath.Join(root, "projects", source.ID, "project.json")); err == nil {
-			if project.Title != "" {
-				title = project.Title
-			}
-			if project.Status == "unavailable" {
-				status = " (unavailable)"
-			}
-		}
-		fmt.Fprintf(&page, "<li><a href=\"%s\">%s</a>%s</li>", archiveIndexHref(local), template.HTMLEscapeString(title), status)
-	}
-	page.WriteString("</ul></body></html>")
-	return os.WriteFile(path, []byte(page.String()), 0o644)
-}
-
 func archiveIndexHref(local string) string {
 	return template.HTMLEscapeString(strings.ReplaceAll(local, "'", "%27"))
 }
 
-func writeArchiveProject(path string, source archiveSource, entry archivedPage, pages []archivedPage, failure string) error {
+func writeArchiveProject(path string, source archiveSource, entry archivedPage, pages []archivedPage, thumbnail, failure string) error {
 	status := "archived"
 	if failure != "" {
 		status = "unavailable"
 	}
 	data, err := json.MarshalIndent(archiveProject{
-		Version: archiveProjectVersion, ID: source.ID, SourceURL: source.URL.String(), SourcePage: source.Page, EntryPath: entry.Path, Title: entry.Title, Pages: pages, Status: status, Error: failure,
+		Version: archiveProjectVersion, ID: source.ID, SourceURL: source.URL.String(), SourcePage: source.Page, EntryPath: entry.Path, Title: entry.Title, Thumbnail: thumbnail, Pages: pages, Status: status, Error: failure,
 	}, "", "  ")
 	if err != nil {
 		return err

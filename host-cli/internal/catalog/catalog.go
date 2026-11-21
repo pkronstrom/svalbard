@@ -18,18 +18,25 @@ type Item struct {
 	SizeGB      float64           `yaml:"size_gb"`
 	Strategy    string            `yaml:"strategy"`
 	URL         string            `yaml:"url,omitempty"`
+	SHA256      string            `yaml:"sha256,omitempty"`
 	URLPattern  string            `yaml:"url_pattern,omitempty"`
 	Filename    string            `yaml:"filename,omitempty"`
 	Platforms   map[string]string `yaml:"platforms,omitempty"`
-	Build       *BuildSpec        `yaml:"build,omitempty"`
-	Viewer      *ViewerSpec       `yaml:"viewer,omitempty"`
-	License     *LicenseSpec      `yaml:"license,omitempty"`
-	Tags        []string          `yaml:"tags,omitempty"`
-	Menu        *MenuSpec         `yaml:"menu,omitempty"`
-	Env         map[string]string `yaml:"env,omitempty"`
+	// PlatformSHA256 pins the archive selected from Platforms for each target.
+	// It is optional for existing recipes; new multi-platform closures use it.
+	PlatformSHA256 map[string]string `yaml:"platform_sha256,omitempty"`
+	Build          *BuildSpec        `yaml:"build,omitempty"`
+	Viewer         *ViewerSpec       `yaml:"viewer,omitempty"`
+	License        *LicenseSpec      `yaml:"license,omitempty"`
+	Tags           []string          `yaml:"tags,omitempty"`
+	Menu           *MenuSpec         `yaml:"menu,omitempty"`
+	Env            map[string]string `yaml:"env,omitempty"`
 
 	// Recipe dependency declarations.
 	Deps []string `yaml:"deps,omitempty"`
+
+	// DraftFor lists the model recipe IDs a drafter (gguf-mtp) speeds up.
+	DraftFor []string `yaml:"draft_for,omitempty"`
 
 	// Embedding model params (gguf-embed only).
 	Embedding *EmbeddingSpec `yaml:"embedding,omitempty"`
@@ -138,6 +145,9 @@ func LoadFromFS(recipesFS fs.FS, presetsFS fs.FS) (*Catalog, error) {
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("walking recipes: %w", err)
+	}
+	if err := c.validateDraftTargets(); err != nil {
+		return nil, err
 	}
 
 	if err := fs.WalkDir(presetsFS, ".", func(path string, d fs.DirEntry, err error) error {

@@ -10,10 +10,11 @@ import (
 func writeVendorBundle(t *testing.T, root string) {
 	t.Helper()
 
+	// The layout the maplibre-vendor app-bundle recipe actually installs.
 	for _, rel := range []string{
-		filepath.Join("vendor", "maplibre-gl.js"),
-		filepath.Join("vendor", "maplibre-gl.css"),
-		filepath.Join("vendor", "pmtiles.js"),
+		filepath.Join("apps", "maplibre-vendor", "vendor", "maplibre-gl.js"),
+		filepath.Join("apps", "maplibre-vendor", "vendor", "maplibre-gl.css"),
+		filepath.Join("apps", "maplibre-vendor", "vendor", "pmtiles.js"),
 	} {
 		path := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -45,13 +46,13 @@ func TestGenerateCreatesHTMLFile(t *testing.T) {
 	if strings.Contains(html, "unpkg.com") {
 		t.Error("generated HTML should not reference CDN assets")
 	}
-	if !strings.Contains(html, "../../vendor/maplibre-gl.js") {
+	if !strings.Contains(html, "../maplibre-vendor/vendor/maplibre-gl.js") {
 		t.Error("missing local MapLibre GL JS reference")
 	}
-	if !strings.Contains(html, "../../vendor/maplibre-gl.css") {
+	if !strings.Contains(html, "../maplibre-vendor/vendor/maplibre-gl.css") {
 		t.Error("missing local MapLibre GL CSS reference")
 	}
-	if !strings.Contains(html, "../../vendor/pmtiles.js") {
+	if !strings.Contains(html, "../maplibre-vendor/vendor/pmtiles.js") {
 		t.Error("missing local PMTiles JS reference")
 	}
 	if !strings.Contains(html, "osm-finland.pmtiles") {

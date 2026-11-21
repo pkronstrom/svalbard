@@ -15,10 +15,14 @@ build:
   creator: "NODE / makeityourself.org"
   archive_rules:
     - domain: learn.adafruit.com
-      content: main
-      remove: [nav.skip-links, "#adafruit-header", "#adafruit-footer"]
+      content: "article#content-wrapper"
+      remove: [nav.skip-links, "#adafruit-header", "#adafruit-footer", '[title="Saves"]', '[title="Skill Level"]', '[title="Guide Type"]', .related-guides-wrapper]
     - domain: github.com
-      remove: ['header[role="banner"]', 'nav[aria-label="Repository"]', footer]
+      content: article.markdown-body
+      remove: ['header[role="banner"]', 'nav[aria-label="Repository"]', footer, .anchor]
+    - domain: www.ana-white.com
+      content: main
+      remove: [.plan-breadcrumb, .plan-jump, .more-plans-consider, .plan-start-banner, .unit-toggle, .metric-availability-note, .ad-slot, .plan-mobile-ad]
 license:
   id: mixed
   attribution: "Curated by NODE (makeityourself.org). Individual project licenses vary."

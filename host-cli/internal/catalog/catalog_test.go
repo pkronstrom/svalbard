@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -79,6 +80,16 @@ func TestPresetParsesNewFields(t *testing.T) {
 	}
 	if preset.TargetSizeGB != 1 {
 		t.Errorf("TargetSizeGB: expected 1, got %f", preset.TargetSizeGB)
+	}
+}
+
+func TestItemParsesSHA256(t *testing.T) {
+	var item Item
+	if err := yaml.Unmarshal([]byte("id: verified\nsha256: deadbeef\n"), &item); err != nil {
+		t.Fatal(err)
+	}
+	if item.SHA256 != "deadbeef" {
+		t.Errorf("SHA256 = %q, want deadbeef", item.SHA256)
 	}
 }
 
@@ -859,5 +870,54 @@ func TestEmbeddedCatalogPreservesCurrentBuildArrays(t *testing.T) {
 	layers, ok := cat.RecipeByID("lipas-recreation")
 	if !ok || layers.Build == nil || len(layers.Build.Layers) == 0 {
 		t.Fatal("lipas layers were not preserved")
+	}
+}
+
+func TestPlatformIOTargetArchivesHavePinnedChecksums(t *testing.T) {
+	cat, err := NewDefaultCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range cat.AllRecipes() {
+		for platform, rawURL := range item.Platforms {
+			if !strings.HasPrefix(rawURL, "https://dl.registry.platformio.org/download/") {
+				continue
+			}
+			if item.PlatformSHA256[platform] == "" {
+				t.Errorf("%s lacks platform_sha256 for %s", item.ID, platform)
+			}
+		}
+	}
+}
+
+func TestESPIDFPythonPinsSatisfyEsptoolAndBootstrapDependencies(t *testing.T) {
+	cat, err := NewDefaultCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := cat.RecipeByID("espidf-python")
+	if !ok {
+		t.Fatal("missing espidf-python recipe")
+	}
+	pins := make(map[string]bool, len(item.Packages))
+	for _, pin := range item.Packages {
+		pins[pin] = true
+	}
+	// Direct runtime requirements from the pinned tool-esptoolpy archive, plus
+	// packaging, which bootstrap imports for the ESP-IDF version-range check.
+	for _, pin := range []string{
+		"bitstring==4.3.1",
+		"cryptography==46.0.3",
+		"ecdsa==0.19.1",
+		"pyserial==3.5",
+		"reedsolo==1.7.0",
+		"PyYAML==6.0.3",
+		"intelhex==2.3.0",
+		"argcomplete==3.6.3",
+		"packaging==25.0",
+	} {
+		if !pins[pin] {
+			t.Errorf("espidf-python must explicitly pin %s for offline esptool/bootstrap", pin)
+		}
 	}
 }

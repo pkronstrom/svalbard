@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/net/html"
 )
@@ -28,7 +29,7 @@ func pruneMissingArchiveResources(output string, pages []archivedPage, stripLink
 		prune = func(node *html.Node) {
 			for child := node.FirstChild; child != nil; {
 				next := child.NextSibling
-				if stripLinks && stripArchiveLink(child) {
+				if stripLinks && stripArchiveLink(child, path, output) {
 					changed = true
 				}
 				if missingArchiveResource(child, path, output) {
@@ -55,14 +56,15 @@ func pruneMissingArchiveResources(output string, pages []archivedPage, stripLink
 	return nil
 }
 
-func stripArchiveLink(node *html.Node) bool {
+// stripArchiveLink removes a link unless it points at a file in the archive.
+func stripArchiveLink(node *html.Node, documentPath, output string) bool {
 	if node.Type != html.ElementNode || node.Data != "a" {
 		return false
 	}
 	attributes := node.Attr[:0]
 	removed := false
 	for _, attribute := range node.Attr {
-		if attribute.Key == "href" {
+		if attribute.Key == "href" && !archiveLocalTarget(attribute.Val, documentPath, output) {
 			removed = true
 			continue
 		}
@@ -70,6 +72,19 @@ func stripArchiveLink(node *html.Node) bool {
 	}
 	node.Attr = attributes
 	return removed
+}
+
+func archiveLocalTarget(reference, documentPath, output string) bool {
+	target, err := url.Parse(reference)
+	if err != nil || target.IsAbs() || target.Host != "" || target.Path == "" || strings.HasPrefix(target.Path, "/") {
+		return false
+	}
+	local := filepath.Join(filepath.Dir(documentPath), filepath.FromSlash(target.Path))
+	if !pathWithin(local, output) {
+		return false
+	}
+	info, err := os.Stat(local)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func missingArchiveResource(node *html.Node, documentPath, output string) bool {
@@ -80,15 +95,7 @@ func missingArchiveResource(node *html.Node, documentPath, output string) bool {
 		if attribute.Key != "src" {
 			continue
 		}
-		target, err := url.Parse(attribute.Val)
-		if err != nil || target.IsAbs() || target.Host != "" || target.Path == "" {
-			return true
-		}
-		local := filepath.Join(filepath.Dir(documentPath), filepath.FromSlash(target.Path))
-		if !pathWithin(local, output) {
-			return true
-		}
-		if _, err := os.Stat(local); err != nil {
+		if !archiveLocalTarget(attribute.Val, documentPath, output) {
 			return true
 		}
 	}

@@ -11,6 +11,11 @@ platforms:
   linux-arm64: https://dl.registry.platformio.org/download/platformio/tool/tool-openocd-esp32/2.1100.20220706/tool-openocd-esp32-linux_aarch64-2.1100.20220706.tar.gz
   macos-arm64: https://dl.registry.platformio.org/download/platformio/tool/tool-openocd-esp32/2.1100.20220706/tool-openocd-esp32-darwin_arm64-2.1100.20220706.tar.gz
   macos-x86_64: https://dl.registry.platformio.org/download/platformio/tool/tool-openocd-esp32/2.1100.20220706/tool-openocd-esp32-darwin_x86_64-2.1100.20220706.tar.gz
+platform_sha256:
+  linux-x86_64: 911b419f4521588afd5a75c220607fd66c92b2c0cbac0391723f9c35ff098673
+  linux-arm64: 08f49086fb2835fd2276da93d562b5e7ed3f1e5836b80dcf8319da7056d4fbaf
+  macos-arm64: 32f3a05d37c0e8e9d8b0107f0c126553bcfbea8f5f3695fd67b38d03d84f2a2c
+  macos-x86_64: 86ad7e4fc23108ad78d73bdff571ff661e13d7432c0930bbe4b16506eb49a15d
 description: OpenOCD debug server for ESP32 (SWD/JTAG)
 license:
   id: GPL-2.0-or-later

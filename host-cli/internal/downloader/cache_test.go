@@ -2,6 +2,8 @@ package downloader
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -113,5 +115,112 @@ func TestReuseFromCacheOfflineTrustsCache(t *testing.T) {
 	_, used, err := ReuseFromCache(context.Background(), cache, "http://127.0.0.1:1/x.gguf", dest)
 	if err != nil || !used {
 		t.Fatalf("offline ReuseFromCache used=%v err=%v, want used=true", used, err)
+	}
+}
+
+func TestReuseFromCacheCancellationLeavesFinalAndHTTPPartialUntouched(t *testing.T) {
+	cache := filepath.Join(t.TempDir(), "cached.gguf")
+	if err := os.WriteFile(cache, make([]byte, 2*chunkSize), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "out.gguf")
+	if err := os.WriteFile(dest, []byte("old-final"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dest+".part", []byte("http-partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	_, used, err := ReuseFromCache(ctx, cache, "http://127.0.0.1:1/x.gguf", dest, func(_, _ int64) { cancel() })
+	if err == nil || used {
+		t.Fatalf("cancelled reuse = used=%v err=%v, want unused cancellation", used, err)
+	}
+	if got, _ := os.ReadFile(dest); string(got) != "old-final" {
+		t.Fatalf("final was replaced with %q", got)
+	}
+	if got, _ := os.ReadFile(dest + ".part"); string(got) != "http-partial" {
+		t.Fatalf("HTTP partial was changed to %q", got)
+	}
+	if _, err := os.Stat(dest + ".cache.part"); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
+func TestRejectedCachePreservesHTTPResumeOffset(t *testing.T) {
+	content := []byte("hello world")
+	hash := sha256.Sum256(content)
+	expected := hex.EncodeToString(hash[:])
+	var requestedRange string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `"version-one"`)
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", "11")
+			return
+		}
+		requestedRange = r.Header.Get("Range")
+		w.Header().Set("Content-Range", "bytes 5-10/11")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(content[5:])
+	}))
+	defer server.Close()
+	dest := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(dest+".part", content[:5], 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveState(dest+".download.json", transferState{Version: sidecarVersion, URL: server.URL, ExpectedSHA256: expected, ETag: `"version-one"`, Size: 11}); err != nil {
+		t.Fatal(err)
+	}
+	cache := filepath.Join(t.TempDir(), "cached-file")
+	if err := os.WriteFile(cache, []byte("wrong bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, used, err := ReuseFromCacheWithSHA256(context.Background(), cache, server.URL, dest, expected); err != nil || used {
+		t.Fatalf("cache used=%v error=%v", used, err)
+	}
+	if _, err := Download(context.Background(), server.URL, dest, expected); err != nil {
+		t.Fatal(err)
+	}
+	if requestedRange != "bytes=5-" {
+		t.Fatalf("range=%q, want original offset", requestedRange)
+	}
+	if got, err := os.ReadFile(dest); err != nil || string(got) != string(content) {
+		t.Fatalf("content=%q error=%v", got, err)
+	}
+}
+
+func TestCompletedCacheArtifactIsReusableWithoutCacheOrNetwork(t *testing.T) {
+	cache := filepath.Join(t.TempDir(), "cached")
+	content := []byte("complete offline cache")
+	if err := os.WriteFile(cache, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "file")
+	source := "http://127.0.0.1:1/unavailable"
+	if _, used, err := ReuseFromCache(context.Background(), cache, source, dest); err != nil || !used {
+		t.Fatalf("cache promotion: used=%v error=%v", used, err)
+	}
+	if err := os.Remove(cache); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := Download(context.Background(), source, dest, ""); err != nil || !result.Cached {
+		t.Fatalf("post-promotion offline restart lost completion: %+v %v", result, err)
+	}
+}
+
+func TestCompletedCachePartialRecoversBeforePromotion(t *testing.T) {
+	content := []byte("complete offline cache")
+	hash := sha256.Sum256(content)
+	dest := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(dest+".cache.part", content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dest+".part", []byte("older HTTP prefix"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveState(dest+".download.json", transferState{Version: sidecarVersion, URL: "http://127.0.0.1:1/unavailable", Size: int64(len(content)), SHA256: hex.EncodeToString(hash[:]), Complete: true}); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := Download(context.Background(), "http://127.0.0.1:1/unavailable", dest, ""); err != nil || !result.Cached {
+		t.Fatalf("pre-promotion cache recovery failed: %+v %v", result, err)
 	}
 }

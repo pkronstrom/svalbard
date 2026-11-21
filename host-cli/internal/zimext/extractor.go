@@ -1,6 +1,8 @@
 package zimext
 
 import (
+	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,9 +20,38 @@ var errNoIndexableArticles = errors.New("zimext: no indexable articles found")
 // ExtractArticles opens a ZIM archive and returns searchable articles plus a
 // human-readable archive title.
 func ExtractArticles(path string) ([]searchdb.Article, string, error) {
+	articles, title, _, err := ExtractArticlesContext(context.Background(), path)
+	return articles, title, err
+}
+
+// ArchiveUUID returns the UUID recorded in a ZIM header without reading its
+// article payloads.
+func ArchiveUUID(ctx context.Context, path string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	archive, err := zim.Open(path)
 	if err != nil {
-		return nil, "", fmt.Errorf("open zim: %w", err)
+		return "", fmt.Errorf("open zim: %w", err)
+	}
+	defer archive.Close()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	uuid := archive.UUID()
+	return hex.EncodeToString(uuid[:]), nil
+}
+
+// ExtractArticlesContext opens a ZIM archive and returns its searchable
+// articles, title, and UUID. It checks cancellation while walking entries so a
+// cancelled refresh cannot proceed to database replacement.
+func ExtractArticlesContext(ctx context.Context, path string) ([]searchdb.Article, string, string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, "", "", err
+	}
+	archive, err := zim.Open(path)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("open zim: %w", err)
 	}
 	defer archive.Close()
 
@@ -38,8 +69,11 @@ func ExtractArticles(path string) ([]searchdb.Article, string, error) {
 
 	articles := make([]searchdb.Article, 0, archive.EntryCountByNamespace(ns))
 	for entry, iterErr := range archive.AllEntriesByNamespace(ns) {
+		if err := ctx.Err(); err != nil {
+			return nil, "", "", err
+		}
 		if iterErr != nil {
-			return nil, "", fmt.Errorf("iterate content entries: %w", iterErr)
+			return nil, "", "", fmt.Errorf("iterate content entries: %w", iterErr)
 		}
 		if entry.IsRedirect() || !isIndexableMIME(entry.MIMEType()) {
 			continue
@@ -47,7 +81,7 @@ func ExtractArticles(path string) ([]searchdb.Article, string, error) {
 
 		content, err := entry.ReadContent()
 		if err != nil {
-			return nil, "", fmt.Errorf("read %s: %w", entry.FullPath(), err)
+			return nil, "", "", fmt.Errorf("read %s: %w", entry.FullPath(), err)
 		}
 
 		// Extract sections from raw HTML before stripping.
@@ -73,10 +107,11 @@ func ExtractArticles(path string) ([]searchdb.Article, string, error) {
 	}
 
 	if len(articles) == 0 {
-		return nil, "", errNoIndexableArticles
+		return nil, "", "", errNoIndexableArticles
 	}
 
-	return articles, archiveTitle, nil
+	uuid := archive.UUID()
+	return articles, archiveTitle, hex.EncodeToString(uuid[:]), nil
 }
 
 func isIndexableMIME(mime string) bool {

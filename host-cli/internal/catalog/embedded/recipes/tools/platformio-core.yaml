@@ -1,0 +1,14 @@
+id: platformio-core
+type: python-package
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+venv: svalbard-python
+deps: [svalbard-python]
+packages: [platformio==6.2.0]
+entry_points: [pio, platformio]
+description: PlatformIO Core 6.2.0
+license:
+  id: Apache-2.0
+  attribution: PlatformIO Labs
+size_gb: 0.04

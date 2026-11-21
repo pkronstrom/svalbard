@@ -2,12 +2,14 @@ package commands
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 )
@@ -176,5 +178,121 @@ func TestIndexVaultSkipsAlreadyIndexed(t *testing.T) {
 	}
 	if ac != 1 {
 		t.Errorf("article count = %d, should still be 1 after re-index", ac)
+	}
+}
+
+func TestIndexVaultRefreshesWhenSourceMtimeChanges(t *testing.T) {
+	root := t.TempDir()
+	zimDir := filepath.Join(root, "zim")
+	os.MkdirAll(zimDir, 0o755)
+	path := filepath.Join(zimDir, "wiki.zim")
+	copyFile(t, testSmallZIMPath(t), path)
+	if err := IndexVault(root, false, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := time.Unix(0, info.ModTime().UnixNano()+time.Second.Nanoseconds())
+	if err := os.Chtimes(path, changed, changed); err != nil {
+		t.Fatal(err)
+	}
+	var done bool
+	if err := IndexVault(root, false, io.Discard, func(p IndexProgress) { done = done || p.Status == "done" }); err != nil {
+		t.Fatal(err)
+	}
+	if !done {
+		t.Fatal("changed source was not refreshed")
+	}
+}
+
+func TestIndexVaultPrunesRemovedSource(t *testing.T) {
+	root := t.TempDir()
+	zimDir := filepath.Join(root, "zim")
+	os.MkdirAll(zimDir, 0o755)
+	path := filepath.Join(zimDir, "wiki.zim")
+	copyFile(t, testSmallZIMPath(t), path)
+	if err := IndexVault(root, false, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := IndexVault(root, false, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	db, err := searchdb.Open(filepath.Join(root, "data", "search.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if hits, err := db.Search("test", 10); err != nil || len(hits) != 0 {
+		t.Fatalf("removed-source hits = %#v, %v", hits, err)
+	}
+}
+
+func TestIndexVaultFailurePreservesExistingSource(t *testing.T) {
+	root := t.TempDir()
+	zimDir := filepath.Join(root, "zim")
+	os.MkdirAll(zimDir, 0o755)
+	path := filepath.Join(zimDir, "wiki.zim")
+	copyFile(t, testSmallZIMPath(t), path)
+	if err := IndexVault(root, false, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := IndexVault(root, false, io.Discard, nil); err == nil {
+		t.Fatal("expected corrupt replacement error")
+	}
+	db, err := searchdb.Open(filepath.Join(root, "data", "search.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if hits, err := db.Search("test", 10); err != nil || len(hits) != 1 {
+		t.Fatalf("preserved hits = %#v, %v", hits, err)
+	}
+}
+
+func TestIndexVaultContextCancellationLeavesNoCurrentSource(t *testing.T) {
+	root := t.TempDir()
+	zimDir := filepath.Join(root, "zim")
+	os.MkdirAll(zimDir, 0o755)
+	copyFile(t, testSmallZIMPath(t), filepath.Join(zimDir, "wiki.zim"))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := IndexVaultContext(ctx, root, false, io.Discard, nil); err != context.Canceled {
+		t.Fatalf("IndexVaultContext error = %v, want context.Canceled", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "data", "search.db")); !os.IsNotExist(err) {
+		t.Fatalf("cancelled indexing created search database: %v", err)
+	}
+}
+
+func TestIndexVaultContextCancellationBeforeCommitPreservesSource(t *testing.T) {
+	root := t.TempDir()
+	zimDir := filepath.Join(root, "zim")
+	os.MkdirAll(zimDir, 0o755)
+	copyFile(t, testSmallZIMPath(t), filepath.Join(zimDir, "wiki.zim"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := IndexVaultContext(ctx, root, false, io.Discard, func(p IndexProgress) {
+		if p.Status == "extracting" && strings.HasPrefix(p.Detail, "inserting") {
+			cancel()
+		}
+	})
+	if err != context.Canceled {
+		t.Fatalf("IndexVaultContext error = %v, want context.Canceled", err)
+	}
+	db, err := searchdb.Open(filepath.Join(root, "data", "search.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if sources, err := db.IndexedFilenames(); err != nil || len(sources) != 0 {
+		t.Fatalf("cancelled replacement sources = %v, %v", sources, err)
 	}
 }

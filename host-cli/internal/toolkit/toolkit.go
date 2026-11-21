@@ -137,9 +137,22 @@ type GenerateOpts struct {
 
 	// Menus maps entry IDs to recipe menu specs from the catalog.
 	Menus map[string]catalog.MenuSpec
+
+	// PlatformIORecipes is the requested PlatformIO archive closure. It is
+	// supplied by apply, which has the catalog and desired selection together.
+	PlatformIORecipes map[string]catalog.Item
+
+	// PlatformIOPlatforms are normalized requested host targets. Only these
+	// targets are required in the inventory closure.
+	PlatformIOPlatforms []string
+
+	// Recipes holds catalog metadata for realized entries, written to
+	// .svalbard/recipes.json for the MCP server.
+	Recipes map[string]catalog.Item
 }
 
-// Generate creates the .svalbard/actions.json runtime config under root.
+// Generate creates the .svalbard/actions.json runtime config under root,
+// along with the recipe metadata, PlatformIO inventory and root scripts.
 // entries is the list of realized manifest entries; presetName is recorded in
 // the config for the drive-runtime to identify which preset was applied.
 func Generate(root string, entries []manifest.RealizedEntry, presetName string, opts ...GenerateOpts) error {
@@ -151,6 +164,25 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 		menus = opts[0].Menus
 	}
 	if err := writeActionsConfig(root, entries, presetName, menus); err != nil {
+		return err
+	}
+	var platformIORecipes map[string]catalog.Item
+	var platformIOPlatforms []string
+	if len(opts) > 0 {
+		platformIORecipes = opts[0].PlatformIORecipes
+		platformIOPlatforms = opts[0].PlatformIOPlatforms
+	}
+	if err := writePlatformIOInventory(root, entries, platformIORecipes, platformIOPlatforms); err != nil {
+		return err
+	}
+	if err := writePlatformIOExample(root, entries); err != nil {
+		return err
+	}
+	var recipes map[string]catalog.Item
+	if len(opts) > 0 {
+		recipes = opts[0].Recipes
+	}
+	if err := writeRecipesMetadata(root, entries, recipes); err != nil {
 		return err
 	}
 	if err := installRuntimeBinaries(root); err != nil {
@@ -224,6 +256,7 @@ type builtinCapability struct {
 	Order       int
 	ActionID    string
 	Args        map[string]string
+	Aliases     []string
 	Condition   func(driveState) bool
 }
 
@@ -231,6 +264,7 @@ var builtinCapabilities = []builtinCapability{
 	// Search
 	{ID: "search-all", Group: "search", Label: "Search all content",
 		Description: "Query the on-drive search index.", Order: 100, ActionID: "search",
+		Aliases:   []string{"search"},
 		Condition: func(s driveState) bool { return s.HasLibrary }},
 	// Sharing
 	{ID: "serve-all", Group: "tools", Subheader: "Sharing", Label: "Serve Everything",
@@ -246,6 +280,7 @@ var builtinCapabilities = []builtinCapability{
 		Description: "Open a temporary shell with drive commands available.", Order: 690, ActionID: "activate-shell"},
 	{ID: "embedded-shell", Group: "tools", Subheader: "Development", Label: "Embedded Dev Shell",
 		Description: "Drop into the bundled embedded development shell.", Order: 700, ActionID: "embedded-shell",
+		Aliases:   []string{"embedded"},
 		Condition: func(s driveState) bool { return s.HasToolchain }},
 	// Drive
 	{ID: "inspect-drive", Group: "tools", Subheader: "Drive", Label: "Inspect Drive",
@@ -400,6 +435,7 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			Description: cap.Description,
 			Subheader:   cap.Subheader,
 			Order:       cap.Order,
+			Aliases:     cap.Aliases,
 			Action:      builtinAction(cap.ActionID, cap.Args),
 		})
 	}

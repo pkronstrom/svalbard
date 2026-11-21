@@ -17,6 +17,9 @@ import (
 // the directory exists on disk.
 func InitVault(path, presetName string, c *catalog.Catalog) error {
 	slog.Info("init vault", "path", path, "preset", presetName)
+	if err := rejectExistingManifest(filepath.Join(path, "manifest.yaml")); err != nil {
+		return err
+	}
 	preset, err := c.ResolvePreset(presetName)
 	if err != nil {
 		return fmt.Errorf("resolving preset: %w", err)
@@ -47,6 +50,9 @@ func InitVault(path, presetName string, c *catalog.Catalog) error {
 // Used by the TUI wizard which provides custom selections instead of a preset name.
 func InitVaultWithOptions(path string, items []string, presetName string, region string, hostPlatforms []string) error {
 	slog.Info("init vault", "path", path, "preset", presetName, "items", len(items), "platforms", hostPlatforms)
+	if err := rejectExistingManifest(filepath.Join(path, "manifest.yaml")); err != nil {
+		return err
+	}
 	m := manifest.New(filepath.Base(path))
 	if presetName != "" {
 		m.Desired.Presets = []string{presetName}
@@ -66,5 +72,16 @@ func InitVaultWithOptions(path string, items []string, presetName string, region
 		return fmt.Errorf("writing manifest: %w", err)
 	}
 
+	return nil
+}
+
+func rejectExistingManifest(path string) error {
+	_, err := os.Stat(path)
+	if err == nil {
+		return fmt.Errorf("vault already has a manifest; reopen this vault to resume")
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("checking existing manifest: %w", err)
+	}
 	return nil
 }

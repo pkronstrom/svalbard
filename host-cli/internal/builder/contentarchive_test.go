@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -124,7 +125,7 @@ func TestBuildContentArchiveBuildsPDFLinkSeeds(t *testing.T) {
 			_, _ = writer.Write([]byte(`<html><head><title>DIY Plan</title><link rel="alternate" href="/feed.rss"></head><body><a href="/category">Category</a><img src="/assets/plan.png"></body></html>`))
 		case "/assets/plan.png":
 			writer.Header().Set("Content-Type", "image/png")
-			_, _ = writer.Write([]byte("png"))
+			_, _ = writer.Write(bytes.Repeat([]byte("png"), 200))
 		default:
 			http.NotFound(writer, request)
 		}

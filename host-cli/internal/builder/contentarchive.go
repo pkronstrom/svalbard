@@ -12,6 +12,7 @@ import (
 	"image/draw"
 	"image/png"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 
@@ -30,6 +32,7 @@ import (
 
 const (
 	maxArchiveResponseBytes = 32 << 20
+	archiveWorkers          = 12
 	archiveUserAgent        = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
@@ -83,8 +86,15 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 	if pdfLinks {
 		limit = configInt(recipe.Build.Config, "max_pages", 1)
 	}
-	pages := make([]archivedPage, 0)
-	for _, source := range sources {
+	siteInfo := archiveSiteInfo{title: archiveMetadata(recipe, "title", recipe.ID), home: "../../index.html", stylesheet: "../../" + archiveStylesheet}
+	fetcher := newArchiveFetcher(ctx)
+	fetcher.root, fetcher.workdir = root, workdir
+	fetcher.embedVideos = recipe.Build.Config["video_embeds"] == "true"
+	fetcher.videoHeight = configInt(recipe.Build.Config, "video_height", fetcher.videoHeight)
+	fetcher.videoMinutes = configInt(recipe.Build.Config, "max_video_minutes", fetcher.videoMinutes)
+	results := make([][]archivedPage, len(sources))
+	archiveOne := func(index int) error {
+		source := sources[index]
 		client := &http.Client{CheckRedirect: func(request *http.Request, _ []*http.Request) error {
 			if request.URL.Scheme != source.URL.Scheme || request.URL.Host != source.URL.Host {
 				return http.ErrUseLastResponse
@@ -108,31 +118,46 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		if copied == nil {
 			if prefix != "" {
 				if err := os.RemoveAll(filepath.Join(site, prefix)); err != nil {
-					return nil, err
+					return err
 				}
 			}
 			failure := ""
-			copied, err = archiveSite(ctx, client, source.URL, filepath.Join(site, prefix), limit, !pdfLinks, rule)
+			var err error
+			if pdfLinks {
+				copied, err = archiveReader(fetcher, source, filepath.Join(site, prefix), siteInfo, rule)
+			} else {
+				copied, err = archiveSite(ctx, client, source.URL, filepath.Join(site, prefix), limit, true, rule)
+			}
 			if err != nil {
 				if !pdfLinks {
-					return nil, fmt.Errorf("content-archive %s: %w", recipe.ID, err)
+					return fmt.Errorf("content-archive %s: %w", recipe.ID, err)
+				}
+				if ctx.Err() != nil {
+					return ctx.Err()
 				}
 				failure = err.Error()
-				copied, err = writeArchiveFailure(filepath.Join(site, prefix), source.URL, err)
+				if err := os.RemoveAll(filepath.Join(site, prefix)); err != nil {
+					return err
+				}
+				copied, err = writeArchiveFailure(filepath.Join(site, prefix), source, err, siteInfo)
 				if err != nil {
-					return nil, err
+					return err
 				}
 			}
 			if prefix != "" {
-				entry := archivedPage{Path: archiveLocalPath(source.URL, "")}
+				entry := archivedPage{Path: archiveEntryPath(source.URL)}
 				for _, page := range copied {
 					if page.URL == source.URL.String() {
 						entry = page
 						break
 					}
 				}
-				if err := writeArchiveProject(filepath.Join(site, prefix, "project.json"), source, entry, copied, failure); err != nil {
-					return nil, err
+				thumbnail := ""
+				if pdfLinks && failure == "" {
+					thumbnail = writeArchiveThumbnail(filepath.Join(site, prefix), copied)
+				}
+				if err := writeArchiveProject(filepath.Join(site, prefix, "project.json"), source, entry, copied, thumbnail, failure); err != nil {
+					return err
 				}
 			}
 		}
@@ -141,15 +166,63 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 			copied[index].SourcePage = source.Page
 			copied[index].ProjectID = source.ID
 		}
+		results[index] = copied
+		return nil
+	}
+	workers := 1
+	if pdfLinks {
+		workers = archiveWorkers
+	}
+	var group sync.WaitGroup
+	var mutex sync.Mutex
+	var failed error
+	finished := 0
+	finish := func(err error) bool {
+		mutex.Lock()
+		defer mutex.Unlock()
+		if err != nil && failed == nil {
+			failed = err
+		}
+		return failed != nil
+	}
+	slots := make(chan struct{}, workers)
+	for index := range sources {
+		slots <- struct{}{}
+		if finish(nil) {
+			<-slots
+			break
+		}
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			defer func() { <-slots }()
+			finish(archiveOne(index))
+			mutex.Lock()
+			finished++
+			if pdfLinks && finished%50 == 0 {
+				slog.Info("archiving links", "id", recipe.ID, "done", finished, "total", len(sources))
+			}
+			mutex.Unlock()
+		}()
+	}
+	group.Wait()
+	if failed != nil {
+		return nil, failed
+	}
+	pages := make([]archivedPage, 0)
+	for _, copied := range results {
 		pages = append(pages, copied...)
+	}
+	if pdfLinks || len(sources) > 1 {
+		if err := os.WriteFile(filepath.Join(site, archiveStylesheet), []byte(archiveCSS), 0o644); err != nil {
+			return nil, err
+		}
+		if err := writeArchiveIndex(filepath.Join(site, "index.html"), site, sources, siteInfo.title, recipe.Build.SourceURL); err != nil {
+			return nil, err
+		}
 	}
 	if err := pruneMissingArchiveResources(site, pages, pdfLinks); err != nil {
 		return nil, err
-	}
-	if pdfLinks || len(sources) > 1 {
-		if err := writeArchiveIndex(filepath.Join(site, "index.html"), site, sources); err != nil {
-			return nil, err
-		}
 	}
 	encoded, err := json.MarshalIndent(archiveManifest{Source: recipe.Build.SourceURL, Pages: pages}, "", "  ")
 	if err != nil {
@@ -242,27 +315,40 @@ func archiveSite(ctx context.Context, client *http.Client, source *url.URL, outp
 }
 
 func archiveFetch(ctx context.Context, client *http.Client, target *url.URL) ([]byte, string, error) {
+	body, contentType, _, err := archiveFetchLimit(ctx, client, target, maxArchiveResponseBytes)
+	return body, contentType, err
+}
+
+// archiveFetchLimit also reports the URL the response came from, which differs
+// from target when the client followed redirects.
+func archiveFetchLimit(ctx context.Context, client *http.Client, target *url.URL, limit int) ([]byte, string, *url.URL, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	req.Header.Set("User-Agent", archiveUserAgent)
 	response, err := client.Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
+	return archiveReadResponse(response, target, limit)
+}
+
+// archiveReadResponse reads a successful response of at most limit bytes and
+// closes it.
+func archiveReadResponse(response *http.Response, target *url.URL, limit int) ([]byte, string, *url.URL, error) {
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, "", fmt.Errorf("GET %s: %s", target, response.Status)
+		return nil, "", nil, fmt.Errorf("GET %s: %s", target, response.Status)
 	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxArchiveResponseBytes+1))
+	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
-	if len(body) > maxArchiveResponseBytes {
-		return nil, "", fmt.Errorf("GET %s: response exceeds %d MiB", target, maxArchiveResponseBytes>>20)
+	if len(body) > limit {
+		return nil, "", nil, fmt.Errorf("GET %s: response exceeds %d MiB", target, limit>>20)
 	}
-	return body, response.Header.Get("Content-Type"), nil
+	return body, response.Header.Get("Content-Type"), response.Request.URL, nil
 }
 
 func archiveHTML(body []byte, current, source *url.URL, currentPath string, queue []*url.URL, rewritePages bool, rule *compiledArchiveRule) ([]byte, string, []*url.URL) {

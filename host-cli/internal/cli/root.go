@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/apply"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
@@ -73,6 +75,9 @@ func NewRootCommand() *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Added %d item(s) to desired state\n", len(ids))
+			for _, warning := range commands.DrafterWarnings(cat, m.Desired.Items) {
+				fmt.Fprintln(cmd.ErrOrStderr(), warning)
+			}
 			return nil
 		},
 	}
@@ -152,6 +157,8 @@ func NewRootCommand() *cobra.Command {
 		Use:   "apply",
 		Short: "Execute reconciliation plan and update realized state",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
 			vaultFlag, _ := cmd.Flags().GetString("vault")
 			vaultRoot, err := ResolveVaultRoot(vaultFlag)
 			if err != nil {
@@ -161,8 +168,15 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("loading catalog: %w", err)
 			}
-			if err := commands.ApplyVault(cmd.Context(), vaultRoot, cat); err != nil {
+			if err := commands.ApplyVault(ctx, vaultRoot, cat); err != nil {
 				return err
+			}
+			m, err := manifest.Load(filepath.Join(vaultRoot, "manifest.yaml"))
+			if err != nil {
+				return fmt.Errorf("loading applied manifest: %w", err)
+			}
+			if err := commands.RunConfiguredIndex(ctx, vaultRoot, m.Desired.Options.IndexStrategy, cmd.OutOrStdout(), nil, nil); err != nil {
+				return fmt.Errorf("apply completed but indexing failed: %w", err)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Apply complete")
 			return nil
@@ -173,12 +187,14 @@ func NewRootCommand() *cobra.Command {
 		Use:   "index",
 		Short: "Build full-text search index from ZIM files in the vault",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
 			vaultFlag, _ := cmd.Flags().GetString("vault")
 			vaultRoot, err := ResolveVaultRoot(vaultFlag)
 			if err != nil {
 				return err
 			}
-			return commands.IndexVault(vaultRoot, false, cmd.OutOrStdout(), nil)
+			return commands.IndexVaultContext(ctx, vaultRoot, false, cmd.OutOrStdout(), nil)
 		},
 	}
 
@@ -247,10 +263,10 @@ func newInitCommand() *cobra.Command {
 			config.InitVault = deps.InitVault
 			if deps.RunApply != nil && deps.RebuildForVault != nil {
 				rebuildForVault := deps.RebuildForVault
-				config.RunApply = func(vaultPath string, onProgress func(hosttui.WizardApplyEvent)) error {
+				config.RunApply = func(ctx context.Context, vaultPath string, onProgress func(hosttui.WizardApplyEvent)) error {
 					newDeps := rebuildForVault(vaultPath)
-					return newDeps.RunApply(context.Background(), func(ev hosttui.ApplyEvent) {
-						onProgress(hosttui.WizardApplyEvent{ID: ev.ID, Status: ev.Status, Error: ev.Error})
+					return newDeps.RunApply(ctx, func(ev hosttui.ApplyEvent) {
+						onProgress(hosttui.WizardApplyEvent{ID: ev.ID, Status: ev.Status, Step: ev.Step, Downloaded: ev.Downloaded, Total: ev.Total, Error: ev.Error})
 					})
 				}
 			}
@@ -512,8 +528,8 @@ func buildWizardConfig(prefillPath string) (hosttui.WizardConfig, error) {
 		Regions:     cat.Regions(),
 		PackGroups:  packGroups,
 		PrefillPath: prefillPath,
-		ResolveDeps: func(selectedIDs map[string]bool) map[string]bool {
-			return cat.ResolveDeps(selectedIDs, depDefaults)
+		ResolveDeps: func(selectedIDs map[string]bool) (map[string]bool, []string) {
+			return cat.ResolveDepsChecked(selectedIDs, depDefaults)
 		},
 	}, nil
 }
@@ -767,30 +783,49 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		}
 
 		if indexType == "full" {
-			if err := commands.IndexVault(root, true, io.Discard, keywordCb); err != nil {
-				return err
-			}
-			// Semantic uses prefixed file IDs to avoid overwriting keyword entries.
 			fullSemanticCb := func(p commands.SemanticProgress) {
 				ev := mapSemanticIndexEvent(p, true)
 				ev.Status = mapStatus(p.Status)
 				onProgress(ev)
 			}
-			// Semantic is best-effort — keyword index still succeeds if model is missing.
-			if err := commands.IndexSemantic(ctx, root, true, io.Discard, fullSemanticCb); err != nil {
-				onProgress(hosttui.IndexEvent{
-					File: "semantic", Status: tui.StatusFailed, Detail: err.Error(),
-				})
-			}
-			return nil
+			return commands.RunConfiguredIndex(ctx, root, "full", io.Discard, keywordCb, fullSemanticCb)
 		}
 
 		if indexType == "semantic" {
-			return commands.IndexSemantic(ctx, root, true, io.Discard, semanticCb)
+			return commands.IndexSemantic(ctx, root, false, io.Discard, semanticCb)
 		}
 
-		return commands.IndexVault(root, true, io.Discard, keywordCb)
+		return commands.IndexVaultContext(ctx, root, false, io.Discard, keywordCb)
 	}
 
+	deps.RunConfiguredIndex = func(ctx context.Context, vaultPath string, onProgress func(hosttui.IndexEvent)) error {
+		m, err := manifest.Load(filepath.Join(vaultPath, "manifest.yaml"))
+		if err != nil {
+			return err
+		}
+		statusMap := map[string]string{"extracting": tui.StatusIndexing, "embedding": tui.StatusIndexing, "skip": tui.StatusSkip, "done": tui.StatusDone, "failed": tui.StatusFailed, "starting": tui.StatusIndexing, "queued": tui.StatusQueued}
+		mapStatus := func(status string) string {
+			if mapped, ok := statusMap[status]; ok {
+				return mapped
+			}
+			return tui.StatusIndexing
+		}
+		return commands.RunConfiguredIndex(ctx, vaultPath, m.Desired.Options.IndexStrategy, io.Discard,
+			func(p commands.IndexProgress) {
+				onProgress(hosttui.IndexEvent{File: p.File, Status: mapStatus(p.Status), Detail: p.Detail})
+			},
+			func(p commands.SemanticProgress) {
+				ev := mapSemanticIndexEvent(p, true)
+				ev.Status = mapStatus(p.Status)
+				onProgress(ev)
+			},
+		)
+	}
+
+	deps.ShouldIndex = func(vaultPath string) bool {
+		m, err := manifest.Load(filepath.Join(vaultPath, "manifest.yaml"))
+		// Let the configured runner report load errors in the progress screen.
+		return err != nil || !strings.EqualFold(strings.TrimSpace(m.Desired.Options.IndexStrategy), "none")
+	}
 	return deps
 }

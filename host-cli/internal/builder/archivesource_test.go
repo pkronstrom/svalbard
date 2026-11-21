@@ -43,7 +43,7 @@ func TestWriteArchiveIndexEncodesApostrophesInLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := filepath.Join(t.TempDir(), "index.html")
-	if err := writeArchiveIndex(index, filepath.Dir(index), []archiveSource{newArchiveSource(source, 0)}); err != nil {
+	if err := writeArchiveIndex(index, filepath.Dir(index), []archiveSource{newArchiveSource(source, 0)}, "Archive", "https://example.test/list.pdf"); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile(index)

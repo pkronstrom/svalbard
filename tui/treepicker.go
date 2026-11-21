@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,6 +28,7 @@ type PackSource struct {
 	Strategy    string // "download" or "build"
 	Description string
 	SizeGB      float64
+	Unavailable bool // source is selected but absent from the current catalog
 }
 
 // Row kinds for the flattened tree display.
@@ -457,7 +459,7 @@ func (tp *TreePicker) TotalCheckedGB() float64 {
 	for _, g := range tp.Groups {
 		for _, p := range g.Packs {
 			for _, s := range p.Sources {
-				if tp.checkedIDs[s.ID] && !seen[s.ID] {
+				if tp.checkedIDs[s.ID] && !s.Unavailable && !seen[s.ID] {
 					seen[s.ID] = true
 					total += s.SizeGB
 				}
@@ -473,6 +475,7 @@ func (tp *TreePicker) CheckedIDSlice() []string {
 	for id := range tp.checkedIDs {
 		ids = append(ids, id)
 	}
+	sort.Strings(ids)
 	return ids
 }
 
@@ -504,7 +507,7 @@ func PackCheckState(pack *Pack, checked map[string]bool) (int, int) {
 func PackCheckedSizeGB(pack *Pack, checked map[string]bool) float64 {
 	total := 0.0
 	for _, s := range pack.Sources {
-		if checked[s.ID] {
+		if checked[s.ID] && !s.Unavailable {
 			total += s.SizeGB
 		}
 	}
@@ -600,7 +603,7 @@ func (tp *TreePicker) RenderTree() string {
 			if strat != "" {
 				strat = " " + strat
 			}
-			line := fmt.Sprintf("        %s%s %s %s%s  %s", prefix, mark, src.ID, TypeSymbol(src.Type), strat, FormatSizeGB(src.SizeGB))
+			line := fmt.Sprintf("        %s%s %s %s%s  %s", prefix, mark, src.ID, TypeSymbol(src.Type), strat, sourceSizeLabel(src))
 			if isAutoDep {
 				line += "  ← dep"
 			}
@@ -672,7 +675,7 @@ func (tp *TreePicker) RenderDetail() string {
 		if src.Strategy == "build" {
 			stratLabel = "build ⚒"
 		}
-		info := tp.Theme.Muted.Render(fmt.Sprintf("  %s · %s · %s", src.Type, stratLabel, FormatSizeGB(src.SizeGB)))
+		info := tp.Theme.Muted.Render(fmt.Sprintf("  %s · %s · %s", src.Type, stratLabel, sourceSizeLabel(src)))
 		if tp.IsAutoDep(src.ID) {
 			info += "\n" + tp.Theme.Muted.Render("  auto-included — needed by another recipe")
 		}
@@ -688,13 +691,37 @@ func (tp *TreePicker) RenderDetail() string {
 // RenderSizeSummary renders the total/free size summary line.
 func (tp *TreePicker) RenderSizeSummary() string {
 	totalGB := tp.TotalCheckedGB()
+	label := "Total"
+	if tp.hasSelectedUnavailable() {
+		label = "Known-size subtotal"
+	}
 	if tp.FreeGB <= 0 {
-		return tp.Theme.Base.Render(fmt.Sprintf("  Total: %.1f GB", totalGB))
+		return tp.Theme.Base.Render(fmt.Sprintf("  %s: %.1f GB", label, totalGB))
 	}
 	if totalGB <= tp.FreeGB {
-		return tp.Theme.Base.Render(fmt.Sprintf("  Total: %.1f / %.0f GB  ", totalGB, tp.FreeGB)) +
+		return tp.Theme.Base.Render(fmt.Sprintf("  %s: %.1f / %.0f GB  ", label, totalGB, tp.FreeGB)) +
 			tp.Theme.Success.Render("fits")
 	}
-	return tp.Theme.Base.Render(fmt.Sprintf("  Total: %.1f / %.0f GB  ", totalGB, tp.FreeGB)) +
+	return tp.Theme.Base.Render(fmt.Sprintf("  %s: %.1f / %.0f GB  ", label, totalGB, tp.FreeGB)) +
 		tp.Theme.Danger.Render(fmt.Sprintf("%.1f GB over", totalGB-tp.FreeGB))
+}
+
+func (tp *TreePicker) hasSelectedUnavailable() bool {
+	for _, group := range tp.Groups {
+		for _, pack := range group.Packs {
+			for _, source := range pack.Sources {
+				if source.Unavailable && tp.checkedIDs[source.ID] {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func sourceSizeLabel(source *PackSource) string {
+	if source.Unavailable {
+		return "unknown size"
+	}
+	return FormatSizeGB(source.SizeGB)
 }

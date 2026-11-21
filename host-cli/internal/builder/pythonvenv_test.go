@@ -162,6 +162,39 @@ func TestBuildPythonVenvFailsWhenPackageInstallsNowhere(t *testing.T) {
 	}
 }
 
+func TestBuildPythonVenvPlatformIOPackageFailsForAnyRequestedTarget(t *testing.T) {
+	root := t.TempDir()
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"python.yaml": {Data: []byte("id: svalbard-python\ntype: python-venv\npython: 3.12\nstrategy: build\nbuild: {family: python-venv}\n")},
+		"pio.yaml":    {Data: []byte("id: platformio-core\ntype: python-package\nvenv: svalbard-python\npackages: [platformio==6.2.0]\nentry_points: [pio, platformio]\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe, _ := cat.RecipeByID("svalbard-python")
+	fakeUV(t, map[string]bool{"platformio/x86_64-apple-darwin": true})
+	_, err = buildPythonVenv(root, recipe, cat, Options{Platforms: []string{"macos-arm64", "macos-x86_64"}, DesiredIDs: map[string]bool{"platformio-core": true}})
+	if err == nil || !strings.Contains(err.Error(), "required target macos-x86_64") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPlatformIOPythonTreeCompleteRequiresEntryPoints(t *testing.T) {
+	dir := t.TempDir()
+	if platformIOPythonTreeComplete(dir, []string{"pio"}) {
+		t.Fatal("missing entry point accepted")
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin", "pio"), []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !platformIOPythonTreeComplete(dir, []string{"pio"}) {
+		t.Fatal("complete PlatformIO tree rejected")
+	}
+}
+
 func TestPythonVersionFromSpec(t *testing.T) {
 	for spec, want := range map[string]string{"3.12": "3.12", ">=3.11": "3.11", "3.12.4": "3.12", "": "3.12"} {
 		if got := pythonVersionFromSpec(spec); got != want {

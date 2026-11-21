@@ -1,6 +1,9 @@
 package tui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTreePickerReplaceUserSelectionClearsAutomaticDependencies(t *testing.T) {
 	picker := newSelectionPicker()
@@ -56,6 +59,33 @@ func TestTreePickerTogglePreservesAutomaticDependency(t *testing.T) {
 	}
 	if _, explicitlySelected := picker.UserSelection()["manual"]; explicitlySelected {
 		t.Fatal("toggle did not remove explicit selection")
+	}
+}
+
+func TestTreePickerUnavailableSourceHasUnknownSizeAndIsExcludedFromTotals(t *testing.T) {
+	picker := NewTreePicker(TreePickerConfig{
+		Groups: []PackGroup{{
+			Name: "Unavailable",
+			Packs: []Pack{{
+				Name:    "unavailable-items",
+				Sources: []PackSource{{ID: "stale", Unavailable: true, SizeGB: 42}},
+			}},
+		}},
+		CheckedIDs: map[string]bool{"stale": true},
+	})
+	picker.ExpandAtCursor()
+	picker.Cursor = 1
+	picker.ExpandAtCursor()
+	picker.Cursor = 2
+
+	if total := picker.TotalCheckedGB(); total != 0 {
+		t.Fatalf("TotalCheckedGB() = %v, want 0", total)
+	}
+	if got := picker.RenderSizeSummary(); !strings.Contains(got, "Known-size subtotal:") {
+		t.Fatalf("RenderSizeSummary() = %q, want known-size subtotal", got)
+	}
+	if got := picker.RenderTree() + picker.RenderDetail(); !strings.Contains(got, "unknown size") {
+		t.Fatalf("unavailable source should render unknown size, got:\n%s", got)
 	}
 }
 

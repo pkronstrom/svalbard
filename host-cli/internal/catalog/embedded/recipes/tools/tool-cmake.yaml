@@ -1,0 +1,20 @@
+id: tool-cmake
+type: toolchain
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+size_gb: 0.069701
+platforms:
+  linux-x86_64: https://dl.registry.platformio.org/download/platformio/tool/tool-cmake/3.30.2/tool-cmake-linux_x86_64-3.30.2.tar.gz
+  linux-arm64: https://dl.registry.platformio.org/download/platformio/tool/tool-cmake/3.30.2/tool-cmake-linux_aarch64-3.30.2.tar.gz
+  macos-arm64: https://dl.registry.platformio.org/download/platformio/tool/tool-cmake/3.30.2/tool-cmake-darwin_x86_64-3.30.2.tar.gz
+  macos-x86_64: https://dl.registry.platformio.org/download/platformio/tool/tool-cmake/3.30.2/tool-cmake-darwin_x86_64-3.30.2.tar.gz
+platform_sha256:
+  linux-x86_64: e68b0febb0f2cedc2efb8fb88dcb6959f091afaef9530ae06efbbc7967ffa07b
+  linux-arm64: b25d81d55873a008b096dcb1109d263aa6b24f8ad0ffa269137818e09850a67f
+  macos-arm64: 80b1437d6977535f2b2e2ccc4ab1811d8a1eb634ffe987ea4da30b114e663e57
+  macos-x86_64: 80b1437d6977535f2b2e2ccc4ab1811d8a1eb634ffe987ea4da30b114e663e57
+description: CMake used by PlatformIO ESP-IDF builds
+license:
+  id: BSD-3-Clause
+  attribution: Kitware

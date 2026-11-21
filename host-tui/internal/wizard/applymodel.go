@@ -1,15 +1,17 @@
 package wizard
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkronstrom/svalbard/tui"
 )
 
 // wizardApplyDoneMsg is sent when the apply completes.
-type wizardApplyDoneMsg struct{}
+type wizardApplyDoneMsg struct{ success bool }
 
 type applyStep struct {
 	id         string
@@ -20,29 +22,42 @@ type applyStep struct {
 }
 
 type applyStartedMsg struct {
-	ch <-chan ApplyEvent
+	ch     <-chan ApplyEvent
+	result <-chan applyResultMsg
 }
 
 type applyTickMsg struct {
 	event ApplyEvent
 	done  bool
 }
+type applyResultMsg struct {
+	err      error
+	outcomes []ApplyEvent
+}
 
 // wizardApplyModel runs the apply process within the wizard.
 type wizardApplyModel struct {
-	vaultPath string
-	runApply  ApplyFunc
-	steps     []applyStep
-	ch        <-chan ApplyEvent
-	started   bool
-	finished  bool
-	width     int
-	height    int
-	theme     tui.Theme
-	keys      tui.KeyMap
+	vaultPath  string
+	runApply   ApplyFunc
+	steps      []applyStep
+	ch         <-chan ApplyEvent
+	result     <-chan applyResultMsg
+	started    bool
+	finished   bool
+	err        string
+	globalErr  string
+	stopping   bool
+	exitIntent string
+	ctx        context.Context
+	cancel     context.CancelFunc
+	width      int
+	height     int
+	theme      tui.Theme
+	keys       tui.KeyMap
 }
 
 func newWizardApply(vaultPath string, itemIDs []string, runApply ApplyFunc) wizardApplyModel {
+	ctx, cancel := context.WithCancel(context.Background())
 	steps := make([]applyStep, len(itemIDs))
 	for i, id := range itemIDs {
 		steps[i] = applyStep{id: id}
@@ -53,6 +68,8 @@ func newWizardApply(vaultPath string, itemIDs []string, runApply ApplyFunc) wiza
 		steps:     steps,
 		theme:     tui.DefaultTheme(),
 		keys:      tui.DefaultKeyMap(),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -69,13 +86,17 @@ func (m wizardApplyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case applyStartedMsg:
 		m.ch = msg.ch
+		m.result = msg.result
 		m.started = true
 		return m, waitForEvent(m.ch)
 
 	case applyTickMsg:
 		if msg.done {
-			m.finished = true
-			return m, nil
+			return m, waitForResult(m.result)
+		}
+		if msg.event.ID == "" && msg.event.Error != "" {
+			m.globalErr = msg.event.Error
+			return m, waitForEvent(m.ch)
 		}
 		for i := range m.steps {
 			if m.steps[i].id == msg.event.ID {
@@ -90,12 +111,50 @@ func (m wizardApplyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, waitForEvent(m.ch)
 
-	case tea.KeyMsg:
-		if m.keys.ForceQuit.Matches(msg) {
+	case applyResultMsg:
+		m.finished = true
+		for _, event := range msg.outcomes {
+			for i := range m.steps {
+				if m.steps[i].id == event.ID {
+					m.steps[i].status = event.Status
+					m.steps[i].downloaded = event.Downloaded
+					m.steps[i].total = event.Total
+					m.steps[i].err = event.Error
+				}
+			}
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+		}
+		if m.err == "" {
+			m.err = m.globalErr
+		}
+		if m.exitIntent == "quit" {
 			return m, tea.Quit
 		}
+		if m.exitIntent == "back" {
+			return m, func() tea.Msg { return wizardApplyDoneMsg{success: false} }
+		}
+		return m, nil
+
+	case tea.KeyMsg:
+		if m.keys.ForceQuit.Matches(msg) || m.keys.Back.Matches(msg) {
+			if !m.finished && !m.stopping {
+				m.stopping = true
+				if m.keys.ForceQuit.Matches(msg) {
+					m.exitIntent = "quit"
+				} else {
+					m.exitIntent = "back"
+				}
+				m.cancel()
+				return m, nil
+			}
+			if m.finished && m.keys.ForceQuit.Matches(msg) {
+				return m, tea.Quit
+			}
+		}
 		if m.finished && m.keys.Enter.Matches(msg) {
-			return m, func() tea.Msg { return wizardApplyDoneMsg{} }
+			return m, func() tea.Msg { return wizardApplyDoneMsg{success: m.success()} }
 		}
 	}
 	return m, nil
@@ -106,16 +165,42 @@ func (m wizardApplyModel) startApply() tea.Cmd {
 	vaultPath := m.vaultPath
 	return func() tea.Msg {
 		ch := make(chan ApplyEvent, 16)
+		result := make(chan applyResultMsg, 1)
+		outcomes := make(map[string]ApplyEvent)
+		var outcomesMu sync.Mutex
 		go func() {
 			defer close(ch)
-			if err := runApply(vaultPath, func(ev ApplyEvent) {
-				ch <- ev
-			}); err != nil {
-				ch <- ApplyEvent{Status: tui.StatusFailed, Error: err.Error()}
+			err := runApply(m.ctx, vaultPath, func(ev ApplyEvent) {
+				if ev.ID != "" {
+					outcomesMu.Lock()
+					outcomes[ev.ID] = ev
+					outcomesMu.Unlock()
+				}
+				select {
+				case ch <- ev:
+				case <-m.ctx.Done():
+				}
+			})
+			if err != nil {
+				select {
+				case ch <- ApplyEvent{Status: tui.StatusFailed, Error: err.Error()}:
+				case <-m.ctx.Done():
+				}
 			}
+			outcomesMu.Lock()
+			snapshot := make([]ApplyEvent, 0, len(outcomes))
+			for _, event := range outcomes {
+				snapshot = append(snapshot, event)
+			}
+			outcomesMu.Unlock()
+			result <- applyResultMsg{err: err, outcomes: snapshot}
 		}()
-		return applyStartedMsg{ch: ch}
+		return applyStartedMsg{ch: ch, result: result}
 	}
+}
+
+func waitForResult(result <-chan applyResultMsg) tea.Cmd {
+	return func() tea.Msg { return <-result }
 }
 
 func waitForEvent(ch <-chan ApplyEvent) tea.Cmd {
@@ -148,18 +233,35 @@ func (m wizardApplyModel) View() string {
 				failed++
 			}
 		}
-		if failed > 0 {
-			b.WriteString(m.theme.Warning.Render(fmt.Sprintf("  Done: %d completed, %d failed", done, failed)))
+		pending := len(pv.Steps) - done - failed
+		if !m.success() {
+			b.WriteString(m.theme.Warning.Render(fmt.Sprintf("  Completed: %d, Failed: %d, Pending: %d", done, failed, pending)))
+			b.WriteString("\n")
+			b.WriteString(m.theme.Warning.Render("  " + m.err + "\n  Reopen this vault and apply the remaining plan to resume."))
 		} else {
 			b.WriteString(m.theme.Success.Render(fmt.Sprintf("  Done: %d items applied", done)))
 		}
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Help.Render("  Enter: continue"))
+	} else if m.stopping {
+		b.WriteString(m.theme.Warning.Render("Stopping… saving progress"))
 	} else {
 		b.WriteString(pv.RenderSummary())
 	}
 
 	return b.String()
+}
+
+func (m wizardApplyModel) success() bool {
+	if m.err != "" || m.globalErr != "" {
+		return false
+	}
+	for _, step := range m.steps {
+		if step.status != tui.StatusDone {
+			return false
+		}
+	}
+	return true
 }
 
 func (m wizardApplyModel) progressView() tui.ProgressView {
@@ -183,4 +285,3 @@ func (m wizardApplyModel) progressView() tui.ProgressView {
 		MaxVisible: maxVis,
 	}
 }
-

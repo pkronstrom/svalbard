@@ -209,6 +209,19 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.browse = m.newBrowse(false)
 		return m, m.sendSize()
 
+	case plan.ApplySucceededMsg:
+		if m.deps != nil && m.deps.ShouldIndex != nil && !m.deps.ShouldIndex(m.vaultPath) {
+			m.screen = screenDashboard
+			m.dashboard = m.newDashboard(m.vaultPath)
+			return m, tea.Batch(m.dashboard.Init(), m.sendSize())
+		}
+		if m.deps != nil && m.deps.RunConfiguredIndex != nil {
+			m.screen = screenIndex
+			m.indexScr = m.newConfiguredIndex()
+			return m, tea.Batch(m.indexScr.Init(), m.sendSize())
+		}
+		return m, nil
+
 	// --- Import messages ---
 	case importscreen.BackMsg:
 		m.screen = screenDashboard
@@ -330,10 +343,10 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 		}
 		if m.deps.RunApply != nil && m.deps.RebuildForVault != nil {
 			rebuildForVault := m.deps.RebuildForVault
-			cfg.RunApply = func(vaultPath string, onProgress func(wizard.ApplyEvent)) error {
+			cfg.RunApply = func(ctx context.Context, vaultPath string, onProgress func(wizard.ApplyEvent)) error {
 				// Rebuild deps targeting the new vault path, then run apply
 				newDeps := rebuildForVault(vaultPath)
-				return newDeps.RunApply(context.Background(), func(ev ApplyEvent) {
+				return newDeps.RunApply(ctx, func(ev ApplyEvent) {
 					onProgress(wizard.ApplyEvent{
 						ID: ev.ID, Status: ev.Status, Step: ev.Step,
 						Downloaded: ev.Downloaded, Total: ev.Total,
@@ -342,7 +355,7 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 				})
 			}
 		}
-		if m.deps.RunIndex != nil {
+		if m.deps.RunConfiguredIndex != nil {
 			rebuildForVault := m.deps.RebuildForVault
 			depsRef := m.deps
 			cfg.RunIndex = func(ctx context.Context, vaultPath string, onProgress func(file, status, detail string)) error {
@@ -350,9 +363,20 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 				if rebuildForVault != nil {
 					deps = rebuildForVault(vaultPath)
 				}
-				return deps.RunIndex(ctx, "keyword", func(ev IndexEvent) {
+				return deps.RunConfiguredIndex(ctx, vaultPath, func(ev IndexEvent) {
 					onProgress(ev.File, ev.Status, ev.Detail)
 				})
+			}
+		}
+		if m.deps.ShouldIndex != nil || m.deps.RebuildForVault != nil {
+			rebuildForVault := m.deps.RebuildForVault
+			depsRef := m.deps
+			cfg.ShouldIndex = func(vaultPath string) bool {
+				deps := depsRef
+				if rebuildForVault != nil {
+					deps = rebuildForVault(vaultPath)
+				}
+				return deps.ShouldIndex == nil || deps.ShouldIndex(vaultPath)
 			}
 		}
 	}
@@ -494,6 +518,18 @@ func (m *appModel) newIndex() index.Model {
 					onProgress(index.IndexEvent{File: ev.File, Status: ev.Status, Detail: ev.Detail})
 				})
 			}
+		}
+	}
+	return index.New(cfg)
+}
+
+func (m *appModel) newConfiguredIndex() index.Model {
+	cfg := index.Config{AutoStart: true}
+	if m.deps != nil && m.deps.RunConfiguredIndex != nil {
+		cfg.RunIndex = func(ctx context.Context, _ string, onProgress func(index.IndexEvent)) error {
+			return m.deps.RunConfiguredIndex(ctx, m.vaultPath, func(ev IndexEvent) {
+				onProgress(index.IndexEvent{File: ev.File, Status: ev.Status, Detail: ev.Detail})
+			})
 		}
 	}
 	return index.New(cfg)

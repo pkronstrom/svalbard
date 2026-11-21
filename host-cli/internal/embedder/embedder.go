@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,10 +31,13 @@ const (
 
 // Server manages a llama-server subprocess running in embedding mode.
 type Server struct {
-	proc   *exec.Cmd
-	host   string
-	port   int
-	stderr *bytes.Buffer
+	proc    *exec.Cmd
+	host    string
+	port    int
+	stderr  *bytes.Buffer
+	done    chan struct{}
+	waitErr error
+	waitMu  sync.RWMutex
 }
 
 // StartServer launches llama-server with the given model in embedding mode.
@@ -78,8 +82,10 @@ func StartServer(ctx context.Context, modelPath, driveRoot string, maxInputToken
 	if err := s.proc.Start(); err != nil {
 		return nil, fmt.Errorf("embedder: start llama-server: %w", err)
 	}
+	s.done = make(chan struct{})
+	go func() { err := s.proc.Wait(); s.waitMu.Lock(); s.waitErr = err; s.waitMu.Unlock(); close(s.done) }()
 
-	if err := s.waitHealthy(); err != nil {
+	if err := s.waitHealthy(ctx); err != nil {
 		s.Stop()
 		return nil, err
 	}
@@ -90,9 +96,9 @@ func StartServer(ctx context.Context, modelPath, driveRoot string, maxInputToken
 func (s *Server) Stop() {
 	if s.proc != nil && s.proc.Process != nil {
 		_ = s.proc.Process.Kill()
-		// Wait may have already been called by waitHealthy's exit detector;
-		// calling it again is harmless (returns "wait: already waited").
-		_ = s.proc.Wait()
+		if s.done != nil {
+			<-s.done
+		}
 	}
 }
 
@@ -178,12 +184,24 @@ func (s *Server) embedBatchOnce(ctx context.Context, texts []string) ([][]float3
 	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
 		return nil, fmt.Errorf("embedder: decode response: %w", err)
 	}
+	if len(items) != len(texts) {
+		return nil, fmt.Errorf("embedder: response vector count %d, want %d", len(items), len(texts))
+	}
 
 	vectors := make([][]float32, 0, len(items))
+	dimensions := 0
 	for i, item := range items {
 		vec, err := parseEmbedding(item.Embedding)
 		if err != nil {
 			return nil, fmt.Errorf("embedder: parse embedding[%d]: %w", i, err)
+		}
+		if len(vec) == 0 {
+			return nil, fmt.Errorf("embedder: embedding[%d] is empty", i)
+		}
+		if dimensions == 0 {
+			dimensions = len(vec)
+		} else if len(vec) != dimensions {
+			return nil, fmt.Errorf("embedder: embedding[%d] has %d dimensions, want %d", i, len(vec), dimensions)
 		}
 		vectors = append(vectors, vec)
 	}
@@ -250,18 +268,23 @@ func findFreePort() (int, error) {
 	return port, nil
 }
 
-func (s *Server) waitHealthy() error {
+func (s *Server) waitHealthy(ctx context.Context) error {
 	url := fmt.Sprintf("http://%s:%d/health", s.host, s.port)
 	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(healthTimeout)
 
-	// Channel to detect early process exit.
-	exited := make(chan error, 1)
-	go func() { exited <- s.proc.Wait() }()
-
 	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		select {
-		case err := <-exited:
+		case <-s.done:
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			s.waitMu.RLock()
+			err := s.waitErr
+			s.waitMu.RUnlock()
 			detail := strings.TrimSpace(s.stderr.String())
 			if len(detail) > 300 {
 				detail = detail[len(detail)-300:]
@@ -270,19 +293,30 @@ func (s *Server) waitHealthy() error {
 				return fmt.Errorf("embedder: llama-server exited (%v): %s", err, detail)
 			}
 			return fmt.Errorf("embedder: llama-server exited: %v", err)
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
 
-		resp, err := client.Get(url)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			return reqErr
+		}
+		resp, err := client.Do(req)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return nil
 			}
 		}
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 
+	s.Stop()
 	detail := strings.TrimSpace(s.stderr.String())
 	if len(detail) > 300 {
 		detail = detail[len(detail)-300:]
@@ -292,7 +326,6 @@ func (s *Server) waitHealthy() error {
 	}
 	return fmt.Errorf("embedder: llama-server not healthy after %s", healthTimeout)
 }
-
 
 // parseEmbedding handles both flat vectors and the nested [[...]] format
 // that some llama-server versions produce.

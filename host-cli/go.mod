@@ -10,6 +10,7 @@ require (
 	github.com/pkronstrom/svalbard/tui v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.9.1
 	github.com/stazelabs/gozim v0.1.0
+	golang.org/x/image v0.39.0
 	golang.org/x/net v0.48.0
 	golang.org/x/sys v0.43.0
 	gopkg.in/yaml.v3 v3.0.1

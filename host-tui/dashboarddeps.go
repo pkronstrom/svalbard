@@ -17,9 +17,13 @@ type DashboardDeps struct {
 	InitVault        func(path string, items []string, presetName, region string, platforms []string) error
 
 	// Long-running operations (run in goroutines, report progress via callback)
-	RunApply  func(ctx context.Context, onProgress func(ApplyEvent)) error
-	RunImport func(ctx context.Context, source string) (ImportResult, error)
-	RunIndex  func(ctx context.Context, indexType string, onProgress func(IndexEvent)) error
+	RunApply           func(ctx context.Context, onProgress func(ApplyEvent)) error
+	RunImport          func(ctx context.Context, source string) (ImportResult, error)
+	RunIndex           func(ctx context.Context, indexType string, onProgress func(IndexEvent)) error
+	RunConfiguredIndex func(ctx context.Context, vaultPath string, onProgress func(IndexEvent)) error
+	// ShouldIndex reports whether the manifest enables automatic indexing.
+	// Nil preserves the historical behavior of running indexing after apply.
+	ShouldIndex func(vaultPath string) bool
 
 	// Static catalog data (for Browse)
 	PackGroups []PackGroup

@@ -66,6 +66,12 @@ func FindInCache(dirs []string, filename string) (string, bool) {
 // used=false (without error) when the cached file is unsuitable so the caller
 // falls back to a normal download.
 func ReuseFromCache(ctx context.Context, cachedPath, url, destPath string, onProgress ...ProgressFunc) (Result, bool, error) {
+	return ReuseFromCacheWithSHA256(ctx, cachedPath, url, destPath, "", onProgress...)
+}
+
+// ReuseFromCacheWithSHA256 is ReuseFromCache with optional expected checksum
+// verification before the cache copy is promoted.
+func ReuseFromCacheWithSHA256(ctx context.Context, cachedPath, url, destPath, expectedSHA256 string, onProgress ...ProgressFunc) (Result, bool, error) {
 	info, err := os.Stat(cachedPath)
 	if err != nil || info.Size() == 0 {
 		return Result{}, false, nil
@@ -81,14 +87,26 @@ func ReuseFromCache(ctx context.Context, cachedPath, url, destPath string, onPro
 	if len(onProgress) > 0 {
 		progress = onProgress[0]
 	}
-	if err := copyFile(cachedPath, destPath, info.Size(), progress); err != nil {
+	partial := destPath + ".cache.part"
+	if err := copyFile(ctx, cachedPath, partial, info.Size(), progress); err != nil {
 		return Result{}, false, fmt.Errorf("copy from cache: %w", err)
 	}
-	sha, err := ComputeSHA256(destPath)
+	sha, err := computeSHA256Context(ctx, partial)
 	if err != nil {
 		return Result{}, false, fmt.Errorf("hash cached copy: %w", err)
 	}
-	return Result{Path: destPath, SHA256: sha, Cached: true}, true, nil
+	if expectedSHA256 != "" && sha != expectedSHA256 {
+		_ = os.Remove(partial)
+		return Result{}, false, nil
+	}
+	state := transferState{Version: sidecarVersion, URL: url, ExpectedSHA256: expectedSHA256, Size: info.Size(), SHA256: sha, Complete: true}
+	result, err := promote(partial, destPath, destPath+".download.json", state, progress)
+	if err != nil {
+		return Result{}, false, fmt.Errorf("promote cached copy: %w", err)
+	}
+	_ = os.Remove(destPath + ".part")
+	result.Cached = true
+	return result, true, nil
 }
 
 // remoteSize reports the URL's content length via a HEAD request. ok is false
@@ -109,7 +127,7 @@ func remoteSize(ctx context.Context, url string) (int64, bool) {
 	return resp.ContentLength, true
 }
 
-func copyFile(src, dst string, total int64, progress ProgressFunc) error {
+func copyFile(ctx context.Context, src, dst string, total int64, progress ProgressFunc) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -119,7 +137,11 @@ func copyFile(src, dst string, total int64, progress ProgressFunc) error {
 	if err != nil {
 		return err
 	}
-	if err := streamToFile(out, in, 0, total, progress); err != nil {
+	if err := streamToFile(ctx, out, in, 0, total, progress); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Sync(); err != nil {
 		out.Close()
 		return err
 	}

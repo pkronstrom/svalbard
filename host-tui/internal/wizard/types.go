@@ -1,11 +1,14 @@
 package wizard
 
-import "github.com/pkronstrom/svalbard/tui"
+import (
+	"context"
+	"github.com/pkronstrom/svalbard/tui"
+)
 
 // Volume is a detected storage mount point.
 type Volume struct {
-	Path    string  // e.g. "/Volumes/KINGSTON/svalbard"
-	Name    string  // e.g. "KINGSTON"
+	Path    string // e.g. "/Volumes/KINGSTON/svalbard"
+	Name    string // e.g. "KINGSTON"
 	TotalGB float64
 	FreeGB  float64
 	Network bool
@@ -29,8 +32,9 @@ type (
 	PackSource = tui.PackSource
 )
 
-// DepResolver returns auto-dep IDs for a given set of selected IDs.
-type DepResolver func(selectedIDs map[string]bool) map[string]bool
+// DepResolver returns known auto-dep IDs and missing catalog IDs for a given
+// explicit selection.
+type DepResolver func(selectedIDs map[string]bool) (autoDeps map[string]bool, missingIDs []string)
 
 // ApplyEvent reports progress of a single item during apply.
 type ApplyEvent struct {
@@ -43,7 +47,7 @@ type ApplyEvent struct {
 }
 
 // ApplyFunc runs vault apply with progress reporting.
-type ApplyFunc func(vaultPath string, onProgress func(ApplyEvent)) error
+type ApplyFunc func(ctx context.Context, vaultPath string, onProgress func(ApplyEvent)) error
 
 // InitFunc initializes a new vault.
 type InitFunc func(path string, items []string, presetName, region string, platforms []string) error
@@ -58,10 +62,11 @@ type WizardConfig struct {
 	PackGroups  []PackGroup    // all packs grouped
 	PrefillPath string
 	StartAtStep int
-	InitVault   InitFunc  // called after review confirm
-	ResolveDeps DepResolver // nil = no dep resolution
-	RunApply    ApplyFunc  // called to download content
-	RunIndex    IndexFunc  // called to build search index after apply
+	InitVault   InitFunc                    // called after review confirm
+	ResolveDeps DepResolver                 // nil = no dep resolution
+	RunApply    ApplyFunc                   // called to download content
+	RunIndex    IndexFunc                   // called to build search index after apply
+	ShouldIndex func(vaultPath string) bool // nil means automatic indexing is enabled
 }
 
 // WizardResult is returned when the wizard completes.

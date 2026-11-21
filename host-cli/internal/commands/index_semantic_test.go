@@ -1,12 +1,153 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
+	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 )
+
+type fakeEmbeddingServer struct {
+	dimensions int
+	err        error
+}
+
+func (s *fakeEmbeddingServer) EmbedBatch(_ context.Context, texts []string) ([][]float32, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	vectors := make([][]float32, len(texts))
+	for i := range vectors {
+		vectors[i] = make([]float32, s.dimensions)
+	}
+	return vectors, nil
+}
+
+func (s *fakeEmbeddingServer) Stop() {}
+
+func installFakeEmbeddingServer(t *testing.T, server embeddingServer, err error) {
+	t.Helper()
+	old := startEmbeddingServer
+	startEmbeddingServer = func(context.Context, string, string, int) (embeddingServer, error) { return server, err }
+	t.Cleanup(func() { startEmbeddingServer = old })
+}
+
+func semanticCommandFixture(t *testing.T) (string, *searchdb.DB, searchdb.SemanticContract, int64) {
+	t.Helper()
+	root := t.TempDir()
+	modelPath := filepath.Join(root, "models", "embed", "model.gguf")
+	if err := os.MkdirAll(filepath.Dir(modelPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(modelPath, []byte("test embedding model"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "data"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := searchdb.Open(filepath.Join(root, "data", "search.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.ReplaceSource(context.Background(), searchdb.Source{Filename: "wiki.zim", Title: "Wiki", UUID: "wiki", Size: 1, ModTimeNS: 1}, []searchdb.Article{{Path: "/a", Title: "Article", Body: "semantic body"}}); err != nil {
+		t.Fatal(err)
+	}
+	sources, err := db.Sources()
+	if err != nil || len(sources) != 1 {
+		t.Fatalf("sources = %#v, %v", sources, err)
+	}
+	hash, err := hashEmbeddingModel(context.Background(), modelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, db, searchdb.SemanticContract{Version: 1, Model: "models/embed/model.gguf", ModelSHA256: hash, Dimensions: 2}, sources[0].ID
+}
+
+func completeOldSemanticContract(t *testing.T, db *searchdb.DB, contract searchdb.SemanticContract, articleID int64) {
+	t.Helper()
+	if _, err := db.BeginSemanticContract(context.Background(), contract, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.InsertChunkEmbeddings([]searchdb.ChunkEmbedding{{ArticleID: articleID, ChunkIndex: 0, Header: "Article", Vector: make([]byte, 8)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CompleteSemanticContract(context.Background(), contract, semanticMetadata("old")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIndexSemanticStartupFailurePreservesCompleteContract(t *testing.T) {
+	root, db, old, articleID := semanticCommandFixture(t)
+	completeOldSemanticContract(t, db, old, articleID)
+	installFakeEmbeddingServer(t, nil, errors.New("server unavailable"))
+
+	if err := IndexSemantic(context.Background(), root, false, io.Discard, nil); err == nil {
+		t.Fatal("IndexSemantic succeeded after startup failure")
+	}
+	contract, state, err := db.LoadSemanticContract()
+	if err != nil || state != "complete" || contract != old {
+		t.Fatalf("contract after failed startup = %#v, %q, %v", contract, state, err)
+	}
+	if count, err := db.EmbeddingCountBySource(articleID); err != nil || count != 1 {
+		t.Fatalf("vectors after failed startup = %d, %v", count, err)
+	}
+}
+
+func TestIndexSemanticInvalidConfiguredDimensionsPreservesCompleteContract(t *testing.T) {
+	root, db, old, articleID := semanticCommandFixture(t)
+	completeOldSemanticContract(t, db, old, articleID)
+	if err := os.WriteFile(filepath.Join(root, "models", "embed", "model.embedding.json"), []byte(`{"dims":3,"matryoshka":true}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	installFakeEmbeddingServer(t, &fakeEmbeddingServer{dimensions: 2}, nil)
+
+	if err := IndexSemantic(context.Background(), root, false, io.Discard, nil); err == nil {
+		t.Fatal("IndexSemantic accepted configured dimensions above native output")
+	}
+	contract, state, err := db.LoadSemanticContract()
+	if err != nil || state != "complete" || contract != old {
+		t.Fatalf("contract after invalid dimensions = %#v, %q, %v", contract, state, err)
+	}
+	if count, err := db.EmbeddingCountBySource(articleID); err != nil || count != 1 {
+		t.Fatalf("vectors after invalid dimensions = %d, %v", count, err)
+	}
+}
+
+func TestIndexSemanticResumeCompletesCancelledCommittedBatch(t *testing.T) {
+	root, db, contract, articleID := semanticCommandFixture(t)
+	installFakeEmbeddingServer(t, &fakeEmbeddingServer{dimensions: 2}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := IndexSemantic(ctx, root, false, io.Discard, func(p SemanticProgress) {
+		if p.Status == "embedding" && p.Current == 1 {
+			cancel()
+		}
+	}); err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled indexing error = %v, want context.Canceled", err)
+	}
+	stored, state, err := db.LoadSemanticContract()
+	if err != nil || state != "building" || stored != contract {
+		t.Fatalf("state after committed batch cancellation = %#v, %q, %v", stored, state, err)
+	}
+	if count, err := db.EmbeddingCountBySource(articleID); err != nil || count != 1 {
+		t.Fatalf("retained vectors = %d, %v", count, err)
+	}
+	if err := IndexSemantic(context.Background(), root, false, io.Discard, nil); err != nil {
+		t.Fatalf("ordinary resume: %v", err)
+	}
+	stored, state, err = db.LoadSemanticContract()
+	if err != nil || state != "complete" || stored != contract {
+		t.Fatalf("state after no-work resume = %#v, %q, %v", stored, state, err)
+	}
+}
 
 func TestPrepareEmbeddingTextTruncatesLongBody(t *testing.T) {
 	body := strings.Repeat("token ", 800)

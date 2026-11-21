@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,21 @@ const (
 )
 
 var sentenceEndRe = regexp.MustCompile(`([.!?])\s+`)
+
+// embeddingServer is the small portion of the embedder used by semantic
+// indexing. Keeping construction behind this seam lets lifecycle tests drive
+// the command through its real database pipeline without a llama binary.
+type embeddingServer interface {
+	EmbedBatch(context.Context, []string) ([][]float32, error)
+	Stop()
+}
+
+var (
+	findEmbeddingModel   = embedder.FindEmbeddingModel
+	startEmbeddingServer = func(ctx context.Context, modelPath, root string, maxInputTokens int) (embeddingServer, error) {
+		return embedder.StartServer(ctx, modelPath, root, maxInputTokens)
+	}
+)
 
 // loadEmbeddingSpec reads the .embedding.json sidecar next to the GGUF model.
 // Returns an empty spec (no prefixes) if the sidecar doesn't exist.
@@ -88,6 +104,18 @@ type SemanticProgress struct {
 //
 // The keyword index must already exist (run IndexVault first).
 func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, onProgress func(SemanticProgress)) error {
+	releaseLock, err := acquireIndexWriterLock(root)
+	if err != nil {
+		return err
+	}
+	defer releaseLock()
+	return indexSemanticUnlocked(ctx, root, force, w, onProgress)
+}
+
+// indexSemanticUnlocked performs semantic indexing while its caller holds the
+// vault writer lock. A later combined index runner can retain that lock across
+// keyword and semantic stages.
+func indexSemanticUnlocked(ctx context.Context, root string, force bool, w io.Writer, onProgress func(SemanticProgress)) error {
 	dataDir := filepath.Join(root, "data")
 	dbPath := filepath.Join(dataDir, "search.db")
 	if _, err := os.Stat(dbPath); err != nil {
@@ -116,7 +144,7 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 
 	// Find the embedding model and load its spec BEFORE any destructive work.
 	// Preflight must be able to refuse without losing existing embeddings.
-	modelPath, err := embedder.FindEmbeddingModel(root)
+	modelPath, err := findEmbeddingModel(root)
 	if err != nil {
 		return err
 	}
@@ -125,21 +153,40 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 	if err := preflightEmbeddingSpec(embSpec, modelID); err != nil {
 		return err
 	}
+	modelHash, err := hashEmbeddingModel(ctx, modelPath)
+	if err != nil {
+		return err
+	}
 
-	// Now safe to delete: preflight passed, so indexing will proceed.
-	if force {
-		if err := db.DeleteAllEmbeddings(); err != nil {
-			return fmt.Errorf("clearing embeddings: %w", err)
+	notify(SemanticProgress{Status: "starting", Detail: "Starting embedding server..."})
+	server, err := startEmbeddingServer(ctx, modelPath, root, embSpec.MaxInputTokens)
+	if err != nil {
+		return fmt.Errorf("starting embedding server: %w", err)
+	}
+	defer server.Stop()
+
+	probe, err := server.EmbedBatch(ctx, []string{"semantic contract probe"})
+	if err != nil {
+		return fmt.Errorf("probing embedding dimensions: %w", err)
+	}
+	nativeDims := len(probe[0])
+	dims := nativeDims
+	if embSpec.Dims > 0 {
+		if embSpec.Dims > nativeDims {
+			return fmt.Errorf("embedding model returns %d dimensions, below configured %d", nativeDims, embSpec.Dims)
 		}
-	} else {
-		// Detect model change — re-embed everything if model switched.
-		previousModel, _ := db.GetMeta("embedding_model")
-		if previousModel != "" && previousModel != modelID {
-			notify(SemanticProgress{Status: "starting", Detail: fmt.Sprintf("Model changed (%s → %s), re-embedding...", previousModel, modelID)})
-			if err := db.DeleteAllEmbeddings(); err != nil {
-				return fmt.Errorf("clearing old embeddings: %w", err)
-			}
+		if embSpec.Dims < nativeDims && !embSpec.Matryoshka {
+			return fmt.Errorf("embedding model truncation requires Matryoshka support")
 		}
+		dims = embSpec.Dims
+	}
+	relativeModel, err := filepath.Rel(root, modelPath)
+	if err != nil {
+		return fmt.Errorf("resolving embedding model path: %w", err)
+	}
+	contract := searchdb.SemanticContract{Version: 1, Model: filepath.ToSlash(relativeModel), ModelSHA256: modelHash, DocPrefix: embSpec.DocPrefix, QueryPrefix: embSpec.QueryPrefix, Dimensions: dims, Matryoshka: embSpec.Matryoshka}
+	if _, err := db.BeginSemanticContract(ctx, contract, force); err != nil {
+		return fmt.Errorf("starting semantic contract: %w", err)
 	}
 
 	// Report all sources upfront so progress view populates immediately.
@@ -158,18 +205,14 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 		}
 	}
 	if !anyWork {
+		state, _ := db.SemanticState()
+		if state == "building" {
+			if err := db.CompleteSemanticContract(ctx, contract, semanticMetadata(modelID)); err != nil {
+				return fmt.Errorf("completing semantic contract: %w", err)
+			}
+		}
 		return nil
 	}
-
-	notify(SemanticProgress{Status: "starting", Detail: "Starting embedding server..."})
-
-	server, err := embedder.StartServer(ctx, modelPath, root, embSpec.MaxInputTokens)
-	if err != nil {
-		return fmt.Errorf("starting embedding server: %w", err)
-	}
-	defer server.Stop()
-
-	dims := embSpec.Dims // 0 if not set → no truncation
 
 	// Replace the sticky "Starting..." banner with the active model so the
 	// progress view shows which model is actually embedding.
@@ -185,26 +228,43 @@ func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, on
 			return err
 		}
 	}
-
-	if err := db.SetMeta("semantic_indexed_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
-		return fmt.Errorf("setting semantic_indexed_at: %w", err)
-	}
-	if err := db.SetMeta("embedding_model", modelID); err != nil {
-		return fmt.Errorf("setting embedding_model: %w", err)
-	}
-	if err := db.SetMeta("embedding_doc_prefix", embSpec.DocPrefix); err != nil {
-		return fmt.Errorf("setting embedding_doc_prefix: %w", err)
-	}
-	if err := db.SetMeta("embedding_query_prefix", embSpec.QueryPrefix); err != nil {
-		return fmt.Errorf("setting embedding_query_prefix: %w", err)
-	}
-	if dims > 0 {
-		db.SetMeta("embedding_dims", fmt.Sprintf("%d", dims))
-	} else if dimCount, err := db.EmbeddingDims(); err == nil && dimCount > 0 {
-		db.SetMeta("embedding_dims", fmt.Sprintf("%d", dimCount))
+	if err := db.CompleteSemanticContract(ctx, contract, semanticMetadata(modelID)); err != nil {
+		return fmt.Errorf("completing semantic contract: %w", err)
 	}
 
 	return nil
+}
+
+func semanticMetadata(modelID string) searchdb.SemanticCompletionMetadata {
+	return searchdb.SemanticCompletionMetadata{IndexedAt: time.Now().UTC().Format(time.RFC3339), Model: modelID}
+}
+
+func hashEmbeddingModel(ctx context.Context, path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("opening embedding model: %w", err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	buf := make([]byte, 64*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		n, readErr := f.Read(buf)
+		if n > 0 {
+			if _, err := h.Write(buf[:n]); err != nil {
+				return "", err
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return "", fmt.Errorf("reading embedding model: %w", readErr)
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 // Chunk represents a single embedding unit derived from an article section.
@@ -386,7 +446,7 @@ func splitSentences(text string) []string {
 func embedSource(
 	ctx context.Context,
 	db *searchdb.DB,
-	server *embedder.Server,
+	server embeddingServer,
 	src searchdb.SourceInfo,
 	docPrefix string,
 	dims int,
@@ -484,6 +544,9 @@ func embedSource(
 		// Truncate dims if configured.
 		if dims > 0 {
 			for i := range vectors {
+				if len(vectors[i]) < dims {
+					return fmt.Errorf("embedding %s returned %d dimensions, want at least %d", src.Filename, len(vectors[i]), dims)
+				}
 				vectors[i] = embedder.TruncateDims(vectors[i], dims)
 			}
 		}

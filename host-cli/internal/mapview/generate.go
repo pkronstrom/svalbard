@@ -72,17 +72,20 @@ const htmlTemplate = `<!DOCTYPE html>
 </html>
 `
 
+// The maplibre-vendor app-bundle installs into apps/maplibre-vendor/vendor/,
+// a sibling of this viewer's apps/map/ directory.
 const (
-	mapLibreJSPath  = "../../vendor/maplibre-gl.js"
-	mapLibreCSSPath = "../../vendor/maplibre-gl.css"
-	pmTilesJSPath   = "../../vendor/pmtiles.js"
+	mapLibreJSPath  = "../maplibre-vendor/vendor/maplibre-gl.js"
+	mapLibreCSSPath = "../maplibre-vendor/vendor/maplibre-gl.css"
+	pmTilesJSPath   = "../maplibre-vendor/vendor/pmtiles.js"
 )
 
 func ensureVendorAssets(root string) error {
+	vendor := filepath.Join("apps", "maplibre-vendor", "vendor")
 	required := []string{
-		filepath.Join("vendor", "maplibre-gl.js"),
-		filepath.Join("vendor", "maplibre-gl.css"),
-		filepath.Join("vendor", "pmtiles.js"),
+		filepath.Join(vendor, "maplibre-gl.js"),
+		filepath.Join(vendor, "maplibre-gl.css"),
+		filepath.Join(vendor, "pmtiles.js"),
 	}
 	for _, rel := range required {
 		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {

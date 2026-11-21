@@ -1,6 +1,34 @@
 package wizard
 
-import "github.com/pkronstrom/svalbard/tui"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/pkronstrom/svalbard/tui"
+)
+
+func rightPaneWidth(width int) int {
+	if width < tui.MinTwoPaneWidth {
+		return width
+	}
+	return width - int(float64(width)*tui.LeftFraction) - 2
+}
+
+func validationText(width int, message string) string {
+	if width <= 0 || message == "" {
+		return message
+	}
+	return lipgloss.NewStyle().Width(rightPaneWidth(width)).Render(message)
+}
+
+func validationLines(width int, messages ...string) int {
+	lines := 0
+	for _, message := range messages {
+		if message == "" {
+			continue
+		}
+		lines += lipgloss.Height(validationText(width, message))
+	}
+	return lines
+}
 
 // View renders the wizard UI — left pane shows stage list, right pane shows
 // the active sub-model's interactive view.

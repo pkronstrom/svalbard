@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -75,4 +76,47 @@ func (c *Catalog) ResolveDeps(selectedIDs map[string]bool, defaults DepDefaults)
 	}
 
 	return autoDeps
+}
+
+// ResolveDepsChecked takes user-selected IDs and returns known automatic
+// dependencies together with sorted IDs that could not be resolved. Unlike
+// ResolveDeps, false selectedIDs entries do not seed traversal.
+func (c *Catalog) ResolveDepsChecked(selectedIDs map[string]bool, defaults DepDefaults) (map[string]bool, []string) {
+	autoDeps := make(map[string]bool)
+	visited := make(map[string]bool)
+	missing := make(map[string]bool)
+
+	var visit func(id string, isAuto bool)
+	visit = func(id string, isAuto bool) {
+		if visited[id] {
+			return
+		}
+		visited[id] = true
+
+		item, ok := c.recipes[id]
+		if !ok {
+			missing[id] = true
+			return
+		}
+		if isAuto && !selectedIDs[id] {
+			autoDeps[id] = true
+		}
+		for _, depID := range depsForItem(item, defaults) {
+			visit(depID, true)
+		}
+	}
+
+	for id, selected := range selectedIDs {
+		if selected {
+			visit(id, false)
+		}
+	}
+
+	missingIDs := make([]string, 0, len(missing))
+	for id := range missing {
+		missingIDs = append(missingIDs, id)
+	}
+	sort.Strings(missingIDs)
+
+	return autoDeps, missingIDs
 }

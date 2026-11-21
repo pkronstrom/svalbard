@@ -1,0 +1,13 @@
+id: tool-scons
+type: toolchain
+url: https://dl.registry.platformio.org/download/platformio/tool/tool-scons/4.41101.0/tool-scons-4.41101.0.tar.gz
+sha256: e405de1fcd3307fa80d624f0290c7cd30fbb47f67e135a9f56d7e46b6b895311
+description: SCons for PlatformIO builds
+
+size_gb: 0.000523
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+license:
+  id: MIT
+  attribution: PlatformIO Labs and upstream authors

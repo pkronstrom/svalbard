@@ -1,0 +1,13 @@
+id: platformio-espressif32
+type: toolchain
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+size_gb: 0.000147
+url: https://dl.registry.platformio.org/download/platformio/platform/espressif32/7.1.3/espressif32-7.1.3.tar.gz
+sha256: aebc20fac5c17c6cf1d39a87cd33a8a7bbf63d5a4195876d45a62238609da6b0
+description: PlatformIO Espressif32 platform 7.1.3
+deps: [platformio-core, espidf-python, framework-espidf, tool-esptoolpy, tool-openocd-esp32, toolchain-xtensa-esp-elf, toolchain-esp32ulp, toolchain-riscv32-esp, tool-xtensa-esp-elf-gdb, tool-riscv32-esp-elf-gdb, tool-cmake, tool-ninja, tool-scons, tool-esp-rom-elfs]
+license:
+  id: Apache-2.0
+  attribution: PlatformIO Labs

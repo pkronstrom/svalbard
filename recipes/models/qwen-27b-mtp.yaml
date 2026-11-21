@@ -13,5 +13,8 @@ description: Optional Qwen3.8 27B Q4_0 MTP drafter — companion for qwen-27b/qw
 license:
   id: Apache-2.0
   attribution: Alibaba Cloud / Qwen Team / Unsloth
+draft_for:
+- qwen-27b
+- qwen-27b-hq
 deps:
 - llama-server

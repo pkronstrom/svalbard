@@ -3,7 +3,9 @@
 package searchdb
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -13,6 +15,17 @@ import (
 // DB wraps a SQLite database with FTS5 for article search.
 type DB struct {
 	db *sql.DB
+}
+
+// SemanticContract describes the vector compatibility boundary for one build.
+type SemanticContract struct {
+	Version     int    `json:"version"`
+	Model       string `json:"model"`
+	ModelSHA256 string `json:"model_sha256"`
+	DocPrefix   string `json:"doc_prefix"`
+	QueryPrefix string `json:"query_prefix"`
+	Dimensions  int    `json:"dimensions"`
+	Matryoshka  bool   `json:"matryoshka"`
 }
 
 // Article represents an article to be indexed.
@@ -39,7 +52,10 @@ CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     filename TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
-    indexed_at TEXT
+    indexed_at TEXT,
+    source_uuid TEXT,
+    source_size INTEGER,
+    source_mtime_ns INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS articles (
@@ -98,11 +114,26 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("searchdb: create schema: %w", err)
 	}
 
-	// Migrate: add sections column to articles if missing.
-	var hasSections int
-	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('articles') WHERE name='sections'`).Scan(&hasSections)
-	if hasSections == 0 {
-		db.Exec("ALTER TABLE articles ADD COLUMN sections TEXT")
+	for _, column := range []struct {
+		name string
+		typ  string
+	}{
+		{"sections", "TEXT"},
+		{"source_uuid", "TEXT"},
+		{"source_size", "INTEGER"},
+		{"source_mtime_ns", "INTEGER"},
+	} {
+		var present int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, tableForColumn(column.name), column.name).Scan(&present); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("searchdb: inspect %s migration: %w", column.name, err)
+		}
+		if present == 0 {
+			if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableForColumn(column.name), column.name, column.typ)); err != nil {
+				db.Close()
+				return nil, fmt.Errorf("searchdb: migrate %s: %w", column.name, err)
+			}
+		}
 	}
 
 	// Migrate: detect old-style embeddings table (article_id as PK, no chunk_index)
@@ -127,6 +158,13 @@ func Open(path string) (*DB, error) {
 	return &DB{db: db}, nil
 }
 
+func tableForColumn(column string) string {
+	if column == "sections" {
+		return "articles"
+	}
+	return "sources"
+}
+
 // Close closes the database connection.
 func (d *DB) Close() error {
 	return d.db.Close()
@@ -134,11 +172,29 @@ func (d *DB) Close() error {
 
 // SetMeta sets a key-value pair in the meta table.
 func (d *DB) SetMeta(key, value string) error {
-	_, err := d.db.Exec(
+	return d.SetMetaContext(context.Background(), key, value)
+}
+
+// SetMetaContext sets a key-value pair while honoring caller cancellation.
+func (d *DB) SetMetaContext(ctx context.Context, key, value string) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("searchdb: begin metadata update: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
 		"INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
 		key, value,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("searchdb: commit metadata update: %w", err)
+	}
+	return nil
 }
 
 // GetMeta retrieves a value from the meta table. Returns "" if the key is not found.
@@ -149,26 +205,6 @@ func (d *DB) GetMeta(key string) (string, error) {
 		return "", nil
 	}
 	return value, err
-}
-
-// UpsertSource inserts or updates a source (ZIM file) and returns its ID.
-func (d *DB) UpsertSource(filename, title string) (int64, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := d.db.Exec(
-		`INSERT INTO sources (filename, title, indexed_at) VALUES (?, ?, ?)
-		 ON CONFLICT(filename) DO UPDATE SET title = excluded.title, indexed_at = excluded.indexed_at`,
-		filename, title, now,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("searchdb: upsert source: %w", err)
-	}
-
-	var id int64
-	err = d.db.QueryRow("SELECT id FROM sources WHERE filename = ?", filename).Scan(&id)
-	if err != nil {
-		return 0, fmt.Errorf("searchdb: get source id: %w", err)
-	}
-	return id, nil
 }
 
 // IndexedFilenames returns all filenames currently indexed.
@@ -190,38 +226,285 @@ func (d *DB) IndexedFilenames() ([]string, error) {
 	return filenames, rows.Err()
 }
 
-// InsertArticles inserts a batch of articles for the given source within a transaction.
-func (d *DB) InsertArticles(sourceID int64, articles []Article) error {
-	tx, err := d.db.Begin()
+// Source identifies an archive and the cheap identity used to tell whether its
+// indexed articles are still current.
+type Source struct {
+	Filename  string
+	Title     string
+	UUID      string
+	Size      int64
+	ModTimeNS int64
+}
+
+// IndexedSources returns all currently indexed source identities. Legacy rows
+// without an identity are returned with an empty UUID and are never current.
+func (d *DB) IndexedSources() ([]Source, error) {
+	rows, err := d.db.Query(`SELECT filename, title, COALESCE(source_uuid, ''), COALESCE(source_size, 0), COALESCE(source_mtime_ns, 0) FROM sources ORDER BY filename`)
 	if err != nil {
-		return fmt.Errorf("searchdb: begin tx: %w", err)
+		return nil, fmt.Errorf("searchdb: query sources: %w", err)
+	}
+	defer rows.Close()
+
+	var sources []Source
+	for rows.Next() {
+		var source Source
+		if err := rows.Scan(&source.Filename, &source.Title, &source.UUID, &source.Size, &source.ModTimeNS); err != nil {
+			return nil, fmt.Errorf("searchdb: scan source: %w", err)
+		}
+		sources = append(sources, source)
+	}
+	return sources, rows.Err()
+}
+
+// IdentityCurrent reports whether a persisted source has the same complete
+// archive identity as candidate. An identity missing from a legacy row is dirty.
+func (s Source) IdentityCurrent(candidate Source) bool {
+	return s.UUID != "" && s.UUID == candidate.UUID && s.Size == candidate.Size && s.ModTimeNS == candidate.ModTimeNS
+}
+
+// ReplaceSource atomically replaces a source's articles and identity. It
+// deletes embeddings explicitly because older databases did not cascade them.
+func (d *DB) ReplaceSource(ctx context.Context, source Source, articles []Article) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("searchdb: begin replacement: %w", err)
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare("INSERT INTO articles (source_id, path, title, body, sections) VALUES (?, ?, ?, ?, ?)")
+	var existingID int64
+	err = tx.QueryRowContext(ctx, "SELECT id FROM sources WHERE filename = ?", source.Filename).Scan(&existingID)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("searchdb: find source %q: %w", source.Filename, err)
+	}
+	if err == nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM embeddings WHERE article_id IN (SELECT id FROM articles WHERE source_id = ?)`, existingID); err != nil {
+			return fmt.Errorf("searchdb: delete source embeddings: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM articles WHERE source_id = ?", existingID); err != nil {
+			return fmt.Errorf("searchdb: delete source articles: %w", err)
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sources (filename, title, indexed_at, source_uuid, source_size, source_mtime_ns) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(filename) DO UPDATE SET title=excluded.title, indexed_at=excluded.indexed_at, source_uuid=excluded.source_uuid, source_size=excluded.source_size, source_mtime_ns=excluded.source_mtime_ns`,
+		source.Filename, source.Title, now, source.UUID, source.Size, source.ModTimeNS); err != nil {
+		return fmt.Errorf("searchdb: replace source: %w", err)
+	}
+	var sourceID int64
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM sources WHERE filename = ?", source.Filename).Scan(&sourceID); err != nil {
+		return fmt.Errorf("searchdb: get replacement source id: %w", err)
+	}
+	if err := insertArticles(ctx, tx, sourceID, articles); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value = 'building' WHERE key = 'semantic_state' AND value = 'complete'`); err != nil {
+		return fmt.Errorf("searchdb: invalidate semantic state: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("searchdb: commit replacement: %w", err)
+	}
+	return nil
+}
+
+// PruneSources removes every indexed source absent from present. Source removal
+// leaves a completed semantic index valid for the surviving articles.
+func (d *DB) PruneSources(ctx context.Context, present map[string]bool) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("searchdb: begin prune: %w", err)
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, "SELECT id, filename FROM sources")
+	if err != nil {
+		return fmt.Errorf("searchdb: list prune sources: %w", err)
+	}
+	var ids []int64
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		var id int64
+		var filename string
+		if err := rows.Scan(&id, &filename); err != nil {
+			rows.Close()
+			return fmt.Errorf("searchdb: scan prune source: %w", err)
+		}
+		if !present[filename] {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("searchdb: close prune sources: %w", err)
+	}
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM embeddings WHERE article_id IN (SELECT id FROM articles WHERE source_id = ?)`, id); err != nil {
+			return fmt.Errorf("searchdb: prune embeddings: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM articles WHERE source_id = ?", id); err != nil {
+			return fmt.Errorf("searchdb: prune articles: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM sources WHERE id = ?", id); err != nil {
+			return fmt.Errorf("searchdb: prune source: %w", err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("searchdb: commit prune: %w", err)
+	}
+	return nil
+}
+
+func insertArticles(ctx context.Context, tx *sql.Tx, sourceID int64, articles []Article) error {
+	stmt, err := tx.PrepareContext(ctx, "INSERT INTO articles (source_id, path, title, body, sections) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("searchdb: prepare insert: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, a := range articles {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		var sections interface{}
 		if a.Sections != "" {
 			sections = a.Sections
 		}
-		if _, err := stmt.Exec(sourceID, a.Path, a.Title, a.Body, sections); err != nil {
+		if _, err := stmt.ExecContext(ctx, sourceID, a.Path, a.Title, a.Body, sections); err != nil {
 			return fmt.Errorf("searchdb: insert article %q: %w", a.Path, err)
 		}
 	}
 
-	return tx.Commit()
+	return nil
 }
 
-// DeleteSourceArticles removes all articles belonging to a source.
-func (d *DB) DeleteSourceArticles(sourceID int64) error {
-	_, err := d.db.Exec("DELETE FROM articles WHERE source_id = ?", sourceID)
+// SemanticState returns the current semantic lifecycle marker, or absent when
+// no semantic contract has been published.
+func (d *DB) SemanticState() (string, error) {
+	return d.GetMeta("semantic_state")
+}
+
+// LoadSemanticContract returns the stored contract and lifecycle state. Legacy
+// vector rows without this metadata are deliberately unavailable to readers.
+func (d *DB) LoadSemanticContract() (SemanticContract, string, error) {
+	state, err := d.SemanticState()
+	if err != nil || state == "" {
+		return SemanticContract{}, state, err
+	}
+	raw, err := d.GetMeta("semantic_contract")
 	if err != nil {
-		return fmt.Errorf("searchdb: delete source articles: %w", err)
+		return SemanticContract{}, "", err
+	}
+	var contract SemanticContract
+	if err := json.Unmarshal([]byte(raw), &contract); err != nil {
+		return SemanticContract{}, "", fmt.Errorf("searchdb: decode semantic contract: %w", err)
+	}
+	return contract, state, nil
+}
+
+// BeginSemanticContract atomically publishes a building contract and clears
+// incompatible vectors. Matching building work is retained for resume.
+func (d *DB) BeginSemanticContract(ctx context.Context, contract SemanticContract, force bool) (bool, error) {
+	current, state, err := d.LoadSemanticContract()
+	if err != nil {
+		return false, err
+	}
+	if !force && current == contract && state == "building" {
+		return false, nil
+	}
+	if !force && current == contract && state == "complete" {
+		return false, nil
+	}
+	raw, err := json.Marshal(contract)
+	if err != nil {
+		return false, fmt.Errorf("searchdb: encode semantic contract: %w", err)
+	}
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("searchdb: begin semantic contract: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "DELETE FROM embeddings"); err != nil {
+		return false, fmt.Errorf("searchdb: clear incompatible embeddings: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO meta (key, value) VALUES ('semantic_contract', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, string(raw)); err != nil {
+		return false, fmt.Errorf("searchdb: store semantic contract: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO meta (key, value) VALUES ('semantic_state', 'building') ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+		return false, fmt.Errorf("searchdb: mark semantic building: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("searchdb: commit semantic contract: %w", err)
+	}
+	return true, nil
+}
+
+// SemanticCompletionMetadata is the legacy reader metadata published with a
+// completed semantic contract. Its fixed fields prevent callers from changing
+// contract lifecycle keys after coverage has been validated.
+type SemanticCompletionMetadata struct {
+	IndexedAt string
+	Model     string
+}
+
+// CompleteSemanticContract publishes legacy reader metadata and
+// the completion marker in the same transaction as the coverage check.
+func (d *DB) CompleteSemanticContract(ctx context.Context, contract SemanticContract, metadata SemanticCompletionMetadata) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("searchdb: begin semantic completion: %w", err)
+	}
+	defer tx.Rollback()
+	var raw string
+	var state string
+	if err := tx.QueryRowContext(ctx, "SELECT value FROM meta WHERE key='semantic_contract'").Scan(&raw); err != nil {
+		return fmt.Errorf("searchdb: load completion contract: %w", err)
+	}
+	if err := tx.QueryRowContext(ctx, "SELECT value FROM meta WHERE key='semantic_state'").Scan(&state); err != nil {
+		return fmt.Errorf("searchdb: load completion state: %w", err)
+	}
+	var current SemanticContract
+	if err := json.Unmarshal([]byte(raw), &current); err != nil || current != contract {
+		return fmt.Errorf("searchdb: semantic contract changed before completion")
+	}
+	if state == "complete" {
+		return nil
+	}
+	var missing int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM articles a WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.article_id=a.id)`).Scan(&missing); err != nil {
+		return err
+	}
+	if missing != 0 {
+		return fmt.Errorf("searchdb: semantic coverage incomplete: %d articles missing embeddings", missing)
+	}
+	for key, value := range map[string]string{
+		"semantic_indexed_at":    metadata.IndexedAt,
+		"embedding_model":        metadata.Model,
+		"embedding_doc_prefix":   contract.DocPrefix,
+		"embedding_query_prefix": contract.QueryPrefix,
+		"embedding_dims":         fmt.Sprintf("%d", contract.Dimensions),
+	} {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value); err != nil {
+			return fmt.Errorf("searchdb: publish %s: %w", key, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO meta (key,value) VALUES ('semantic_state','complete') ON CONFLICT(key) DO UPDATE SET value=excluded.value"); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("searchdb: commit semantic completion: %w", err)
 	}
 	return nil
 }

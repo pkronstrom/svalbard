@@ -15,6 +15,7 @@ type ReviewItem struct {
 	Type        string
 	SizeGB      float64
 	Description string
+	Unavailable bool
 }
 
 // reviewConfirmMsg is sent when the user confirms the review.
@@ -27,6 +28,7 @@ type reviewBackMsg struct{}
 type reviewModel struct {
 	vaultPath    string
 	items        []ReviewItem
+	missingIDs   []string
 	freeGB       float64
 	cursor       int
 	scrollOffset int
@@ -37,21 +39,19 @@ type reviewModel struct {
 	errMsg       string
 }
 
-func newReviewModel(vaultPath string, items []ReviewItem, freeGB float64) reviewModel {
-	// Sort items by type then ID for consistent display
+func newReviewModel(vaultPath string, items []ReviewItem, missingIDs []string, freeGB float64) reviewModel {
+	// Sort items by ID for consistent display.
 	sort.Slice(items, func(i, j int) bool {
-		if items[i].Type != items[j].Type {
-			return items[i].Type < items[j].Type
-		}
 		return items[i].ID < items[j].ID
 	})
 
 	return reviewModel{
-		vaultPath: vaultPath,
-		items:     items,
-		freeGB:    freeGB,
-		theme:     tui.DefaultTheme(),
-		keys:      tui.DefaultKeyMap(),
+		vaultPath:  vaultPath,
+		items:      items,
+		missingIDs: append([]string(nil), missingIDs...),
+		freeGB:     freeGB,
+		theme:      tui.DefaultTheme(),
+		keys:       tui.DefaultKeyMap(),
 	}
 }
 
@@ -62,6 +62,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.ensureVisible()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -91,11 +92,25 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m reviewModel) maxVisible() int {
 	// Shell chrome(4) + header(3) + detail(4) + footer(2) = 13
-	avail := m.height - 13
-	if avail < 3 {
-		avail = 3
+	avail := m.height - 13 - validationLines(m.width, reviewValidation(m))
+	if avail < 1 {
+		avail = 1
 	}
 	return avail
+}
+
+func reviewValidation(m reviewModel) string {
+	message := ""
+	if len(m.missingIDs) > 0 {
+		message = "  Missing catalog recipes: " + strings.Join(m.missingIDs, ", ")
+	}
+	if m.errMsg != "" {
+		if message != "" {
+			message += "\n"
+		}
+		message += "  " + m.errMsg
+	}
+	return message
 }
 
 func (m *reviewModel) ensureVisible() {
@@ -113,11 +128,19 @@ func (m *reviewModel) ensureVisible() {
 
 func (m reviewModel) View() string {
 	var b strings.Builder
+	if validation := reviewValidation(m); validation != "" {
+		b.WriteString(m.theme.Danger.Render(validationText(m.width, validation)))
+		b.WriteString("\n")
+	}
 
 	// Header
 	totalGB := m.totalSizeGB()
 	b.WriteString(fmt.Sprintf("  Target: %s\n", m.vaultPath))
-	b.WriteString(fmt.Sprintf("  Items:  %d sources, %s", len(m.items), tui.FormatSizeGB(totalGB)))
+	label := tui.FormatSizeGB(totalGB)
+	if m.hasUnavailable() {
+		label = "known-size subtotal " + label
+	}
+	b.WriteString(fmt.Sprintf("  Items:  %d sources, %s", len(m.items), label))
 	if m.freeGB > 0 {
 		b.WriteString(fmt.Sprintf(" / %s free", tui.FormatSizeGB(m.freeGB)))
 	}
@@ -145,7 +168,11 @@ func (m reviewModel) View() string {
 		}
 
 		sym := tui.TypeSymbol(item.Type)
-		line := fmt.Sprintf("  %s%s %s  %s", prefix, sym, item.ID, tui.FormatSizeGB(item.SizeGB))
+		size := tui.FormatSizeGB(item.SizeGB)
+		if item.Unavailable {
+			size = "unknown size"
+		}
+		line := fmt.Sprintf("  %s%s %s  %s", prefix, sym, item.ID, size)
 
 		if isCursor {
 			b.WriteString(m.theme.Selected.Render(line))
@@ -166,19 +193,17 @@ func (m reviewModel) View() string {
 	b.WriteString("\n")
 	if m.cursor >= 0 && m.cursor < len(m.items) {
 		item := m.items[m.cursor]
-		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s %s · %s · %s", tui.TypeSymbol(item.Type), item.ID, item.Type, tui.FormatSizeGB(item.SizeGB))))
+		size := tui.FormatSizeGB(item.SizeGB)
+		if item.Unavailable {
+			size = "unknown size"
+		}
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  %s %s · %s · %s", tui.TypeSymbol(item.Type), item.ID, item.Type, size)))
 		if item.Description != "" {
 			b.WriteString("\n")
 			b.WriteString(m.theme.Muted.Render("  " + item.Description))
 		}
 	}
 	b.WriteString("\n\n")
-
-	if m.errMsg != "" {
-		b.WriteString(m.theme.Danger.Render("  " + m.errMsg))
-		b.WriteString("\n\n")
-	}
-
 	// Footer
 	b.WriteString(m.theme.Help.Render("  j/k scroll  enter confirm  esc back"))
 
@@ -188,7 +213,18 @@ func (m reviewModel) View() string {
 func (m reviewModel) totalSizeGB() float64 {
 	var total float64
 	for _, item := range m.items {
-		total += item.SizeGB
+		if !item.Unavailable {
+			total += item.SizeGB
+		}
 	}
 	return total
+}
+
+func (m reviewModel) hasUnavailable() bool {
+	for _, item := range m.items {
+		if item.Unavailable {
+			return true
+		}
+	}
+	return false
 }

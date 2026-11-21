@@ -105,3 +105,32 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 		t.Fatalf("Entry mismatch: %+v", e)
 	}
 }
+
+func TestSaveAtomicallyReplacesManifestWithPublicPermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.yaml")
+	if err := os.WriteFile(path, []byte("old manifest\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Save(path, New("replacement")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err != nil {
+		t.Fatalf("replacement manifest is not loadable: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Errorf("permissions = %o, want 644", info.Mode().Perm())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, ".manifest-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Errorf("stray temporary manifests: %v", matches)
+	}
+}

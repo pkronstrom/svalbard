@@ -25,33 +25,48 @@ type indexStep struct {
 	detail string
 }
 
-type indexStartedMsg struct{ ch <-chan indexStep }
+type indexStartedMsg struct {
+	ch     <-chan indexStep
+	result <-chan indexResultMsg
+}
 type indexTickMsg struct {
 	step indexStep
 	done bool
 }
+type indexResultMsg struct {
+	err       error
+	cancelled bool
+}
 
 // wizardIndexModel runs keyword indexing within the wizard.
 type wizardIndexModel struct {
-	vaultPath string
-	runIndex  IndexFunc
-	steps     []indexStep
-	ch        <-chan indexStep
-	started   bool
-	finished  bool
-	cancel    context.CancelFunc
-	width     int
-	height    int
-	theme     tui.Theme
-	keys      tui.KeyMap
+	vaultPath      string
+	runIndex       IndexFunc
+	steps          []indexStep
+	ch             <-chan indexStep
+	result         <-chan indexResultMsg
+	started        bool
+	finished       bool
+	terminal       string
+	terminalDetail string
+	ctx            context.Context
+	cancel         context.CancelFunc
+	exitIntent     string
+	width          int
+	height         int
+	theme          tui.Theme
+	keys           tui.KeyMap
 }
 
 func newWizardIndex(vaultPath string, runIndex IndexFunc) wizardIndexModel {
+	ctx, cancel := context.WithCancel(context.Background())
 	return wizardIndexModel{
 		vaultPath: vaultPath,
 		runIndex:  runIndex,
 		theme:     tui.DefaultTheme(),
 		keys:      tui.DefaultKeyMap(),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -68,33 +83,50 @@ func (m wizardIndexModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case indexStartedMsg:
 		m.ch = msg.ch
+		m.result = msg.result
 		m.started = true
 		return m, waitForIndexEvent(m.ch)
 
 	case indexTickMsg:
 		if msg.done {
-			m.finished = true
-			return m, nil
+			return m, waitForIndexResult(m.result)
 		}
 		m.updateStep(msg.step)
 		return m, waitForIndexEvent(m.ch)
 
+	case indexResultMsg:
+		m.finished = true
+		switch {
+		case msg.err == nil:
+			m.terminal = "finished"
+		case msg.cancelled:
+			m.terminal = "cancelled"
+		default:
+			m.terminal = "failed"
+			m.terminalDetail = msg.err.Error()
+		}
+		if m.exitIntent == "quit" {
+			return m, tea.Quit
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if m.keys.ForceQuit.Matches(msg) {
-			if m.cancel != nil {
+			if !m.finished {
+				m.exitIntent = "quit"
 				m.cancel()
+				return m, nil
 			}
 			return m, tea.Quit
 		}
 		if m.finished && m.keys.Enter.Matches(msg) {
 			return m, func() tea.Msg { return wizardIndexDoneMsg{} }
 		}
-		// Allow skipping with Esc
-		if m.keys.Back.Matches(msg) {
-			if m.cancel != nil {
-				m.cancel()
-			}
-			return m, func() tea.Msg { return wizardIndexDoneMsg{} }
+		// Esc cancels but remains on this screen until the producer closes.
+		if m.keys.Back.Matches(msg) && !m.finished {
+			m.exitIntent = "back"
+			m.cancel()
+			return m, nil
 		}
 	}
 	return m, nil
@@ -114,19 +146,20 @@ func (m *wizardIndexModel) updateStep(s indexStep) {
 func (m wizardIndexModel) startIndex() tea.Cmd {
 	runIndex := m.runIndex
 	vaultPath := m.vaultPath
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel = cancel
 	return func() tea.Msg {
 		ch := make(chan indexStep, 16)
+		result := make(chan indexResultMsg, 1)
 		go func() {
 			defer close(ch)
-			if err := runIndex(ctx, vaultPath, func(file, status, detail string) {
-				ch <- indexStep{file: file, status: status, detail: detail}
-			}); err != nil {
-				ch <- indexStep{file: "error", status: tui.StatusFailed, detail: err.Error()}
-			}
+			err := runIndex(m.ctx, vaultPath, func(file, status, detail string) {
+				select {
+				case ch <- indexStep{file: file, status: status, detail: detail}:
+				case <-m.ctx.Done():
+				}
+			})
+			result <- indexResultMsg{err: err, cancelled: m.ctx.Err() != nil}
 		}()
-		return indexStartedMsg{ch: ch}
+		return indexStartedMsg{ch: ch, result: result}
 	}
 }
 
@@ -135,6 +168,9 @@ func waitForIndexEvent(ch <-chan indexStep) tea.Cmd {
 		ev, ok := <-ch
 		return indexTickMsg{step: ev, done: !ok}
 	}
+}
+func waitForIndexResult(result <-chan indexResultMsg) tea.Cmd {
+	return func() tea.Msg { return <-result }
 }
 
 func (m wizardIndexModel) View() string {
@@ -155,9 +191,9 @@ func (m wizardIndexModel) View() string {
 		}
 	}
 
-	maxVis := m.height - 10
-	if maxVis < 4 {
-		maxVis = 4
+	maxVis := m.height - 12
+	if maxVis < 1 {
+		maxVis = 1
 	}
 	pv := tui.ProgressView{
 		Theme:        m.theme,
@@ -168,24 +204,35 @@ func (m wizardIndexModel) View() string {
 
 	var b strings.Builder
 	b.WriteString(m.theme.Section.Render("Building search index"))
-	b.WriteString("\n\n")
-	b.WriteString(pv.Render())
 	b.WriteString("\n")
 
 	if m.finished {
-		done := 0
-		for _, s := range steps {
-			if s.Status == tui.StatusDone {
-				done++
+		switch m.terminal {
+		case "cancelled":
+			b.WriteString(m.theme.Warning.Render("  Indexing cancelled"))
+		case "failed":
+			message := "  Indexing failed"
+			if m.terminalDetail != "" {
+				message += ": " + m.terminalDetail
 			}
+			b.WriteString(m.theme.Error.Render(message))
+		default:
+			done := 0
+			for _, s := range steps {
+				if s.Status == tui.StatusDone {
+					done++
+				}
+			}
+			b.WriteString(m.theme.Success.Render(fmt.Sprintf("  %d files indexed", done)))
 		}
-		b.WriteString(m.theme.Success.Render(fmt.Sprintf("  %d files indexed", done)))
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Help.Render("  Enter: continue to dashboard"))
 	} else {
+		b.WriteString(pv.Render())
+		b.WriteString("\n")
 		b.WriteString(pv.RenderSummary())
 		b.WriteString("\n")
-		b.WriteString(m.theme.Help.Render("  Esc: skip indexing"))
+		b.WriteString(m.theme.Help.Render("  Esc: cancel indexing"))
 	}
 
 	return b.String()

@@ -1,6 +1,8 @@
 package index
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -116,6 +118,16 @@ func TestIndexShowsStatus(t *testing.T) {
 	}
 }
 
+func TestIndexFailureRemainsVisibleInShellAt80x8(t *testing.T) {
+	m := New(Config{})
+	m.width, m.height = 80, 8
+	m.rebuilding, m.rebuildDone, m.rebuildType = true, true, "configured"
+	m.terminal, m.terminalDetail = "failed", "model unavailable"
+	if got := m.View(); !strings.Contains(got, "model unavailable") {
+		t.Fatalf("80x8 shell hid failure: %q", got)
+	}
+}
+
 func TestGlobalProgressEventDoesNotCreateStep(t *testing.T) {
 	m := New(Config{})
 	m.width = 80
@@ -136,5 +148,76 @@ func TestGlobalProgressEventDoesNotCreateStep(t *testing.T) {
 	out := stripAnsi(m.View())
 	if !strings.Contains(out, "Starting embedding server...") {
 		t.Fatalf("View() should show global status, got:\n%s", out)
+	}
+}
+
+func TestIndexFailureAfterProgressCloseUsesTerminalResult(t *testing.T) {
+	m := New(Config{RunIndex: func(context.Context, string, func(IndexEvent)) error { return errors.New("model unavailable") }})
+	next, start := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	next, wait := m.Update(start())
+	m = next.(Model)
+	next, result := m.Update(wait()) // progress closes before the buffered result is consumed
+	m = next.(Model)
+	next, _ = m.Update(result())
+	m = next.(Model)
+	if !m.rebuildDone || m.terminal != "failed" || !strings.Contains(m.terminalDetail, "unavailable") {
+		t.Fatalf("terminal result lost after close: %+v", m)
+	}
+}
+
+func TestIndexCancelAfterProducerCloseKeepsSuccessfulOutcome(t *testing.T) {
+	m := New(Config{RunIndex: func(context.Context, string, func(IndexEvent)) error { return nil }})
+	next, start := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	next, wait := m.Update(start())
+	m = next.(Model)
+	next, result := m.Update(wait())
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = next.(Model)
+	next, _ = m.Update(result())
+	m = next.(Model)
+	if m.terminal != "finished" {
+		t.Fatalf("late Esc relabelled completed index: %q", m.terminal)
+	}
+}
+
+func TestIndexFailureBeforeLateEscRemainsFailure(t *testing.T) {
+	m := New(Config{RunIndex: func(context.Context, string, func(IndexEvent)) error { return errors.New("model unavailable") }})
+	next, start := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	next, wait := m.Update(start())
+	m = next.(Model)
+	next, result := m.Update(wait())
+	m = next.(Model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = next.(Model)
+	next, _ = m.Update(result())
+	m = next.(Model)
+	if m.terminal != "failed" {
+		t.Fatalf("late Esc relabelled failure: %q", m.terminal)
+	}
+}
+
+func TestIndexAutoStartEscBeforeStartedCancelsProducer(t *testing.T) {
+	exited := make(chan struct{})
+	m := New(Config{AutoStart: true, RunIndex: func(ctx context.Context, _ string, _ func(IndexEvent)) error {
+		<-ctx.Done()
+		close(exited)
+		return ctx.Err()
+	}})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = next.(Model)
+	started := m.Init()()
+	next, wait := m.Update(started)
+	m = next.(Model)
+	next, result := m.Update(wait())
+	m = next.(Model)
+	next, _ = m.Update(result())
+	m = next.(Model)
+	<-exited
+	if m.terminal != "cancelled" {
+		t.Fatalf("terminal = %q", m.terminal)
 	}
 }

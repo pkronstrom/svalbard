@@ -1,0 +1,29 @@
+id: espidf-python
+type: python-package
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+venv: svalbard-python
+deps: [svalbard-python]
+packages:
+- urllib3==1.26.20
+- cryptography==46.0.3
+- pyparsing==3.2.5
+- idf-component-manager==3.1.1
+- esp-idf-kconfig==3.9.0
+- pydantic==2.12.4
+- chardet==3.0.4
+- ecdsa==0.19.1
+- bitstring==4.3.1
+- reedsolo==1.7.0
+- intelhex==2.3.0
+- pyserial==3.5
+- PyYAML==6.0.3
+- argcomplete==3.6.3
+- pip==25.2
+- packaging==25.0
+description: ESP-IDF dependencies used by PlatformIO espressif32 7.1.3
+license:
+  id: Apache-2.0
+  attribution: Espressif Systems
+size_gb: 0.12

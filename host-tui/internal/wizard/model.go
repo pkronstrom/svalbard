@@ -7,6 +7,7 @@ package wizard
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkronstrom/svalbard/tui"
@@ -48,19 +49,22 @@ type Model struct {
 	keys   tui.KeyMap
 
 	// Sub-models (created lazily per stage)
-	pathPicker       pathPickerModel
-	platformPicker   platformPickerModel
-	presetPicker     presetPickerModel
-	packPicker       packPickerModel
-	review           reviewModel
-	applyModel       wizardApplyModel
-	indexModel       wizardIndexModel
+	pathPicker     pathPickerModel
+	platformPicker platformPickerModel
+	presetPicker   presetPickerModel
+	packPicker     packPickerModel
+	review         reviewModel
+	applyModel     wizardApplyModel
+	indexModel     wizardIndexModel
 
 	// Accumulated state across stages
 	vaultPath     string
 	freeGB        float64
 	hostPlatforms []string
-	checkedIDs    map[string]bool
+	explicitIDs   map[string]bool
+	effectiveIDs  map[string]bool
+	missingIDs    []string
+	presetSet     bool
 	presetName    string
 	region        string
 }
@@ -68,11 +72,12 @@ type Model struct {
 // New creates a new wizard Model with the given config.
 func New(config WizardConfig) Model {
 	m := Model{
-		config:     config,
-		stage:      stagePath,
-		theme:      tui.DefaultTheme(),
-		keys:       tui.DefaultKeyMap(),
-		checkedIDs: make(map[string]bool),
+		config:       config,
+		stage:        stagePath,
+		theme:        tui.DefaultTheme(),
+		keys:         tui.DefaultKeyMap(),
+		explicitIDs:  make(map[string]bool),
+		effectiveIDs: make(map[string]bool),
 	}
 
 	// Always start at path picker — every wizard run needs a vault path
@@ -115,39 +120,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.sizeActiveModel()
 
 	case presetDoneMsg:
+		if !m.presetSet || m.presetName != msg.preset.Name || m.region != msg.preset.Region {
+			m.explicitIDs = idsToSet(msg.preset.SourceIDs)
+			m.effectiveIDs = make(map[string]bool)
+			m.missingIDs = nil
+		}
 		m.presetName = msg.preset.Name
 		m.region = msg.preset.Region
-		m.checkedIDs = make(map[string]bool)
-		for _, id := range msg.preset.SourceIDs {
-			m.checkedIDs[id] = true
-		}
+		m.presetSet = true
 		m.stage = stagePacks
 		m.packPicker = newPackPicker(packPickerConfig{
 			groups:      m.config.PackGroups,
-			checkedIDs:  m.checkedIDs,
+			explicitIDs: m.explicitIDs,
 			freeGB:      m.freeGB,
 			resolveDeps: m.config.ResolveDeps,
 		})
 		return m.sizeActiveModel()
 
 	case packDoneMsg:
-		m.checkedIDs = msg.selectedIDs
+		m.capturePackSelection(msg.explicitIDs, msg.selectedIDs, msg.missingIDs)
 		m.stage = stageReview
-		m.review = newReviewModel(m.vaultPath, m.buildReviewItems(), m.freeGB)
+		m.review = newReviewModel(m.vaultPath, m.buildReviewItems(), m.missingIDs, m.freeGB)
 		return m.sizeActiveModel()
 
 	case packCancelMsg:
+		m.capturePackSelection(msg.explicitIDs, msg.selectedIDs, msg.missingIDs)
 		m.stage = stagePreset
 		m.presetPicker = newPresetPicker(m.config.Presets, m.config.Regions, m.freeGB)
 		return m.sizeActiveModel()
 
 	case reviewConfirmMsg:
+		if len(m.missingIDs) > 0 {
+			m.review.errMsg = "Missing catalog recipes: " + strings.Join(m.missingIDs, ", ")
+			return m.sizeActiveModel()
+		}
 		ids := m.selectedIDList()
 		// Init the vault if callback is available
 		if m.config.InitVault != nil {
 			if err := m.config.InitVault(m.vaultPath, ids, m.presetName, m.region, m.hostPlatforms); err != nil {
 				m.stage = stageReview
-				m.review = newReviewModel(m.vaultPath, m.buildReviewItems(), m.freeGB)
+				m.review = newReviewModel(m.vaultPath, m.buildReviewItems(), m.missingIDs, m.freeGB)
 				m.review.errMsg = fmt.Sprintf("Init failed: %v", err)
 				return m.sizeActiveModel()
 			}
@@ -164,7 +176,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.doneCmd()
 
 	case wizardApplyDoneMsg:
-		if m.config.RunIndex != nil {
+		shouldIndex := m.config.ShouldIndex == nil || m.config.ShouldIndex(m.vaultPath)
+		if msg.success && shouldIndex && m.config.RunIndex != nil {
 			m.stage = stageIndex
 			m.indexModel = newWizardIndex(m.vaultPath, m.config.RunIndex)
 			sized, sizeCmd := m.sizeActiveModel()
@@ -180,7 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stage = stagePacks
 		m.packPicker = newPackPicker(packPickerConfig{
 			groups:      m.config.PackGroups,
-			checkedIDs:  m.checkedIDs,
+			explicitIDs: m.explicitIDs,
 			freeGB:      m.freeGB,
 			resolveDeps: m.config.ResolveDeps,
 		})
@@ -188,6 +201,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if m.keys.ForceQuit.Matches(msg) {
+			if m.stage == stageApply || m.stage == stageIndex {
+				return m.forwardToActive(msg)
+			}
 			return m, tea.Quit
 		}
 		// Back from path picker goes to welcome screen
@@ -250,33 +266,72 @@ func (m Model) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) buildReviewItems() []ReviewItem {
-	var items []ReviewItem
-	seen := make(map[string]bool)
+	known := make(map[string]ReviewItem)
 	for _, g := range m.config.PackGroups {
 		for _, p := range g.Packs {
 			for _, src := range p.Sources {
-				if m.checkedIDs[src.ID] && !seen[src.ID] {
-					seen[src.ID] = true
-					items = append(items, ReviewItem{
+				if _, exists := known[src.ID]; !exists {
+					known[src.ID] = ReviewItem{
 						ID:          src.ID,
 						Type:        src.Type,
 						SizeGB:      src.SizeGB,
 						Description: src.Description,
-					})
+					}
 				}
 			}
+		}
+	}
+	ids := m.selectedIDList()
+	items := make([]ReviewItem, 0, len(ids)+len(m.missingIDs))
+	seen := make(map[string]bool)
+	for _, id := range ids {
+		if item, ok := known[id]; ok {
+			items = append(items, item)
+		} else {
+			items = append(items, ReviewItem{ID: id, Unavailable: true})
+		}
+		seen[id] = true
+	}
+	for _, id := range m.missingIDs {
+		if !seen[id] {
+			items = append(items, ReviewItem{ID: id, Unavailable: true})
 		}
 	}
 	return items
 }
 
 func (m Model) selectedIDList() []string {
-	ids := make([]string, 0, len(m.checkedIDs))
-	for id := range m.checkedIDs {
+	ids := make([]string, 0, len(m.effectiveIDs))
+	for id := range m.effectiveIDs {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+func (m *Model) capturePackSelection(explicitIDs, effectiveIDs map[string]bool, missingIDs []string) {
+	m.explicitIDs = copyIDs(explicitIDs)
+	m.effectiveIDs = copyIDs(effectiveIDs)
+	m.missingIDs = append([]string(nil), missingIDs...)
+	sort.Strings(m.missingIDs)
+}
+
+func idsToSet(ids []string) map[string]bool {
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
+}
+
+func copyIDs(ids map[string]bool) map[string]bool {
+	copy := make(map[string]bool, len(ids))
+	for id, selected := range ids {
+		if selected {
+			copy[id] = true
+		}
+	}
+	return copy
 }
 
 func (m Model) doneCmd() tea.Cmd {

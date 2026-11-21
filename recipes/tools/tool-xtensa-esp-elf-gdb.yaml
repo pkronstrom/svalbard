@@ -1,0 +1,21 @@
+id: tool-xtensa-esp-elf-gdb
+type: toolchain
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+platforms:
+  linux-x86_64: https://dl.registry.platformio.org/download/espressif/tool/tool-xtensa-esp-elf-gdb/12.1.0+20221002/tool-xtensa-esp-elf-gdb-linux_x86_64-12.1.0+20221002.tar.gz
+  linux-arm64: https://dl.registry.platformio.org/download/espressif/tool/tool-xtensa-esp-elf-gdb/12.1.0+20221002/tool-xtensa-esp-elf-gdb-linux_aarch64-12.1.0+20221002.tar.gz
+  macos-arm64: https://dl.registry.platformio.org/download/espressif/tool/tool-xtensa-esp-elf-gdb/12.1.0+20221002/tool-xtensa-esp-elf-gdb-darwin_arm64-12.1.0+20221002.tar.gz
+  macos-x86_64: https://dl.registry.platformio.org/download/espressif/tool/tool-xtensa-esp-elf-gdb/12.1.0+20221002/tool-xtensa-esp-elf-gdb-darwin_x86_64-12.1.0+20221002.tar.gz
+platform_sha256:
+  linux-x86_64: a142ebefd60d825ce608f1f711971a4a6e76dea78e5ea89eb625cba4df126676
+  linux-arm64: 759eca3c13b34a4c8fc127f97a7637910bc64231d7206597a5897d2273489f07
+  macos-arm64: 0f6adab1955c795425114130ca7cb4d1f9445faafee59978e56754622a1f4fe3
+  macos-x86_64: 71583f1e8e01b52d04c1ac7ad8862d7c682e32694b75f8b187ea4116a3def7f3
+description: Xtensa GDB for PlatformIO ESP32 builds
+
+size_gb: 0.045371
+license:
+  id: GPL-3.0-or-later
+  attribution: Espressif Systems

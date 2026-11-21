@@ -5,11 +5,17 @@ tags:
 - embedded
 - esp32
 depth: reference-only
-size_gb: 0.32
+size_gb: 0.329764
 platforms:
   linux-x86_64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-xtensa-esp-elf/15.2.0+20251204/toolchain-xtensa-esp-elf-linux_x86_64-15.2.0+20251204.tar.gz
   linux-arm64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-xtensa-esp-elf/15.2.0+20251204/toolchain-xtensa-esp-elf-linux_aarch64-15.2.0+20251204.tar.gz
   macos-arm64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-xtensa-esp-elf/15.2.0+20251204/toolchain-xtensa-esp-elf-darwin_arm64-15.2.0+20251204.tar.gz
+  macos-x86_64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-xtensa-esp-elf/15.2.0+20251204/toolchain-xtensa-esp-elf-darwin_x86_64-15.2.0+20251204.tar.gz
+platform_sha256:
+  linux-x86_64: b12ff2cb44816ec8b49e89dd222d734a00299cfe4f6ff64db93bfaab3a7834c8
+  linux-arm64: 32fab0005f323a4cac6939940cd7be94b1fd316800c3744496dffa61bc05f465
+  macos-arm64: 72a4b3545bdcec8b2363ad363af28c9b7d21770d30d8475c6e5ac798437a128f
+  macos-x86_64: a9fbc11f388377ce89953741b5408ce1d15bc393842bcc164582709391fb71c1
 description: Xtensa GCC cross-compiler for ESP32, ESP32-S2, ESP32-S3
 license:
   id: GPL-3.0-or-later

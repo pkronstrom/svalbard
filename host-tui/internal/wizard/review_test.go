@@ -18,7 +18,7 @@ func sampleReviewItems() []ReviewItem {
 
 func TestReviewShowsSelectedItems(t *testing.T) {
 	items := sampleReviewItems()
-	m := newReviewModel("/mnt/vault", items, 64)
+	m := newReviewModel("/mnt/vault", items, nil, 64)
 	m.width = 120
 	m.height = 30
 
@@ -37,7 +37,7 @@ func TestReviewShowsSelectedItems(t *testing.T) {
 
 func TestReviewShowsTotal(t *testing.T) {
 	items := sampleReviewItems()
-	m := newReviewModel("/mnt/vault", items, 64)
+	m := newReviewModel("/mnt/vault", items, nil, 64)
 	m.width = 120
 	m.height = 30
 
@@ -53,7 +53,7 @@ func TestReviewShowsTotal(t *testing.T) {
 
 func TestReviewShowsTypeSymbols(t *testing.T) {
 	items := sampleReviewItems()
-	m := newReviewModel("/mnt/vault", items, 64)
+	m := newReviewModel("/mnt/vault", items, nil, 64)
 	m.width = 120
 	m.height = 30
 
@@ -73,7 +73,7 @@ func TestReviewShowsTypeSymbols(t *testing.T) {
 
 func TestReviewConfirm(t *testing.T) {
 	items := sampleReviewItems()
-	m := newReviewModel("/mnt/vault", items, 64)
+	m := newReviewModel("/mnt/vault", items, nil, 64)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -87,7 +87,7 @@ func TestReviewConfirm(t *testing.T) {
 
 func TestReviewCancel(t *testing.T) {
 	items := sampleReviewItems()
-	m := newReviewModel("/mnt/vault", items, 64)
+	m := newReviewModel("/mnt/vault", items, nil, 64)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	if cmd == nil {
@@ -101,7 +101,7 @@ func TestReviewCancel(t *testing.T) {
 
 func TestReviewNavigates(t *testing.T) {
 	items := sampleReviewItems()
-	m := newReviewModel("/mnt/vault", items, 64)
+	m := newReviewModel("/mnt/vault", items, nil, 64)
 	m.width = 120
 	m.height = 30
 
@@ -124,7 +124,7 @@ func TestReviewNavigates(t *testing.T) {
 
 func TestReviewDetailChanges(t *testing.T) {
 	items := sampleReviewItems()
-	m := newReviewModel("/mnt/vault", items, 64)
+	m := newReviewModel("/mnt/vault", items, nil, 64)
 	m.width = 120
 	m.height = 30
 
@@ -139,5 +139,53 @@ func TestReviewDetailChanges(t *testing.T) {
 
 	if out0 == out1 {
 		t.Error("detail pane should change when cursor moves")
+	}
+}
+
+func TestReviewShowsUnavailableMissingItemsWithUnknownSize(t *testing.T) {
+	m := newReviewModel("/mnt/vault", []ReviewItem{{ID: "known", Type: "zim", SizeGB: 1}, {ID: "missing", Unavailable: true}}, []string{"missing"}, 64)
+	m.width = 80
+	m.height = 8
+	m.cursor = 1
+	m.ensureVisible()
+
+	out := stripAnsi(m.View())
+	for _, want := range []string{"known-size subtotal", "missing", "unknown size", "Missing catalog recipes: missing"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("View() should contain %q, got:\n%s", want, out)
+		}
+	}
+	if got := m.totalSizeGB(); got != 1 {
+		t.Fatalf("totalSizeGB() = %v, want 1", got)
+	}
+}
+
+func TestReviewReservesRowsForWrappedValidation(t *testing.T) {
+	items := sampleReviewItems()
+	plain := newReviewModel("/vault", items, nil, 0)
+	plain.width, plain.height = 80, 30
+	wrapped := newReviewModel("/vault", items, []string{"a-very-long-missing-recipe-id-that-wraps-in-the-right-pane"}, 0)
+	wrapped.width, wrapped.height = 80, 30
+	if wrapped.maxVisible() >= plain.maxVisible() {
+		t.Fatalf("wrapped validation did not reserve rows: wrapped=%d plain=%d", wrapped.maxVisible(), plain.maxVisible())
+	}
+}
+
+func TestValidationLinesCountsRenderedBreaks(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		width int
+		text  string
+		want  int
+	}{
+		{"explicit newline", 80, "first\nsecond", 2},
+		{"wide characters", 80, strings.Repeat("界", 30), 2},
+		{"unknown width", 0, "first\nsecond", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := validationLines(tc.width, tc.text); got != tc.want {
+				t.Fatalf("rendered validation lines = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

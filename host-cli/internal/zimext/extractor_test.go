@@ -1,6 +1,7 @@
 package zimext
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,28 @@ func testSmallZIMPath(t *testing.T) string {
 		t.Fatalf("stat test zim %s: %v", path, err)
 	}
 	return path
+}
+
+func TestExtractArticlesContextReturnsArchiveUUID(t *testing.T) {
+	articles, title, uuid, err := ExtractArticlesContext(context.Background(), testSmallZIMPath(t))
+	if err != nil {
+		t.Fatalf("ExtractArticlesContext: %v", err)
+	}
+	if len(articles) == 0 || title == "" {
+		t.Fatalf("articles=%d title=%q", len(articles), title)
+	}
+	if uuid == "" {
+		t.Fatal("archive UUID is empty")
+	}
+}
+
+func TestExtractArticlesContextStopsBeforeIteration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, _, err := ExtractArticlesContext(ctx, testSmallZIMPath(t))
+	if err != context.Canceled {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
 }
 
 func TestExtractArticlesFromZIM(t *testing.T) {

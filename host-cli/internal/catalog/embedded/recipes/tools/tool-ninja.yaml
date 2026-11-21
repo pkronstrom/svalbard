@@ -1,0 +1,21 @@
+id: tool-ninja
+type: toolchain
+platforms:
+  linux-x86_64: https://dl.registry.platformio.org/download/platformio/tool/tool-ninja/1.7.1/tool-ninja-linux_x86_64-1.7.1.tar.gz
+  linux-arm64: https://dl.registry.platformio.org/download/platformio/tool/tool-ninja/1.10.2/tool-ninja-linux_aarch64-1.10.2.tar.gz
+  macos-arm64: https://dl.registry.platformio.org/download/platformio/tool/tool-ninja/1.13.2/tool-ninja-darwin_x86_64-1.13.2.tar.gz
+  macos-x86_64: https://dl.registry.platformio.org/download/platformio/tool/tool-ninja/1.13.2/tool-ninja-darwin_x86_64-1.13.2.tar.gz
+platform_sha256:
+  linux-x86_64: 500717adb5039bd51ca298aef036e356b14957808105a1e000691e3fc57c223d
+  linux-arm64: 8b5045b6269222013f32a832f0bab49fdb2cc1698da04936ba1ff1cb7d9614ea
+  macos-arm64: 3c309fd3a4c4f4fcd8e0e2ba6750b658fb391f571833fda62cd818c3a1baf022
+  macos-x86_64: 3c309fd3a4c4f4fcd8e0e2ba6750b658fb391f571833fda62cd818c3a1baf022
+description: Ninja for PlatformIO builds
+
+size_gb: 0.000580
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+license:
+  id: Apache-2.0
+  attribution: PlatformIO Labs and upstream authors

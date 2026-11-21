@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -57,12 +58,26 @@ type downloadResult struct {
 	id      string
 	entries []manifest.RealizedEntry
 	err     error
+	ack     chan struct{}
 }
+
+// CheckpointFunc durably stores a manifest snapshot before a completed recipe
+// is reported to callers.
+type CheckpointFunc func(manifest.Manifest) error
 
 // Run executes a reconciliation plan against the vault at root, mutating the
 // manifest's realized state to reflect what was applied.
 // The optional onProgress callback reports per-item status.
 func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Catalog, onProgress ...ProgressFunc) error {
+	return RunWithCheckpoint(ctx, root, m, plan, cat, nil, onProgress...)
+}
+
+// RunWithCheckpoint executes a reconciliation plan and checkpoints each
+// completed recipe before emitting its done event.
+func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Catalog, checkpoint CheckpointFunc, onProgress ...ProgressFunc) error {
+	applyCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	progress := func(ev ProgressEvent) {}
 	if len(onProgress) > 0 && onProgress[0] != nil {
 		progress = onProgress[0]
@@ -70,7 +85,21 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 
 	slog.Info("apply started", "downloads", len(plan.ToDownload), "removals", len(plan.ToRemove), "vault", root)
 
-	// Process removals first (free up space).
+	checkpointManifest := func(snapshot manifest.Manifest) error {
+		canonicalizeEntries(&snapshot)
+		if checkpoint != nil {
+			if err := checkpoint(snapshot); err != nil {
+				cancel()
+				return err
+			}
+		}
+		*m = snapshot
+		return nil
+	}
+
+	var applyErrors []error
+
+	// Process removals first (free up space), checkpointing before completion.
 	removeSet := make(map[string]struct{}, len(plan.ToRemove))
 	for _, id := range plan.ToRemove {
 		removeSet[id] = struct{}{}
@@ -87,73 +116,138 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 			filtered = append(filtered, e)
 		}
 	}
-	m.Realized.Entries = filtered
+	snapshot := *m
+	snapshot.Realized.Entries = filtered
+	if len(plan.ToRemove) > 0 {
+		if err := checkpointManifest(snapshot); err != nil {
+			return fmt.Errorf("checkpointing removals: %w", err)
+		}
+	}
 	for _, id := range plan.ToRemove {
 		progress(ProgressEvent{ID: id, Status: tui.StatusDone})
 	}
 
 	// Build the desired ID set for native builders to filter against.
-	desiredIDs := make(map[string]bool, len(plan.ToDownload))
-	for _, id := range plan.ToDownload {
+	desiredIDs := make(map[string]bool, len(m.Desired.Items))
+	for _, id := range m.Desired.Items {
 		desiredIDs[id] = true
+	}
+	if len(desiredIDs) == 0 {
+		for _, id := range plan.ToDownload {
+			desiredIDs[id] = true
+		}
 	}
 
 	// Partition downloads into parallel-safe (HTTP) and sequential (build) jobs.
 	var httpJobs []downloadJob
 	var buildJobs []downloadJob
+	buildQueued := make(map[string]bool)
 
 	for _, id := range plan.ToDownload {
 		recipe, ok := cat.RecipeByID(id)
 		if !ok {
-			progress(ProgressEvent{ID: id, Status: tui.StatusFailed, Error: fmt.Sprintf("recipe %q not found", id)})
+			err := fmt.Errorf("recipe %q not found", id)
+			progress(ProgressEvent{ID: id, Status: tui.StatusFailed, Error: err.Error()})
+			applyErrors = append(applyErrors, err)
 			continue
 		}
 		if recipe.Type == "python-package" {
-			continue // installed by python-venv builder
+			venv, ok := cat.RecipeByID(recipe.Venv)
+			if !ok {
+				err := fmt.Errorf("%s: python venv %q not found", id, recipe.Venv)
+				progress(ProgressEvent{ID: id, Status: tui.StatusFailed, Error: err.Error()})
+				applyErrors = append(applyErrors, err)
+				continue
+			}
+			// The planner regards an existing venv as complete. Re-run it when a
+			// newly desired package needs a tree below that venv.
+			if !buildQueued[venv.ID] {
+				buildJobs = append(buildJobs, downloadJob{id: venv.ID, recipe: venv})
+				buildQueued[venv.ID] = true
+			}
+			continue
 		}
 
 		switch {
 		case recipe.URL != "" || recipe.URLPattern != "" || len(recipe.Platforms) > 0:
 			httpJobs = append(httpJobs, downloadJob{id: id, recipe: recipe})
 		case recipe.Strategy == "build" && recipe.Build != nil:
-			buildJobs = append(buildJobs, downloadJob{id: id, recipe: recipe})
+			if !buildQueued[id] {
+				buildJobs = append(buildJobs, downloadJob{id: id, recipe: recipe})
+				buildQueued[id] = true
+			}
 		default:
-			progress(ProgressEvent{ID: id, Status: tui.StatusFailed, Error: "no acquisition strategy"})
+			err := fmt.Errorf("%s: no acquisition strategy", id)
+			progress(ProgressEvent{ID: id, Status: tui.StatusFailed, Error: err.Error()})
+			applyErrors = append(applyErrors, err)
 			slog.Warn("no acquisition strategy", "id", id)
 		}
 	}
 
 	allJobs := append(httpJobs, buildJobs...)
+	// Python packages are materialized by their venv aggregate rather than a
+	// standalone job. Replace explicit package dependencies with that queued
+	// aggregate so a platform archive cannot run before its Core tree exists.
+	for i := range allJobs {
+		allJobs[i].recipe.Deps = schedulerDependencies(allJobs[i].recipe, cat)
+	}
 	levels, err := jobLevels(allJobs, m.Realized.Entries)
 	if err != nil {
-		return err
+		return fmt.Errorf("scheduling jobs: %w", err)
 	}
 
-	var applyErrors []string
 	for _, level := range levels {
-		results := runJobBatch(ctx, root, level, cat, m.Desired.Options.HostPlatforms, desiredIDs, progress)
 		levelFailed := false
-		for _, res := range results {
-			if res.err != nil {
-				progress(ProgressEvent{ID: res.id, Status: tui.StatusFailed, Error: res.err.Error()})
-				slog.Warn("job failed", "id", res.id, "error", res.err)
-				applyErrors = append(applyErrors, fmt.Sprintf("%s: %s", res.id, res.err))
-				levelFailed = true
-				continue
-			}
-			m.Realized.Entries = append(m.Realized.Entries, res.entries...)
-			progress(ProgressEvent{ID: res.id, Status: tui.StatusDone})
+		for res := range runJobBatch(applyCtx, root, level, cat, m.Desired.Options.HostPlatforms, desiredIDs, progress) {
+			func() {
+				defer close(res.ack)
+				if res.err != nil {
+					progress(ProgressEvent{ID: res.id, Status: tui.StatusFailed, Error: res.err.Error()})
+					slog.Warn("job failed", "id", res.id, "error", res.err)
+					applyErrors = append(applyErrors, fmt.Errorf("%s: %w", res.id, res.err))
+					levelFailed = true
+					return
+				}
+				snapshot := *m
+				snapshot.Realized.Entries = replaceEntries(snapshot.Realized.Entries, res.entries)
+				if err := checkpointManifest(snapshot); err != nil {
+					progress(ProgressEvent{ID: res.id, Status: tui.StatusFailed, Error: fmt.Sprintf("checkpointing: %v", err)})
+					applyErrors = append(applyErrors, fmt.Errorf("%s: checkpointing: %w", res.id, err))
+					levelFailed = true
+					return
+				}
+				for _, id := range plannedIDsCoveredBy(res.entries, plan.ToDownload) {
+					progress(ProgressEvent{ID: id, Status: tui.StatusDone})
+				}
+			}()
 		}
 		if levelFailed {
 			break
 		}
 	}
+	if err := applyCtx.Err(); err != nil {
+		applyErrors = append(applyErrors, err)
+	}
+	for _, id := range plan.ToDownload {
+		if !realizedID(m.Realized.Entries, id) {
+			applyErrors = append(applyErrors, fmt.Errorf("incomplete apply: %s was not realized", id))
+		}
+	}
+	if len(applyErrors) > 0 {
+		return fmt.Errorf("apply incomplete: %w", errors.Join(applyErrors...))
+	}
 
 	// Collect env vars and menu specs from all realized recipes.
 	envVars := make(map[string]string)
 	menus := make(map[string]catalog.MenuSpec)
+	platformIORecipes := make(map[string]catalog.Item)
+	recipes := make(map[string]catalog.Item)
 	for _, e := range m.Realized.Entries {
 		if recipe, ok := cat.RecipeByID(e.ID); ok {
+			recipes[e.ID] = recipe
+			if desiredIDs[recipe.ID] && isPlatformIORecipe(recipe) {
+				platformIORecipes[recipe.ID] = recipe
+			}
 			for k, v := range recipe.Env {
 				envVars[k] = v
 			}
@@ -175,22 +269,36 @@ func Run(ctx context.Context, root string, m *manifest.Manifest, plan planner.Pl
 	if len(m.Desired.Presets) > 0 {
 		presetName = m.Desired.Presets[0]
 	}
-	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars, Menus: menus}); err != nil {
+	platforms := m.Desired.Options.HostPlatforms
+	if len(platforms) == 0 {
+		platforms = []string{hostPlatform()}
+	}
+	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars, Menus: menus, PlatformIORecipes: platformIORecipes, PlatformIOPlatforms: platforms, Recipes: recipes}); err != nil {
 		return fmt.Errorf("generating toolkit: %w", err)
 	}
 	if err := syncMapViewer(root, m.Realized.Entries); err != nil {
 		return fmt.Errorf("generating map viewer: %w", err)
 	}
 
-	m.Realized.AppliedAt = time.Now().UTC().Format(time.RFC3339)
-
-	if len(applyErrors) > 0 {
-		slog.Warn("apply completed with errors", "errors", len(applyErrors), "realized", len(m.Realized.Entries))
-		return fmt.Errorf("%d item(s) failed", len(applyErrors))
+	snapshot = *m
+	snapshot.Realized.AppliedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := checkpointManifest(snapshot); err != nil {
+		return fmt.Errorf("checkpointing completed apply: %w", err)
 	}
 
 	slog.Info("apply completed", "realized", len(m.Realized.Entries))
 	return nil
+}
+
+func schedulerDependencies(recipe catalog.Item, cat *catalog.Catalog) []string {
+	deps := append([]string(nil), recipeDependencies(recipe)...)
+	for i, dep := range deps {
+		item, ok := cat.RecipeByID(dep)
+		if ok && item.Type == "python-package" && item.Venv != "" {
+			deps[i] = item.Venv
+		}
+	}
+	return slices.Compact(deps)
 }
 
 func runJobBatch(
@@ -201,9 +309,9 @@ func runJobBatch(
 	platforms []string,
 	desiredIDs map[string]bool,
 	progress ProgressFunc,
-) []downloadResult {
-	results := make(chan downloadResult, len(batch))
-	jobs := make(chan downloadJob, len(batch))
+) <-chan downloadResult {
+	results := make(chan downloadResult)
+	jobs := make(chan downloadJob)
 	var wg sync.WaitGroup
 	workerCount := min(maxWorkers, len(batch))
 	for range workerCount {
@@ -211,25 +319,81 @@ func runJobBatch(
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				results <- executeJob(ctx, root, job, cat, platforms, desiredIDs, progress)
+				var result downloadResult
+				select {
+				case <-ctx.Done():
+					result = downloadResult{id: job.id, err: ctx.Err()}
+				default:
+					result = executeJob(ctx, root, job, cat, platforms, desiredIDs, progress)
+				}
+				result.ack = make(chan struct{})
+				results <- result
+				<-result.ack
 			}
 		}()
 	}
-	for _, job := range batch {
-		jobs <- job
-	}
-	close(jobs)
-	wg.Wait()
-	close(results)
+	go func() {
+		defer close(jobs)
+		for _, job := range batch {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- job:
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	return results
+}
 
-	out := make([]downloadResult, 0, len(batch))
-	for result := range results {
-		out = append(out, result)
+func replaceEntries(existing, additions []manifest.RealizedEntry) []manifest.RealizedEntry {
+	ids := make(map[string]struct{}, len(additions))
+	for _, entry := range additions {
+		ids[entry.ID] = struct{}{}
 	}
-	slices.SortFunc(out, func(a, b downloadResult) int {
-		return strings.Compare(a.id, b.id)
+	entries := make([]manifest.RealizedEntry, 0, len(existing)+len(additions))
+	for _, entry := range existing {
+		if _, replace := ids[entry.ID]; !replace {
+			entries = append(entries, entry)
+		}
+	}
+	entries = append(entries, additions...)
+	return entries
+}
+
+func canonicalizeEntries(m *manifest.Manifest) {
+	slices.SortFunc(m.Realized.Entries, func(a, b manifest.RealizedEntry) int {
+		if byID := strings.Compare(a.ID, b.ID); byID != 0 {
+			return byID
+		}
+		return strings.Compare(a.RelativePath, b.RelativePath)
 	})
-	return out
+}
+
+func plannedIDsCoveredBy(entries []manifest.RealizedEntry, planned []string) []string {
+	covered := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		covered[entry.ID] = true
+	}
+	ids := make([]string, 0, len(entries))
+	for _, id := range planned {
+		if covered[id] {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func realizedID(entries []manifest.RealizedEntry, id string) bool {
+	for _, entry := range entries {
+		if entry.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func executeJob(
@@ -358,7 +522,11 @@ func downloadPlatformItems(ctx context.Context, root, id string, recipe catalog.
 		var downloaded bool
 		for _, candidate := range candidates {
 			if platformURL, ok := recipe.Platforms[candidate]; ok {
-				entry, err := fetchAndRecord(ctx, root, id, recipe, platformURL, onProgress)
+				platformRecipe := recipe
+				if checksum := recipe.PlatformSHA256[candidate]; checksum != "" {
+					platformRecipe.SHA256 = checksum
+				}
+				entry, err := fetchAndRecordForPlatform(ctx, root, id, platformRecipe, platformURL, platform, onProgress)
 				if err != nil {
 					return nil, err
 				}
@@ -368,6 +536,9 @@ func downloadPlatformItems(ctx context.Context, root, id string, recipe catalog.
 			}
 		}
 		if !downloaded {
+			if isPlatformIORecipe(recipe) {
+				return nil, fmt.Errorf("PlatformIO closure %s has no archive for required target %s; reprovision with supported targets", id, platform)
+			}
 			slog.Debug("no platform URL", "id", id, "platform", platform, "available", slices.Collect(maps.Keys(recipe.Platforms)))
 		}
 	}
@@ -422,7 +593,22 @@ func hostPlatformCandidates() []string {
 
 // fetchAndRecord downloads a file and returns a RealizedEntry.
 func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, dlURL string, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
+	return fetchAndRecordAt(ctx, root, id, recipe, dlURL, "", onProgress)
+}
+
+func fetchAndRecordForPlatform(ctx context.Context, root, id string, recipe catalog.Item, dlURL, platform string, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
+	return fetchAndRecordAt(ctx, root, id, recipe, dlURL, platform, onProgress)
+}
+
+func fetchAndRecordAt(ctx context.Context, root, id string, recipe catalog.Item, dlURL, platform string, onProgress downloader.ProgressFunc) (manifest.RealizedEntry, error) {
 	typeDir := toolkit.TypeDirs[recipe.Type]
+	if isPlatformIORecipe(recipe) {
+		var err error
+		typeDir, err = platformIODestination(dlURL, platform)
+		if err != nil {
+			return manifest.RealizedEntry{}, fmt.Errorf("%s: %w", id, err)
+		}
+	}
 	filename := recipe.Filename
 	if filename == "" {
 		filename = filenameFromURL(dlURL)
@@ -433,7 +619,7 @@ func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, d
 	var result downloader.Result
 	if dirs := downloader.CacheDirs(); len(dirs) > 0 {
 		if cached, ok := downloader.FindInCache(dirs, filename); ok {
-			if res, used, err := downloader.ReuseFromCache(ctx, cached, dlURL, destPath, onProgress); err != nil {
+			if res, used, err := downloader.ReuseFromCacheWithSHA256(ctx, cached, dlURL, destPath, recipe.SHA256, onProgress); err != nil {
 				return manifest.RealizedEntry{}, fmt.Errorf("reusing cached %s: %w", id, err)
 			} else if used {
 				result = res
@@ -443,7 +629,7 @@ func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, d
 	}
 
 	if result.Path == "" {
-		dl, err := downloader.Download(ctx, dlURL, destPath, "", onProgress)
+		dl, err := downloader.Download(ctx, dlURL, destPath, recipe.SHA256, onProgress)
 		if err != nil {
 			return manifest.RealizedEntry{}, fmt.Errorf("downloading %s: %w", id, err)
 		}
@@ -465,6 +651,18 @@ func fetchAndRecord(ctx context.Context, root, id string, recipe catalog.Item, d
 		ChecksumSHA256: result.SHA256,
 		SourceStrategy: recipe.Strategy,
 	}, nil
+}
+
+func isPlatformIORecipe(recipe catalog.Item) bool {
+	if _, ok := parsePlatformIOArchive(recipe.URL); ok {
+		return true
+	}
+	for _, raw := range recipe.Platforms {
+		if _, ok := parsePlatformIOArchive(raw); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func buildItem(ctx context.Context, root, id string, recipe catalog.Item) (manifest.RealizedEntry, error) {

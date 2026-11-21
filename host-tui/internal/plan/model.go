@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/pkronstrom/svalbard/tui"
 
@@ -62,11 +63,22 @@ type BackMsg struct{}
 // BrowseMsg signals the parent to open the browse screen.
 type BrowseMsg struct{}
 
+// ApplySucceededMsg lets the host route a durable successful apply into its
+// existing indexing progress screen.
+type ApplySucceededMsg struct{}
+
 // Internal messages.
-type applyStartedMsg struct{ ch <-chan ApplyEvent }
+type applyStartedMsg struct {
+	ch     <-chan ApplyEvent
+	result <-chan applyResultMsg
+}
 type applyTickMsg struct {
 	event ApplyEvent
 	done  bool
+}
+type applyResultMsg struct {
+	err      error
+	outcomes []ApplyEvent
 }
 
 // ---------------------------------------------------------------------------
@@ -99,9 +111,12 @@ type Model struct {
 	applying    bool
 	applyItems  []applyStep
 	applyCh     <-chan ApplyEvent
+	applyResult <-chan applyResultMsg
 	applyDone   bool
 	applyErr    string
 	applyCancel context.CancelFunc
+	stopping    bool
+	exitIntent  string
 
 	width, height int
 	theme         tui.Theme
@@ -144,25 +159,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case applyStartedMsg:
 		m.applyCh = msg.ch
+		m.applyResult = msg.result
 		return m, waitForApplyEvent(m.applyCh)
 
 	case applyTickMsg:
 		if msg.done {
-			m.applyDone = true
-			return m, nil
+			return m, waitForApplyResult(m.applyResult)
 		}
 		// Global error (empty ID) — mark remaining queued items as failed.
 		if msg.event.ID == "" && msg.event.Status == tui.StatusFailed {
-			for i := range m.applyItems {
-				if m.applyItems[i].status == "" || m.applyItems[i].status == tui.StatusActive {
-					m.applyItems[i].status = tui.StatusFailed
-					m.applyItems[i].err = msg.event.Error
-				}
-			}
+			m.applyErr = msg.event.Error
 		} else {
 			m.updateApplyStep(msg.event)
 		}
 		return m, waitForApplyEvent(m.applyCh)
+
+	case applyResultMsg:
+		m.applyDone = true
+		for _, event := range msg.outcomes {
+			m.updateApplyStep(event)
+		}
+		if msg.err != nil {
+			m.applyErr = msg.err.Error()
+		}
+		if m.exitIntent == "quit" {
+			return m, tea.Quit
+		}
+		if m.exitIntent == "back" {
+			return m, func() tea.Msg { return BackMsg{} }
+		}
+		if msg.err == nil {
+			return m, func() tea.Msg { return ApplySucceededMsg{} }
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		if m.applying {
@@ -192,7 +221,7 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case m.keys.Enter.Matches(msg):
-		if len(m.items) == 0 {
+		if len(m.items) == 0 && m.runApply == nil {
 			return m, func() tea.Msg { return BrowseMsg{} }
 		}
 		if m.runApply == nil {
@@ -201,6 +230,8 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.applying = true
 		m.applyDone = false
 		m.applyErr = ""
+		m.stopping = false
+		m.exitIntent = ""
 		m.applyItems = make([]applyStep, len(m.items))
 		for i, it := range m.items {
 			m.applyItems[i] = applyStep{id: it.ID}
@@ -224,10 +255,10 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateApplying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.keys.ForceQuit.Matches(msg):
-		if m.applyCancel != nil {
-			m.applyCancel()
+		if m.applyDone {
+			return m, tea.Quit
 		}
-		return m, tea.Quit
+		return m.stopApply("quit")
 
 	case m.keys.Enter.Matches(msg):
 		if m.applyDone {
@@ -239,13 +270,20 @@ func (m Model) updateApplying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.applyDone {
 			return m, func() tea.Msg { return BackMsg{} }
 		}
-		// Cancel running apply and go back.
+		return m.stopApply("back")
+	}
+
+	return m, nil
+}
+
+func (m Model) stopApply(intent string) (tea.Model, tea.Cmd) {
+	if !m.stopping {
+		m.stopping = true
+		m.exitIntent = intent
 		if m.applyCancel != nil {
 			m.applyCancel()
 		}
-		return m, func() tea.Msg { return BackMsg{} }
 	}
-
 	return m, nil
 }
 
@@ -274,17 +312,43 @@ func startApply(runApply func(ctx context.Context, onProgress func(ApplyEvent)) 
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := func() tea.Msg {
 		ch := make(chan ApplyEvent, 16)
+		result := make(chan applyResultMsg, 1)
+		outcomes := make(map[string]ApplyEvent)
+		var outcomesMu sync.Mutex
 		go func() {
 			defer close(ch)
-			if err := runApply(ctx, func(ev ApplyEvent) {
-				ch <- ev
-			}); err != nil {
-				ch <- ApplyEvent{Status: tui.StatusFailed, Error: err.Error()}
+			err := runApply(ctx, func(ev ApplyEvent) {
+				if ev.ID != "" {
+					outcomesMu.Lock()
+					outcomes[ev.ID] = ev
+					outcomesMu.Unlock()
+				}
+				select {
+				case ch <- ev:
+				case <-ctx.Done():
+				}
+			})
+			if err != nil {
+				select {
+				case ch <- ApplyEvent{Status: tui.StatusFailed, Error: err.Error()}:
+				case <-ctx.Done():
+				}
 			}
+			outcomesMu.Lock()
+			snapshot := make([]ApplyEvent, 0, len(outcomes))
+			for _, event := range outcomes {
+				snapshot = append(snapshot, event)
+			}
+			outcomesMu.Unlock()
+			result <- applyResultMsg{err: err, outcomes: snapshot}
 		}()
-		return applyStartedMsg{ch: ch}
+		return applyStartedMsg{ch: ch, result: result}
 	}
 	return cmd, cancel
+}
+
+func waitForApplyResult(result <-chan applyResultMsg) tea.Cmd {
+	return func() tea.Msg { return <-result }
 }
 
 func waitForApplyEvent(ch <-chan ApplyEvent) tea.Cmd {
@@ -300,20 +364,25 @@ func waitForApplyEvent(ch <-chan ApplyEvent) tea.Cmd {
 
 // View renders the plan or apply screen.
 func (m Model) View() string {
-	if len(m.items) == 0 {
-		return m.viewEmpty()
-	}
 	if m.applying {
 		return m.viewApply()
+	}
+	if len(m.items) == 0 {
+		return m.viewEmpty()
 	}
 	return m.viewPlan()
 }
 
 func (m Model) viewEmpty() string {
-	body := m.theme.Success.Render("Everything in sync.")
+	body := m.theme.Muted.Render("No recipe downloads or removals pending")
 
+	enter := tui.KeyBinding{Key: "enter", Label: "Enter: browse"}
+	if m.runApply != nil {
+		enter.Label = "Enter: apply/finalize"
+	}
 	footer := tui.FooterHints(
-		tui.KeyBinding{Key: "enter", Label: "Enter: browse"},
+		enter,
+		tui.KeyBinding{Key: "b", Label: "b: browse"},
 		tui.KeyBinding{Key: "q", Label: "q/Esc: back"},
 	)
 
@@ -465,7 +534,27 @@ func (m Model) viewApply() string {
 	b.WriteString("\n\n")
 	b.WriteString(pv.Render())
 	b.WriteString("\n")
-	b.WriteString(pv.RenderSummary())
+	if m.stopping {
+		b.WriteString(m.theme.Warning.Render("Stopping… saving progress"))
+		b.WriteString("\n")
+	} else {
+		b.WriteString(pv.RenderSummary())
+	}
+	if m.applyDone {
+		done, failed := 0, 0
+		for _, step := range m.applyItems {
+			if step.status == tui.StatusDone {
+				done++
+			}
+			if step.status == tui.StatusFailed {
+				failed++
+			}
+		}
+		pending := len(m.applyItems) - done - failed
+		if m.applyErr != "" || failed > 0 || pending > 0 {
+			b.WriteString(m.theme.Warning.Render(fmt.Sprintf("Completed: %d  Failed: %d  Pending: %d\n%s\nReopen this vault and apply the remaining plan to resume.", done, failed, pending, m.applyErr)))
+		}
+	}
 
 	var footer string
 	if m.applyDone {

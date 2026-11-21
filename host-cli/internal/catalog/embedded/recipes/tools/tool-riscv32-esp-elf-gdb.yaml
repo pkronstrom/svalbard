@@ -1,0 +1,21 @@
+id: tool-riscv32-esp-elf-gdb
+type: toolchain
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+platforms:
+  linux-x86_64: https://dl.registry.platformio.org/download/espressif/tool/tool-riscv32-esp-elf-gdb/12.1.0+20221002/tool-riscv32-esp-elf-gdb-linux_x86_64-12.1.0+20221002.tar.gz
+  linux-arm64: https://dl.registry.platformio.org/download/espressif/tool/tool-riscv32-esp-elf-gdb/12.1.0+20221002/tool-riscv32-esp-elf-gdb-linux_aarch64-12.1.0+20221002.tar.gz
+  macos-arm64: https://dl.registry.platformio.org/download/espressif/tool/tool-riscv32-esp-elf-gdb/12.1.0+20221002/tool-riscv32-esp-elf-gdb-darwin_arm64-12.1.0+20221002.tar.gz
+  macos-x86_64: https://dl.registry.platformio.org/download/espressif/tool/tool-riscv32-esp-elf-gdb/12.1.0+20221002/tool-riscv32-esp-elf-gdb-darwin_x86_64-12.1.0+20221002.tar.gz
+platform_sha256:
+  linux-x86_64: 868fa224bc2367d15e6fb6dae295493a3ee181467dd08dd0da8fc2c5c95a5042
+  linux-arm64: b0d0a3b2aa454595db3ea9f6f97ca4d13938426417a37301bfa45d0f63c02867
+  macos-arm64: ac81bbdc5ce5e2f9736b237e7ea89cdcdd9cc5c27a405fbb25fb7ebd2bc1151b
+  macos-x86_64: 74f7846d5b748b0672e4057921ec45adfb44df44d9c848072a83c42753d58d45
+description: RISC-V GDB for PlatformIO ESP32 builds
+
+size_gb: 0.045528
+license:
+  id: GPL-3.0-or-later
+  attribution: Espressif Systems

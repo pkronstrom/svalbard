@@ -183,6 +183,91 @@ func TestGenerateCreatesActionsJSON(t *testing.T) {
 	}
 }
 
+func TestGenerateWritesPlatformIOInventory(t *testing.T) {
+	stubRuntimeBinarySources(t)
+	root := t.TempDir()
+	entries := []manifest.RealizedEntry{
+		{ID: "platformio-espressif32", Filename: "espressif32-7.1.3.tar.gz", RelativePath: "tools/platformio/packages/espressif32-7.1.3.tar.gz", ChecksumSHA256: "shared"},
+		{ID: "tool-cmake", Filename: "tool-cmake.tar.gz", RelativePath: "tools/platformio/packages/macos-arm64/tool-cmake.tar.gz", ChecksumSHA256: "target"},
+		{ID: "platformio-core", RelativePath: "runtime/python/macos-arm64/tools/platformio-core"},
+		{ID: "espidf-python", RelativePath: "runtime/python/macos-arm64/tools/espidf-python"},
+	}
+	for _, e := range entries {
+		if e.ID == "platformio-core" || e.ID == "espidf-python" {
+			if err := os.MkdirAll(filepath.Join(root, e.RelativePath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, e.RelativePath)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, e.RelativePath), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recipes := map[string]catalog.Item{
+		"platformio-espressif32": {URL: "https://dl.registry.platformio.org/download/platformio/platform/espressif32/7.1.3/espressif32-7.1.3.tar.gz"},
+		"tool-cmake": {Platforms: map[string]string{
+			"macos-arm64":  "https://dl.registry.platformio.org/download/platformio/tool/tool-cmake/3.30.2/tool-cmake.tar.gz",
+			"macos-x86_64": "https://dl.registry.platformio.org/download/platformio/tool/tool-cmake/3.30.2/tool-cmake-x86.tar.gz",
+			"linux-arm64":  "https://dl.registry.platformio.org/download/platformio/tool/tool-cmake/3.30.2/tool-cmake-linux-arm.tar.gz",
+			"linux-x86_64": "https://dl.registry.platformio.org/download/platformio/tool/tool-cmake/3.30.2/tool-cmake-linux-x86.tar.gz",
+		}},
+	}
+	if err := Generate(root, entries, "esp32-dev", GenerateOpts{PlatformIORecipes: recipes, PlatformIOPlatforms: []string{"macos-arm64"}}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".svalbard", "platformio.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inventory platformIOInventory
+	if err := json.Unmarshal(data, &inventory); err != nil {
+		t.Fatal(err)
+	}
+	if inventory.Version != 1 || len(inventory.Packages) != 2 {
+		t.Fatalf("inventory = %+v", inventory)
+	}
+	if inventory.Packages[1].Owner != "platformio" || inventory.Packages[1].Platform != "macos-arm64" {
+		t.Fatalf("target record = %+v", inventory.Packages[1])
+	}
+	if err := os.RemoveAll(filepath.Join(root, "runtime", "python", "macos-arm64", "tools", "espidf-python")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Generate(root, entries, "esp32-dev", GenerateOpts{PlatformIORecipes: recipes, PlatformIOPlatforms: []string{"macos-arm64"}}); err == nil || !strings.Contains(err.Error(), "Python tree") {
+		t.Fatalf("Generate after deleted Python tree = %v", err)
+	}
+}
+
+func TestGenerateSearchCapabilityHasSearchAlias(t *testing.T) {
+	stubRuntimeBinarySources(t)
+	root := t.TempDir()
+	entries := []manifest.RealizedEntry{{ID: "wiki", Type: "zim", Filename: "wiki.zim", RelativePath: "zim/wiki.zim"}}
+	if err := Generate(root, entries, "default", GenerateOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".svalbard", "actions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg testRuntimeConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range cfg.Groups {
+		for _, item := range group.Items {
+			if item.ID == "search-all" {
+				if !reflect.DeepEqual(item.Aliases, []string{"search"}) {
+					t.Fatalf("search aliases = %v", item.Aliases)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("search capability missing")
+}
+
 func TestGenerateBundlesRuntimeAndScripts(t *testing.T) {
 	stubRuntimeBinarySources(t)
 
@@ -467,5 +552,67 @@ func TestDraftModelsAreInstalledSeparatelyWithoutChatActions(t *testing.T) {
 				t.Fatalf("drafter must not appear as a selectable chat model: %s", item.ID)
 			}
 		}
+	}
+}
+
+func TestGenerateWritesRecipeMetadataForRealizedEntries(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	root := t.TempDir()
+	entries := []manifest.RealizedEntry{
+		{ID: "ifixit", Type: "zim", Filename: "ifixit.zim", RelativePath: "zim/ifixit.zim"},
+		{ID: "osm-finland", Type: "pmtiles", Filename: "osm-finland.pmtiles", RelativePath: "maps/osm-finland.pmtiles"},
+	}
+	recipes := map[string]catalog.Item{
+		"ifixit":      {ID: "ifixit", Type: "zim", Description: "Repair guides", Tags: []string{"repair"}},
+		"osm-finland": {ID: "osm-finland", Type: "pmtiles", Description: "Finland basemap", Viewer: &catalog.ViewerSpec{Name: "OSM Finland", Category: "basemap"}},
+		"unrealized":  {ID: "unrealized", Type: "zim", Description: "Not on the drive"},
+	}
+	if err := Generate(root, entries, "test", GenerateOpts{Recipes: recipes}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".svalbard", "recipes.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The drive-runtime MCP reader expects an object keyed by recipe ID.
+	var got map[string]struct {
+		ID          string            `json:"id"`
+		Type        string            `json:"type"`
+		Description string            `json:"description"`
+		Tags        []string          `json:"tags"`
+		Viewer      map[string]string `json:"viewer"`
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("recipes.json is not an object keyed by ID: %v\n%s", err, data)
+	}
+	if len(got) != 2 {
+		t.Fatalf("recipes.json has %d entries, want only the 2 realized: %s", len(got), data)
+	}
+	if r := got["ifixit"]; r.ID != "ifixit" || r.Type != "zim" || r.Description != "Repair guides" || len(r.Tags) != 1 || r.Tags[0] != "repair" {
+		t.Errorf("ifixit = %+v", r)
+	}
+	if r := got["osm-finland"]; r.Viewer["name"] != "OSM Finland" || r.Viewer["category"] != "basemap" {
+		t.Errorf("osm-finland viewer = %+v", r.Viewer)
+	}
+}
+
+func TestGenerateWithoutRecipeMetadataRemovesStaleFile(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	root := t.TempDir()
+	stale := filepath.Join(root, ".svalbard", "recipes.json")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte(`{"old":{"id":"old"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Generate(root, nil, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale recipes.json still present: %v", err)
 	}
 }

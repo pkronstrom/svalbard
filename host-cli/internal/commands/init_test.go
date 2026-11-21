@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -43,5 +44,46 @@ func TestInitSeedsManifestFromPreset(t *testing.T) {
 		if !wantItems[id] {
 			t.Errorf("unexpected item %q", id)
 		}
+	}
+}
+
+func TestInitVaultDoesNotOverwriteExistingManifest(t *testing.T) {
+	cat := catalog.NewTestCatalog(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.yaml")
+	before := []byte("existing manifest bytes\n")
+	if err := os.WriteFile(path, before, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InitVault(dir, "default-32", cat); err == nil {
+		t.Fatal("InitVault succeeded with an existing manifest")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("manifest was overwritten: %q", after)
+	}
+}
+
+func TestInitVaultWithOptionsDoesNotOverwriteExistingManifest(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.yaml")
+	before := []byte("existing manifest bytes\n")
+	if err := os.WriteFile(path, before, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InitVaultWithOptions(dir, []string{"item"}, "preset", "eu", []string{"linux-arm64"}); err == nil {
+		t.Fatal("InitVaultWithOptions succeeded with an existing manifest")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("manifest was overwritten: %q", after)
 	}
 }

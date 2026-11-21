@@ -35,8 +35,9 @@ type IndexEvent struct {
 
 // Config holds everything the index screen needs from its parent.
 type Config struct {
-	Status   IndexStatus
-	RunIndex func(ctx context.Context, indexType string, onProgress func(IndexEvent)) error
+	Status    IndexStatus
+	RunIndex  func(ctx context.Context, indexType string, onProgress func(IndexEvent)) error
+	AutoStart bool
 }
 
 // ---------------------------------------------------------------------------
@@ -47,10 +48,17 @@ type Config struct {
 type BackMsg struct{}
 
 // Internal messages.
-type rebuildStartedMsg struct{ ch <-chan IndexEvent }
+type rebuildStartedMsg struct {
+	ch     <-chan IndexEvent
+	result <-chan rebuildResultMsg
+}
 type rebuildTickMsg struct {
 	event IndexEvent
 	done  bool
+}
+type rebuildResultMsg struct {
+	err       error
+	cancelled bool
 }
 
 // ---------------------------------------------------------------------------
@@ -70,30 +78,49 @@ type Model struct {
 	selected int // 0=keyword, 1=semantic
 
 	// Rebuild sub-state
-	rebuilding  bool
-	rebuildType string
-	steps       []indexStep
-	globalStep  string
-	rebuildCh   <-chan IndexEvent
-	rebuildDone bool
+	rebuilding     bool
+	rebuildType    string
+	steps          []indexStep
+	globalStep     string
+	rebuildCh      <-chan IndexEvent
+	rebuildResult  <-chan rebuildResultMsg
+	rebuildDone    bool
+	rebuildCtx     context.Context
+	rebuildCancel  context.CancelFunc
+	terminal       string
+	terminalDetail string
+	exitIntent     string
 
 	width, height int
 	theme         tui.Theme
 	keys          tui.KeyMap
+	autoStart     bool
 }
 
 // New creates a Model from the given Config.
 func New(cfg Config) Model {
-	return Model{
-		status:   cfg.Status,
-		runIndex: cfg.RunIndex,
-		theme:    tui.DefaultTheme(),
-		keys:     tui.DefaultKeyMap(),
+	m := Model{
+		status:    cfg.Status,
+		runIndex:  cfg.RunIndex,
+		theme:     tui.DefaultTheme(),
+		keys:      tui.DefaultKeyMap(),
+		autoStart: cfg.AutoStart,
 	}
+	if cfg.AutoStart && cfg.RunIndex != nil {
+		m.rebuilding = true
+		m.rebuildType = "configured"
+	}
+	if m.rebuilding {
+		m.rebuildCtx, m.rebuildCancel = context.WithCancel(context.Background())
+	}
+	return m
 }
 
 // Init satisfies tea.Model. No initial command.
 func (m Model) Init() tea.Cmd {
+	if m.autoStart && m.runIndex != nil {
+		return startRebuild(m.rebuildContext(), m.runIndex, "configured")
+	}
 	return nil
 }
 
@@ -112,15 +139,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case rebuildStartedMsg:
 		m.rebuildCh = msg.ch
+		m.rebuildResult = msg.result
 		return m, waitForRebuildEvent(m.rebuildCh)
 
 	case rebuildTickMsg:
 		if msg.done {
-			m.rebuildDone = true
-			return m, nil
+			return m, waitForRebuildResult(m.rebuildResult)
 		}
 		m.updateStep(msg.event)
 		return m, waitForRebuildEvent(m.rebuildCh)
+
+	case rebuildResultMsg:
+		m.rebuildDone = true
+		switch {
+		case msg.err == nil:
+			m.terminal = "finished"
+		case msg.cancelled:
+			m.terminal = "cancelled"
+		default:
+			m.terminal = "failed"
+			m.terminalDetail = msg.err.Error()
+		}
+		if m.exitIntent == "quit" {
+			return m, tea.Quit
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		if m.rebuilding {
@@ -162,7 +205,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rebuildDone = false
 		m.steps = nil
 		m.globalStep = ""
-		return m, startRebuild(m.runIndex, indexType)
+		m.terminal = ""
+		m.terminalDetail = ""
+		m.exitIntent = ""
+		m.rebuildCtx, m.rebuildCancel = context.WithCancel(context.Background())
+		return m, startRebuild(m.rebuildContext(), m.runIndex, indexType)
 
 	case m.keys.Back.Matches(msg), m.keys.Quit.Matches(msg):
 		return m, func() tea.Msg { return BackMsg{} }
@@ -174,10 +221,20 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateRebuilding(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.keys.ForceQuit.Matches(msg):
+		if !m.rebuildDone {
+			m.exitIntent = "quit"
+			if m.rebuildCancel != nil {
+				m.rebuildCancel()
+			}
+			return m, nil
+		}
 		return m, tea.Quit
 
 	case m.keys.Enter.Matches(msg):
 		if m.rebuildDone {
+			if m.autoStart {
+				return m, func() tea.Msg { return BackMsg{} }
+			}
 			m.rebuilding = false
 			return m, nil
 		}
@@ -185,8 +242,15 @@ func (m Model) updateRebuilding(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case m.keys.Back.Matches(msg), m.keys.Quit.Matches(msg):
 		if m.rebuildDone {
+			if m.autoStart {
+				return m, func() tea.Msg { return BackMsg{} }
+			}
 			m.rebuilding = false
 			return m, nil
+		}
+		m.exitIntent = "back"
+		if m.rebuildCancel != nil {
+			m.rebuildCancel()
 		}
 		return m, nil
 	}
@@ -221,19 +285,35 @@ func (m *Model) updateStep(ev IndexEvent) {
 // Async helpers
 // ---------------------------------------------------------------------------
 
-func startRebuild(runIndex func(ctx context.Context, indexType string, onProgress func(IndexEvent)) error, indexType string) tea.Cmd {
+func (m Model) rebuildContext() context.Context {
+	// A context/cancel pair is created synchronously with the state transition.
+	// This fallback only protects a manually constructed model in tests.
+	if m.rebuildCtx == nil {
+		return context.Background()
+	}
+	return m.rebuildCtx
+}
+
+func startRebuild(ctx context.Context, runIndex func(ctx context.Context, indexType string, onProgress func(IndexEvent)) error, indexType string) tea.Cmd {
 	return func() tea.Msg {
 		ch := make(chan IndexEvent, 16)
+		result := make(chan rebuildResultMsg, 1)
 		go func() {
 			defer close(ch)
-			if err := runIndex(context.Background(), indexType, func(ev IndexEvent) {
-				ch <- ev
-			}); err != nil {
-				ch <- IndexEvent{Status: tui.StatusFailed, File: err.Error()}
-			}
+			err := runIndex(ctx, indexType, func(ev IndexEvent) {
+				select {
+				case ch <- ev:
+				case <-ctx.Done():
+				}
+			})
+			result <- rebuildResultMsg{err: err, cancelled: ctx.Err() != nil}
 		}()
-		return rebuildStartedMsg{ch: ch}
+		return rebuildStartedMsg{ch: ch, result: result}
 	}
+}
+
+func waitForRebuildResult(result <-chan rebuildResultMsg) tea.Cmd {
+	return func() tea.Msg { return <-result }
 }
 
 func waitForRebuildEvent(ch <-chan IndexEvent) tea.Cmd {
@@ -278,14 +358,14 @@ func (m Model) viewNormal() string {
 	)
 
 	shell := tui.ShellLayout{
-		Theme:        m.theme,
-		AppName:      "Svalbard",
-		Status:       "index",
-		Left:   nav.Render(),
-		Right:  detail.Render(),
-		Footer: m.theme.Help.Render(footer),
-		Width:        m.width,
-		Height:       m.height,
+		Theme:   m.theme,
+		AppName: "Svalbard",
+		Status:  "index",
+		Left:    nav.Render(),
+		Right:   detail.Render(),
+		Footer:  m.theme.Help.Render(footer),
+		Width:   m.width,
+		Height:  m.height,
 	}
 	return shell.Render()
 }
@@ -371,34 +451,52 @@ func (m Model) viewRebuilding() string {
 		}
 	}
 
-	pv := tui.ProgressView{
-		Theme:        m.theme,
-		Steps:        steps,
-		MaxVisible:   tui.MaxVisibleRows(m.height, 8, 5),
-		ScrollToTail: true,
-	}
-
+	// ShellLayout gives the body four lines at 80x8. Put a terminal result
+	// before progress so it remains visible when that body is clipped.
+	var b strings.Builder
 	title := "Rebuilding keyword index"
 	if m.rebuildType == "full" {
 		title = "Building full index"
 	}
-
-	var b strings.Builder
 	b.WriteString(m.theme.Section.Render(title))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+	if m.rebuildDone {
+		switch m.terminal {
+		case "finished":
+			b.WriteString(m.theme.Success.Render("Indexing finished"))
+		case "cancelled":
+			b.WriteString(m.theme.Warning.Render("Indexing cancelled"))
+		case "failed":
+			message := "Indexing failed"
+			if m.terminalDetail != "" {
+				message += ": " + m.terminalDetail
+			}
+			b.WriteString(m.theme.Error.Render(message))
+		}
+		b.WriteString("\n")
+	}
+
+	pv := tui.ProgressView{
+		Theme:        m.theme,
+		Steps:        steps,
+		MaxVisible:   tui.MaxVisibleRows(m.height, 8, 7),
+		ScrollToTail: true,
+	}
 	if m.globalStep != "" {
 		b.WriteString(m.theme.Status.Render(m.globalStep))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 	}
-	b.WriteString(pv.Render())
-	b.WriteString("\n")
-	b.WriteString(pv.RenderSummary())
+	if !m.rebuildDone {
+		b.WriteString(pv.Render())
+		b.WriteString("\n")
+		b.WriteString(pv.RenderSummary())
+	}
 
 	var footer string
 	if m.rebuildDone {
 		footer = tui.FooterHints(
-			tui.KeyBinding{Key: "enter", Label: "Enter: done"},
-			tui.KeyBinding{Key: "q", Label: "q/Esc: back"},
+			tui.KeyBinding{Key: "enter", Label: terminalEnterLabel(m.autoStart)},
+			tui.KeyBinding{Key: "q", Label: terminalBackLabel(m.autoStart)},
 		)
 	} else {
 		footer = m.theme.Status.Render("rebuilding...")
@@ -414,6 +512,20 @@ func (m Model) viewRebuilding() string {
 		Height:  m.height,
 	}
 	return shell.Render()
+}
+
+func terminalEnterLabel(autoStart bool) string {
+	if autoStart {
+		return "Enter: continue to dashboard"
+	}
+	return "Enter: done"
+}
+
+func terminalBackLabel(autoStart bool) string {
+	if autoStart {
+		return "q/Esc: dashboard"
+	}
+	return "q/Esc: back"
 }
 
 func (ev IndexEvent) detailOrStatus() string {

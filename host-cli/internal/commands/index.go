@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -47,14 +48,32 @@ func ScanZIMFiles(root string) ([]string, error) {
 // IndexVault scans ZIM files in the vault and builds a SQLite FTS5 search index.
 // Progress is reported per-file via onProgress. Text output goes to w.
 func IndexVault(root string, force bool, w io.Writer, onProgress func(IndexProgress)) error {
+	return IndexVaultContext(context.Background(), root, force, w, onProgress)
+}
+
+// IndexVaultContext scans ZIM files and reconciles their searchable articles.
+// It preserves prior sources until each replacement has been fully extracted
+// and its archive identity has been rechecked.
+func IndexVaultContext(ctx context.Context, root string, force bool, w io.Writer, onProgress func(IndexProgress)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	releaseLock, err := acquireIndexWriterLock(root)
+	if err != nil {
+		return err
+	}
+	defer releaseLock()
+	return indexVaultUnlocked(ctx, root, force, w, onProgress)
+}
+
+// indexVaultUnlocked runs while the caller owns the vault index writer lock.
+func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Writer, onProgress func(IndexProgress)) error {
 	zimFiles, err := ScanZIMFiles(root)
 	if err != nil {
 		return err
 	}
-
-	if len(zimFiles) == 0 {
-		fmt.Fprintln(w, "No ZIM files found")
-		return nil
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Ensure data directory exists.
@@ -70,14 +89,13 @@ func IndexVault(root string, force bool, w io.Writer, onProgress func(IndexProgr
 	}
 	defer db.Close()
 
-	// Determine which files are already indexed.
-	indexed, err := db.IndexedFilenames()
+	indexed, err := db.IndexedSources()
 	if err != nil {
-		return fmt.Errorf("reading indexed filenames: %w", err)
+		return fmt.Errorf("reading indexed sources: %w", err)
 	}
-	indexedSet := make(map[string]bool, len(indexed))
-	for _, fn := range indexed {
-		indexedSet[fn] = true
+	indexedByFilename := make(map[string]searchdb.Source, len(indexed))
+	for _, source := range indexed {
+		indexedByFilename[source.Filename] = source
 	}
 
 	notify := func(p IndexProgress) {
@@ -86,29 +104,26 @@ func IndexVault(root string, force bool, w io.Writer, onProgress func(IndexProgr
 		}
 	}
 
-	// Report all files upfront so the progress view populates immediately.
+	present := make(map[string]bool, len(zimFiles))
 	for _, zf := range zimFiles {
-		if !force && indexedSet[zf] {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		present[zf] = true
+		path := filepath.Join(root, "zim", zf)
+		identity, err := archiveSourceIdentity(ctx, path, zf)
+		if err != nil {
+			notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
+			return fmt.Errorf("reading identity for %s: %w", zf, err)
+		}
+		if !force && indexedByFilename[zf].IdentityCurrent(identity) {
 			notify(IndexProgress{File: zf, Status: "skip", Detail: "already indexed"})
-		} else {
-			notify(IndexProgress{File: zf, Status: "queued"})
-		}
-	}
-
-	for _, zf := range zimFiles {
-		if !force && indexedSet[zf] {
 			continue
-		}
-		if force && indexedSet[zf] {
-			// Re-index: remove old articles first.
-			if sourceID, err := db.UpsertSource(zf, zf); err == nil {
-				_ = db.DeleteSourceArticles(sourceID)
-			}
 		}
 
 		notify(IndexProgress{File: zf, Status: "extracting", Detail: "extracting articles..."})
 
-		articles, title, err := zimext.ExtractArticles(filepath.Join(root, "zim", zf))
+		articles, title, uuid, err := zimext.ExtractArticlesContext(ctx, path)
 		if err != nil {
 			notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
 			return fmt.Errorf("extracting articles from %s: %w", zf, err)
@@ -116,20 +131,29 @@ func IndexVault(root string, force bool, w io.Writer, onProgress func(IndexProgr
 		if title == "" {
 			title = strings.TrimSuffix(zf, filepath.Ext(zf))
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current, err := archiveSourceIdentity(ctx, path, zf)
+		if err != nil {
+			return fmt.Errorf("rechecking identity for %s: %w", zf, err)
+		}
+		if current.UUID != uuid || !identity.IdentityCurrent(current) {
+			return fmt.Errorf("source %s changed during extraction; retry indexing", zf)
+		}
 
 		notify(IndexProgress{
 			File: zf, Status: "extracting",
 			Detail:  fmt.Sprintf("inserting %d articles...", len(articles)),
 			Current: int64(len(articles)), Total: int64(len(articles)),
 		})
-
-		sourceID, err := db.UpsertSource(zf, title)
-		if err != nil {
-			return fmt.Errorf("upserting source %s: %w", zf, err)
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 
-		if err := db.InsertArticles(sourceID, articles); err != nil {
-			return fmt.Errorf("inserting articles for %s: %w", zf, err)
+		identity.Title = title
+		if err := db.ReplaceSource(ctx, identity, articles); err != nil {
+			return fmt.Errorf("replacing articles for %s: %w", zf, err)
 		}
 
 		notify(IndexProgress{
@@ -138,11 +162,35 @@ func IndexVault(root string, force bool, w io.Writer, onProgress func(IndexProgr
 			Current: int64(len(articles)), Total: int64(len(articles)),
 		})
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := db.PruneSources(ctx, present); err != nil {
+		return fmt.Errorf("pruning removed sources: %w", err)
+	}
+	if len(zimFiles) == 0 {
+		fmt.Fprintln(w, "No ZIM files found")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	// Store metadata timestamp.
-	if err := db.SetMeta("indexed_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
+	if err := db.SetMetaContext(ctx, "indexed_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
 		return fmt.Errorf("setting indexed_at metadata: %w", err)
 	}
 
 	return nil
+}
+
+func archiveSourceIdentity(ctx context.Context, path, filename string) (searchdb.Source, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return searchdb.Source{}, fmt.Errorf("stat source: %w", err)
+	}
+	uuid, err := zimext.ArchiveUUID(ctx, path)
+	if err != nil {
+		return searchdb.Source{}, err
+	}
+	return searchdb.Source{Filename: filename, UUID: uuid, Size: info.Size(), ModTimeNS: info.ModTime().UnixNano()}, nil
 }

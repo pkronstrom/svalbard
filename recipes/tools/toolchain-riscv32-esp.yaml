@@ -1,0 +1,21 @@
+id: toolchain-riscv32-esp
+type: toolchain
+platforms:
+  linux-x86_64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-riscv32-esp/15.2.0+20251204/toolchain-riscv32-esp-linux_x86_64-15.2.0+20251204.tar.gz
+  linux-arm64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-riscv32-esp/15.2.0+20251204/toolchain-riscv32-esp-linux_aarch64-15.2.0+20251204.tar.gz
+  macos-x86_64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-riscv32-esp/15.2.0+20251204/toolchain-riscv32-esp-darwin_x86_64-15.2.0+20251204.tar.gz
+  macos-arm64: https://dl.registry.platformio.org/download/platformio/tool/toolchain-riscv32-esp/15.2.0+20251204/toolchain-riscv32-esp-darwin_arm64-15.2.0+20251204.tar.gz
+platform_sha256:
+  linux-x86_64: 5f375f61908aaa3bfd7aaa6dade8169e5e3869b13a579b4555f6a7dd71a67c1c
+  linux-arm64: 4caf6caae03212709ef56f500111f471765d221f13b5a3a596ed24f42e3972e1
+  macos-x86_64: b1e5f74c1b0cf09d9490eb052eb92e025a5db2e048dae1022778e157be9dc85b
+  macos-arm64: 3ad7d4b270444c753de62d1e2a50d396dfd36b6a18fad913baef44b12611cead
+description: RISC-V ULP compiler
+
+size_gb: 0.818838
+display_group: tools
+tags: [embedded, esp32]
+depth: reference-only
+license:
+  id: GPL-2.0-or-later
+  attribution: Espressif Systems
