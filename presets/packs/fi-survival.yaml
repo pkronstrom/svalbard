@@ -11,7 +11,6 @@ target_size_gb: 8
 sources:
 # ── Medical ──
 - wikimed
-- wikem
 - who-basic-emergency-care
 - fas-military-medicine
 - zimgit-medicine

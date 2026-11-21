@@ -5,9 +5,14 @@ tags:
 - emergency-medicine
 - medicine
 depth: comprehensive
-size_gb: 0.349
-url_pattern: https://download.kiwix.org/zim/other/wikem_en_all_maxi_{date}.zim
+size_gb: 0.049
+# Kiwix withdrew WikEM (openzim/zim-requests#1970, 2026-10) and wikem.org's terms
+# forbid automated capture, so this is a frozen snapshot of the last English-only
+# Kiwix build, kept on a mirror that may drop it. Not in any built-in preset.
+url: https://mirror.triplebit.org/download.kiwix.org/zim/other/wikem_en_all_maxi_2026-04.zim
+sha256: d28e41a2c2a7d8946564c009dca38bb213f0b112118b362b26755c50dc58d770
 description: WikEM — concise emergency medicine wiki for clinical decision-making
+  (frozen April 2026 snapshot; no longer updated upstream)
 license:
   id: CC-BY-SA-4.0
   attribution: WikEM contributors

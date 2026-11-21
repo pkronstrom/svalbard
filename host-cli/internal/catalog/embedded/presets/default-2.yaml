@@ -12,7 +12,7 @@ sources:
 - wikiciv
 - cd3wd
 # ── Medical ──
-- wikem
+- wikipedia-en-medicine-mini
 - who-basic-emergency-care
 - zimgit-medicine
 - fas-military-medicine

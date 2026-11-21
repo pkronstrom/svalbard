@@ -8,7 +8,7 @@ display_group: Survival & Medical
 description: Emergency medicine, wilderness survival, and preparedness references
 target_size_gb: 2
 sources:
-# Note: wikimed, wikem, who-basic-emergency-care, fas-military-medicine
+# Note: wikimed, who-basic-emergency-care, fas-military-medicine
 # are already in the default preset chain. This pack adds supplements.
 # ── Medical ZIMs from Kiwix ──
 - nhs-medicines
