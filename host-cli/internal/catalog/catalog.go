@@ -12,16 +12,21 @@ import (
 
 // Item represents a single recipe (content source) in the catalog.
 type Item struct {
-	ID          string            `yaml:"id"`
-	Type        string            `yaml:"type"`
-	Description string            `yaml:"description"`
-	SizeGB      float64           `yaml:"size_gb"`
-	Strategy    string            `yaml:"strategy"`
-	URL         string            `yaml:"url,omitempty"`
-	SHA256      string            `yaml:"sha256,omitempty"`
-	URLPattern  string            `yaml:"url_pattern,omitempty"`
-	Filename    string            `yaml:"filename,omitempty"`
-	Platforms   map[string]string `yaml:"platforms,omitempty"`
+	ID          string `yaml:"id"`
+	Type        string `yaml:"type"`
+	Description string `yaml:"description"`
+	// SizeGB is the download size in decimal GB. For a per-platform recipe (a
+	// platforms map, or a python-package/python-venv built per target) it is
+	// one platform's download, using the largest platform asset; estimates
+	// multiply it by the number of the vault's platforms the recipe supports
+	// (see SizeGBFor). For any other recipe it is the single asset's size.
+	SizeGB     float64           `yaml:"size_gb"`
+	Strategy   string            `yaml:"strategy"`
+	URL        string            `yaml:"url,omitempty"`
+	SHA256     string            `yaml:"sha256,omitempty"`
+	URLPattern string            `yaml:"url_pattern,omitempty"`
+	Filename   string            `yaml:"filename,omitempty"`
+	Platforms  map[string]string `yaml:"platforms,omitempty"`
 	// PlatformSHA256 pins the archive selected from Platforms for each target.
 	// It is optional for existing recipes; new multi-platform closures use it.
 	PlatformSHA256 map[string]string `yaml:"platform_sha256,omitempty"`
@@ -120,13 +125,10 @@ type Preset struct {
 // IsUser reports whether the preset was loaded from a user preset file.
 func (p Preset) IsUser() bool { return p.Path != "" }
 
-// ContentSizeGB returns the sum of SizeGB across all resolved Items.
-func (p Preset) ContentSizeGB() float64 {
-	var total float64
-	for _, item := range p.Items {
-		total += item.SizeGB
-	}
-	return total
+// ContentSizeGB estimates the resolved Items' size on a vault that targets
+// platforms (see TotalSizeGB).
+func (p Preset) ContentSizeGB(platforms []string) float64 {
+	return TotalSizeGB(p.Items, platforms)
 }
 
 // Catalog holds all known recipes and presets.

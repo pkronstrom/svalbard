@@ -4,7 +4,7 @@ display_group: tools
 tags:
 - cybersec
 depth: reference-only
-size_gb: 0.02
+size_gb: 0.017
 venv: svalbard-python
 packages:
 - sqlmap==1.10.9

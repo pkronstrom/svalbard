@@ -442,6 +442,27 @@ func buildWizardConfig(prefillPath string, warn io.Writer) (hosttui.WizardConfig
 		FreeGB:  home.FreeGB,
 	}
 
+	presetOpts, packGroups := wizardCatalog(cat, nil)
+
+	return hosttui.WizardConfig{
+		Volumes:     wizVols,
+		HomeVolume:  homeVol,
+		Presets:     presetOpts,
+		Regions:     cat.Regions(),
+		PackGroups:  packGroups,
+		PrefillPath: prefillPath,
+		ResolveDeps: func(selectedIDs map[string]bool) (map[string]bool, []string) {
+			return cat.ResolveDepsChecked(selectedIDs, depDefaults)
+		},
+		ForPlatforms: func(platforms []string) ([]hosttui.PresetOption, []hosttui.PackGroup) {
+			return wizardCatalog(cat, platforms)
+		},
+	}, nil
+}
+
+// wizardCatalog lists the presets and pack groups the wizard and browse
+// screens offer, with sizes estimated for a vault that targets platforms.
+func wizardCatalog(cat *catalog.Catalog, platforms []string) ([]hosttui.PresetOption, []hosttui.PackGroup) {
 	// Build preset options for all regions
 	var presetOpts []hosttui.PresetOption
 	for _, region := range cat.Regions() {
@@ -453,7 +474,7 @@ func buildWizardConfig(prefillPath string, warn io.Writer) (hosttui.WizardConfig
 			presetOpts = append(presetOpts, hosttui.PresetOption{
 				Name:         p.Name,
 				Description:  p.Description,
-				ContentGB:    resolved.ContentSizeGB(),
+				ContentGB:    resolved.ContentSizeGB(platforms),
 				TargetSizeGB: p.TargetSizeGB,
 				Region:       p.Region,
 				SourceIDs:    resolved.Sources,
@@ -484,7 +505,7 @@ func buildWizardConfig(prefillPath string, warn io.Writer) (hosttui.WizardConfig
 				Type:        item.Type,
 				Strategy:    item.Strategy,
 				Description: item.Description,
-				SizeGB:      item.SizeGB,
+				SizeGB:      item.SizeGBFor(platforms),
 			})
 		}
 		pg.Packs = append(pg.Packs, pack)
@@ -511,7 +532,7 @@ func buildWizardConfig(prefillPath string, warn io.Writer) (hosttui.WizardConfig
 			Type:        item.Type,
 			Strategy:    item.Strategy,
 			Description: item.Description,
-			SizeGB:      item.SizeGB,
+			SizeGB:      item.SizeGBFor(platforms),
 		})
 	}
 	if len(loose) > 0 {
@@ -535,17 +556,7 @@ func buildWizardConfig(prefillPath string, warn io.Writer) (hosttui.WizardConfig
 		return packGroups[i].Name < packGroups[j].Name
 	})
 
-	return hosttui.WizardConfig{
-		Volumes:     wizVols,
-		HomeVolume:  homeVol,
-		Presets:     presetOpts,
-		Regions:     cat.Regions(),
-		PackGroups:  packGroups,
-		PrefillPath: prefillPath,
-		ResolveDeps: func(selectedIDs map[string]bool) (map[string]bool, []string) {
-			return cat.ResolveDepsChecked(selectedIDs, depDefaults)
-		},
-	}, nil
+	return presetOpts, packGroups
 }
 
 // buildDashboardDeps constructs callback closures that bridge host-cli
@@ -556,6 +567,14 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 	if wizConfig != nil {
 		deps.PackGroups = wizConfig.PackGroups
 		deps.Presets = wizConfig.Presets
+		if wizConfig.ForPlatforms != nil {
+			// Browse estimates sizes for the open vault's platforms.
+			if root, err := ResolveVaultRoot(vaultFlag); err == nil {
+				if m, err := manifest.Load(filepath.Join(root, "manifest.yaml")); err == nil {
+					deps.Presets, deps.PackGroups = wizConfig.ForPlatforms(m.Desired.Options.HostPlatforms)
+				}
+			}
+		}
 	}
 
 	deps.RebuildForVault = func(vaultPath string) *hosttui.DashboardDeps {
@@ -630,12 +649,13 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			return hosttui.PlanSummary{}, err
 		}
 
+		platforms := m.Desired.Options.HostPlatforms
 		var summary hosttui.PlanSummary
 		for _, id := range p.ToDownload {
 			item := hosttui.PlanItem{ID: id, Action: "download"}
 			if recipe, ok := cat.RecipeByID(id); ok {
 				item.Type = recipe.Type
-				item.SizeGB = recipe.SizeGB
+				item.SizeGB = recipe.SizeGBFor(platforms)
 				item.Description = recipe.Description
 				if recipe.Build != nil {
 					item.Network = recipe.Build.Network
@@ -654,7 +674,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			item := hosttui.PlanItem{ID: id, Action: "remove"}
 			if recipe, ok := cat.RecipeByID(id); ok {
 				item.Type = recipe.Type
-				item.SizeGB = recipe.SizeGB
+				item.SizeGB = recipe.SizeGBFor(platforms)
 				item.Description = recipe.Description
 			}
 			summary.ToRemove = append(summary.ToRemove, item)

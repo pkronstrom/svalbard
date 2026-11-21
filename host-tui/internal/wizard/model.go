@@ -110,6 +110,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case platformDoneMsg:
 		m.hostPlatforms = msg.platforms
+		if m.config.ForPlatforms != nil {
+			// Per-platform recipes count once per chosen platform.
+			m.config.Presets, m.config.PackGroups = m.config.ForPlatforms(msg.platforms)
+		}
 		m.stage = stagePreset
 		m.presetPicker = newPresetPicker(m.config.Presets, m.config.Regions, m.freeGB)
 		return m.sizeActiveModel()

@@ -84,9 +84,10 @@ func main() {
 	}
 }
 
-// checkRecipe measures the recipe's download. A multi-platform recipe is
-// compared by its largest asset, since size_gb semantics for those are not
-// settled; sizes are decimal GB. Drift must exceed both the fraction and minGB.
+// checkRecipe measures the recipe's download. A multi-platform recipe's
+// size_gb is one platform's download (catalog.Item.SizeGBFor counts it per
+// platform), so it is compared with the largest asset; sizes are decimal GB.
+// Drift must exceed both the fraction and minGB.
 func checkRecipe(ctx context.Context, client *http.Client, item catalog.Item, threshold, minGB float64) result {
 	r := result{ID: item.ID, Declared: item.SizeGB}
 	var urls []string

@@ -5,7 +5,7 @@ tags:
 - cybersec
 - forensics
 depth: reference-only
-size_gb: 0.03
+size_gb: 0.011
 venv: svalbard-python
 packages:
 - volatility3==2.28.2

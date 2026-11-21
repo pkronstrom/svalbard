@@ -524,7 +524,7 @@ func downloadPlatformItems(ctx context.Context, root, id string, recipe catalog.
 
 	var entries []manifest.RealizedEntry
 	for _, platform := range targets {
-		candidates := platformCandidates(platform)
+		candidates := catalog.PlatformCandidates(platform)
 		var downloaded bool
 		for _, candidate := range candidates {
 			if platformURL, ok := recipe.Platforms[candidate]; ok {
@@ -553,29 +553,6 @@ func downloadPlatformItems(ctx context.Context, root, id string, recipe catalog.
 		return nil, fmt.Errorf("no download URL for %s on any target platform %v (available: %v)", id, targets, slices.Collect(maps.Keys(recipe.Platforms)))
 	}
 	return entries, nil
-}
-
-func platformCandidates(platform string) []string {
-	candidates := []string{platform}
-	parts := strings.SplitN(platform, "-", 2)
-	if len(parts) != 2 {
-		return candidates
-	}
-	osName, archName := parts[0], parts[1]
-
-	switch osName {
-	case "macos":
-		candidates = append(candidates, "darwin-"+archName)
-	case "darwin":
-		candidates = append(candidates, "macos-"+archName)
-	}
-	if archName == "arm64" {
-		candidates = append(candidates, osName+"-aarch64")
-	}
-	if archName == "x86_64" {
-		candidates = append(candidates, osName+"-amd64")
-	}
-	return candidates
 }
 
 func hostPlatformCandidates() []string {

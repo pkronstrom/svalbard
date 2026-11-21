@@ -67,6 +67,9 @@ type WizardConfig struct {
 	RunApply    ApplyFunc                   // called to download content
 	RunIndex    IndexFunc                   // called to build search index after apply
 	ShouldIndex func(vaultPath string) bool // nil means automatic indexing is enabled
+	// ForPlatforms re-lists Presets and PackGroups with sizes estimated for
+	// the chosen target platforms; nil keeps the sizes above.
+	ForPlatforms func(platforms []string) ([]PresetOption, []PackGroup)
 }
 
 // WizardResult is returned when the wizard completes.

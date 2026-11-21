@@ -441,7 +441,7 @@ func TestContentSizeGBSumsItems(t *testing.T) {
 			{ID: "c", SizeGB: 0.5},
 		},
 	}
-	got := p.ContentSizeGB()
+	got := p.ContentSizeGB(nil)
 	want := 4.5
 	if got != want {
 		t.Errorf("ContentSizeGB: expected %f, got %f", want, got)
@@ -450,7 +450,7 @@ func TestContentSizeGBSumsItems(t *testing.T) {
 
 func TestContentSizeGBZeroWhenNoItems(t *testing.T) {
 	p := Preset{}
-	if got := p.ContentSizeGB(); got != 0 {
+	if got := p.ContentSizeGB(nil); got != 0 {
 		t.Errorf("ContentSizeGB: expected 0, got %f", got)
 	}
 }
@@ -774,7 +774,7 @@ func TestLoadCatalogContentSizeGB(t *testing.T) {
 		t.Fatalf("ResolvePreset: %v", err)
 	}
 
-	size := preset.ContentSizeGB()
+	size := preset.ContentSizeGB(nil)
 	if size <= 0 {
 		t.Errorf("expected positive ContentSizeGB for default-32, got %f", size)
 	}

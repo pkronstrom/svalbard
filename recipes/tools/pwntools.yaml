@@ -5,7 +5,7 @@ tags:
 - cybersec
 - ctf
 depth: reference-only
-size_gb: 0.05
+size_gb: 0.18
 venv: svalbard-python
 packages:
 - pwntools==4.15.0

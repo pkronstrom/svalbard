@@ -128,6 +128,31 @@ func TestWizardPlatformsToPresetTransition(t *testing.T) {
 	}
 }
 
+func TestWizardReestimatesSizesForChosenPlatforms(t *testing.T) {
+	cfg := testConfig()
+	var asked []string
+	cfg.ForPlatforms = func(platforms []string) ([]PresetOption, []PackGroup) {
+		asked = platforms
+		presets := append([]PresetOption(nil), cfg.Presets...)
+		presets[0].ContentGB = 7
+		groups := []PackGroup{{Name: "Tools", Packs: []Pack{{Name: "bin", Sources: []PackSource{{ID: "wikiciv", SizeGB: 7}}}}}}
+		return presets, groups
+	}
+	m := sizedModel(cfg)
+	m = advancePastPath(t, m)
+	m = advancePastPlatforms(t, m)
+	if strings.Join(asked, ",") != strings.Join(m.hostPlatforms, ",") || len(asked) == 0 {
+		t.Fatalf("ForPlatforms got %v, want the chosen platforms %v", asked, m.hostPlatforms)
+	}
+	if got := m.presetPicker.presets[0].ContentGB; got != 7 {
+		t.Errorf("preset picker ContentGB = %v, want the re-estimated 7", got)
+	}
+	m = advancePastPreset(t, m)
+	if got := m.packPicker.picker.TotalCheckedGB(); got != 7 {
+		t.Errorf("pack picker total = %v, want the re-estimated 7", got)
+	}
+}
+
 func TestWizardPresetToPacksTransition(t *testing.T) {
 	m := sizedModel(testConfig())
 	m = advancePastPath(t, m)

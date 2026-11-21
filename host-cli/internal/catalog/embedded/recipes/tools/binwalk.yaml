@@ -5,7 +5,7 @@ tags:
 - cybersec
 - forensics
 depth: reference-only
-size_gb: 0.01
+size_gb: 0.001
 venv: svalbard-python
 packages:
 - binwalk @ https://github.com/ReFirmLabs/binwalk/archive/refs/tags/v2.3.4.tar.gz

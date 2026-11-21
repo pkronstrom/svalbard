@@ -4,7 +4,7 @@ display_group: tools
 tags:
 - cybersec
 depth: reference-only
-size_gb: 0.08
+size_gb: 0.047
 platforms:
   linux-x86_64: https://caido.download/releases/v0.58.3/caido-cli-v0.58.3-linux-x86_64.tar.gz
   linux-arm64: https://caido.download/releases/v0.58.3/caido-cli-v0.58.3-linux-aarch64.tar.gz

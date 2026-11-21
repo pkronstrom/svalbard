@@ -4,7 +4,7 @@ display_group: tools
 tags:
 - computing
 depth: reference-only
-size_gb: 0.04
+size_gb: 0.017
 platforms:
   linux-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b11146/llama-b11146-bin-ubuntu-x64.tar.gz
   linux-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b11146/llama-b11146-bin-ubuntu-arm64.tar.gz

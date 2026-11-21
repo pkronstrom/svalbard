@@ -6,7 +6,7 @@ tags:
 - agentic
 - coding
 depth: reference-only
-size_gb: 0.04
+size_gb: 0.091
 platforms:
   linux-x86_64: https://github.com/aaif-goose/goose/releases/download/v1.52.0/goose-x86_64-unknown-linux-musl.tar.gz
   linux-arm64: https://github.com/aaif-goose/goose/releases/download/v1.52.0/goose-aarch64-unknown-linux-musl.tar.gz

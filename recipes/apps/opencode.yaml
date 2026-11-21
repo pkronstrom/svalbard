@@ -6,7 +6,7 @@ tags:
 - agentic
 - coding
 depth: reference-only
-size_gb: 0.04
+size_gb: 0.063
 platforms:
   linux-x86_64: https://github.com/anomalyco/opencode/releases/download/v1.18.33/opencode-linux-x64-baseline-musl.tar.gz
   linux-arm64: https://github.com/anomalyco/opencode/releases/download/v1.18.33/opencode-linux-arm64-musl.tar.gz

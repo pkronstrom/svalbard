@@ -4,7 +4,7 @@ display_group: tools
 tags:
 - cybersec
 depth: reference-only
-size_gb: 0.015
+size_gb: 0.003
 platforms:
   linux-x86_64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.9.2/ligolo-ng_agent_0.9.2_linux_amd64.tar.gz
   linux-arm64: https://github.com/nicocha30/ligolo-ng/releases/download/v0.9.2/ligolo-ng_agent_0.9.2_linux_arm64.tar.gz

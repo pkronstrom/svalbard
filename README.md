@@ -109,7 +109,7 @@ Presets scale from pocket-sized emergency kits to full archives:
 
 | Preset | Content | What you get |
 |--------|---------|-------------|
-| `default-2` | ~1.5 GiB | Bugout kit — emergency medicine (WikEM, WHO, field manuals), water/food, knots, appropriate tech |
+| `default-2` | ~1.3 GiB | Bugout kit — emergency medicine (WikEM, WHO, field manuals), water/food, knots, appropriate tech |
 | `default-32` | ~17 GiB | Survival core — Wikipedia top 50k, WikiMed, MedlinePlus, iFixit, repair/homesteading guides, practical Q&A |
 | `default-64` | ~40 GiB | Adds pictured top Wikipedia, Wikibooks, Gutenberg agriculture + medicine, trades textbooks, electronics/radio Q&A |
 | `default-128` | ~91 GiB | Full-text English Wikipedia (no pictures), Wiktionary, OSM wiki, DSP/IoT Q&A |
@@ -118,7 +118,7 @@ Presets scale from pocket-sized emergency kits to full archives:
 | `default-1tb` | ~700 GiB | Pictured English Wikipedia, Survivor Library, 64 GB-class local AI |
 | `default-2tb` | ~1 TiB | Full Gutenberg, Stack Overflow, sysadmin Q&A — everything curated |
 
-Sizes are catalog estimates in GiB; every tier leaves at least ~15% of the drive free for search indexes and your own files. Specialization packs (cybersec, computing, sciences, engineering, communications, ESP32 dev, homesteading) are opt-in and not part of the default tiers.
+Sizes are catalog estimates in GiB for one target platform; tool binaries and Python tools are downloaded once per platform you pick, so each extra platform adds their size again. Every tier leaves at least ~15% of the drive free for search indexes and your own files. Specialization packs (cybersec, computing, sciences, engineering, communications, ESP32 dev, homesteading) are opt-in and not part of the default tiers.
 
 Finnish presets (`finland-*`) extend the same-size default tier plus the next-smaller Finnish tier: Finnish Wikipedia and Wiktionary, Finnish Gutenberg/Wikibooks/Wikisource, partiotaidot (scoutwiki), the Fimea medicine registry, and — from 32 GB up — Finnish maps and open geodata (recreation structures, nature reserves, groundwater).
 

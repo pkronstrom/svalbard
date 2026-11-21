@@ -4,7 +4,7 @@ display_group: tools
 tags:
 - computing
 depth: reference-only
-size_gb: 0.03
+size_gb: 0.11
 python: "3.12"
 strategy: build
 build:

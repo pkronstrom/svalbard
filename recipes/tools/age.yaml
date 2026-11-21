@@ -4,7 +4,7 @@ display_group: tools
 tags:
 - computing
 depth: reference-only
-size_gb: 0.005
+size_gb: 0.019
 platforms:
   linux-x86_64: https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
   linux-arm64: https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-arm64.tar.gz
