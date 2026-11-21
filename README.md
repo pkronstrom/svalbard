@@ -169,7 +169,7 @@ svalbard init                             # the wizard lists them, marked "(cust
 svalbard add cybersec --vault /Volumes/MyStick   # add/remove also accept preset and pack names
 ```
 
-Custom presets are checked when the catalog loads, and any command fails with the file name if one is invalid: a custom preset may not reuse a built-in or another custom preset's name, and every `extends` entry and source id (including `-id` removals) must exist. A custom preset without a `region` takes the region of the first preset it extends, or `custom` if that has none. In a development checkout, the gitignored `local/presets/` is also read. `preset copy --flatten` writes the fully resolved source list instead of an `extends` stub.
+Custom presets are checked when the catalog loads: a custom preset may not reuse a built-in or another custom preset's name, and every `extends` entry and source id (including `-id` removals) must exist. An invalid file, and any custom preset that extends it, is skipped with one warning on stderr naming the file and the reason; everything else still loads, and naming a skipped preset (`preset copy`, `add`, `remove`) fails with that reason. A custom preset without a `region` takes the region of the first preset it extends, or `custom` if that has none. In a development checkout, the gitignored `local/presets/` is also read. `preset copy --flatten` writes the fully resolved source list instead of an `extends` stub.
 
 ## Commands
 

@@ -133,6 +133,7 @@ func (p Preset) ContentSizeGB() float64 {
 type Catalog struct {
 	recipes map[string]Item
 	presets map[string]Preset
+	skipped []SkippedPreset // user presets left out by LoadUserPresets
 }
 
 // LoadFromFS walks both FS trees, parsing .yaml files into recipes and presets maps.
@@ -206,6 +207,9 @@ func LoadFromFS(recipesFS fs.FS, presetsFS fs.FS) (*Catalog, error) {
 func (c *Catalog) ResolvePreset(name string) (Preset, error) {
 	preset, ok := c.presets[name]
 	if !ok {
+		if s, skipped := c.SkippedUserPreset(name); skipped {
+			return Preset{}, s.Err()
+		}
 		return Preset{}, fmt.Errorf("preset %q not found", name)
 	}
 

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,7 @@ func TestUserPresetCLIFlow(t *testing.T) {
 	}
 
 	// The wizard offers it.
-	config, err := buildWizardConfig("")
+	config, err := buildWizardConfig("", io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,5 +86,76 @@ func TestUserPresetCLIFlow(t *testing.T) {
 		if len(m.Desired.Items) != want {
 			t.Fatalf("after %s: %d desired items, want %d: %v", verb, len(m.Desired.Items), want, m.Desired.Items)
 		}
+	}
+}
+
+func TestBrokenUserPresetIsSkippedWithWarning(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	dir := filepath.Join(cfg, "svalbard", "presets")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "good-32.yaml"), []byte("extends: [default-32]\nsources: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	broken := filepath.Join(dir, "broken.yaml")
+	if err := os.WriteFile(broken, []byte("extends: [default-32]\nsources: [no-such-recipe]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantWarning := "warning: skipped user preset " + broken + `: unknown source id "no-such-recipe"`
+
+	// Commands still load the catalog; the broken file is named once on stderr.
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"preset", "list"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("preset list with a broken user preset: %v", err)
+	}
+	if !strings.Contains(out.String(), "good-32  (user: ") || strings.Contains(out.String(), "broken") {
+		t.Errorf("preset list should show good-32 and not broken:\n%s", out.String())
+	}
+	if strings.TrimSpace(errOut.String()) != wantWarning {
+		t.Errorf("stderr = %q, want %q", errOut.String(), wantWarning)
+	}
+
+	// Naming the skipped preset explains why it is unavailable.
+	vault := t.TempDir()
+	if err := commands.InitVaultWithOptions(vault, nil, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"preset", "copy", "broken", "mine"},
+		{"add", "broken", "--vault", vault},
+	} {
+		cmd = NewRootCommand()
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "was skipped") || !strings.Contains(err.Error(), "no-such-recipe") {
+			t.Errorf("%v: err = %v, want the skip reason", args, err)
+		}
+	}
+
+	// The wizard offers only the valid preset.
+	errOut.Reset()
+	config, err := buildWizardConfig("", &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var custom []string
+	for _, p := range config.Presets {
+		if p.Custom {
+			custom = append(custom, p.Name)
+		}
+	}
+	if len(custom) != 1 || custom[0] != "good-32" {
+		t.Errorf("wizard custom presets = %v, want [good-32]", custom)
+	}
+	if !strings.Contains(errOut.String(), wantWarning) {
+		t.Errorf("wizard warning = %q, want %q", errOut.String(), wantWarning)
 	}
 }

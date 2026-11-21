@@ -33,7 +33,7 @@ func NewRootCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// No subcommand → launch interactive TUI dashboard
 			vaultFlag, _ := cmd.Flags().GetString("vault")
-			config, err := buildWizardConfig("")
+			config, err := buildWizardConfig("", cmd.ErrOrStderr())
 			if err != nil {
 				// Degrade gracefully — launch TUI without wizard data
 				return hosttui.RunInteractive(vaultFlag, nil, nil)
@@ -60,9 +60,9 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cat, err := catalog.LoadCatalog()
+			cat, err := loadCatalog(cmd.ErrOrStderr())
 			if err != nil {
-				return fmt.Errorf("loading catalog: %w", err)
+				return err
 			}
 			ids, err := commands.ExpandItemRefs(cat, args)
 			if err != nil {
@@ -97,9 +97,9 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cat, err := catalog.LoadCatalog()
+			cat, err := loadCatalog(cmd.ErrOrStderr())
 			if err != nil {
-				return fmt.Errorf("loading catalog: %w", err)
+				return err
 			}
 			ids, err := commands.ExpandItemRefs(cat, args)
 			if err != nil {
@@ -164,9 +164,9 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cat, err := catalog.LoadCatalog()
+			cat, err := loadCatalog(cmd.ErrOrStderr())
 			if err != nil {
-				return fmt.Errorf("loading catalog: %w", err)
+				return err
 			}
 			if err := commands.ApplyVault(ctx, vaultRoot, cat); err != nil {
 				return err
@@ -255,7 +255,7 @@ func newInitCommand() *cobra.Command {
 				prefill = abs
 			}
 
-			config, err := buildWizardConfig(prefill)
+			config, err := buildWizardConfig(prefill, cmd.ErrOrStderr())
 			if err != nil {
 				return fmt.Errorf("preparing wizard: %w", err)
 			}
@@ -357,9 +357,9 @@ func newPresetCommand() *cobra.Command {
 		Use:   "list",
 		Short: "List available presets",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cat, err := catalog.LoadCatalog()
+			cat, err := loadCatalog(cmd.ErrOrStderr())
 			if err != nil {
-				return fmt.Errorf("loading catalog: %w", err)
+				return err
 			}
 			return commands.WritePresetList(cmd.OutOrStdout(), cat)
 		},
@@ -372,9 +372,9 @@ func newPresetCommand() *cobra.Command {
 			"the user preset dir (~/.config/svalbard/presets/<target>.yaml); a path is used as is.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cat, err := catalog.LoadCatalog()
+			cat, err := loadCatalog(cmd.ErrOrStderr())
 			if err != nil {
-				return fmt.Errorf("loading catalog: %w", err)
+				return err
 			}
 			target, err := commands.PresetTargetPath(args[1])
 			if err != nil {
@@ -394,12 +394,26 @@ func newPresetCommand() *cobra.Command {
 	return cmd
 }
 
-// buildWizardConfig loads the catalog and detected volumes to prepare
-// a WizardConfig for the interactive init wizard.
-func buildWizardConfig(prefillPath string) (hosttui.WizardConfig, error) {
+// loadCatalog loads the catalog and prints one warning to w for each user
+// preset it skipped.
+func loadCatalog(w io.Writer) (*catalog.Catalog, error) {
 	cat, err := catalog.LoadCatalog()
 	if err != nil {
-		return hosttui.WizardConfig{}, fmt.Errorf("loading catalog: %w", err)
+		return nil, fmt.Errorf("loading catalog: %w", err)
+	}
+	for _, skipped := range cat.SkippedUserPresets() {
+		fmt.Fprintf(w, "warning: %s\n", skipped)
+	}
+	return cat, nil
+}
+
+// buildWizardConfig loads the catalog and detected volumes to prepare
+// a WizardConfig for the interactive init wizard. Skipped user presets are
+// reported to warn before the TUI takes over the terminal.
+func buildWizardConfig(prefillPath string, warn io.Writer) (hosttui.WizardConfig, error) {
+	cat, err := loadCatalog(warn)
+	if err != nil {
+		return hosttui.WizardConfig{}, err
 	}
 
 	depDefaults, err := catalog.LoadDepDefaultsAuto()

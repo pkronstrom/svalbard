@@ -86,7 +86,8 @@ func NewCatalogFromPaths(recipesDir, presetsDir string) (*Catalog, error) {
 
 // LoadCatalog prefers the embedded real catalog and falls back to the repo
 // root during development if the embedded assets are unavailable. User
-// presets from UserPresetDirs are layered on top.
+// presets from UserPresetDirs are layered on top; invalid ones are skipped
+// and listed by SkippedUserPresets for the caller to report.
 func LoadCatalog() (*Catalog, error) {
 	cat, err := NewEmbeddedCatalog()
 	if err != nil {
@@ -96,9 +97,7 @@ func LoadCatalog() (*Catalog, error) {
 			return nil, fmt.Errorf("embedded catalog: %w; default catalog: %v", err, fallbackErr)
 		}
 	}
-	if err := cat.LoadUserPresets(UserPresetDirs()...); err != nil {
-		return nil, err
-	}
+	cat.LoadUserPresets(UserPresetDirs()...)
 	return cat, nil
 }
 

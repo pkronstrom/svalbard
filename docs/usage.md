@@ -37,11 +37,11 @@ svalbard status --vault /Volumes/MyDrive
 
 The CLI loads the built-in catalog from embedded copies of `recipes/` and `presets/`.
 
-- `svalbard preset list` shows the embedded preset names.
-- `svalbard preset copy <source> <target>` exports one preset as YAML.
-- The init wizard only offers presets that are known to the binary's embedded catalog.
+- `svalbard preset list` shows the embedded preset names and your custom presets.
+- `svalbard preset copy <source> <target>` starts a custom preset in `~/.config/svalbard/presets/` that extends `<source>`.
+- The init wizard offers the embedded presets and every valid custom preset.
 
-That means `preset copy` is useful for inspection and editing, but local custom preset loading is not yet part of the current CLI flow.
+A custom preset that fails validation is skipped with a warning naming the file and the reason; see "Custom presets" in the README.
 
 ## Vault Layout
 

@@ -243,7 +243,7 @@ func TestCustomizedPresetSnapshotSurvivesCatalogChangeAndReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	vault := filepath.Join(t.TempDir(), "vault")
-	cfg, err := buildWizardConfig(vault)
+	cfg, err := buildWizardConfig(vault, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestCustomizedPresetSnapshotSurvivesCatalogChangeAndReopen(t *testing.T) {
 	if err := os.WriteFile(presetPath, []byte("name: phase3-snapshot\nregion: custom\nkind: preset\nsources: [wikiciv]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	newCfg, err := buildWizardConfig(vault)
+	newCfg, err := buildWizardConfig(vault, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

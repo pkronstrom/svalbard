@@ -56,8 +56,8 @@ func TestPresetListMarksUserPresets(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "mine.yaml"), []byte("extends: [default-32]\nsources: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := cat.LoadUserPresets(dir); err != nil {
-		t.Fatal(err)
+	if skipped := cat.LoadUserPresets(dir); len(skipped) > 0 {
+		t.Fatal(skipped)
 	}
 
 	var buf bytes.Buffer
@@ -90,8 +90,8 @@ func TestCopyPresetWritesExtendsStubThatLoadsBack(t *testing.T) {
 		}
 	}
 
-	if err := c.LoadUserPresets(dir); err != nil {
-		t.Fatalf("stub does not load back: %v", err)
+	if skipped := c.LoadUserPresets(dir); len(skipped) > 0 {
+		t.Fatalf("stub does not load back: %v", skipped)
 	}
 	mine, err := c.ResolvePreset("my-custom")
 	if err != nil {
