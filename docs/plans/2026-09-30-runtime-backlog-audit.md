@@ -14,9 +14,11 @@ Other open themes include mobile recommendations/provisioning, offline routing, 
 
 Recipes expose installed content through predefined type-to-action mappings (ZIM browse, PMTiles maps, GGUF chat, app serving, local-ai binaries as agent clients). Menu metadata changes labels/groups/order/aliases; env fields configure the activation script. Supported installed types enable built-in capabilities such as search/sharing. Adding a new capability still requires a Go handler and generator mapping; recipe YAML is not an arbitrary runtime plugin interface. Runtime exec actions exist, but the parsed recipe menu schema does not currently expose an arbitrary action definition.
 
-MCP implements vault inventory, structured SQLite queries, and search/read capabilities; it does not expose every native drive action. Its metadata reader accepts `.svalbard/recipes.json`, but the current Go generator does not write that file, so recipe descriptions/tags are not fully propagated through that path.
+MCP implements vault inventory, structured SQLite queries, and search/read capabilities; it does not expose every native drive action. Its metadata reader accepts `.svalbard/recipes.json`, but the current Go generator does not write that file, so recipe descriptions/tags are not fully propagated through that path. Fixed 2026-11-21: apply now writes `.svalbard/recipes.json` (object keyed by recipe ID: type, description, tags, viewer) for realized entries and removes a stale copy (`host-cli/internal/toolkit/recipes_metadata.go`).
 
 ## Search
+
+Update 2026-10-07: Phase 4 repaired the first three limitations below and verified actual pinned llama/Nomic/Kiwix packaged journeys, cancellation/resume and source reconciliation. See the [completed checkpoint](2026-10-06-search-reliability-checkpoint.md). The original findings and verification below are the 2026-09-30 audit; recall/performance and non-ZIM ingestion remain follow-ups.
 
 FTS5 indexing of actual ZIM fixtures, database queries, semantic chunk/vector helpers, hybrid search with fixture vectors, keyword fallback, MCP integration, action resolution, toolkit generation, and embedded archive helpers passed the targeted package tests on this date.
 

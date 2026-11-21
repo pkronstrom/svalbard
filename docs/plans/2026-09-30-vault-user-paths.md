@@ -14,6 +14,8 @@ Path: choose a preset → inspect its contents → remove/add items through TUI 
 
 Separate master preset definitions from this vault's changes. Reopening the vault must preserve overrides. Define how explicit removals interact with required dependencies, catalog changes and future preset refreshes. Verify the existing picker and commands before introducing new configuration syntax. Browser configuration is a separate planned interface over the same operations.
 
+Phase 3 completed 2026-10-05: [verified customization checkpoint](2026-10-05-preset-customization-checkpoint.md). Existing-vault editing and versioned refresh remain separate phases.
+
 ## Pack operations
 
 For every offered pack, write down: how the user installs it, where files land, what actions appear, which binaries/configs those actions need, the first useful operation, and how failures/recovery behave. Read through that path even where hardware/platform testing is unavailable; record the limitation instead of treating inspection as a live test.
@@ -33,5 +35,7 @@ Path: inspect existing vault → search/browse catalog → add/remove desired it
 Verify current TUI and CLI paths, dependency closure, changes cancelled before apply, removal of managed outputs only, stale search entries and generated assets, multi-platform/multi-file recipes and unknown catalog items. Preserve unrelated user files. Keep operation preview and execution consistent.
 
 ## Completion evidence
+
+Search/indexing verified 2026-10-07: [Phase 4 checkpoint](2026-10-06-search-reliability-checkpoint.md) records automatic keyword provisioning, semantic cancellation/resume, changed/removed ZIM reconciliation, exact-model native/MCP hybrid search and packaged Kiwix reading. Live execution covers macOS arm64 in a local disposable vault; physical media and other operating systems remain unverified.
 
 Each phase records the path read-through, concrete gaps and fixes, relevant automated tests and feasible live checks. Record untested platforms, hardware requirements and remaining blockers explicitly. Do not write a large combined implementation plan for all journeys.

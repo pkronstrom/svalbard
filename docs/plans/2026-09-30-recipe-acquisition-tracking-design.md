@@ -9,7 +9,7 @@ Detect when an installed recipe has changed even if its ID stays the same. The c
 ## Simple design
 
 - Compute SHA-256 when loading/resolving a recipe, using deterministic JSON of an explicit acquisition-field projection. Share this helper between installation, planning, and status.
-- Include source URLs/patterns/platforms, destination filename/type, acquisition strategy, build parameters/steps, and Python/package/entry-point installation parameters. Include resolved defaults used by acquisition. Preserve meaningful execution order; serialization must not depend on YAML or map-key order.
+- Include source URLs/patterns/platforms, shared and per-platform checksum pins (`sha256`, `platform_sha256`), destination filename/type, acquisition strategy, build parameters/steps, and Python/package/entry-point installation parameters. Include resolved defaults used by acquisition. Preserve meaningful execution order; serialization must not depend on YAML or map-key order.
 - Exclude descriptions, tags, menu/display fields, license prose, and size estimates. New fields that affect acquisition join the projection; presentation-only fields do not.
 - Store the result as `acquisition_hash` on existing realized manifest entries only after successful installation. Multiple artifacts from a recipe receive the same recipe hash. Do not add a generated hash field to recipe YAML.
 - Compare the computed recipe hash with the recorded installed hash: equal means acquisition current; different means update available; absent means version unknown. Keep recipe update detection distinct from file-integrity verification.

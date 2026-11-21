@@ -38,11 +38,11 @@ The resumed [catalog refresh results](2026-09-30-catalog-refresh-results.md) sup
 - [x] `gutenberg` 10 → **206 GB** (in default-128!) — replace with `gutenberg_en_lcc-{t,s,r}` subsets (12 / 4.2 / 1.9 GB); full set 1tb+ only.  — done: `gutenberg-en-lcc-{t,s,r}` recipes added; default-128 gets s+r, default-256 adds t, full gutenberg + khan-academy moved to default-1tb; fi-reference uses the subsets. Top-100 is now a single `wikipedia-en-100` recipe (318 MB).
 - [x] `wikimed` points at `mdwiki_en_all` (10 GB); intended `mdwiki_en_all_maxi` (2.1 GB).
 - [x] Understated: wikem 0.04→0.35, wiktionary-en 5→8.5, SE electronics 2→3.9, SE math 5→6.9, natural-earth 0.3→0.42.
-- [ ] Still to resize: cyberchef 0.015→0.083, gentoo-wiki 0.07→0.09.
+- [x] Resized 2026-11-21 from upstream Content-Length: cyberchef 0.015→0.083 (11.6.0 zip 83.4 MB), gentoo-wiki 0.069→0.092 (2026-07 ZIM 92 MB).
 - [x] Overstated: SE cooking 1.5→0.23, amateur-radio 0.5→0.07, survival 0.5→0.14, biology 1.0→0.4, chemistry 1.0→0.4, engineering 0.5→0.24, diy 3→1.9, serverfault 5→1.5; wikipedia-fi-nopic 5→2.6; wiktionary-fi 2→0.43.
 - [x] `fas-military-medicine` → newer `zimit/irp.fas.org_en_military-medicine_{date}` (2026-05).
 - [x] `scripts/sync-catalog.sh` failed on files deleted from disk but still tracked → now skips missing paths.
-- [ ] Consider a script that refreshes `size_gb` from resolved Content-Length so this can't drift silently.
+- [x] `scripts/check-size-drift.sh` (2026-11-21; `host-cli/cmd/size-drift`) reports recipes whose `size_gb` drifts more than 30% and 10 MB from upstream Content-Length. It needs the network, so it is not in `make verify`. First run: 27 drifted under the plain 30% rule; WikEM no longer exists on Kiwix.
 
 ## 3. Tool versions (after today's refresh)
 
@@ -117,7 +117,7 @@ Done 2026-09-30 (measured on M4 Max / Metal, llama-server b11146):
 - [x] Roster: 8 GB e4b + qwen-4b · 16 GB gemma-4-12b + qwen-9b · 24 GB 26b-a4b + qwen-27b · 64 GB 31b + qwen-27b-hq (+ optional qwen-35b-a3b). All 14 model URLs verified; sizes in GiB; revisions pinned.
 
 Open:
-- [ ] MTP drafter as a real recipe layer (user direction): add `draft_for: [qwen-27b, qwen-27b-hq]` to `qwen-27b-mtp`; planner refuses/warns when no target is selected; runtime reads the pairing from recipe metadata instead of the hard-coded filename in `llamaserve.packagedDraft`, enabling MTP automatically when both are installed.
+- [ ] MTP drafter as a real recipe layer (user direction): add `draft_for: [qwen-27b, qwen-27b-hq]` to `qwen-27b-mtp`; planner refuses/warns when no target is selected; runtime reads the pairing from recipe metadata instead of the hard-coded filename in `llamaserve.packagedDraft`, enabling MTP automatically when both are installed. Partly done 2026-11-21: `qwen-27b-mtp` declares `draft_for`; catalog load rejects unknown targets; `svalbard add` warns about a drafter with no selected target (`host-cli/internal/catalog/drafters.go`, `commands.DrafterWarnings`). Still open: the wizard review warning and the runtime reading the pairing (e.g. from `.svalbard/recipes.json`) instead of `packagedDraft`'s hard-coded names; first re-measure MTP/DFlash2 at llama.cpp ≥ b11840 (`docs/plans/research/2026-11-21-model-backend-updates.md`).
 - [ ] Embedder selection picks the first file in `models/embed/` — make it explicit before adding an opt-in multilingual embedder (Qwen3-Embedding-0.6B).
 - [ ] Unverified: Linux x64/arm64 and Intel Mac runs, MTP on CPU, Q6_K_XL live, 8 GB-tier models live, Svalbard MCP tools inside harnesses.
 - [ ] Vision (`--mmproj`) still unsupported in the runtime.
