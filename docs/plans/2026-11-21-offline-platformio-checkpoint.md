@@ -21,6 +21,10 @@ Scope: MASTERPLAN Phase 5, following the [design](2026-10-07-offline-platformio-
 - Final whole-feature spec and correctness review: no blocking finding. Two low findings fixed (shell check before preparation; absolute drive root in `Run`); others recorded below.
 - After the final source changes: `GOFLAGS="-count=1 -timeout=4m" make verify` passed (catalog sync check, 53 tested packages across all five Go modules); `go test -race ./internal/embedded ./internal/shell ./cmd/svalbard-drive` in drive-runtime passed; `make build` passed (host CLI plus macOS/Linux arm64/x86_64 runtimes); scoped `git diff --check` passed. The tree also contains another session's in-progress builder edits, which compiled and passed at that moment.
 
+## Correction 2026-11-23
+
+The acceptance above piped its commands into `run embedded`, so it never read from a terminal. Typed into a real terminal, the same command printed "Embedded dev shell ready" and then accepted no input: the command-line path ran the action in a background process group, which the terminal stops on its first read. The menu entry was not affected. Fixed in `drive-runtime/cmd/svalbard-drive/main.go` ([plan](archive/2026-11-23-run-tty-handoff-implementation.md)) and re-checked on a freshly applied `esp32-dev` vault in tmux: the shell opens, `pio --version` reports 6.2.0, and `exit` returns to the calling shell.
+
 ## Found during acceptance
 
 espressif32 7.1.3's `builder/frameworks/espidf.py` (`compile_source_files`) tests framework membership with resolved paths but computes object paths from the unresolved source path. With a cache under a symlinked path, or under macOS `/private/tmp` (CMake always rewrites it to `/tmp`), app and bootloader objects collide ("Two environments with different actions were specified for the same target"). The runtime now resolves the cache root and refuses macOS `/tmp` with a clear message; the default user cache is unaffected.

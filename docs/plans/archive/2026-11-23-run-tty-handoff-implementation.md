@@ -1,6 +1,6 @@
 # `./run` terminal handoff: implementation
 
-Status: in progress
+Status: done 2026-11-23
 
 Goal: an interactive action started from the command line (`./run search`, `./run embedded`, any alias) can read the keyboard. Today it stops on its first read.
 
