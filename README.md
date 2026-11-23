@@ -64,7 +64,7 @@ The `svalbard-tools` image includes warc2zim, tippecanoe, zim-tools, GDAL, ffmpe
 
 ### Build from source
 
-Requires Go 1.25+.
+Requires Go 1.26+.
 
 ```bash
 git clone https://github.com/pkronstrom/svalbard.git

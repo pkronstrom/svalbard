@@ -9,7 +9,7 @@ import (
 )
 
 func TestExtraFlags(t *testing.T) {
-	ctx := []string{"--ctx-size", "32768"}
+	ctx := []string{"--ctx-size", "32768", "--parallel", "1"}
 	qwenSampling := []string{"--temp", "0.6", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.0"}
 	qwen38Sampling := []string{"--temp", "1.0", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.0", "--presence-penalty", "0.0", "--repeat-penalty", "1.0"}
 	gemmaSampling := []string{"--temp", "1.0", "--top-k", "64", "--top-p", "0.95", "--min-p", "0.0"}
@@ -76,9 +76,12 @@ func TestExtraFlagsUsesPackagedDraftOnlyForMatchingTarget(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := ExtraFlags(target, 8192)
-			want := []string{"--spec-type", "draft-mtp", "--spec-draft-model", draft, "--spec-draft-n-max", tc.count, "--parallel", "1"}
+			want := []string{"--spec-type", "draft-mtp", "--spec-draft-model", draft, "--spec-draft-n-max", tc.count}
 			if len(got) < len(want) || !reflect.DeepEqual(got[len(got)-len(want):], want) {
 				t.Fatalf("packaged MTP flags = %v; want suffix %v", got, want)
+			}
+			if n := strings.Count(strings.Join(got, " "), "--parallel 1"); n != 1 {
+				t.Fatalf("packaged MTP flags = %v; want --parallel 1 exactly once, got %d", got, n)
 			}
 			if strings.Contains(strings.Join(ExtraFlags(filepath.Join(models, "other.gguf"), 8192), " "), "--spec-type") {
 				t.Fatal("draft must not be attached to a different model")

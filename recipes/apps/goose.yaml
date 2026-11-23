@@ -8,10 +8,10 @@ tags:
 depth: reference-only
 size_gb: 0.091
 platforms:
-  linux-x86_64: https://github.com/aaif-goose/goose/releases/download/v1.52.0/goose-x86_64-unknown-linux-musl.tar.gz
-  linux-arm64: https://github.com/aaif-goose/goose/releases/download/v1.52.0/goose-aarch64-unknown-linux-musl.tar.gz
-  macos-arm64: https://github.com/aaif-goose/goose/releases/download/v1.52.0/goose-aarch64-apple-darwin.tar.gz
-  macos-x86_64: https://github.com/aaif-goose/goose/releases/download/v1.52.0/goose-x86_64-apple-darwin.tar.gz
+  linux-x86_64: https://github.com/aaif-goose/goose/releases/download/v1.56.0/goose-x86_64-unknown-linux-musl.tar.gz
+  linux-arm64: https://github.com/aaif-goose/goose/releases/download/v1.56.0/goose-aarch64-unknown-linux-musl.tar.gz
+  macos-arm64: https://github.com/aaif-goose/goose/releases/download/v1.56.0/goose-aarch64-apple-darwin.tar.gz
+  macos-x86_64: https://github.com/aaif-goose/goose/releases/download/v1.56.0/goose-x86_64-apple-darwin.tar.gz
 description: Goose terminal coding and agent client
 menu:
   group: local-ai

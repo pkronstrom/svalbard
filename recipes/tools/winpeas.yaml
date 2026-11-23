@@ -5,7 +5,7 @@ tags:
 - cybersec
 depth: reference-only
 size_gb: 0.005
-url: https://github.com/peass-ng/PEASS-ng/releases/download/20260930-df86658b/winPEASx64.exe
+url: https://github.com/peass-ng/PEASS-ng/releases/download/20261021-2fe956c4/winPEASx64.exe
 description: Windows privilege escalation enumeration tool (x64 exe, deploy on targets)
 license:
   id: GPL-3.0-only
