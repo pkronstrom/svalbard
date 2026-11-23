@@ -138,7 +138,6 @@ func TestInteractiveActionHelper(t *testing.T) {
 		return
 	}
 	pidFile := filepath.Join(os.TempDir(), "svalbard-tty-helper-"+strconv.Itoa(os.Getpid()))
-	defer os.Remove(pidFile)
 	cmd := exec.Command("sh", "-c", `sleep 300 & echo $! > "$0"; echo ready; read line; echo "got:$line"`, pidFile)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	err := runResolvedActionContext(context.Background(), actions.ResolvedAction{Mode: actions.ModeExecProcess, Cmd: cmd})
@@ -151,6 +150,7 @@ func TestInteractiveActionHelper(t *testing.T) {
 	println("leftover-reaped:" + strconv.FormatBool(leftover > 0 && syscall.Kill(leftover, 0) == syscall.ESRCH))
 	foreground, _ := unix.IoctlGetInt(int(os.Stdin.Fd()), unix.TIOCGPGRP)
 	println("foreground-restored:" + strconv.FormatBool(foreground == syscall.Getpgrp()))
+	_ = os.Remove(pidFile)
 	if err != nil {
 		println("action error: " + err.Error())
 		os.Exit(1)

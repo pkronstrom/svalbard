@@ -192,6 +192,7 @@ func runActionProcess(ctx context.Context, cmd *exec.Cmd) error {
 			return
 		}
 		err := waitHoldingTerminal(cmd.Process.Pid)
+		_ = cmd.Wait() // already reaped; this only releases the command's pipes
 		// Ctrl+C went to the action alone, so nothing else ends what it left behind.
 		sweepGroup(cmd.Process.Pid)
 		done <- err
@@ -200,6 +201,7 @@ func runActionProcess(ctx context.Context, cmd *exec.Cmd) error {
 	case err := <-done:
 		return err
 	case <-ctx.Done():
+		// The grace period is for the action itself; what outlives it is killed at once.
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 		reaped := false
 		select {
@@ -252,7 +254,8 @@ func waitHoldingTerminal(pid int) error {
 	}
 }
 
-// sweepGroup ends whatever an exited action left running in its process group.
+// sweepGroup ends whatever an exited action left running in its process group:
+// SIGTERM, then SIGKILL for whatever is still there two seconds later.
 func sweepGroup(pid int) {
 	if syscall.Kill(-pid, syscall.SIGTERM) != nil {
 		return
