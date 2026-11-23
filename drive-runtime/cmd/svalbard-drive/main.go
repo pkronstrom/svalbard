@@ -11,6 +11,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/term"
+	"golang.org/x/sys/unix"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/actions"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/agent"
@@ -147,7 +149,7 @@ func runResolvedAction(resolved actions.ResolvedAction) error {
 }
 
 func runResolvedActionContext(ctx context.Context, resolved actions.ResolvedAction) error {
-	err := runActionProcess(ctx, resolved.Cmd)
+	err := runActionProcess(ctx, resolved.Cmd, resolved.Mode == actions.ModeExecProcess)
 	switch resolved.Mode {
 	case actions.ModeCaptureOutput:
 		if resolved.Cmd.Stdout != nil {
@@ -168,8 +170,16 @@ func runResolvedActionContext(ctx context.Context, resolved actions.ResolvedActi
 	}
 }
 
-func runActionProcess(ctx context.Context, cmd *exec.Cmd) error {
+// runActionProcess runs cmd in its own process group, so cancellation can reap
+// everything it started. An interactive action also gets the terminal: a
+// separate group is otherwise a background job, stopped on its first read.
+func runActionProcess(ctx context.Context, cmd *exec.Cmd, interactive bool) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if tty := int(os.Stdin.Fd()); interactive && ownsTerminal(tty) {
+		cmd.SysProcAttr.Foreground = true
+		cmd.SysProcAttr.Ctty = tty
+		defer reclaimTerminal(tty)
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -194,6 +204,25 @@ func runActionProcess(ctx context.Context, cmd *exec.Cmd) error {
 		}
 		return ctx.Err()
 	}
+}
+
+// ownsTerminal reports whether fd is a terminal whose foreground group is this
+// process's group. A runtime started as a background job must not take it.
+func ownsTerminal(fd int) bool {
+	if !term.IsTerminal(uintptr(fd)) {
+		return false
+	}
+	foreground, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP)
+	return err == nil && foreground == syscall.Getpgrp()
+}
+
+// reclaimTerminal makes this process's group the terminal's foreground group
+// again after an action held it.
+func reclaimTerminal(fd int) {
+	// Changing the foreground group from a background group raises SIGTTOU.
+	signal.Ignore(syscall.SIGTTOU)
+	defer signal.Reset(syscall.SIGTTOU)
+	_ = unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, syscall.Getpgrp())
 }
 
 func runMCPServe(driveRoot string) error {

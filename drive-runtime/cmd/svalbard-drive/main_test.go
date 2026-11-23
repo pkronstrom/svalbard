@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/creack/pty"
+	"golang.org/x/sys/unix"
+
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/actions"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -77,6 +80,72 @@ func TestRunResolvedActionContextReapsChildProcessGroup(t *testing.T) {
 	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
 		t.Fatalf("surviving child %d remains: %v", pid, err)
 	}
+}
+
+// TestInteractiveActionReadsTerminal gives the runner a real controlling
+// terminal: an interactive action must be able to read what is typed there,
+// and the runner must own the terminal again afterwards.
+func TestInteractiveActionReadsTerminal(t *testing.T) {
+	helper := exec.Command(os.Args[0], "-test.run=^TestInteractiveActionHelper$")
+	// TERM=dumb keeps the terminal libraries from querying a terminal nobody answers.
+	helper.Env = append(os.Environ(), "SVALBARD_TTY_HELPER=1", "TERM=dumb")
+	terminal, err := pty.Start(helper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A stopped action never closes the terminal, so the deadline ends the read.
+	deadline := time.AfterFunc(10*time.Second, func() {
+		_ = helper.Process.Kill()
+		_ = terminal.Close()
+	})
+	t.Cleanup(func() {
+		deadline.Stop()
+		_ = helper.Process.Kill()
+		_ = terminal.Close()
+	})
+
+	var seen strings.Builder
+	typed := false
+	buf := make([]byte, 256)
+	for {
+		n, err := terminal.Read(buf)
+		seen.Write(buf[:n])
+		if !typed && strings.Contains(seen.String(), "ready") {
+			typed = true
+			if _, err := terminal.WriteString("hello\n"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
+	if err := helper.Wait(); err != nil {
+		t.Fatalf("helper: %v; terminal output %q", err, seen.String())
+	}
+	for _, want := range []string{"got:hello", "foreground-restored:true"} {
+		if !strings.Contains(seen.String(), want) {
+			t.Fatalf("terminal output %q lacks %q", seen.String(), want)
+		}
+	}
+}
+
+// TestInteractiveActionHelper is the process TestInteractiveActionReadsTerminal
+// runs under a pty; on its own it does nothing.
+func TestInteractiveActionHelper(t *testing.T) {
+	if os.Getenv("SVALBARD_TTY_HELPER") != "1" {
+		return
+	}
+	cmd := exec.Command("sh", "-c", `echo ready; read line; echo "got:$line"`)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	err := runResolvedActionContext(context.Background(), actions.ResolvedAction{Mode: actions.ModeExecProcess, Cmd: cmd})
+	foreground, _ := unix.IoctlGetInt(int(os.Stdin.Fd()), unix.TIOCGPGRP)
+	println("foreground-restored:" + strconv.FormatBool(foreground == syscall.Getpgrp()))
+	if err != nil {
+		println("action error: " + err.Error())
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 func TestNativeSearchSubcommand(t *testing.T) {
