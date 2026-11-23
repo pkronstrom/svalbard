@@ -84,7 +84,7 @@ func TestRunResolvedActionContextReapsChildProcessGroup(t *testing.T) {
 
 // TestInteractiveActionReadsTerminal gives the runner a real controlling
 // terminal: an interactive action must be able to read what is typed there,
-// and the runner must own the terminal again afterwards.
+// survive Ctrl+Z, leave nothing running, and hand the terminal back.
 func TestInteractiveActionReadsTerminal(t *testing.T) {
 	helper := exec.Command(os.Args[0], "-test.run=^TestInteractiveActionHelper$")
 	// TERM=dumb keeps the terminal libraries from querying a terminal nobody answers.
@@ -112,7 +112,8 @@ func TestInteractiveActionReadsTerminal(t *testing.T) {
 		seen.Write(buf[:n])
 		if !typed && strings.Contains(seen.String(), "ready") {
 			typed = true
-			if _, err := terminal.WriteString("hello\n"); err != nil {
+			// Ctrl+Z first: the action must still answer the line after it.
+			if _, err := terminal.WriteString("\x1ahello\n"); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -123,7 +124,7 @@ func TestInteractiveActionReadsTerminal(t *testing.T) {
 	if err := helper.Wait(); err != nil {
 		t.Fatalf("helper: %v; terminal output %q", err, seen.String())
 	}
-	for _, want := range []string{"got:hello", "foreground-restored:true"} {
+	for _, want := range []string{"got:hello", "leftover-reaped:true", "foreground-restored:true"} {
 		if !strings.Contains(seen.String(), want) {
 			t.Fatalf("terminal output %q lacks %q", seen.String(), want)
 		}
@@ -136,9 +137,18 @@ func TestInteractiveActionHelper(t *testing.T) {
 	if os.Getenv("SVALBARD_TTY_HELPER") != "1" {
 		return
 	}
-	cmd := exec.Command("sh", "-c", `echo ready; read line; echo "got:$line"`)
+	pidFile := filepath.Join(os.TempDir(), "svalbard-tty-helper-"+strconv.Itoa(os.Getpid()))
+	defer os.Remove(pidFile)
+	cmd := exec.Command("sh", "-c", `sleep 300 & echo $! > "$0"; echo ready; read line; echo "got:$line"`, pidFile)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	err := runResolvedActionContext(context.Background(), actions.ResolvedAction{Mode: actions.ModeExecProcess, Cmd: cmd})
+	data, _ := os.ReadFile(pidFile)
+	leftover, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	// The swept process lingers as a zombie until its new parent collects it.
+	for deadline := time.Now().Add(time.Second); syscall.Kill(leftover, 0) == nil && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	println("leftover-reaped:" + strconv.FormatBool(leftover > 0 && syscall.Kill(leftover, 0) == syscall.ESRCH))
 	foreground, _ := unix.IoctlGetInt(int(os.Stdin.Fd()), unix.TIOCGPGRP)
 	println("foreground-restored:" + strconv.FormatBool(foreground == syscall.Getpgrp()))
 	if err != nil {

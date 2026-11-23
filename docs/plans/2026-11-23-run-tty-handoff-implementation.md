@@ -9,8 +9,10 @@ Goal: an interactive action started from the command line (`./run search`, `./ru
 ### Decisions
 - `runActionProcess` keeps starting the action in its own process group, so cancellation still reaps the whole group.
 - When the action is interactive (`ModeExecProcess`) and stdin is a terminal, that group becomes the terminal's foreground group at start (`SysProcAttr.Foreground` with `Ctty` set to stdin). When the action ends, the runtime takes the foreground back, ignoring SIGTTOU while it does.
-- Captured actions and runs without a terminal on stdin behave exactly as before.
-- Ctrl+C in the terminal reaches the action's group only. The runtime returns when the action exits. SIGTERM to the runtime still cancels and reaps.
+- Whether an action takes the terminal is decided from its own stdin: a terminal whose foreground group is the runtime's. Captured actions and runs without a terminal on stdin behave exactly as before.
+- Ctrl+C in the terminal reaches the action's group only. The runtime returns when the action exits, then ends anything left in that group. SIGTERM to the runtime still cancels and reaps.
+- Ctrl+Z does nothing to an action started from the command line: a suspended action is continued at once, because the runtime could not hand a stopped action's terminal back to the calling shell. Job control inside a shell the action opens is unaffected.
+- SIGTTOU stays ignored in the runtime after it takes the terminal back; the runtime runs one action and exits.
 - Test dependency: `github.com/creack/pty`, test-only, to give a helper process a real controlling terminal.
 
 ### Invariants

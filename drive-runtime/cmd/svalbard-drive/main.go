@@ -149,7 +149,7 @@ func runResolvedAction(resolved actions.ResolvedAction) error {
 }
 
 func runResolvedActionContext(ctx context.Context, resolved actions.ResolvedAction) error {
-	err := runActionProcess(ctx, resolved.Cmd, resolved.Mode == actions.ModeExecProcess)
+	err := runActionProcess(ctx, resolved.Cmd)
 	switch resolved.Mode {
 	case actions.ModeCaptureOutput:
 		if resolved.Cmd.Stdout != nil {
@@ -171,20 +171,31 @@ func runResolvedActionContext(ctx context.Context, resolved actions.ResolvedActi
 }
 
 // runActionProcess runs cmd in its own process group, so cancellation can reap
-// everything it started. An interactive action also gets the terminal: a
+// everything it started. An action that reads the terminal also gets it: a
 // separate group is otherwise a background job, stopped on its first read.
-func runActionProcess(ctx context.Context, cmd *exec.Cmd, interactive bool) error {
+func runActionProcess(ctx context.Context, cmd *exec.Cmd) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if tty := int(os.Stdin.Fd()); interactive && ownsTerminal(tty) {
+	holdsTerminal := false
+	if stdin, ok := cmd.Stdin.(*os.File); ok && ownsTerminal(int(stdin.Fd())) {
+		holdsTerminal = true
 		cmd.SysProcAttr.Foreground = true
-		cmd.SysProcAttr.Ctty = tty
-		defer reclaimTerminal(tty)
+		cmd.SysProcAttr.Ctty = int(stdin.Fd())
+		defer reclaimTerminal(int(stdin.Fd()))
 	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	go func() {
+		if !holdsTerminal {
+			done <- cmd.Wait()
+			return
+		}
+		err := waitHoldingTerminal(cmd.Process.Pid)
+		// Ctrl+C went to the action alone, so nothing else ends what it left behind.
+		sweepGroup(cmd.Process.Pid)
+		done <- err
+	}()
 	select {
 	case err := <-done:
 		return err
@@ -216,12 +227,51 @@ func ownsTerminal(fd int) bool {
 	return err == nil && foreground == syscall.Getpgrp()
 }
 
+// waitHoldingTerminal waits for an action that owns the terminal. Ctrl+Z would
+// leave it stopped with the terminal, out of reach of Ctrl+C and of the calling
+// shell, so a suspended action is continued at once.
+func waitHoldingTerminal(pid int) error {
+	for {
+		var status syscall.WaitStatus
+		_, err := syscall.Wait4(pid, &status, syscall.WUNTRACED, nil)
+		switch {
+		case err == syscall.EINTR:
+		case err != nil:
+			return err
+		case status.Stopped():
+			if status.StopSignal() == syscall.SIGTSTP {
+				_ = syscall.Kill(-pid, syscall.SIGCONT)
+			}
+		case status.Exited() && status.ExitStatus() == 0:
+			return nil
+		case status.Exited():
+			return fmt.Errorf("exit status %d", status.ExitStatus())
+		default:
+			return fmt.Errorf("signal: %v", status.Signal())
+		}
+	}
+}
+
+// sweepGroup ends whatever an exited action left running in its process group.
+func sweepGroup(pid int) {
+	if syscall.Kill(-pid, syscall.SIGTERM) != nil {
+		return
+	}
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if syscall.Kill(-pid, 0) != nil {
+			return
+		}
+	}
+	_ = syscall.Kill(-pid, syscall.SIGKILL)
+}
+
 // reclaimTerminal makes this process's group the terminal's foreground group
 // again after an action held it.
 func reclaimTerminal(fd int) {
-	// Changing the foreground group from a background group raises SIGTTOU.
+	// Changing the foreground group from a background group raises SIGTTOU, and
+	// an ignore cannot be undone, so it stays ignored. The runtime runs one
+	// action and exits; revisit before running a second in the same process.
 	signal.Ignore(syscall.SIGTTOU)
-	defer signal.Reset(syscall.SIGTTOU)
 	_ = unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, syscall.Getpgrp())
 }
 
