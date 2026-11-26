@@ -31,6 +31,10 @@ import (
 
 const maxWorkers = 4
 
+// noticeID is the progress ID of messages about the vault as a whole, such as
+// replaced local edits to a Svalbard skill; their text is in Message.
+const noticeID = "svalbard"
+
 // ProgressEvent is JSON Lines-compatible and reports item or procedure progress.
 type ProgressEvent struct {
 	ID         string `json:"id"`
@@ -314,7 +318,12 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	if len(platforms) == 0 {
 		platforms = []string{hostPlatform()}
 	}
-	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars, Menus: menus, PlatformIORecipes: platformIORecipes, PlatformIOPlatforms: platforms, Recipes: recipes}); err != nil {
+	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{
+		EnvVars: envVars, Menus: menus, PlatformIORecipes: platformIORecipes, PlatformIOPlatforms: platforms, Recipes: recipes,
+		Notice: func(notice string) {
+			progress(ProgressEvent{ID: noticeID, Status: tui.StatusDone, Step: notice, Message: notice})
+		},
+	}); err != nil {
 		return fmt.Errorf("generating toolkit: %w", err)
 	}
 	if err := toolkit.WriteDocumentsMetadata(root, m.Realized.Entries, recipes); err != nil {

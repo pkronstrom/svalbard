@@ -70,6 +70,8 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 		return buildContentArchive, true
 	case "raster-sheets":
 		return buildRasterSheets, true
+	case "embedded":
+		return buildEmbedded, true
 	}
 	// 3. App bundles use the shared Go download/extract pipeline.
 	if recipe.Build.Family == "app-bundle" {

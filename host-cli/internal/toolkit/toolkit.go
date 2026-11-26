@@ -69,6 +69,7 @@ var TypeDirs = map[string]string{
 	"sqlite":         "data",
 	"python-venv":    "runtime/python",
 	"python-package": "runtime/python",
+	"skills":         "skills",
 }
 
 // runtimeConfig mirrors drive-runtime/internal/config.RuntimeConfig.
@@ -157,6 +158,10 @@ type GenerateOpts struct {
 	// .svalbard/recipes.json for the MCP server; the settings they declare go
 	// to .svalbard/settings.schema.json.
 	Recipes map[string]catalog.Item
+
+	// Notice receives what the user should hear about once, such as local
+	// edits to a Svalbard skill that were replaced.
+	Notice func(string)
 }
 
 // Generate creates the .svalbard/actions.json runtime config under root,
@@ -190,6 +195,15 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	}
 	if err := writeAppPages(root, entries); err != nil {
 		return err
+	}
+	report, err := writeSkills(root, entries, skillTree())
+	if err != nil {
+		return err
+	}
+	if len(opts) > 0 && opts[0].Notice != nil {
+		for _, notice := range skillNoticesFor(report) {
+			opts[0].Notice(notice)
+		}
 	}
 	if err := writeRecipesMetadata(root, entries, recipes); err != nil {
 		return err
