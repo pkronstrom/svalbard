@@ -74,15 +74,20 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 		RelativePath:   "runtime/python",
 		SourceStrategy: "build",
 	}
-	if len(pkgItems) == 0 {
-		return []manifest.RealizedEntry{venvEntry}, nil
-	}
-
-	version := pythonVersionFromSpec(recipe.Python)
 	targets := opts.Platforms
 	if len(targets) == 0 {
 		targets = []string{hostPlatformStr()}
 	}
+	if len(pkgItems) == 0 {
+		for _, platform := range targets {
+			if err := upgradePythonCommands(filepath.Join(root, "bin", platform), platform); err != nil {
+				return nil, err
+			}
+		}
+		return []manifest.RealizedEntry{venvEntry}, nil
+	}
+
+	version := pythonVersionFromSpec(recipe.Python)
 
 	workdir, err := pythonBuildDir()
 	if err != nil {
@@ -239,8 +244,8 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			for _, ep := range pkg.EntryPoints {
 				wrapper := filepath.Join(binDir, ep)
 				script := fmt.Sprintf(
-					"#!/bin/sh\nDRIVE=\"$(cd \"$(dirname \"$0\")/../..\" && pwd)\"\nPY=\"$DRIVE/runtime/python/%s\"\nPYTHONPATH=\"$PY/tools/%s\" PYTHONNOUSERSITE=1 exec \"$PY/%s\" \"$PY/tools/%s/bin/%s\" \"$@\"\n",
-					platform, pkg.ID, filepath.ToSlash(pythonRel), pkg.ID, ep,
+					"#!/bin/sh\nDRIVE=\"$(cd \"$(dirname \"$0\")/../..\" && pwd)\"\nPY=\"$DRIVE/runtime/python/%s\"\n%sPYTHONPATH=\"$PY/tools/%s\" PYTHONNOUSERSITE=1 exec \"$PY/%s\" \"$PY/tools/%s/bin/%s\" \"$@\"\n",
+					platform, bytecodeLines(platform), pkg.ID, filepath.ToSlash(pythonRel), pkg.ID, ep,
 				)
 				if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 					return nil, fmt.Errorf("writing wrapper for %s: %w", ep, err)
@@ -249,8 +254,8 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			if pkg.PythonLauncher != "" {
 				launcher := filepath.Join(binDir, pkg.PythonLauncher)
 				script := fmt.Sprintf(
-					"#!/bin/sh\nunset PYTHONHOME\nDRIVE=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/../..\" && pwd)\"\nPY=\"$DRIVE/runtime/python/%s\"\nPYTHONPATH=\"$PY/tools/%s\" PYTHONNOUSERSITE=1 exec \"$PY/%s\" \"$@\"\n",
-					platform, pkg.ID, filepath.ToSlash(pythonRel),
+					"#!/bin/sh\nunset PYTHONHOME\nDRIVE=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/../..\" && pwd)\"\nPY=\"$DRIVE/runtime/python/%s\"\n%sPYTHONPATH=\"$PY/tools/%s\" PYTHONNOUSERSITE=1 exec \"$PY/%s\" \"$@\"\n",
+					platform, bytecodeLines(platform), pkg.ID, filepath.ToSlash(pythonRel),
 				)
 				if err := os.WriteFile(launcher, []byte(script), 0o755); err != nil {
 					return nil, fmt.Errorf("writing launcher %s: %w", pkg.PythonLauncher, err)
@@ -278,6 +283,11 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			return nil, fmt.Errorf("python package %s could not be installed for any of %v", pkg.ID, targets)
 		}
 	}
+	for _, platform := range targets {
+		if err := upgradePythonCommands(filepath.Join(root, "bin", platform), platform); err != nil {
+			return nil, err
+		}
+	}
 
 	if repairDeferred {
 		message := "Python trees use an older layout; the next apply with network will rebuild them"
@@ -298,6 +308,25 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 	venvEntry.SizeBytes = dirSize(filepath.Join(root, "runtime", "python"))
 	return append(entries, venvEntry), nil
 }
+
+// bytecodeLines keep Python's compiled modules off the stick, where each is
+// one more cluster (up to 8,311 files for Open WebUI): they go to this
+// computer's cache dir, where Go's os.UserCacheDir has it, and are not written
+// without a HOME. A prefix or a no-write the caller set (Open WebUI's runtime,
+// the embedded shell) is kept.
+func bytecodeLines(platform string) string {
+	cache := "${XDG_CACHE_HOME:-$HOME/.cache}"
+	if strings.HasPrefix(platform, "macos-") {
+		cache = "$HOME/Library/Caches"
+	}
+	return "if [ -z \"${PYTHONPYCACHEPREFIX:-}\" ] && [ -z \"${PYTHONDONTWRITEBYTECODE:-}\" ]; then\n" +
+		"  if [ -n \"${HOME:-}\" ]; then export PYTHONPYCACHEPREFIX=\"" + cache + "/" + bytecodeCacheDir + "\"; else export PYTHONDONTWRITEBYTECODE=1; fi\n" +
+		"fi\n"
+}
+
+// bytecodeCacheDir is where in the user cache dir Python's bytecode goes;
+// the drive runtime uses the same for Open WebUI.
+const bytecodeCacheDir = "svalbard/pycache"
 
 // pythonTreeLayoutStamp names how installTree lays trees out. The interpreter's
 // python.layout and each package's .packages stamp carry it, so trees an older
@@ -320,9 +349,11 @@ func pythonLayoutCurrent(stampPath string) bool {
 }
 
 // PythonTreesNeedRepair reports whether a vault holds Python trees for one of
-// platforms in an older layout than this builder writes, or the uv cache older
-// builds left on it, so apply rebuilds the venv even when nothing else asks for
-// it. A stamp without its tree (a removed package) is not a tree.
+// platforms in an older layout than this builder writes, the uv cache older
+// builds left on it, or commands that write bytecode onto the stick, so apply
+// rebuilds the venv even when nothing else asks for it. A stamp without its
+// tree (a removed package) is not a tree. Rewriting the commands alone needs
+// neither the network nor Docker.
 func PythonTreesNeedRepair(root string, platforms []string) bool {
 	if _, err := os.Stat(filepath.Join(root, ".staging", "uv-cache")); err == nil {
 		return true
@@ -343,8 +374,54 @@ func PythonTreesNeedRepair(root string, platforms []string) bool {
 				return true
 			}
 		}
+		if pythonCommandsWriteBytecode(filepath.Join(root, "bin", platform)) {
+			return true
+		}
 	}
 	return false
+}
+
+// pythonCommandsWriteBytecode reports whether binDir holds a Python command
+// written before bytecodeLines, which leaves __pycache__ in the tree.
+func pythonCommandsWriteBytecode(binDir string) bool {
+	return len(oldPythonCommands(binDir)) > 0
+}
+
+// oldPythonCommands are the commands in binDir written before bytecodeLines,
+// with their content.
+func oldPythonCommands(binDir string) map[string]string {
+	old := map[string]string{}
+	entries, _ := os.ReadDir(binDir)
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() || info.Size() > 4096 {
+			continue
+		}
+		path := filepath.Join(binDir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		script := string(data)
+		if strings.HasPrefix(script, "#!/bin/sh\n") && strings.Contains(script, "/runtime/python/") &&
+			strings.Contains(script, "\nPYTHONPATH=") && !strings.Contains(script, "PYTHONPYCACHEPREFIX") {
+			old[path] = script
+		}
+	}
+	return old
+}
+
+// upgradePythonCommands adds bytecodeLines to the commands in binDir the
+// build did not write again, such as those of a package the catalog no
+// longer has, so none of them writes onto the stick.
+func upgradePythonCommands(binDir, platform string) error {
+	for path, script := range oldPythonCommands(binDir) {
+		script = strings.Replace(script, "\nPYTHONPATH=", "\n"+bytecodeLines(platform)+"PYTHONPATH=", 1)
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // pythonBuildDir holds uv's cache and the interpreter archives while building,

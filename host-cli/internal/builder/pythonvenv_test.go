@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -370,10 +371,86 @@ func TestPythonLauncherWrapper(t *testing.T) {
 			"unset PYTHONHOME\n" +
 			"DRIVE=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/../..\" && pwd)\"\n" +
 			"PY=\"$DRIVE/runtime/python/" + platform + "\"\n" +
+			bytecodeLines(platform) +
 			"PYTHONPATH=\"$PY/tools/py-docs\" PYTHONNOUSERSITE=1 exec \"$PY/" + pythons[platform] + "\" \"$@\"\n"
 		if string(data) != want {
 			t.Errorf("%s =\n%s\nwant\n%s", path, data, want)
 		}
+	}
+}
+
+// A Python command from the stick writes its bytecode to this computer's
+// cache dir, never into the tree on the stick.
+func TestPythonCommandKeepsBytecodeOffTheStick(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newLauncherTestCatalog(t)
+	fakeUV(t, nil)
+	platforms := []string{"linux-arm64", "macos-arm64"}
+	if _, err := buildPythonVenv(root, recipe, cat, Options{Platforms: platforms}); err != nil {
+		t.Fatal(err)
+	}
+	if PythonTreesNeedRepair(root, platforms) {
+		t.Fatal("fresh commands reported as needing repair")
+	}
+	interpreters := map[string]string{
+		"linux-arm64": "python/cpython-3.12.14-linux-aarch64-gnu/bin/python3.12",
+		"macos-arm64": "python/cpython-3.12.14-macos-aarch64-none/bin/python3.12",
+	}
+	for _, platform := range platforms {
+		// The interpreter prints what it was given.
+		fake := filepath.Join(root, "runtime", "python", platform, interpreters[platform])
+		if err := os.WriteFile(fake, []byte("#!/bin/sh\necho \"prefix=${PYTHONPYCACHEPREFIX:-} nowrite=${PYTHONDONTWRITEBYTECODE:-}\"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		home := map[string]string{"linux-arm64": "/home/u/.cache", "macos-arm64": "/home/u/Library/Caches"}[platform]
+		for _, tc := range []struct {
+			env  []string
+			want string
+		}{
+			{[]string{"HOME=/home/u"}, "prefix=" + home + "/svalbard/pycache nowrite="},
+			{[]string{"HOME=/home/u", "PYTHONPYCACHEPREFIX=/set/by/caller"}, "prefix=/set/by/caller nowrite="},
+			{[]string{"HOME=/home/u", "PYTHONDONTWRITEBYTECODE=1"}, "prefix= nowrite=1"},
+			{nil, "prefix= nowrite=1"},
+		} {
+			if platform == "linux-arm64" && len(tc.env) == 1 {
+				tc.env = append(tc.env, "XDG_CACHE_HOME=")
+			}
+			cmd := exec.Command("/bin/sh", filepath.Join(root, "bin", platform, "py-docs"))
+			cmd.Env = append([]string{"PATH=/usr/bin:/bin"}, tc.env...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s %v: %v\n%s", platform, tc.env, err, out)
+			}
+			if got := strings.TrimSpace(string(out)); got != tc.want {
+				t.Errorf("%s %v: %q, want %q", platform, tc.env, got, tc.want)
+			}
+		}
+	}
+
+	// Commands written before this read as needing the venv build again.
+	launcher := filepath.Join(root, "bin", "macos-arm64", "py-docs")
+	old := "#!/bin/sh\nunset PYTHONHOME\nPY=\"$DRIVE/runtime/python/macos-arm64\"\nPYTHONPATH=\"$PY/tools/py-docs\" exec \"$PY/python\" \"$@\"\n"
+	if err := os.WriteFile(launcher, []byte(old), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !PythonTreesNeedRepair(root, platforms) {
+		t.Fatal("a command that writes bytecode onto the stick was not reported")
+	}
+
+	// The build brings every command up to date, also one of a package the
+	// catalog no longer has, so the repair is not asked for again.
+	withdrawn := filepath.Join(root, "bin", "linux-arm64", "gone")
+	if err := os.WriteFile(withdrawn, []byte("#!/bin/sh\nPY=\"$DRIVE/runtime/python/linux-arm64\"\nPYTHONPATH=\"$PY/tools/gone\" exec \"$PY/python\" \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := buildPythonVenv(root, recipe, cat, Options{Platforms: platforms}); err != nil {
+		t.Fatal(err)
+	}
+	if PythonTreesNeedRepair(root, platforms) {
+		t.Fatal("repair still asked for after the build")
+	}
+	if data, _ := os.ReadFile(withdrawn); !strings.Contains(string(data), bytecodeLines("linux-arm64")+"PYTHONPATH=") {
+		t.Fatalf("withdrawn package's command not upgraded:\n%s", data)
 	}
 }
 

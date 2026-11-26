@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -173,10 +174,10 @@ func TestEnvironmentConfiguresALocalSignedOutSlimInstance(t *testing.T) {
 		}
 	}
 
-	// Everything Open WebUI writes stays below the drive's runtime directory.
+	// Everything Open WebUI keeps stays below the drive's runtime directory.
 	for _, key := range []string{
 		"HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "TMPDIR",
-		"DATA_DIR", "STATIC_DIR", "PYTHONPYCACHEPREFIX",
+		"DATA_DIR", "STATIC_DIR",
 	} {
 		if got := env[key]; !strings.HasPrefix(got, root+string(filepath.Separator)) {
 			t.Errorf("env[%q] = %q, want a path below %s", key, got, root)
@@ -340,6 +341,14 @@ func TestRunStartsEverythingAndStopsItOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stdout := &syncBuffer{}
+	// Bytecode an earlier runtime kept on the stick.
+	stalePyc := filepath.Join(driveRoot, ".svalbard", "runtime", "open-webui", "pycache", "mod.cpython-312.pyc")
+	if err := os.MkdirAll(filepath.Dir(stalePyc), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stalePyc, []byte("pyc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	opened := make(chan string, 2)
 	done := make(chan error, 1)
 	go func() {
@@ -397,6 +406,12 @@ func TestRunStartsEverythingAndStopsItOnCancel(t *testing.T) {
 	}
 	if got, want := env["HOME"], filepath.Join(runtimeRoot, "home"); got != want {
 		t.Errorf("HOME = %q, want %q", got, want)
+	}
+	if prefix := env["PYTHONPYCACHEPREFIX"]; strings.HasPrefix(prefix, driveRoot) || (prefix == "" && env["PYTHONDONTWRITEBYTECODE"] != "1") {
+		t.Errorf("bytecode goes to %q on the drive (no-write %q)", prefix, env["PYTHONDONTWRITEBYTECODE"])
+	}
+	if _, err := os.Stat(filepath.Dir(stalePyc)); !os.IsNotExist(err) {
+		t.Errorf("bytecode left on the drive: %v", err)
 	}
 	if env["DEFAULT_MODELS"] != "Qwen3.5-4B-Q4_K_M" {
 		t.Errorf("DEFAULT_MODELS = %q", env["DEFAULT_MODELS"])
@@ -657,5 +672,29 @@ func TestRunStopsTheModelServerWhenOpenWebUIFailsToStart(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(recordDir, "llama-server.stopped")); err != nil {
 		t.Errorf("llama-server was left running: %v", err)
+	}
+}
+
+// Compiled modules go to this computer's cache, not the stick, where up to
+// 8,311 of them took 1.10 GB at 128 KB clusters.
+func TestEnvironmentKeepsBytecodeOffTheDrive(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".svalbard", "runtime", "open-webui")
+	env := Environment(Launch{RuntimeRoot: root, BytecodeDir: "/home/u/.cache/svalbard/pycache", Port: 8084})
+	if got := env["PYTHONPYCACHEPREFIX"]; got != "/home/u/.cache/svalbard/pycache" {
+		t.Errorf("PYTHONPYCACHEPREFIX = %q", got)
+	}
+	if _, ok := env["PYTHONDONTWRITEBYTECODE"]; ok {
+		t.Error("bytecode switched off although there is a cache dir")
+	}
+	env = Environment(Launch{RuntimeRoot: root, Port: 8084})
+	if _, ok := env["PYTHONPYCACHEPREFIX"]; ok || env["PYTHONDONTWRITEBYTECODE"] != "1" {
+		t.Errorf("without a cache dir: prefix %q, no-write %q", env["PYTHONPYCACHEPREFIX"], env["PYTHONDONTWRITEBYTECODE"])
+	}
+
+	t.Setenv("HOME", "/home/u")
+	t.Setenv("XDG_CACHE_HOME", "")
+	want := map[string]string{"darwin": "/home/u/Library/Caches/svalbard/pycache", "linux": "/home/u/.cache/svalbard/pycache"}[runtime.GOOS]
+	if got := bytecodeDir(); want != "" && got != want {
+		t.Errorf("bytecodeDir() = %q, want %q", got, want)
 	}
 }
