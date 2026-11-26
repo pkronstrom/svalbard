@@ -17,7 +17,7 @@ import DOMPurify from "dompurify";
 <div id="out"></div>
 <script type="module">
 import DOMPurify from "dompurify";
-const dirty = '<p>Hello <img src=x onerror="alert(1)"><script>alert(2)<\/script></p>';
+const dirty = '<p onclick="alert(1)">Hello <a href="javascript:alert(2)">link</a><script>alert(3)<\/script></p>';
 document.getElementById("out").innerHTML = DOMPurify.sanitize(dirty);
 </script>
 </body></html>
