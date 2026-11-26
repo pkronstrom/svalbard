@@ -106,3 +106,12 @@ func sizeOf(cat *catalog.Catalog, ids, platforms []string) string {
 	}
 	return tui.FormatSize(catalog.TotalSizeGB(items, platforms))
 }
+
+// applyCommand is the apply command line for the vault a command was
+// pointed at, so its hint works from any directory.
+func applyCommand(vaultFlag string) string {
+	if vaultFlag == "" {
+		return "svalbard apply"
+	}
+	return "svalbard apply --vault " + vaultFlag
+}

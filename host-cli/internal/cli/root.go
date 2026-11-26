@@ -109,7 +109,7 @@ func NewRootCommand() *cobra.Command {
 			if required := m.Desired.Items[requested:]; len(required) > 0 {
 				fmt.Fprintf(out, "Includes required: %s\n", strings.Join(required, ", "))
 			}
-			fmt.Fprintln(out, "Run \"svalbard apply\" to download")
+			fmt.Fprintf(out, "Run %q to download\n", applyCommand(vaultFlag))
 			for _, warning := range commands.DrafterWarnings(cat, m.Desired.Items) {
 				fmt.Fprintln(cmd.ErrOrStderr(), warning)
 			}
@@ -164,7 +164,7 @@ func NewRootCommand() *cobra.Command {
 					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s is no longer in the catalog; once apply deletes it, it cannot be downloaded again (\"svalbard add %s\" before applying keeps it)\n", id, id)
 				}
 			}
-			fmt.Fprintln(out, "Run \"svalbard apply\" to update the vault")
+			fmt.Fprintf(out, "Run %q to update the vault\n", applyCommand(vaultFlag))
 			return nil
 		},
 	}

@@ -169,7 +169,7 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 		return fmt.Errorf("pruning removed sources: %w", err)
 	}
 	if len(zimFiles) == 0 {
-		fmt.Fprintln(w, "No ZIM files found")
+		fmt.Fprintln(w, "Search index: no ZIM files to index")
 	}
 	if err := ctx.Err(); err != nil {
 		return err

@@ -158,3 +158,22 @@ func TestApplyRestoresACopySetAsideByAnInterruptedUpdate(t *testing.T) {
 		t.Errorf("set-aside copies left behind: %v", left)
 	}
 }
+
+func TestRemovalIsReportedAsRemovingAndLeavesNoDownloadRecord(t *testing.T) {
+	root, m := installV1(t, "item.zim")
+	m.Desired.Items = nil
+	cat := zimCatalog(t, "http://example.test/v1.zim", "item.zim")
+
+	var steps []string
+	record := func(ev ProgressEvent) { steps = append(steps, ev.Status+":"+ev.Step) }
+	if err := Run(context.Background(), root, &m, planner.Plan{ToRemove: []string{"item"}}, cat, record); err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) == 0 || steps[0] != "active:removing" {
+		t.Fatalf("progress = %v, want the removal reported as removing", steps)
+	}
+	left, _ := filepath.Glob(filepath.Join(root, "zim", "*"))
+	if len(left) != 0 {
+		t.Fatalf("removal left %v behind", left)
+	}
+}

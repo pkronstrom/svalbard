@@ -116,11 +116,14 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	removeSet := make(map[string]struct{}, len(plan.ToRemove))
 	for _, id := range plan.ToRemove {
 		removeSet[id] = struct{}{}
-		progress(ProgressEvent{ID: id, Status: tui.StatusActive})
+		progress(ProgressEvent{ID: id, Status: tui.StatusActive, Step: "removing"})
 	}
 	for _, e := range m.Realized.Entries {
 		if _, ok := removeSet[e.ID]; ok {
-			os.RemoveAll(filepath.Join(root, e.RelativePath))
+			path := filepath.Join(root, e.RelativePath)
+			os.RemoveAll(path)
+			// The downloader's record of where the file came from.
+			os.Remove(path + ".download.json")
 		}
 	}
 	var filtered []manifest.RealizedEntry
