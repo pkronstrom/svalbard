@@ -745,3 +745,68 @@ func TestPlatformBinariesAreKeptApartPerPlatform(t *testing.T) {
 		t.Errorf("realized paths = %v", paths)
 	}
 }
+
+// skills-core through apply: the build family routes, the skills whose
+// requirements are installed are written, a local edit is put back and
+// reported, and removing the recipe removes its skills but not skills/.
+func TestApplyWritesAndRemovesEmbeddedSkills(t *testing.T) {
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"skills-core.yaml": {Data: []byte("id: skills-core\ntype: skills\nstrategy: build\nbuild: {family: embedded}\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	m := manifest.New("test")
+	m.Desired.Items = []string{"skills-core"}
+	if err := Run(context.Background(), root, &m, planner.Plan{ToDownload: []string{"skills-core"}}, cat); err != nil {
+		t.Fatal(err)
+	}
+	skill := filepath.Join(root, "skills", "skills-core", "vault-research", "SKILL.md")
+	if _, err := os.Stat(skill); err != nil {
+		t.Fatalf("vault-research (requires nothing) not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "skills", "skills-core", "spreadsheet-file")); !os.IsNotExist(err) {
+		t.Fatalf("spreadsheet-file written without py-docs: %v", err)
+	}
+	if !realizedID(m.Realized.Entries, "skills-core") {
+		t.Fatalf("skills-core not realized: %+v", m.Realized.Entries)
+	}
+	recipes, err := os.ReadFile(filepath.Join(root, ".svalbard", "recipes.json"))
+	if err != nil || !strings.Contains(string(recipes), `"skills"`) {
+		t.Fatalf("recipes.json does not list the skills recipe: %v %s", err, recipes)
+	}
+
+	if err := os.WriteFile(skill, []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var notices []string
+	if err := Run(context.Background(), root, &m, planner.Plan{}, cat, func(ev ProgressEvent) {
+		if ev.Message != "" {
+			notices = append(notices, ev.ID+": "+ev.Message)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(notices, []string{"svalbard: restored svalbard skill vault-research (local edits replaced)"}) {
+		t.Fatalf("notices = %q", notices)
+	}
+	if got, _ := os.ReadFile(skill); string(got) == "mine\n" {
+		t.Fatal("local edit kept")
+	}
+
+	m.Desired.Items = nil
+	if err := Run(context.Background(), root, &m, planner.Plan{ToRemove: []string{"skills-core"}}, cat); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "skills", "skills-core")); !os.IsNotExist(err) {
+		t.Fatalf("skills/skills-core kept: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "skills")); err != nil || !info.IsDir() {
+		t.Fatalf("skills/ removed: %v", err)
+	}
+	recipes, _ = os.ReadFile(filepath.Join(root, ".svalbard", "recipes.json"))
+	if strings.Contains(string(recipes), `"skills"`) {
+		t.Fatalf("recipes.json still lists a skills recipe: %s", recipes)
+	}
+}
