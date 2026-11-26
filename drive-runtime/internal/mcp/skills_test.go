@@ -727,6 +727,28 @@ func TestSkillReadFilesListAndCase(t *testing.T) {
 	}
 }
 
+// A folder too large to walk to the end still lists the skill's markdown:
+// in name order 2,100 images in assets/ come before references/, and the walk
+// stops first. The index knows the markdown files, so they are listed from it.
+func TestSkillReadFilesListFindsMarkdownInALargeFolder(t *testing.T) {
+	f := newSkillFixture(t)
+	for i := 0; i < skillFilesWalked+100; i++ {
+		f.file(fmt.Sprintf("skills/skills-core/data-dashboard/assets/img%04d.png", i), "x")
+	}
+	result, err := f.read(map[string]any{"id": "skills/skills-core/data-dashboard"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Files) == 0 || result.Files[0] != "references/r.md" || !strings.Contains(result.Note, "at least") {
+		t.Errorf("files = %v\nnote = %q; want the markdown file first and the rest counted as at least", result.Files[:min(3, len(result.Files))], result.Note)
+	}
+	// A file that is not there is answered with the same list.
+	_, err = f.read(map[string]any{"id": "skills/skills-core/data-dashboard", "file": "references/none.md"})
+	if err == nil || !strings.Contains(err.Error(), "Its files: references/r.md, ") {
+		t.Errorf("err = %v, want the markdown file named first", err)
+	}
+}
+
 // The command line finds skills by keyword alone: starting an embedding
 // server for one command costs seconds each time.
 func TestSkillCapabilityKeywordOnlyStartsNoEmbeddingServer(t *testing.T) {

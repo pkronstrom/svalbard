@@ -352,7 +352,7 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 		// use do not tell "References/R.md" from "references/r.md" either.
 		target, indexed := catalog.filename(entry.Folder + "/" + rel)
 		if !indexed {
-			return ActionResult{}, c.notIndexedError(entry, entry.Folder+"/"+rel)
+			return ActionResult{}, c.notIndexedError(entry, catalog, entry.Folder+"/"+rel)
 		}
 		if target != entry.File {
 			file, result.File = target, strings.TrimPrefix(target, entry.Folder+"/")
@@ -379,7 +379,7 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 	}
 	if offset == 0 && file == entry.File && entry.Folder != "" && !text.oneSection {
 		var more string
-		if result.Files, more = c.otherFiles(entry); len(result.Files) > 0 {
+		if result.Files, more = c.otherFiles(entry, catalog); len(result.Files) > 0 {
 			result.Folder = filepath.Join(c.driveRoot, filepath.FromSlash(entry.Folder))
 			// Given the folder, a small model saved its own page into it.
 			result.Note = skillFolderNote
@@ -392,24 +392,38 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 }
 
 // notIndexedError explains a file of a skill that skill_read cannot return.
-func (c *SkillCapability) notIndexedError(entry skillEntry, target string) error {
+func (c *SkillCapability) notIndexedError(entry skillEntry, catalog *skillCatalog, target string) error {
 	if info, err := os.Stat(filepath.Join(c.driveRoot, filepath.FromSlash(target))); err == nil && !info.IsDir() {
 		return fmt.Errorf("%s is not markdown, so skill_read does not hold it. It is a file on this computer: %s", path.Base(target), filepath.Join(c.driveRoot, filepath.FromSlash(target)))
 	}
-	files, _ := c.otherFiles(entry)
+	files, _ := c.otherFiles(entry, catalog)
 	if len(files) == 0 {
 		return fmt.Errorf("%s has no file %q", entry.ID, strings.TrimPrefix(target, entry.Folder+"/"))
 	}
 	return fmt.Errorf("%s has no file %q. Its files: %s", entry.ID, strings.TrimPrefix(target, entry.Folder+"/"), strings.Join(files, ", "))
 }
 
-// otherFiles lists the files of a skill's folder beside its entry file, as
-// they are on the drive: the markdown files first, which skill_read can
-// return, then the rest. more says how many it left out ("23", or "at least
-// 1960" when the folder was too large to walk to the end), "" for none. A
-// folder that is gone has no files.
-func (c *SkillCapability) otherFiles(entry skillEntry) (files []string, more string) {
+// otherFiles lists the files of a skill's folder beside its entry file: the
+// markdown files the index holds first, which skill_read can return, then the
+// rest as they are on the drive, markdown first. The indexed ones come from
+// the index, not the walk: the walk stops after skillFilesWalked entries, and
+// in name order a folder of images (assets/) comes before references/. more
+// says how many it left out ("23", or "at least 1960" when the folder was too
+// large to walk to the end), "" for none. A folder that is gone has no files.
+func (c *SkillCapability) otherFiles(entry skillEntry, catalog *skillCatalog) (files []string, more string) {
 	base := filepath.Join(c.driveRoot, filepath.FromSlash(entry.Folder))
+	if info, err := os.Stat(base); err != nil || !info.IsDir() {
+		return nil, ""
+	}
+	indexed := map[string]bool{}
+	for filename := range catalog.titles {
+		if rel, ok := strings.CutPrefix(filename, entry.Folder+"/"); ok && filename != entry.File {
+			files = append(files, rel)
+			indexed[rel] = true
+		}
+	}
+	sort.Strings(files)
+	var rest []string
 	walked, cut := 0, false
 	_ = filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -432,18 +446,19 @@ func (c *SkillCapability) otherFiles(entry skillEntry) (files []string, more str
 		if err != nil {
 			return nil
 		}
-		if rel = filepath.ToSlash(rel); entry.Folder+"/"+rel != entry.File {
-			files = append(files, rel)
+		if rel = filepath.ToSlash(rel); entry.Folder+"/"+rel != entry.File && !indexed[rel] {
+			rest = append(rest, rel)
 		}
 		return nil
 	})
 	isMarkdown := func(name string) bool { return strings.EqualFold(path.Ext(name), ".md") }
-	sort.Slice(files, func(i, j int) bool {
-		if a, b := isMarkdown(files[i]), isMarkdown(files[j]); a != b {
+	sort.Slice(rest, func(i, j int) bool {
+		if a, b := isMarkdown(rest[i]), isMarkdown(rest[j]); a != b {
 			return a
 		}
-		return files[i] < files[j]
+		return rest[i] < rest[j]
 	})
+	files = append(files, rest...)
 	if extra := len(files) - skillFilesListed; extra > 0 || cut {
 		files = files[:min(len(files), skillFilesListed)]
 		if more = strconv.Itoa(max(extra, 0)); cut {
