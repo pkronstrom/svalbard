@@ -1,13 +1,17 @@
 package wiki
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 )
 
@@ -21,6 +25,10 @@ func newProxy(socket string, port int, folder string) http.Handler {
 	upstream := &httputil.ReverseProxy{
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.SetURL(&url.URL{Scheme: "http", Host: "silverbullet"})
+			if request.In.URL.Path == configPath {
+				// The answer is rewritten below, so it must come as it is.
+				request.Out.Header.Del("Accept-Encoding")
+			}
 			// SilverBullet works out its own origin from the Host header.
 			request.Out.Host = request.In.Host
 		},
@@ -37,6 +45,11 @@ func newProxy(socket string, port int, folder string) http.Handler {
 		ModifyResponse: func(response *http.Response) error {
 			if response.Request.URL.Path == pingPath {
 				response.Header.Set(folderHeader, folder)
+			}
+			if response.Request.URL.Path == configPath {
+				if err := keepNothingInTheBrowser(response); err != nil {
+					return err
+				}
 			}
 			// SilverBullet protects only its dashboard from being framed.
 			// The wiki in a frame on another site writes as the user clicks,
@@ -66,6 +79,38 @@ const contentPolicy = "default-src 'self'; " +
 	"img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; " +
 	"connect-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:; " +
 	"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+
+// configPath is where SilverBullet's page asks for its settings at start.
+const configPath = "/.config"
+
+// keepNothingInTheBrowser switches on SilverBullet's "shared computer" mode
+// in its answer to configPath: the page then keeps its index in memory, and
+// the browser profile holds no copy of the notes once the tab is closed. A
+// stick is used on borrowed computers. SilverBullet has no setting for this
+// that the launcher could write; its server always answers false.
+func keepNothingInTheBrowser(response *http.Response) error {
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		return err
+	}
+	var config map[string]any
+	if response.StatusCode != http.StatusOK || json.Unmarshal(body, &config) != nil {
+		// Not the settings: an answer the page cannot start from is better
+		// than one that lets it keep the notes.
+		return fmt.Errorf("unexpected answer to %s", configPath)
+	}
+	config["ephemeralStorage"] = true
+	if body, err = json.Marshal(config); err != nil {
+		return err
+	}
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	response.ContentLength = int64(len(body))
+	response.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	response.Header.Del("ETag")
+	response.Header.Set("Cache-Control", "no-store")
+	return nil
+}
 
 // guard refuses the requests that must not reach SilverBullet.
 func guard(port int, next http.Handler) http.Handler {

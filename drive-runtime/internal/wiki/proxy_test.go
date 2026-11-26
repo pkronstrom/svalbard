@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -358,5 +359,79 @@ func TestProxyAnswersWhenSilverBulletIsGone(t *testing.T) {
 	body, _ := io.ReadAll(response.Body)
 	if response.StatusCode != http.StatusBadGateway || !strings.Contains(string(body), "The wiki is not answering") {
 		t.Errorf("answer = %d %q, want 502 and a plain sentence", response.StatusCode, body)
+	}
+}
+
+// A stick is used on borrowed computers: the browser there must not keep the
+// notes. SilverBullet's own switch for that is in its answer to /.config.
+func TestProxyTellsThePageToKeepNothingInTheBrowser(t *testing.T) {
+	p := newProxied(t)
+	// A browser asks for compressed answers; this one must come plain to be
+	// changed, and must not be cached as it was.
+	request, err := http.NewRequest(http.MethodGet, "http://"+p.addr+configPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	response, err := http.DefaultTransport.RoundTrip(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	var config map[string]any
+	if err := json.Unmarshal(body, &config); err != nil {
+		t.Fatalf("config = %q (%v), want plain JSON", body, err)
+	}
+	if config["ephemeralStorage"] != true {
+		t.Errorf("ephemeralStorage = %v, want true", config["ephemeralStorage"])
+	}
+	// Everything else SilverBullet said is passed on.
+	if config["spaceFolderPath"] != p.pages || config["disableServiceWorker"] != true || config["syncProtocolVersion"] != float64(2) {
+		t.Errorf("config = %v, want the other settings as SilverBullet gave them", config)
+	}
+	if got := response.Header.Get("Content-Length"); got != fmt.Sprint(len(body)) {
+		t.Errorf("Content-Length = %q for %d bytes", got, len(body))
+	}
+	if response.Header.Get("ETag") != "" || response.Header.Get("Cache-Control") != "no-store" {
+		t.Errorf("headers = %v, want no ETag and no-store", response.Header)
+	}
+	// Only that answer is touched.
+	if _, other := p.send(t, "GET", "/Projects/.config", nil, ""); !strings.HasPrefix(other, "path=/Projects/.config") {
+		t.Errorf("another path was rewritten: %q", other)
+	}
+}
+
+func TestProxyFailsClosedWhenTheSettingsAnswerIsNotUnderstood(t *testing.T) {
+	// An answer that cannot be changed is not passed on: the page would
+	// start in the mode that keeps the notes.
+	socketDir, err := os.MkdirTemp("/tmp", "sbwt-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(socketDir)
+	socket := filepath.Join(socketDir, "s")
+	upstream, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	silverbullet := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "<html>not json</html>") })}
+	go silverbullet.Serve(upstream)
+	defer silverbullet.Close()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	proxy := &http.Server{Handler: newProxy(socket, port, "/pages")}
+	go proxy.Serve(listener)
+	defer proxy.Close()
+	response, err := http.Get(fmt.Sprintf("http://localhost:%d%s", port, configPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502", response.StatusCode)
 	}
 }

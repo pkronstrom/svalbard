@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -114,6 +115,20 @@ func fakeSilverBullet(pages, recordDir string) http.Handler {
 		default:
 			http.ServeFile(w, r, file)
 		}
+	})
+	mux.HandleFunc(configPath, func(w http.ResponseWriter, r *http.Request) {
+		// As SilverBullet 3.0.1 answers: ephemeralStorage is always false.
+		body := `{"spaceFolderPath":"` + pages + `","readOnly":false,"disableServiceWorker":true,"ephemeralStorage":false,"syncProtocolVersion":2}`
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			zipped := gzip.NewWriter(w)
+			zipped.Write([]byte(body))
+			zipped.Close()
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("ETag", `"abc"`)
+		fmt.Fprint(w, body)
 	})
 	mux.HandleFunc("/.proxy/", func(w http.ResponseWriter, r *http.Request) {
 		_ = os.WriteFile(filepath.Join(recordDir, "proxied"), []byte(r.URL.Path), 0o644)
