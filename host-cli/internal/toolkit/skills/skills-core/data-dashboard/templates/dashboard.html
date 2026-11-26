@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f6f5f1; color: #1f2a24; }
+  header { padding: 14px 24px; background: #2d4a2b; color: #fff; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 1.3rem; flex: 1; }
+  header label { font-size: .9rem; }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; padding: 16px 24px; }
+  section { background: #fff; border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 4px #0002; min-width: 0; }
+  section.wide { grid-column: 1 / -1; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e3e1da; }
+  th { cursor: pointer; user-select: none; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #note { font-size: .85rem; color: #6b4d2a; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <label>Load another file <input type="file" id="file" accept=".csv,.tsv,.json,text/csv,application/json"></label>
+  <span id="note"></span>
+</header>
+<main>
+  <section><canvas id="chart1"></canvas></section>
+  <section><canvas id="chart2"></canvas></section>
+  <section class="wide"><table id="table"></table></section>
+</main>
+<script type="module">
+import Chart from "chart.js/auto";
+import Papa from "papaparse";
+
+// EDIT: data (the CSV or JSON file beside this page; html pack puts it in the page)
+import data from "./data.csv";
+// /EDIT
+
+// EDIT: settings (title, the label column, the number columns to chart, chart types)
+const settings = {
+  title: "Dashboard",
+  label: "month",
+  values: ["sales", "costs"],
+  chart1: "bar",
+  chart2: "line",
+};
+// /EDIT
+
+// Everything below works as it is: rows come from the data above or from
+// the file the user loads, and missing columns are guessed.
+const toRows = input => typeof input === "string"
+  ? Papa.parse(input.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true }).data
+  : Array.isArray(input) ? input : [];
+
+let charts = [];
+function render(rows, name) {
+  const columns = rows.length ? Object.keys(rows[0]) : [];
+  const numeric = columns.filter(c => rows.some(r => typeof r[c] === "number"));
+  let label = columns.includes(settings.label) ? settings.label : columns.find(c => !numeric.includes(c)) || columns[0];
+  let values = settings.values.filter(v => numeric.includes(v));
+  if (!values.length) values = numeric.filter(c => c !== label).slice(0, 3);
+  document.getElementById("title").textContent = settings.title;
+  document.title = settings.title;
+  document.getElementById("note").textContent = name ? `${name}: ${rows.length} rows` : `${rows.length} rows`;
+  charts.forEach(c => c.destroy());
+  const labels = rows.map(r => r[label]);
+  const datasets = values.map(v => ({ label: v, data: rows.map(r => r[v]) }));
+  const make = (id, type) => {
+    const round = type === "pie" || type === "doughnut";
+    return new Chart(document.getElementById(id), {
+      type,
+      data: { labels, datasets: round ? datasets.slice(0, 1) : datasets },
+      options: { plugins: { title: { display: true, text: round ? `${values[0]} by ${label}` : `${values.join(", ")} by ${label}` } } },
+    });
+  };
+  charts = [make("chart1", settings.chart1), make("chart2", settings.chart2)];
+  table(rows, columns, numeric);
+}
+
+function table(rows, columns, numeric) {
+  const el = document.getElementById("table");
+  let sortKey = null, asc = true;
+  const draw = () => {
+    const sorted = sortKey === null ? rows : [...rows].sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * (asc ? 1 : -1));
+    el.replaceChildren();
+    const head = el.createTHead().insertRow();
+    for (const c of columns) {
+      const th = document.createElement("th");
+      th.textContent = c + (c === sortKey ? (asc ? " ▲" : " ▼") : "");
+      th.onclick = () => { asc = sortKey === c ? !asc : true; sortKey = c; draw(); };
+      head.appendChild(th);
+    }
+    const body = el.createTBody();
+    for (const r of sorted) {
+      const tr = body.insertRow();
+      for (const c of columns) {
+        const td = tr.insertCell();
+        td.textContent = r[c] ?? "";
+        if (numeric.includes(c)) td.className = "num";
+      }
+    }
+  };
+  draw();
+}
+
+document.getElementById("file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  try {
+    render(toRows(/\.json$/i.test(file.name) ? JSON.parse(text) : text), file.name);
+  } catch (err) {
+    document.getElementById("note").textContent = `${file.name}: ${err.message}`;
+  }
+});
+
+render(toRows(data));
+</script>
+</body>
+</html>
