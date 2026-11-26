@@ -169,10 +169,9 @@ func detectCapabilities(ctx context.Context, driveRoot string, db *sql.DB) (Capa
 		return Capabilities{}, 0, 0, err
 	}
 	var caps Capabilities
-	var sourceCount, articleCount int
-
-	_ = db.QueryRow("SELECT count(*) FROM sources").Scan(&sourceCount)
-	_ = db.QueryRow("SELECT count(*) FROM articles").Scan(&articleCount)
+	// Skills and library quickstarts are in the index too, but this search
+	// does not cover them.
+	sourceCount, articleCount := engine.New(db).KnowledgeCounts()
 
 	var hasEmbeddings int
 	_ = db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name='embeddings'").Scan(&hasEmbeddings)

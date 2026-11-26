@@ -151,14 +151,20 @@ func TestSearchWithoutSemanticIndexSerializesOnlyResults(t *testing.T) {
 	}
 }
 
-func TestSearchCapabilityHybridUsesRecordedQueryShapeAndSerializesOnlyResults(t *testing.T) {
-	root := searchFixtureDrive(t)
+// hybridFixtureDrive is searchFixtureDrive with a completed semantic index:
+// a recorded model, one vector for the wiki article, and a stand-in
+// llama-server that embeds every query as that same vector and writes the
+// text it was asked to embed to the returned log.
+func hybridFixtureDrive(t *testing.T) (root string, db *sql.DB, queryLog string) {
+	t.Helper()
+	root = searchFixtureDrive(t)
 	dbPath := filepath.Join(root, "data", "search.db")
-	db, err := sql.Open("sqlite3", dbPath)
+	var err error
+	db, err = sql.Open("sqlite3", dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	if _, err := db.Exec("CREATE TABLE embeddings (article_id INTEGER NOT NULL, chunk_header TEXT, vector BLOB NOT NULL)"); err != nil {
 		t.Fatal(err)
 	}
@@ -196,9 +202,14 @@ func TestSearchCapabilityHybridUsesRecordedQueryShapeAndSerializesOnlyResults(t 
 	if err := os.Symlink(os.Args[0], filepath.Join(binDir, "llama-server")); err != nil {
 		t.Fatal(err)
 	}
-	queryLog := filepath.Join(t.TempDir(), "embedded-query")
+	queryLog = filepath.Join(t.TempDir(), "embedded-query")
 	t.Setenv("SVALBARD_TEST_MCP_LLAMA", "1")
 	t.Setenv("SVALBARD_TEST_MCP_LLAMA_LOG", queryLog)
+	return root, db, queryLog
+}
+
+func TestSearchCapabilityHybridUsesRecordedQueryShapeAndSerializesOnlyResults(t *testing.T) {
+	root, _, queryLog := hybridFixtureDrive(t)
 
 	cap := NewSearchCapability(root, DriveMetadata{})
 	defer cap.Close()

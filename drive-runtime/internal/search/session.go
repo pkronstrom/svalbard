@@ -135,7 +135,7 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 			status = "Hybrid unavailable, fell back to keyword"
 		} else {
 			var usable bool
-			results, usable, embedErr = HybridSnapshot(ctx, s.db, contract, query, queryVec, limit)
+			results, usable, embedErr = HybridSnapshot(ctx, s.db, contract, query, queryVec, limit, "")
 			if !usable {
 				effectiveMode = ModeKeyword
 				status = "Hybrid unavailable, fell back to keyword"

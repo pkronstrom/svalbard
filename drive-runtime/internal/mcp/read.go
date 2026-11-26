@@ -214,6 +214,14 @@ func (c *SearchCapability) resolveScope(ctx context.Context, name string, onDisk
 	want := strings.ToLower(sourceName(strings.TrimSpace(name)))
 	var partial []string
 	for _, filename := range known {
+		if engine.IsSkillSource(filename) {
+			// A skill file is a source only by its whole path: a loosely
+			// given name must never land on one in place of an archive.
+			if strings.ToLower(filename) == given {
+				return filename, nil
+			}
+			continue
+		}
 		if engine.IsDocumentSource(filename) {
 			forms := documentNames(filename)
 			if slices.Contains(forms, given) {
@@ -238,14 +246,27 @@ func (c *SearchCapability) resolveScope(ctx context.Context, name string, onDisk
 	if len(partial) == 1 {
 		return partial[0], nil
 	}
-	if len(known) == 0 {
+	knowledge := knowledgeSources(known)
+	if len(knowledge) == 0 {
 		return "", fmt.Errorf("unknown source %q: the drive has no archives or documents", name)
 	}
-	return "", fmt.Errorf("unknown source %q. Sources on this drive: %s", name, strings.Join(sourceNames(known), ", "))
+	return "", fmt.Errorf("unknown source %q. Sources on this drive: %s", name, strings.Join(sourceNames(knowledge), ", "))
 }
 
-// knownSources lists the indexed sources and, with onDisk, the archives in
-// zim/ that are not indexed.
+// knowledgeSources drops the skill files and library quickstarts from a list
+// of sources, for the lists that say what the drive holds.
+func knowledgeSources(filenames []string) []string {
+	var knowledge []string
+	for _, filename := range filenames {
+		if !engine.IsSkillSource(filename) {
+			knowledge = append(knowledge, filename)
+		}
+	}
+	return knowledge
+}
+
+// knownSources lists the indexed sources, skill files among them, and, with
+// onDisk, the archives in zim/ that are not indexed.
 func (c *SearchCapability) knownSources(ctx context.Context, onDisk bool) []string {
 	var known []string
 	listed := map[string]bool{}
@@ -271,9 +292,9 @@ func (c *SearchCapability) knownSources(ctx context.Context, onDisk bool) []stri
 }
 
 // sourceName is a source as tools name it: an archive's filename without
-// extension, a document's path on the drive as it is.
+// extension, the path on the drive of a document or a skill file as it is.
 func sourceName(filename string) string {
-	if engine.IsDocumentSource(filename) {
+	if engine.IsDocumentSource(filename) || engine.IsSkillSource(filename) {
 		return filename
 	}
 	return strings.TrimSuffix(filename, filepath.Ext(filename))

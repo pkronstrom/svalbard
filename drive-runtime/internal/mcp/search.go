@@ -158,21 +158,15 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	if err != nil {
 		return ActionResult{}, err
 	}
-	// source is the scope searched: an indexed filename, or a folder of
-	// documents ending in "/". sourceFilter is the name tools know it by.
+	// source is the scope searched: an indexed filename, a folder ending in
+	// "/", or empty for every knowledge source (the skills are searched only
+	// when the scope names them). sourceFilter is the name tools know it by.
 	source, sourceFilter := "", ""
 	if requested := getString(params, "source"); requested != "" {
 		if source, err = c.resolveScope(ctx, requested, false); err != nil {
 			return ActionResult{}, err
 		}
 		sourceFilter = strings.TrimSuffix(sourceName(source), "/")
-	}
-
-	// Fetch more results when filtering by source, then trim.
-	// Use 200 to avoid missing source-specific hits that rank below global top-N.
-	fetchLimit := limit
-	if sourceFilter != "" && fetchLimit < 200 {
-		fetchLimit = 200
 	}
 
 	// Building, legacy, and malformed semantic contracts remain keyword-only.
@@ -192,7 +186,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			if detail == "full" {
 				results, usable, embedErr = search.HybridSnapshotFull(ctx, db, contract, query, queryVec, limit, source)
 			} else {
-				results, usable, embedErr = search.HybridSnapshot(ctx, db, contract, query, queryVec, fetchLimit)
+				results, usable, embedErr = search.HybridSnapshot(ctx, db, contract, query, queryVec, limit, source)
 			}
 			if !usable {
 				results = nil
@@ -209,15 +203,8 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	}
 
 	if hybridUsed {
-		if sourceFilter != "" {
-			filtered := make([]engine.Result, 0, len(results))
-			for _, r := range results {
-				if engine.InScope(r.Filename, source) {
-					filtered = append(filtered, r)
-				}
-			}
-			results = filtered
-		}
+		// The engine kept to the scope, in its keyword candidates and in the
+		// vectors it scored.
 		if len(results) > limit {
 			results = results[:limit]
 		}
@@ -310,7 +297,8 @@ func (c *SearchCapability) holdings(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	filenames, err := eng.SourceFilenames(ctx)
+	indexed, err := eng.SourceFilenames(ctx)
+	filenames := knowledgeSources(indexed)
 	if err != nil || len(filenames) == 0 {
 		return ""
 	}

@@ -44,24 +44,27 @@ func New(db Queryer) *Engine {
 	return &Engine{db: db}
 }
 
-// Keyword runs an FTS5 keyword search.
+// Keyword runs an FTS5 keyword search over the knowledge sources.
 func (e *Engine) Keyword(query string, limit int) ([]Result, error) {
-	return e.KeywordContext(context.Background(), query, limit)
+	return e.KeywordContext(context.Background(), query, limit, "")
 }
 
-// KeywordContext runs FTS5 search with caller cancellation propagated to SQLite.
-func (e *Engine) KeywordContext(ctx context.Context, query string, limit int) ([]Result, error) {
+// KeywordContext runs FTS5 search with caller cancellation propagated to
+// SQLite. scope is a search scope as InScope reads it.
+func (e *Engine) KeywordContext(ctx context.Context, query string, limit int, scope string) ([]Result, error) {
 	ftsQuery := BuildFTSQuery(query)
+	clause, scopeArgs := scopeClause(scope)
+	args := append(append([]any{ftsQuery}, scopeArgs...), limit)
 	rows, err := e.db.QueryContext(ctx,
 		`SELECT a.id, src.filename, a.path, a.title,
                 snippet(articles_fts, 1, '»', '«', '...', 12)
          FROM articles_fts
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id
-         WHERE articles_fts MATCH ?
+         WHERE articles_fts MATCH ?`+clause+`
          ORDER BY rank
          LIMIT ?`,
-		ftsQuery, limit,
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("engine: keyword search: %w", err)
@@ -89,12 +92,14 @@ func (e *Engine) KeywordContext(ctx context.Context, query string, limit int) ([
 // Hybrid runs FTS5 keyword search, then vector search pre-filtered to FTS
 // candidates, merges with RRF, and applies MMR diversity.
 func (e *Engine) Hybrid(query string, queryVec []float32, limit int) ([]Result, error) {
-	return e.HybridContext(context.Background(), query, queryVec, limit)
+	return e.HybridContext(context.Background(), query, queryVec, limit, "")
 }
 
-func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []float32, limit int) ([]Result, error) {
+// HybridContext is Hybrid within a search scope, as InScope reads it. Both
+// halves keep to the scope: the keyword candidates and the vectors scored.
+func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []float32, limit int, scope string) ([]Result, error) {
 	// Step 1: Run FTS5 first to get candidate article IDs for vector pre-filter.
-	ftsResults, ftsErr := e.KeywordContext(ctx, query, 200)
+	ftsResults, ftsErr := e.KeywordContext(ctx, query, 200, scope)
 
 	// Step 2: Run vector search filtered to FTS candidate articles.
 	// This avoids loading ALL embeddings into memory.
@@ -108,10 +113,11 @@ func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []flo
 	var vecChunks []scoredChunk
 	var vecErr error
 	if len(candidateIDs) > 0 {
+		// The candidates are in the scope already.
 		vecChunks, vecErr = e.vectorSearchFiltered(queryVec, candidateIDs, 100)
 	} else {
 		// No FTS hits — fall back to full scan (small corpus or unusual query)
-		vecChunks, vecErr = e.vectorSearch(queryVec, 100)
+		vecChunks, vecErr = e.vectorSearch(queryVec, 100, scope)
 	}
 	if vecErr != nil {
 		return nil, vecErr
@@ -177,12 +183,16 @@ func (e *Engine) vectorSearchFiltered(queryVec []float32, articleIDs []int, limi
 	return e.scanAndScoreVectors(rows, queryVec, limit)
 }
 
-// vectorSearch fetches all embeddings and computes dot product with queryVec.
-// Used as fallback when FTS5 returns no candidates.
-func (e *Engine) vectorSearch(queryVec []float32, limit int) ([]scoredChunk, error) {
+// vectorSearch fetches every embedding in the scope and computes dot product
+// with queryVec. Used as fallback when FTS5 returns no candidates.
+func (e *Engine) vectorSearch(queryVec []float32, limit int, scope string) ([]scoredChunk, error) {
+	clause, scopeArgs := scopeClause(scope)
 	rows, err := e.db.Query(
 		`SELECT e.article_id, e.chunk_header, e.vector
-         FROM embeddings e`)
+         FROM embeddings e
+         JOIN articles a ON a.id = e.article_id
+         JOIN sources src ON src.id = a.source_id
+         WHERE 1 = 1`+clause, scopeArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("engine: vector search: %w", err)
 	}
@@ -468,11 +478,13 @@ func (e *Engine) ReadArticle(source, path string) (string, error) {
 	return body.String, nil
 }
 
-// ListSources returns all indexed sources.
+// ListSources returns the indexed knowledge sources: the archives and the
+// documents. Skill files and library quickstarts are not listed.
 func (e *Engine) ListSources() ([]SourceInfo, error) {
 	rows, err := e.db.Query(
 		`SELECT src.filename, COUNT(a.id) FROM sources src
          LEFT JOIN articles a ON a.source_id = src.id
+         WHERE NOT ` + skillRoots + `
          GROUP BY src.id ORDER BY src.filename`)
 	if err != nil {
 		return nil, err
@@ -488,6 +500,14 @@ func (e *Engine) ListSources() ([]SourceInfo, error) {
 		sources = append(sources, s)
 	}
 	return sources, rows.Err()
+}
+
+// KnowledgeCounts counts the knowledge sources and their articles: what a
+// search without a scope covers.
+func (e *Engine) KnowledgeCounts() (sources, articles int) {
+	_ = e.db.QueryRow(`SELECT count(*) FROM sources src WHERE NOT ` + skillRoots).Scan(&sources)
+	_ = e.db.QueryRow(`SELECT count(*) FROM articles a JOIN sources src ON src.id = a.source_id WHERE NOT ` + skillRoots).Scan(&articles)
+	return sources, articles
 }
 
 // SourceInfo holds source metadata.

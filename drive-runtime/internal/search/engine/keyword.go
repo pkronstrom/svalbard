@@ -45,20 +45,30 @@ var stopWords = map[string]bool{
 // KeywordOptions narrows a keyword search.
 type KeywordOptions struct {
 	// Source is a search scope as InScope reads it: a filename from the
-	// sources table, a folder of documents ending in "/", or empty for every
-	// source.
+	// sources table, a folder ending in "/", SkillScope, or empty for every
+	// knowledge source.
 	Source string
 	Limit  int
 }
 
+// skillRoots is the SQL condition that a source joined as src is a skill
+// file or a library quickstart: IsSkillSource in SQL. GLOB compares case as
+// Go does, and neither root holds a character GLOB reads as a pattern.
+const skillRoots = `(src.filename GLOB '` + SkillsDir + `/*' OR src.filename GLOB '` + LibraryDocsDir + `/*')`
+
 // scopeClause is the SQL condition for a search scope on the sources table
-// joined as src, with its argument.
-func scopeClause(scope string) (string, any) {
-	if strings.HasSuffix(scope, "/") {
+// joined as src, with its arguments. It reads a scope as InScope does.
+func scopeClause(scope string) (string, []any) {
+	switch {
+	case scope == "":
+		return ` AND NOT ` + skillRoots, nil
+	case scope == SkillScope:
+		return ` AND ` + skillRoots, nil
+	case strings.HasSuffix(scope, "/"):
 		// substr, not LIKE: a folder name may hold "%" or "_".
-		return ` AND substr(src.filename, 1, length(?)) = ?`, scope
+		return ` AND substr(src.filename, 1, length(?)) = ?`, []any{scope, scope}
 	}
-	return ` AND src.filename = ?`, scope
+	return ` AND src.filename = ?`, []any{scope}
 }
 
 // KeywordMatches is the outcome of Search.
@@ -202,15 +212,9 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id
          WHERE articles_fts MATCH ? AND rank MATCH '` + keywordRank + `'`
-	args := []any{ftsQuery}
-	if source != "" {
-		clause, arg := scopeClause(source)
-		statement += clause
-		args = append(args, arg)
-		if strings.Count(clause, "?") == 2 {
-			args = append(args, arg)
-		}
-	}
+	clause, scopeArgs := scopeClause(source)
+	statement += clause
+	args := append([]any{ftsQuery}, scopeArgs...)
 	// FTS5 hands the rows out in rank order, so reading stops as soon as the
 	// limit is filled; the generous LIMIT only bounds the skipping.
 	capped := !IsDocumentSource(source) || strings.HasSuffix(source, "/")
@@ -251,18 +255,11 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
 // missingWords returns the words that no article of the searched sources
 // contains, so a caller can tell "not on this drive" from "not together".
 func (e *Engine) missingWords(ctx context.Context, words []string, source string) ([]string, error) {
-	statement := `SELECT 1 FROM articles_fts WHERE articles_fts MATCH ? LIMIT 1`
-	var scopeArgs []any
-	if source != "" {
-		clause, arg := scopeClause(source)
-		statement = `SELECT 1 FROM articles_fts
+	clause, scopeArgs := scopeClause(source)
+	statement := `SELECT 1 FROM articles_fts
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id
          WHERE articles_fts MATCH ?` + clause + ` LIMIT 1`
-		for range strings.Count(clause, "?") {
-			scopeArgs = append(scopeArgs, arg)
-		}
-	}
 	var missing []string
 	for _, word := range words {
 		args := append([]any{ftsTerm(word)}, scopeArgs...)
