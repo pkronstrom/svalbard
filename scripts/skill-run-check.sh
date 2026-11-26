@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs the offline check of each skill on a vault: examples/check.sh with the
-# drive's tools first on PATH and the network denied. Prints PASS or FAIL per
-# skill and exits non-zero when any fails.
+# drive's tools first on PATH and the network denied. Prints PASS, FAIL or
+# SKIP (the check exited 77: nothing to test on this vault) per skill and
+# exits non-zero when any fails.
 #
 #   scripts/skill-run-check.sh <vault> [skill|path/to/skill-folder ...]
 #
@@ -24,10 +25,16 @@ case "$(uname -s)-$(uname -m)" in
   *) printf 'unsupported platform %s\n' "$(uname -sm)" >&2; exit 2 ;;
 esac
 
-# offline runs a command with the network denied.
+# offline runs a command with the network denied. On macOS every socket is
+# denied, Unix sockets included (DNS through mDNSResponder, Docker's
+# socket); a request handed to another process over XPC (`open https://...`)
+# is not. On Linux the new network namespace has no network, but Unix
+# sockets on the file system (systemd-resolved, docker.sock) stay
+# reachable. Both catch what a skill's own scripts would do; neither is a
+# hard boundary.
 offline() {
   case $platform in
-    macos-*) sandbox-exec -p '(version 1)(allow default)(deny network*)(allow network* (local unix))' "$@" ;;
+    macos-*) sandbox-exec -p '(version 1)(allow default)(deny network*)' "$@" ;;
     linux-*) unshare -rn "$@" ;;
   esac
 }
@@ -81,6 +88,10 @@ for dir in "${skills[@]}"; do
   status=$?
   if [[ $status -eq 0 ]]; then
     printf 'PASS %s\n' "$name"
+  elif [[ $status -eq 77 ]]; then
+    # The check had nothing to test on this vault (exit 77, as automake's
+    # test harness uses it): reported apart, not as a pass or a failure.
+    printf 'SKIP %s: %s\n' "$name" "$(grep -v '^[[:space:]]*$' "$log" | tail -n 1)"
   else
     last=$(grep -v '^[[:space:]]*$' "$log" | tail -n 1)
     printf 'FAIL %s: %s\n' "$name" "${last:-exit $status}"

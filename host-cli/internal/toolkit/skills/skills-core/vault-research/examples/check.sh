@@ -1,29 +1,48 @@
 #!/bin/sh
-# Offline check for vault-research. With no argument: list the drive's
-# sources over its MCP server, search for a word from the first ones'
-# descriptions and read the top result. With a file (an answer the agent
-# wrote): it must cite a source that is on this drive. A drive without a
-# search index passes with a note: there is nothing to search.
+# Offline check for vault-research.
+#   sh check.sh ANSWER.md   the answer cites a source on this drive: a
+#                           source's name inside parentheses or on a line
+#                           that says "source"
+#   sh check.sh             self-test: list the drive's sources over its MCP
+#                           server, search for a word from their
+#                           descriptions and read the top result
+# On a drive without a search index there is nothing to test: the check
+# prints SKIP and exits 77.
 set -eu
 SKILL="$(cd "$(dirname "$0")/.." && pwd)"
 CALL="$SKILL/scripts/mcp_call.sh"
 drive=${DRIVE_ROOT:-${DRIVE:-$(cd "$SKILL/../../.." && pwd)}}
 export DRIVE_ROOT="$drive"
 if [ ! -f "$drive/data/search.db" ]; then
-  echo "vault-research: ok (skipped: $drive has no search index)"
-  exit 0
+  echo "nothing to search: $drive has no search index"
+  exit 77
 fi
+answer=""
+if [ $# -gt 0 ]; then
+  answer=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+  [ -s "$answer" ] || { echo "$1 is missing or empty"; exit 1; }
+fi
+# Work in a temporary folder, never the caller's.
+REF=$(mktemp -d "${TMPDIR:-/tmp}/research-check.XXXXXX")
+trap 'case $REF in */research-check.??????) rm -rf "$REF" ;; esac' EXIT
+cd "$REF"
 sh "$CALL" vault_sources > sources.json
-# Name keys of each source: the id up to its first "_" or ".", and the first
-# word of its description, lower case, four letters or more.
 tr '{' '\n' < sources.json | sed -n 's/.*"id":"\([^"]*\)".*"description":"\([^"]*\)".*/\1 \2/p' > sources.txt
 [ -s sources.txt ] || { echo "vault_sources listed no source"; exit 1; }
-if [ $# -gt 0 ]; then
-  answer=$(tr 'A-Z' 'a-z' < "$1")
-  for key in $(sed 's/^\([^ _.]*\)[^ ]* \([A-Za-z0-9-]*\).*/\1 \2/' sources.txt | tr 'A-Z' 'a-z'); do
-    [ ${#key} -ge 4 ] || continue
-    case $answer in *"$key"*) echo "$1: ok (cites $key)"; exit 0 ;; esac
-  done
+if [ -n "$answer" ]; then
+  # What counts as a citation: text in parentheses, and lines naming a source.
+  { grep -o '([^)]*)' "$answer" || true; grep -i 'source' "$answer" || true; } | tr 'A-Z' 'a-z' > cites.txt
+  [ -s cites.txt ] || { echo "$1 cites nothing: no (Title, source) and no Sources line"; exit 1; }
+  # A source's names: its id up to the first "_" or "." (four letters or
+  # more), and its description up to " — ".
+  sed 's/^\([^ _.]*\)[^ ]* .*/\1/' sources.txt | tr 'A-Z' 'a-z' | awk 'length >= 4' > keys.txt
+  sed -e 's/^[^ ]* //' -e 's/ — .*//' sources.txt | tr 'A-Z' 'a-z' | awk 'length >= 4' >> keys.txt
+  while IFS= read -r key; do
+    if grep -qF -- "$key" cites.txt; then
+      echo "$1: ok (cites $key)"
+      exit 0
+    fi
+  done < keys.txt
   echo "$1 cites no source on this drive"
   exit 1
 fi
