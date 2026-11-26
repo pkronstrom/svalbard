@@ -25,22 +25,32 @@ func ResolveModel(driveRoot, selected string) (string, error) {
 		return "", fmt.Errorf("model not found: %s", selected)
 	}
 
-	pattern := filepath.Join(driveRoot, "models", "*.gguf")
-	models, err := filepath.Glob(pattern)
+	models, err := ChatModels(driveRoot)
 	if err != nil {
 		return "", err
 	}
-	filtered := models[:0]
-	for _, model := range models {
-		base := filepath.Base(model)
+	if len(models) == 0 {
+		return "", fmt.Errorf("no GGUF model found in models/")
+	}
+	return filepath.Join(driveRoot, "models", models[0]), nil
+}
+
+// ChatModels lists the chat model files in driveRoot/models, sorted. Embedding
+// models and drafters live in subdirectories and are not chat models; macOS
+// resource forks "._*" are skipped.
+func ChatModels(driveRoot string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(driveRoot, "models", "*.gguf"))
+	if err != nil {
+		return nil, err
+	}
+	var models []string
+	for _, path := range paths {
+		base := filepath.Base(path)
 		if strings.HasPrefix(base, "._") {
 			continue
 		}
-		filtered = append(filtered, model)
+		models = append(models, base)
 	}
-	sort.Strings(filtered)
-	if len(filtered) == 0 {
-		return "", fmt.Errorf("no GGUF model found in models/")
-	}
-	return filtered[0], nil
+	sort.Strings(models)
+	return models, nil
 }
