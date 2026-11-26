@@ -70,15 +70,24 @@ Where the specification left a choice, or the release behaved differently from w
     send one from a form, and nothing of the drive's writes through the proxy;
   - forwarding headers from the client are not passed on, because SilverBullet derives its origin from
     them;
-  - every answer carries `X-Frame-Options: SAMEORIGIN`,
-    `Content-Security-Policy: frame-ancestors 'self'; form-action 'self'` and
-    `Cross-Origin-Resource-Policy: same-origin`, which SilverBullet sends for its dashboard only.
+  - every answer carries `X-Frame-Options: SAMEORIGIN`, `Cross-Origin-Resource-Policy: same-origin` and
+    a content policy that keeps requests, images, media, fonts, frames and scripts on the wiki's own
+    address (`default-src 'self'`, `connect-src 'self' data: blob:`, `img-src 'self' data: blob:`,
+    `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'self'`). Scripts keep
+    `'unsafe-inline' 'unsafe-eval' blob:`: that was the first policy tried and SilverBullet's client
+    raised no violation under it; a tighter script rule was not tried. A user's page that embeds an
+    image from the internet no longer shows it.
 - **Pages are code to SilverBullet, and the tools write none.** It evaluates `${...}` as Lua when a page
-  is shown, with the browser's JavaScript in reach (`${1+41}` showed 42 and `${js.window.document.title}`
-  the title, on the real binary), and it loads `space-lua` blocks from pages under `Library/` for the
-  whole wiki. So the write tools refuse any page under `Library/` (in any letter case), and refuse a
-  write that adds a `${` outside a fenced code block or a code span, where it is shown as text. An
-  expression the user wrote stays, and a tool can edit around it. See "Open risk" below.
+  is shown, with the browser's JavaScript in reach, and it loads `space-lua` blocks from pages under
+  `Library/` for the whole wiki. So:
+  - the write tools refuse any page under `Library/`, in any letter case;
+  - text they write has each `${` outside a fenced block or code span saved as `\${`, and the result
+    says so: `The text had "${" 2 times outside a code block. The wiki would run that as code, so it
+    was saved as "\${", which the wiki shows as the same text.` Of five spellings tried on the real
+    binary, `\${`, `$\{` and a code span are shown and not run; an HTML entity is shown as typed;
+  - an edit that joins a `$` and a `{` already on the page is refused;
+  - `space-lua` and `space-style` fences need no change: 3.0.1 runs them from `Library/` pages only;
+  - an expression the user wrote stays, and a tool can edit around it. See "Open risk" below.
 - **One write at a time** inside one MCP server: several appends sent in one turn all arrive.
 - **Existing pages keep their names.** The naming rules apply to pages the tools create. A page the user
   named `Recipe: bread` is read, edited, moved and deleted under that name.
@@ -124,10 +133,12 @@ Unit tests (`make verify`: 60 tested packages, up from 59 with the new `wiki` pa
   for five methods with the page folder compared afterwards; fourteen spellings of `/.proxy` refused for
   three methods; unclean paths, upgrades and forwarding headers; the frame, form and resource headers;
   the wiki's own reads and writes passing; an event arriving while its stream is open.
-- After the review: writes under `Library/` in eleven forms; `${` added by create, append and edit,
-  whole or assembled from pieces, refused, and allowed inside fences and code spans; a user's own
-  expression kept through an edit; 20 appends and 20 creates sent at once (also under the race
-  detector); freely named pages read, edited, moved and deleted; a move that changes only letter case.
+- After the review: writes under `Library/` in eleven forms; `${` in created, appended and edited text
+  saved as `\${` with the note, left alone inside fences and code spans, and eight edge cases (an
+  unclosed span, a closed fence, an escaped backslash, text already inert); an edit that assembles one
+  from pieces refused; a user's own expression kept through an edit; 20 appends and 20 creates sent at
+  once (also under the race detector); freely named pages read, edited, moved and deleted; a move that
+  changes only letter case; the content policy naming no other address.
 - Menu, settings schema, catalog: one entry for a four-platform install; the group label; the recipe's
   pins and settings; every default preset has the wiki once.
 
@@ -186,7 +197,7 @@ findings and what was done:
 
 | Finding | Done |
 |---|---|
-| Pages the tools write can be code in the user's browser | `Library/` and new `${` refused by the write tools; the rest is the open risk below |
+| Pages the tools write can be code in the user's browser | `Library/` refused, `${` saved inert, a content policy on every answer; the rest is the open risk below |
 | The browser keeps a service worker and a copy of the notes | Service worker off. The page index in IndexedDB stays: open risk |
 | Any site can frame the wiki | Frame, form and resource headers added by the proxy |
 | Parallel tool calls lose writes (20 appends kept 2) | One write at a time; 20 of 20 arrive |
@@ -196,11 +207,35 @@ findings and what was done:
 | A closed terminal skips cleanup | Fixed before the review arrived |
 | The port probe follows redirects | It does not; the other points are accepted and listed below |
 | A test passed without the code it named | It now checks that the host's binary never ran |
-| `binary.Resolve` fell through to PATH on an unsupported platform | Restored |
+| `binary.Resolve` fell through to PATH on an unsupported platform | Restored; the file tools' rename error text is as it was; `wiki.Installed` removed |
 
-After these changes the real binary was run again from a vault on the internal disk: the page loads
-without a service worker, a tool append reaches the open tab, typed text is saved, a write without
-origin headers gets 403, and both refused kinds of write are refused over stdio.
+After these changes the real binary was run again, in an isolated browser profile:
+
+- The page loads without a service worker, a tool append reaches the open tab, typed text is saved, the
+  search answers, and SilverBullet's own client raised no policy violation. A write without origin
+  headers gets 403. From a script on the wiki's page, a request to another address, to another
+  localhost port and an image from another site were each blocked by the policy.
+- A page with `${js.window.localStorage.setItem("lua_ran", "yes")}` written by hand set the marker when
+  viewed. The same text sent through `wiki_create` was saved as `\${...}`, shown as text, and set
+  nothing.
+- **pi again, on the final build, from the exFAT image:** `wiki/Ibuprofen for adults.md` (3,578 bytes)
+  after one search, reads and one `wiki_create`; first request 4,268 tokens; the reply ended with the
+  page's link; the page showed in the UI and its search.
+
+Evaluated and not shipped:
+
+- **Lua off** (`?disableSpaceLua=1`, the same switch the proxy could set in `/.config`): the marker page
+  did not run and expressions show nothing. Viewing, the page list and navigation work. The Search
+  button answers "Error: Command Space: Search not found", because SilverBullet's standard library is
+  Lua; its other commands go the same way. Templates and queries were not tried: they are expressions.
+- **`ephemeralStorage`** (set by a proxy that rewrote `/.config`, not committed; the variant is kept
+  as `proxy.go.ephemeral-experiment` in the scratch folder): in a fresh browser profile the page showed
+  in about 5 s, as without it, the search dialog worked, and the profile held no IndexedDB database,
+  no cache and zero bytes of storage. Without it the same wiki leaves `sb_data_*` databases behind.
+  Cost seen on a four-page wiki: none. Expected cost on a large one: the page index is rebuilt in the
+  browser at each load. It is about 20 lines in the proxy.
+- **A sweep of stale state folders at start** was left out: two drives' wikis run at once, and telling
+  a stale folder from the other wiki's live one needs a liveness check.
 
 ## Open risk, for the owner
 
@@ -208,17 +243,20 @@ The specification's accepted risk is that a model acting on injected vault text 
 pages. SilverBullet adds a second one: **a page is a program**. What is closed and what is not:
 
 - Closed for the tools: scripts under `Library/`, and `${...}` expressions, the two ways the 3.0.1
-  documentation and source give for a page to run code.
+  documentation and source give for a page to run code. The content policy then keeps code that ran
+  anyway from sending the notes to another address by a request, an image or a form.
 - Not closed: this is a list of known ways, not a proof. Another construct that runs when a page is
   shown would pass. Code that runs has the wiki's address: it can rewrite or erase pages through
-  SilverBullet's own file API, past the trash, and send text out when the computer is online. It does
-  not reach the host's files: shell, the runtime API and the fetch proxy are off.
+  SilverBullet's own file API, past the trash, and it can navigate the tab away. It does not reach the
+  host's files: shell, the runtime API and the fetch proxy are off.
+- Not closed: a page the user pastes or writes with `${...}` runs, as SilverBullet intends.
 - Not closed: the browser profile keeps SilverBullet's page index in IndexedDB after the stick is gone.
-  SilverBullet's "shared computer" switch (`ephemeralStorage`) would keep nothing, at the cost of
-  indexing again at each load; setting it means the proxy rewriting `/.config`.
-- Stronger choices, each a product decision: switch Space Lua off in the client (SilverBullet's
-  queries, templates and commands go with it), add a `connect-src 'self'` policy against sending text
-  out, or version the page folder so that any change can be undone.
+- The two choices for the owner, both measured above:
+  - **Lua on, agents cannot write code** (this build), or **Lua off**, which costs the search dialog
+    and every standard-library command.
+  - **`ephemeralStorage` on**, so a borrowed computer keeps nothing, at no cost seen on a small wiki.
+    This one looks worth taking.
+- Versioning the page folder would make any change undoable; it is a follow-up.
 - Accepted from the review without change: a local process that answers `/.ping` on ports 8088 to 8107
   with this drive's folder gets its address returned as the page link; a port that accepts and never
   answers costs a write 300 ms; a wiki pushed to a port outside that range is not found, and writes
