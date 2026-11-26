@@ -444,3 +444,85 @@ func TestPlanShowsFreeSpaceBeforeAndAfter(t *testing.T) {
 		t.Fatalf("plan does not warn when the download does not fit:\n%s", out)
 	}
 }
+
+func updateItems() []PlanItem {
+	return []PlanItem{
+		{ID: "wiki-physics", Type: "zim", SizeGB: 1.2, Action: "update"},
+		{ID: "wiki-math", Type: "zim", SizeGB: 0.8, Action: "update"},
+		{ID: "osm-fi", Type: "pmtiles", SizeGB: 2.0, Action: "update"},
+	}
+}
+
+func TestSelectableRunsOnlyTickedItems(t *testing.T) {
+	var gotIDs []string
+	var gotReplace bool
+	m := New(Config{Items: updateItems(), FreeGB: 100, RunSelected: func(_ context.Context, ids []string, replace bool, _ func(ApplyEvent)) error {
+		gotIDs, gotReplace = ids, replace
+		return nil
+	}})
+	m.width, m.height = 120, 30
+
+	if out := stripAnsi(m.View()); !strings.Contains(out, "3 of 3 ticked") || !strings.Contains(out, "Installed copies stay") {
+		t.Fatalf("every update should start ticked, keeping installed copies:\n%s", out)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
+	m = next.(Model)
+	if out := stripAnsi(m.View()); !strings.Contains(out, "2 of 3 ticked") || !strings.Contains(out, "[ ] ↻ wiki-math") || !strings.Contains(out, "Download: 3.2 GB") {
+		t.Fatalf("Space should untick wiki-math and drop its size:\n%s", out)
+	}
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	m, _ = drainPlanApply(t, m, cmd)
+	if strings.Join(gotIDs, ",") != "wiki-physics,osm-fi" || gotReplace {
+		t.Fatalf("ran %v replace=%v, want the two ticked items keeping their copies", gotIDs, gotReplace)
+	}
+	if len(m.applyItems) != 2 {
+		t.Fatalf("progress should list the ticked items only, got %d rows", len(m.applyItems))
+	}
+}
+
+func TestSelectableAllToggleAndNothingTicked(t *testing.T) {
+	ran := false
+	m := New(Config{Items: updateItems(), RunSelected: func(context.Context, []string, bool, func(ApplyEvent)) error {
+		ran = true
+		return nil
+	}})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = next.(Model)
+	if len(m.tickedItems()) != 0 {
+		t.Fatalf("a with everything ticked should untick all, %d left", len(m.tickedItems()))
+	}
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if m.applying || cmd != nil || ran {
+		t.Fatal("Enter with nothing ticked should do nothing")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if len(next.(Model).tickedItems()) != 3 {
+		t.Fatal("a with items unticked should tick all")
+	}
+}
+
+func TestSelectableStartsDeleteFirstWithoutRoom(t *testing.T) {
+	var gotReplace bool
+	m := New(Config{Items: updateItems(), FreeGB: 3, RunSelected: func(_ context.Context, _ []string, replace bool, _ func(ApplyEvent)) error {
+		gotReplace = replace
+		return nil
+	}})
+	m.width, m.height = 160, 30
+	if out := stripAnsi(m.View()); !m.replace || !strings.Contains(out, "Delete first") || !strings.Contains(out, "r: keep copies") {
+		t.Fatalf("4 GB of updates on 3 GB free should start delete-first:\n%s", out)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = next.(Model)
+	if out := stripAnsi(m.View()); !strings.Contains(out, "Not enough room to keep the installed copies") {
+		t.Fatalf("keeping copies without room should warn:\n%s", out)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	next, cmd := next.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	drainPlanApply(t, next.(Model), cmd)
+	if !gotReplace {
+		t.Fatal("delete-first should reach RunSelected as replace")
+	}
+}

@@ -989,10 +989,11 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			})
 			summary.DownloadGB += it.SizeGB
 		}
+		summary.FreeGB = volumes.FreeSpaceGB(root)
 		return summary, nil
 	}
 
-	deps.RunUpdate = func(ctx context.Context, ids []string, onProgress func(hosttui.ApplyEvent)) error {
+	deps.RunUpdate = func(ctx context.Context, ids []string, replace bool, onProgress func(hosttui.ApplyEvent)) error {
 		root, err := ResolveVaultRoot(vaultFlag)
 		if err != nil {
 			return err
@@ -1001,7 +1002,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return err
 		}
-		return commands.UpdateVault(ctx, root, cat, ids, false, func(ev apply.ProgressEvent) {
+		return commands.UpdateVault(ctx, root, cat, ids, replace, func(ev apply.ProgressEvent) {
 			onProgress(hosttui.ApplyEvent{
 				ID: ev.ID, Procedure: ev.Procedure, State: ev.State,
 				Status: ev.Status, Step: ev.Step, Message: ev.Message,

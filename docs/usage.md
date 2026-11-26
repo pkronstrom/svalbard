@@ -126,6 +126,8 @@ Update installed items whose recipe changed since they were installed. `apply` n
 
 Each installed copy is kept until its new one is in place, and put back if the download or build fails. That needs room for both copies; `--replace` deletes the installed copy first, and a failed `--replace` leaves the item pending.
 
+The dashboard's Updates screen does the same: every listed item starts ticked, Space unticks one, and `r` deletes installed copies first. That choice starts on when the vault lacks room for both copies.
+
 `status` shows a version for every installed item:
 
 - `current`: installed from the recipe as it is now

@@ -54,6 +54,11 @@ type Config struct {
 	FreeGB      float64
 	FreeAfterGB float64
 	RunApply    func(ctx context.Context, onProgress func(ApplyEvent)) error
+	// RunSelected, when set, lets the user choose which items to run: each
+	// starts ticked, and Enter runs it with the ticked ids instead of
+	// RunApply. replace asks for each installed copy to be deleted before its
+	// new one arrives; it starts on when FreeGB cannot hold every new copy.
+	RunSelected func(ctx context.Context, ids []string, replace bool, onProgress func(ApplyEvent)) error
 	// Title and EmptyText replace the plan screen's wording when it lists
 	// something other than pending changes, such as available updates.
 	Title     string
@@ -112,6 +117,9 @@ type Model struct {
 	freeGB          float64
 	freeAfterGB     float64
 	runApply        func(ctx context.Context, onProgress func(ApplyEvent)) error
+	runSelected     func(ctx context.Context, ids []string, replace bool, onProgress func(ApplyEvent)) error
+	ticked          map[string]bool
+	replace         bool
 	title           string
 	emptyText       string
 	cursor          int
@@ -141,7 +149,7 @@ func New(cfg Config) Model {
 	if cfg.EmptyText == "" {
 		cfg.EmptyText = "No recipe downloads or removals pending"
 	}
-	return Model{
+	m := Model{
 		title:           cfg.Title,
 		emptyText:       cfg.EmptyText,
 		items:           cfg.Items,
@@ -153,9 +161,37 @@ func New(cfg Config) Model {
 		freeGB:          cfg.FreeGB,
 		freeAfterGB:     cfg.FreeAfterGB,
 		runApply:        cfg.RunApply,
+		runSelected:     cfg.RunSelected,
 		theme:           tui.DefaultTheme(),
 		keys:            tui.DefaultKeyMap(),
 	}
+	if m.runSelected != nil {
+		m.ticked = make(map[string]bool, len(m.items))
+		for _, it := range m.items {
+			m.ticked[it.ID] = true
+		}
+		m.replace = m.freeGB > 0 && m.tickedGB() > m.freeGB
+	}
+	return m
+}
+
+// tickedItems returns the ticked items in list order.
+func (m Model) tickedItems() []PlanItem {
+	var items []PlanItem
+	for _, it := range m.items {
+		if m.ticked[it.ID] {
+			items = append(items, it)
+		}
+	}
+	return items
+}
+
+func (m Model) tickedGB() float64 {
+	var gb float64
+	for _, it := range m.tickedItems() {
+		gb += it.SizeGB
+	}
+	return gb
 }
 
 // Init satisfies tea.Model. No initial command.
@@ -239,6 +275,38 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case m.runSelected != nil && m.keys.Toggle.Matches(msg):
+		if m.cursor < len(m.items) {
+			id := m.items[m.cursor].ID
+			m.ticked[id] = !m.ticked[id]
+		}
+		return m, nil
+
+	case m.runSelected != nil && msg.String() == "a":
+		all := len(m.tickedItems()) < len(m.items)
+		for _, it := range m.items {
+			m.ticked[it.ID] = all
+		}
+		return m, nil
+
+	case m.runSelected != nil && msg.String() == "r":
+		m.replace = !m.replace
+		return m, nil
+
+	case m.runSelected != nil && m.keys.Enter.Matches(msg):
+		items := m.tickedItems()
+		if len(items) == 0 {
+			return m, nil
+		}
+		ids := make([]string, len(items))
+		for i, it := range items {
+			ids[i] = it.ID
+		}
+		replace, run := m.replace, m.runSelected
+		return m.startApplying(items, func(ctx context.Context, onProgress func(ApplyEvent)) error {
+			return run(ctx, ids, replace, onProgress)
+		})
+
 	case m.keys.Enter.Matches(msg):
 		if len(m.items) == 0 && m.runApply == nil {
 			return m, func() tea.Msg { return BrowseMsg{} }
@@ -246,18 +314,7 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.runApply == nil {
 			return m, nil
 		}
-		m.applying = true
-		m.applyDone = false
-		m.applyErr = ""
-		m.stopping = false
-		m.exitIntent = ""
-		m.applyItems = make([]applyStep, len(m.items))
-		for i, it := range m.items {
-			m.applyItems[i] = applyStep{id: it.ID}
-		}
-		cmd, cancel := startApply(m.runApply, m.items)
-		m.applyCancel = cancel
-		return m, cmd
+		return m.startApplying(m.items, m.runApply)
 
 	case m.keys.Back.Matches(msg), m.keys.Quit.Matches(msg):
 		return m, func() tea.Msg { return BackMsg{} }
@@ -269,6 +326,21 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) startApplying(items []PlanItem, run func(ctx context.Context, onProgress func(ApplyEvent)) error) (tea.Model, tea.Cmd) {
+	m.applying = true
+	m.applyDone = false
+	m.applyErr = ""
+	m.stopping = false
+	m.exitIntent = ""
+	m.applyItems = make([]applyStep, len(items))
+	for i, it := range items {
+		m.applyItems[i] = applyStep{id: it.ID}
+	}
+	cmd, cancel := startApply(run, items)
+	m.applyCancel = cancel
+	return m, cmd
 }
 
 func (m Model) updateApplying(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -421,6 +493,9 @@ func (m Model) viewPlan() string {
 	var b strings.Builder
 
 	b.WriteString(m.theme.Section.Render(m.title))
+	if m.runSelected != nil {
+		b.WriteString(fmt.Sprintf("  %d of %d ticked", len(m.tickedItems()), len(m.items)))
+	}
 	b.WriteString("\n\n")
 
 	// Visible height: reserve for header(2) + detail(4) + summary(2) + footer(2) + shell(4)
@@ -460,6 +535,13 @@ func (m Model) viewPlan() string {
 			sym = "-"
 		case "update":
 			sym = "↻"
+		}
+		if m.runSelected != nil {
+			check := "[ ]"
+			if m.ticked[it.ID] {
+				check = "[✓]"
+			}
+			sym = check + " " + sym
 		}
 		line := fmt.Sprintf("%s %s %s  %s", prefix, sym, it.ID, tui.FormatSize(it.SizeGB))
 
@@ -508,20 +590,10 @@ func (m Model) viewPlan() string {
 
 	// Summary
 	b.WriteString("\n\n")
-	b.WriteString(m.theme.Muted.Render(fmt.Sprintf(
-		"  Download: %s  |  Remove: %s",
-		tui.FormatSize(m.downloadGB), tui.FormatSize(m.removeGB),
-	)))
-	if m.freeGB > 0 && m.freeAfterGB < 0 {
-		b.WriteString("\n")
-		b.WriteString(m.theme.Warning.Render(fmt.Sprintf(
-			"  Not enough space: %s free, %s short", tui.FormatSize(m.freeGB), tui.FormatSize(-m.freeAfterGB),
-		)))
-	} else if m.freeGB > 0 {
-		b.WriteString("\n")
-		b.WriteString(m.theme.Muted.Render(fmt.Sprintf(
-			"  Free: %s  |  After: %s", tui.FormatSize(m.freeGB), tui.FormatSize(m.freeAfterGB),
-		)))
+	if m.runSelected != nil {
+		b.WriteString(m.selectedSummary())
+	} else {
+		b.WriteString(m.planSummary())
 	}
 	if m.buildDownloadGB > 0 || m.buildWorkGB > 0 || m.toolsRequired {
 		tools := "no tools image"
@@ -546,6 +618,20 @@ func (m Model) viewPlan() string {
 		tui.KeyBinding{Key: "b", Label: "b: browse"},
 		tui.KeyBinding{Key: "q", Label: "q/Esc: back"},
 	)
+	if m.runSelected != nil {
+		replaceLabel := "r: delete first"
+		if m.replace {
+			replaceLabel = "r: keep copies"
+		}
+		footer = tui.FooterHints(
+			m.keys.MoveUp,
+			tui.KeyBinding{Key: " ", Label: "Space: tick"},
+			tui.KeyBinding{Key: "a", Label: "a: all/none"},
+			tui.KeyBinding{Key: "r", Label: replaceLabel},
+			tui.KeyBinding{Key: "enter", Label: "Enter: update"},
+			tui.KeyBinding{Key: "q", Label: "q/Esc: back"},
+		)
+	}
 
 	shell := tui.ShellLayout{
 		Theme:   m.theme,
@@ -557,6 +643,50 @@ func (m Model) viewPlan() string {
 		Height:  m.height,
 	}
 	return shell.Render()
+}
+
+// planSummary gives the plan's download and removal sizes and free space.
+func (m Model) planSummary() string {
+	var b strings.Builder
+	b.WriteString(m.theme.Muted.Render(fmt.Sprintf(
+		"  Download: %s  |  Remove: %s",
+		tui.FormatSize(m.downloadGB), tui.FormatSize(m.removeGB),
+	)))
+	if m.freeGB > 0 && m.freeAfterGB < 0 {
+		b.WriteString("\n")
+		b.WriteString(m.theme.Warning.Render(fmt.Sprintf(
+			"  Not enough space: %s free, %s short", tui.FormatSize(m.freeGB), tui.FormatSize(-m.freeAfterGB),
+		)))
+	} else if m.freeGB > 0 {
+		b.WriteString("\n")
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf(
+			"  Free: %s  |  After: %s", tui.FormatSize(m.freeGB), tui.FormatSize(m.freeAfterGB),
+		)))
+	}
+	return b.String()
+}
+
+// selectedSummary describes the download of the ticked items and whether
+// the vault has room to keep each installed copy until its new one arrives.
+func (m Model) selectedSummary() string {
+	need := m.tickedGB()
+	lines := []string{m.theme.Muted.Render("  Download: " + tui.FormatSize(need))}
+	switch {
+	case m.replace:
+		lines = append(lines, m.theme.Warning.Render(
+			"  Delete first: a failed update leaves the item to download again"))
+	case m.freeGB > 0 && need > m.freeGB:
+		lines = append(lines, m.theme.Warning.Render(fmt.Sprintf(
+			"  Not enough room to keep the installed copies: needs %s, %s free; untick some or press r",
+			tui.FormatSize(need), tui.FormatSize(m.freeGB))))
+	case m.freeGB > 0:
+		lines = append(lines, m.theme.Muted.Render(fmt.Sprintf(
+			"  Free: %s  |  Installed copies stay until each new one is in place",
+			tui.FormatSize(m.freeGB))))
+	default:
+		lines = append(lines, m.theme.Muted.Render("  Installed copies stay until each new one is in place"))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) viewApply() string {
