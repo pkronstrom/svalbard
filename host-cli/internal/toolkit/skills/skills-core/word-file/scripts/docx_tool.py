@@ -159,6 +159,10 @@ def replace_in_paragraph(p, values):
     # Placeholders may be split across runs: put the text in the first run
     # (keeping its formatting) and empty the rest.
     runs = p.runs
+    if not runs or "".join(r.text for r in runs) != text:
+        # Part of the text is in a hyperlink or a field, which runs do not
+        # hold; rewriting the runs would duplicate or lose it.
+        return 0
     runs[0].text = new
     for run in runs[1:]:
         run.text = ""

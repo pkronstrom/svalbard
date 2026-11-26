@@ -100,6 +100,14 @@ def create(args):
     from reportlab.platypus import (Image, ListFlowable, ListItem, PageBreak, Paragraph,
                                     SimpleDocTemplate, Spacer, Table, TableStyle)
 
+    def para(text, style):
+        # Mis-nested emphasis (**a *b** c*) is markup reportlab refuses:
+        # set such a line as plain text rather than fail.
+        try:
+            return Paragraph(inline(text), style)
+        except ValueError:
+            return Paragraph(escape(text), style)
+
     source = Path(args.source)
     styles = getSampleStyleSheet()
     size = letter if args.size.lower() == "letter" else A4
@@ -110,17 +118,17 @@ def create(args):
     for kind, value in parse_markdown(source.read_text(encoding="utf-8")):
         if kind == "h1":
             title = title or value
-            story.append(Paragraph(inline(value), styles["Title"]))
+            story.append(para(value, styles["Title"]))
         elif kind in ("h2", "h3"):
-            story.append(Paragraph(inline(value), styles["Heading2" if kind == "h2" else "Heading3"]))
+            story.append(para(value, styles["Heading2" if kind == "h2" else "Heading3"]))
         elif kind == "p":
-            story.append(Paragraph(inline(value), styles["BodyText"]))
+            story.append(para(value, styles["BodyText"]))
         elif kind in ("ul", "ol"):
-            items = [ListItem(Paragraph(inline(v), styles["BodyText"])) for v in value]
+            items = [ListItem(para(v, styles["BodyText"])) for v in value]
             story.append(ListFlowable(items, bulletType="1" if kind == "ol" else "bullet", start="1" if kind == "ol" else None))
         elif kind == "table":
             width = max(len(r) for r in value)
-            rows = [[Paragraph(inline(c), styles["BodyText"]) for c in r + [""] * (width - len(r))] for r in value]
+            rows = [[para(c, styles["BodyText"]) for c in r + [""] * (width - len(r))] for r in value]
             table = Table(rows, repeatRows=1, hAlign="LEFT", spaceBefore=2 * mm)
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DDE4EE")),
@@ -139,7 +147,7 @@ def create(args):
             img.drawWidth, img.drawHeight = img.drawWidth * scale, img.drawHeight * scale
             story.append(img)
             if caption:
-                story.append(Paragraph(inline(caption), styles["Italic"]))
+                story.append(para(caption, styles["Italic"]))
         elif kind == "break":
             story.append(PageBreak())
     if title:
