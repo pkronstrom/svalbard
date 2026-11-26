@@ -223,7 +223,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 						if err := checkpointManifest(snapshot); err != nil {
 							applyErrors = append(applyErrors, fmt.Errorf("%s: checkpointing: %w", res.id, err))
 						} else {
-							recordDocumentTitles(root, m.Realized.Entries, cat, res.id)
+							recordCollection(root, m.Realized.Entries, cat, res.id)
 						}
 					}
 					return
@@ -236,6 +236,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 					levelFailed = true
 					return
 				}
+				recordCollection(root, m.Realized.Entries, cat, res.id)
 				for _, id := range plannedIDsCoveredBy(res.entries, plan.ToDownload) {
 					progress(ProgressEvent{ID: id, Status: tui.StatusDone})
 				}
@@ -298,6 +299,9 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	}
 	if err := toolkit.WriteDocumentsMetadata(root, m.Realized.Entries, recipes); err != nil {
 		return fmt.Errorf("writing document metadata: %w", err)
+	}
+	if err := syncRecipeCopies(root, m, cat); err != nil {
+		return fmt.Errorf("writing the vault's recipe copies: %w", err)
 	}
 	if err := syncMapViewer(root, m.Realized.Entries); err != nil {
 		return fmt.Errorf("generating map viewer: %w", err)

@@ -25,6 +25,11 @@ import (
 // request; missing or changed ones are downloaded or copied through staging,
 // and realized files the list no longer names are deleted.
 //
+// A local source that cannot be read on this computer (see
+// catalog.UnreadableSource) says nothing about what it holds, so the files
+// already installed from it are kept with their entries; it fails the item
+// only when the vault holds nothing from it yet.
+//
 // The returned entries are the collection's complete realized set, also when
 // an error is returned with them: one failing document fails the item but the
 // documents that did arrive stay recorded, so the next apply fetches only the
@@ -34,7 +39,7 @@ func assembleDocuments(ctx context.Context, root, id string, recipe catalog.Item
 	if !ok {
 		return realized, fmt.Errorf("type %q has no directory for documents", recipe.Type)
 	}
-	docs, err := catalog.ExpectedDocuments(recipe)
+	set, err := catalog.ExpectedDocuments(recipe)
 	if err != nil {
 		// Nothing is known about the wanted set, so nothing is touched.
 		return realized, err
@@ -49,8 +54,8 @@ func assembleDocuments(ctx context.Context, root, id string, recipe catalog.Item
 
 	var entries []manifest.RealizedEntry
 	var pending []catalog.Document
-	expected := make(map[string]bool, len(docs))
-	for _, doc := range docs {
+	expected := make(map[string]bool, len(set.Documents))
+	for _, doc := range set.Documents {
 		expected[doc.RelPath] = true
 		if entry, ok := have[doc.RelPath]; ok && documentCurrent(root, entry, doc) {
 			entries = append(entries, entry)
@@ -60,13 +65,28 @@ func assembleDocuments(ctx context.Context, root, id string, recipe catalog.Item
 	}
 
 	var errs []error
-	for rel, entry := range have {
-		if expected[rel] {
+	held := make(map[string]bool)
+	for _, entry := range realized {
+		rel, ok := collectionRelPath(dir, entry.RelativePath)
+		if !ok || expected[rel] {
+			continue
+		}
+		if source, kept := set.Holds(rel); kept {
+			held[source.Name] = true
+			entries = append(entries, entry)
 			continue
 		}
 		if err := removeDocument(root, dir, entry.RelativePath); err != nil {
 			errs = append(errs, fmt.Errorf("removing %s: %w", entry.RelativePath, err))
 			entries = append(entries, entry)
+		}
+	}
+	for _, source := range set.Unreadable {
+		switch {
+		case held[source.Name]:
+			slog.Warn("document source not readable; keeping installed files", "id", id, "path", source.Path, "reason", source.Reason)
+		case !source.Foreign:
+			errs = append(errs, fmt.Errorf("%s: cannot read: %s", source.Path, source.Reason))
 		}
 	}
 
@@ -241,20 +261,41 @@ func checkDocumentContent(path string) error {
 	return errors.New("not a PDF: the file has no %PDF- header")
 }
 
-// DocumentDiff counts how a collection's definition differs from what the
-// vault has realized for it.
+// DocumentDiff is how a collection's definition differs from what the vault
+// has realized for it.
 type DocumentDiff struct {
 	Added   int // listed but not realized
 	Changed int // realized, but the pin or the local source changed
 	Removed int // realized but no longer listed
+	// Kept are installed documents whose local source cannot be read on this
+	// computer. They are left exactly as they are.
+	Kept []KeptDocument
+	// Missing are unreadable local sources the vault holds nothing from:
+	// documents that cannot be installed from this computer.
+	Missing []catalog.UnreadableSource
 }
 
-// Any reports whether an apply has something to do for the collection.
-func (d DocumentDiff) Any() bool { return d.Added+d.Changed+d.Removed > 0 }
+// KeptDocument is an installed document and the unreadable source it is from.
+type KeptDocument struct {
+	RelPath string // below the collection directory
+	Source  catalog.UnreadableSource
+}
+
+// Any reports whether an apply has something to do for the collection. A
+// source defined on another computer can never be read here, so it is not a
+// reason to try.
+func (d DocumentDiff) Any() bool {
+	for _, source := range d.Missing {
+		if !source.Foreign {
+			return true
+		}
+	}
+	return d.Added+d.Changed+d.Removed > 0
+}
 
 // DiffDocuments compares a collection's expected documents with its realized
 // entries. It reads neither the vault nor the network, so a plan can show it.
-func DiffDocuments(recipe catalog.Item, docs []catalog.Document, realized []manifest.RealizedEntry) DocumentDiff {
+func DiffDocuments(recipe catalog.Item, set catalog.DocumentSet, realized []manifest.RealizedEntry) DocumentDiff {
 	dir := filepath.Join(toolkit.TypeDirs[recipe.Type], recipe.ID)
 	have := make(map[string]manifest.RealizedEntry, len(realized))
 	for _, entry := range realized {
@@ -263,7 +304,9 @@ func DiffDocuments(recipe catalog.Item, docs []catalog.Document, realized []mani
 		}
 	}
 	var diff DocumentDiff
-	for _, doc := range docs {
+	expected := make(map[string]bool, len(set.Documents))
+	for _, doc := range set.Documents {
+		expected[doc.RelPath] = true
 		entry, ok := have[doc.RelPath]
 		switch {
 		case !ok:
@@ -271,9 +314,25 @@ func DiffDocuments(recipe catalog.Item, docs []catalog.Document, realized []mani
 		case !documentMatches(entry, doc):
 			diff.Changed++
 		}
-		delete(have, doc.RelPath)
 	}
-	diff.Removed = len(have)
+	held := make(map[string]bool)
+	for _, entry := range realized {
+		rel, ok := collectionRelPath(dir, entry.RelativePath)
+		if !ok || expected[rel] {
+			continue
+		}
+		if source, kept := set.Holds(rel); kept {
+			held[source.Name] = true
+			diff.Kept = append(diff.Kept, KeptDocument{RelPath: rel, Source: source})
+			continue
+		}
+		diff.Removed++
+	}
+	for _, source := range set.Unreadable {
+		if !held[source.Name] {
+			diff.Missing = append(diff.Missing, source)
+		}
+	}
 	return diff
 }
 
@@ -378,25 +437,19 @@ func replaceEntriesForID(existing []manifest.RealizedEntry, id string, additions
 	return append(entries, additions...)
 }
 
-// recordDocumentTitles writes the document metadata of one collection as soon
-// as its entries are saved. The complete file is written when an apply
-// succeeds; this covers the apply that fails on one document, after which
-// `svalbard index` is run by hand and should still know the titles. It is
-// best effort: the index falls back to the file's own title.
-func recordDocumentTitles(root string, entries []manifest.RealizedEntry, cat *catalog.Catalog, id string) {
-	recipe, ok := cat.RecipeByID(id)
-	if !ok || !recipe.IsCollection() {
-		return
-	}
-	if err := toolkit.WriteDocumentsMetadata(root, entries, map[string]catalog.Item{id: recipe}); err != nil {
-		slog.Warn("writing document metadata", "id", id, "error", err)
+// writeCollectionTitles writes the document metadata of one collection; the
+// other collections keep what the file already says about them.
+func writeCollectionTitles(root string, entries []manifest.RealizedEntry, recipe catalog.Item) {
+	if err := toolkit.WriteDocumentsMetadata(root, entries, map[string]catalog.Item{recipe.ID: recipe}); err != nil {
+		slog.Warn("writing document metadata", "id", recipe.ID, "error", err)
 	}
 }
 
 // removeCollectionDirs deletes the directory of every removed item whose
 // files were recorded one by one inside <type dir>/<id>/, as a document
-// collection's are, together with its staging directory. Removing the entries
-// alone would leave the emptied folders behind.
+// collection's are, together with its staging directory and the vault's copy
+// of its recipe. Removing the entries alone would leave the emptied folders
+// behind.
 func removeCollectionDirs(root string, removed []manifest.RealizedEntry) {
 	for _, entry := range removed {
 		if !IsCollectionEntry(entry) {
@@ -404,5 +457,8 @@ func removeCollectionDirs(root string, removed []manifest.RealizedEntry) {
 		}
 		os.RemoveAll(filepath.Join(root, toolkit.TypeDirs[entry.Type], entry.ID))
 		os.RemoveAll(filepath.Join(root, ".staging", "documents", entry.ID))
+		if err := removeRecipeCopy(root, entry.ID); err != nil {
+			slog.Warn("removing the vault's recipe copy", "id", entry.ID, "error", err)
+		}
 	}
 }

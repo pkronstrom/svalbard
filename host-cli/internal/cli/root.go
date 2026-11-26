@@ -129,7 +129,7 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cat, err := loadCatalog(cmd.ErrOrStderr())
+			cat, err := loadVaultCatalog(cmd.ErrOrStderr(), vaultRoot)
 			if err != nil {
 				return err
 			}
@@ -171,10 +171,11 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cat, err := loadCatalog(cmd.ErrOrStderr())
+			cat, err := loadVaultCatalog(cmd.ErrOrStderr(), vaultRoot)
 			if err != nil {
 				return err
 			}
+			commands.WriteVaultDocumentNotes(cmd.ErrOrStderr(), vaultRoot, cat)
 			if err := commands.ApplyVault(ctx, vaultRoot, cat); err != nil {
 				return err
 			}
@@ -417,6 +418,20 @@ func loadCatalog(w io.Writer) (*catalog.Catalog, error) {
 	return cat, nil
 }
 
+// loadVaultCatalog is loadCatalog for a command that works on a vault. A
+// user recipe the vault holds but this computer does not define is loaded
+// from the copy the vault keeps of it, and w is told so.
+func loadVaultCatalog(w io.Writer, vaultRoot string) (*catalog.Catalog, error) {
+	cat, err := loadCatalog(w)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range cat.LoadVaultRecipes(catalog.VaultRecipeDir(vaultRoot)) {
+		fmt.Fprintf(w, "note: %s is not defined on this computer; using the vault's copy of its recipe\n", id)
+	}
+	return cat, nil
+}
+
 // buildWizardConfig loads the catalog and detected volumes to prepare
 // a WizardConfig for the interactive init wizard. Skipped user presets are
 // reported to warn before the TUI takes over the terminal.
@@ -652,7 +667,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return hosttui.PlanSummary{}, err
 		}
-		cat, err := catalog.LoadCatalog()
+		cat, err := loadVaultCatalog(io.Discard, root)
 		if err != nil {
 			return hosttui.PlanSummary{}, err
 		}
@@ -715,7 +730,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return err
 		}
-		cat, err := catalog.LoadCatalog()
+		cat, err := loadVaultCatalog(io.Discard, root)
 		if err != nil {
 			return err
 		}

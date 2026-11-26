@@ -84,6 +84,9 @@ func TestLoadUserRecipesSkipsInvalid(t *testing.T) {
 		"nameless url":        {"c.yaml", "documents:\n  - url: https://example.org/download?id=5\n", "set filename:"},
 		"filename with dir":   {"c.yaml", "documents:\n  - url: https://example.org/a.pdf\n    filename: sub/a.pdf\n", "plain file name"},
 		"bad pin":             {"c.yaml", "documents:\n  - url: https://example.org/a.pdf\n    sha256: abc\n", "64 hex"},
+		"dot-dot url":         {"c.yaml", "documents:\n  - url: https://example.org/files/..\n", "set filename:"},
+		"unportable url name": {"c.yaml", "documents:\n  - url: https://example.org/report%3Afinal.pdf\n", "cannot be stored on every drive"},
+		"unportable filename": {"c.yaml", "documents:\n  - url: https://example.org/a.pdf\n    filename: 'what?.pdf'\n", "plain file name"},
 		"bad id":              {"c.yaml", "id: ../escape\ndocuments:\n  - url: https://example.org/a.pdf\n", "may only hold"},
 		"bad yaml":            {"c.yaml", "documents: [\n", "invalid YAML"},
 	}
@@ -112,6 +115,86 @@ func TestLoadUserRecipesSkipsInvalid(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// On an exFAT vault books/Manuals and books/manuals are one folder, so two
+// collections whose ids differ only in case would overwrite and delete each
+// other's files.
+func TestLoadUserRecipesRejectsIDsThatDifferOnlyInCase(t *testing.T) {
+	cat := NewTestCatalog(t)
+	dir := t.TempDir()
+	body := "documents:\n  - url: https://example.org/a.pdf\n"
+	writeUserRecipe(t, dir, "a-manuals.yaml", body)
+	writeUserRecipe(t, dir, "b.yaml", "id: A-Manuals\n"+body)
+	writeUserRecipe(t, dir, "c.yaml", "id: IFIXIT\n"+body)
+	skipped := cat.LoadUserRecipes(dir)
+	if len(skipped) != 2 {
+		t.Fatalf("skipped = %v, want the two case twins", skipped)
+	}
+	if !strings.Contains(skipped[0].Reason, `differs only in letter case from the recipe "a-manuals"`) {
+		t.Errorf("user twin reason = %q", skipped[0].Reason)
+	}
+	if !strings.Contains(skipped[1].Reason, `differs only in letter case from the recipe "ifixit"`) {
+		t.Errorf("built-in twin reason = %q", skipped[1].Reason)
+	}
+	if _, ok := cat.RecipeByID("A-Manuals"); ok {
+		t.Error("the case twin was added to the catalog")
+	}
+	if _, ok := cat.RecipeByID("a-manuals"); !ok {
+		t.Error("the first definition was dropped")
+	}
+}
+
+func TestLoadVaultRecipesFillsInOnlyWhatThisComputerLacks(t *testing.T) {
+	cat := NewTestCatalog(t)
+	config, vault := t.TempDir(), t.TempDir()
+	local := filepath.Join(t.TempDir(), "trailer.pdf")
+	writeDocument(t, local, 1)
+	writeUserRecipe(t, config, "here.yaml", "description: edited here\ndocuments:\n  - url: https://example.org/new.pdf\n")
+	writeUserRecipe(t, vault, "here.yaml", "description: stale copy\ndocuments:\n  - url: https://example.org/old.pdf\n")
+	writeUserRecipe(t, vault, "elsewhere.yaml", "description: from another computer\ndocuments:\n"+
+		"  - title: Volvo\n    url: https://example.org/volvo.pdf\n"+
+		"  - title: Trailer\n    path: "+local+"\n"+
+		"  - path: ~/Documents/manuals/workshop/\n")
+	writeUserRecipe(t, vault, "broken.yaml", "description: no documents\n")
+	cat.LoadUserRecipes(config)
+
+	if used := cat.LoadVaultRecipes(vault); !reflect.DeepEqual(used, []string{"elsewhere"}) {
+		t.Fatalf("vault copies used = %v, want only the one this computer lacks", used)
+	}
+	if cat.LoadVaultRecipes(filepath.Join(vault, "missing")) != nil {
+		t.Error("a vault without copies added recipes")
+	}
+	if here, _ := cat.RecipeByID("here"); here.Description != "edited here" || here.VaultCopy {
+		t.Errorf("the definition on this computer lost to the vault's copy: %+v", here)
+	}
+	if skipped := cat.SkippedUserRecipes(); len(skipped) != 1 || skipped[0].ID != "broken" {
+		t.Errorf("skipped = %v, want the broken copy reported", skipped)
+	}
+
+	item, _ := cat.RecipeByID("elsewhere")
+	if !item.VaultCopy || item.Path != filepath.Join(vault, "elsewhere.yaml") {
+		t.Fatalf("item = %+v", item)
+	}
+	// Paths stay as written, and are not read even when one exists here: a
+	// vault from elsewhere must not get this computer's files copied onto it.
+	if got := item.Documents[2].Path; got != "~/Documents/manuals/workshop/" {
+		t.Errorf("path = %q, want it as written", got)
+	}
+	set, err := ExpectedDocuments(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Documents) != 1 || set.Documents[0].URL != "https://example.org/volvo.pdf" {
+		t.Fatalf("documents = %+v, want only the URL document", set.Documents)
+	}
+	want := []UnreadableSource{
+		{Path: local, Name: "trailer.pdf", Reason: "defined on another computer", Foreign: true},
+		{Path: "~/Documents/manuals/workshop/", Name: "workshop", Reason: "defined on another computer", Foreign: true},
+	}
+	if !reflect.DeepEqual(set.Unreadable, want) {
+		t.Fatalf("unreadable = %+v, want %+v", set.Unreadable, want)
 	}
 }
 
@@ -175,10 +258,11 @@ documents:
 		t.Fatal(skipped)
 	}
 	item, _ := cat.RecipeByID("car-manuals")
-	docs, err := ExpectedDocuments(item)
-	if err != nil {
-		t.Fatal(err)
+	set, err := ExpectedDocuments(item)
+	if err != nil || len(set.Unreadable) != 0 {
+		t.Fatalf("ExpectedDocuments: %v, unreadable %+v", err, set.Unreadable)
 	}
+	docs := set.Documents
 	var got []string
 	for _, doc := range docs {
 		got = append(got, doc.RelPath)
@@ -192,19 +276,53 @@ documents:
 	}
 }
 
-func TestExpectedDocumentsReportsUnreadableAndCollidingSources(t *testing.T) {
+// A local source that cannot be read, and a folder with nothing in it, say
+// nothing about the documents they held: they must not shrink the set.
+func TestExpectedDocumentsKeepsUnreadableSourcesApart(t *testing.T) {
+	src := t.TempDir()
+	writeDocument(t, filepath.Join(src, "trailer.pdf"), 1)
+	if err := os.MkdirAll(filepath.Join(src, "unsynced", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	item := Item{ID: "c", Documents: []DocumentSource{
+		{Path: filepath.Join(src, "trailer.pdf")},
+		{Path: filepath.Join(src, "unsynced")},
+		{Path: filepath.Join(src, "unplugged") + "/"},
+		{Path: filepath.Join(src, "gone.pdf"), Filename: "renamed.pdf"},
+	}}
+	set, err := ExpectedDocuments(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Documents) != 1 || set.Documents[0].RelPath != "trailer.pdf" {
+		t.Fatalf("documents = %+v", set.Documents)
+	}
+	want := []UnreadableSource{
+		{Path: filepath.Join(src, "unsynced"), Name: "unsynced", Reason: "no documents found in it"},
+		{Path: filepath.Join(src, "unplugged") + "/", Name: "unplugged", Reason: "no such file or directory"},
+		{Path: filepath.Join(src, "gone.pdf"), Name: "renamed.pdf", Reason: "no such file or directory"},
+	}
+	if !reflect.DeepEqual(set.Unreadable, want) {
+		t.Fatalf("unreadable = %+v, want %+v", set.Unreadable, want)
+	}
+	for rel, held := range map[string]bool{
+		"unsynced/a.pdf": true, "unsynced/sub/b.pdf": true, "unplugged/c.pdf": true, "renamed.pdf": true,
+		"trailer.pdf": false, "unsynced.pdf": false, "renamed.pdf.bak": false,
+	} {
+		if _, got := set.Holds(rel); got != held {
+			t.Errorf("Holds(%q) = %v, want %v", rel, got, held)
+		}
+	}
+}
+
+func TestExpectedDocumentsRejectsUnusableDefinitions(t *testing.T) {
 	src := t.TempDir()
 	writeDocument(t, filepath.Join(src, "a", "manual.pdf"), 1)
 	writeDocument(t, filepath.Join(src, "manual.pdf"), 1)
-	if err := os.MkdirAll(filepath.Join(src, "empty"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	cases := map[string]struct {
 		docs []DocumentSource
 		want string
 	}{
-		"missing folder":   {[]DocumentSource{{Path: filepath.Join(src, "gone")}}, "cannot read " + filepath.Join(src, "gone")},
-		"empty folder":     {[]DocumentSource{{Path: filepath.Join(src, "empty")}}, "no documents found"},
 		"folder with pin":  {[]DocumentSource{{Path: filepath.Join(src, "a"), SHA256: strings.Repeat("a", 64)}}, "is a folder"},
 		"case collision":   {[]DocumentSource{{Path: filepath.Join(src, "manual.pdf")}, {URL: "https://example.org/Manual.pdf"}}, "would both be saved as Manual.pdf; set filename:"},
 		"folder collision": {[]DocumentSource{{Path: filepath.Join(src, "a")}, {URL: "https://example.org/x.pdf", Filename: "A"}}, "which is also the folder of"},

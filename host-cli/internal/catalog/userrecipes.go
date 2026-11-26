@@ -80,71 +80,118 @@ func UserRecipeDirs() []string {
 	return dirs
 }
 
+// VaultRecipeDir is where a vault keeps a copy of each user recipe it has
+// realized, so the vault can still be planned and applied on a computer
+// that does not have the definition.
+func VaultRecipeDir(vaultRoot string) string {
+	return filepath.Join(vaultRoot, ".svalbard", "recipes")
+}
+
 // LoadUserRecipes adds the *.yaml recipes found in dirs (missing dirs are
 // ignored) to the catalog. A user recipe is a document collection: it must
 // list documents, and its id may not shadow a built-in recipe or another user
-// recipe. A recipe that fails is skipped rather than failing the load; the
+// recipe, also not by letter case, since both would share one folder on the
+// vault. A recipe that fails is skipped rather than failing the load; the
 // skipped files are returned and kept for SkippedUserRecipes. Local document
 // paths are made absolute: "~" is the home directory and a relative path
 // starts at the recipe file's directory.
 func (c *Catalog) LoadUserRecipes(dirs ...string) []SkippedRecipe {
 	var skipped []SkippedRecipe
-	skip := func(id, path, reason string) {
-		skipped = append(skipped, SkippedRecipe{ID: id, Path: path, Reason: reason})
-	}
-
-	userPaths := map[string]string{}
 	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			skip("", dir, fmt.Sprintf("reading directory: %v", err))
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") || strings.HasPrefix(e.Name(), ".") {
-				continue
-			}
-			path := filepath.Join(dir, e.Name())
-			fileName := strings.TrimSuffix(e.Name(), ".yaml")
-			data, err := os.ReadFile(path)
-			if err != nil {
-				skip(fileName, path, err.Error())
-				continue
-			}
-			var item Item
-			if err := yaml.Unmarshal(data, &item); err != nil {
-				skip(fileName, path, fmt.Sprintf("invalid YAML: %v", err))
-				continue
-			}
-			if item.ID == "" {
-				item.ID = fileName
-			}
-			if other, ok := userPaths[item.ID]; ok {
-				skip(item.ID, path, fmt.Sprintf("id %q is already defined in %s", item.ID, other))
-				continue
-			}
-			if _, ok := c.recipes[item.ID]; ok {
-				skip(item.ID, path, fmt.Sprintf("id %q shadows a built-in recipe; pick a different id", item.ID))
-				continue
-			}
-			if reason := prepareUserRecipe(&item, dir); reason != "" {
-				skip(item.ID, path, reason)
-				continue
-			}
-			c.recipes[item.ID] = item
-			userPaths[item.ID] = path
-		}
+		_, bad := c.loadRecipeDir(dir, false)
+		skipped = append(skipped, bad...)
 	}
 	c.skippedRecipes = append(c.skippedRecipes, skipped...)
 	return skipped
 }
 
-// prepareUserRecipe validates a user recipe and resolves its local paths
-// against baseDir. It returns why the recipe cannot be used, or "".
-func prepareUserRecipe(item *Item, baseDir string) string {
+// LoadVaultRecipes adds the recipe copies a vault keeps in dir for ids the
+// catalog does not define, and returns those ids. A definition on this
+// computer always wins over the vault's copy. A copy's local path: entries
+// are kept as written and never read: they name files of the computer that
+// wrote them, and a vault from elsewhere must not be able to make this one
+// copy its files (see ExpectedDocuments).
+func (c *Catalog) LoadVaultRecipes(dir string) []string {
+	used, skipped := c.loadRecipeDir(dir, true)
+	c.skippedRecipes = append(c.skippedRecipes, skipped...)
+	return used
+}
+
+// loadRecipeDir loads the user recipes of one directory and returns the ids
+// added and the files skipped.
+func (c *Catalog) loadRecipeDir(dir string, vaultCopy bool) (added []string, skipped []SkippedRecipe) {
+	skip := func(id, path, reason string) {
+		skipped = append(skipped, SkippedRecipe{ID: id, Path: path, Reason: reason})
+	}
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		skip("", dir, fmt.Sprintf("reading directory: %v", err))
+		return nil, skipped
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		fileName := strings.TrimSuffix(e.Name(), ".yaml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			skip(fileName, path, err.Error())
+			continue
+		}
+		var item Item
+		if err := yaml.Unmarshal(data, &item); err != nil {
+			skip(fileName, path, fmt.Sprintf("invalid YAML: %v", err))
+			continue
+		}
+		if item.ID == "" {
+			item.ID = fileName
+		}
+		if existing, ok := c.recipeByFoldedID(item.ID); ok {
+			switch {
+			case vaultCopy:
+				// The definition on this computer is the one in use.
+			case existing.ID != item.ID:
+				skip(item.ID, path, fmt.Sprintf("id %q differs only in letter case from the recipe %q; they would share one folder on the vault", item.ID, existing.ID))
+			case existing.Path == "":
+				skip(item.ID, path, fmt.Sprintf("id %q shadows a built-in recipe; pick a different id", item.ID))
+			default:
+				skip(item.ID, path, fmt.Sprintf("id %q is already defined in %s", item.ID, existing.Path))
+			}
+			continue
+		}
+		if reason := prepareUserRecipe(&item, dir, !vaultCopy); reason != "" {
+			skip(item.ID, path, reason)
+			continue
+		}
+		item.Path, item.VaultCopy = path, vaultCopy
+		c.recipes[item.ID] = item
+		added = append(added, item.ID)
+	}
+	return added, skipped
+}
+
+// recipeByFoldedID finds a recipe whose id equals id without regard to
+// letter case. Vaults are usually exFAT, where such ids name the same folder.
+func (c *Catalog) recipeByFoldedID(id string) (Item, bool) {
+	if item, ok := c.recipes[id]; ok {
+		return item, true
+	}
+	for existing, item := range c.recipes {
+		if strings.EqualFold(existing, id) {
+			return item, true
+		}
+	}
+	return Item{}, false
+}
+
+// prepareUserRecipe validates a user recipe and, with resolve, makes its
+// local paths absolute against baseDir. It returns why the recipe cannot be
+// used, or "".
+func prepareUserRecipe(item *Item, baseDir string, resolve bool) string {
 	if !userRecipeIDRe.MatchString(item.ID) {
 		return fmt.Sprintf("id %q may only hold letters, digits, '.', '_' and '-'", item.ID)
 	}
@@ -177,8 +224,8 @@ func prepareUserRecipe(item *Item, baseDir string) string {
 		if doc.SHA256 != "" && !sha256Re.MatchString(doc.SHA256) {
 			return entry + ": sha256 must be 64 hex characters"
 		}
-		if doc.Filename != "" && (doc.Filename != filepath.Base(doc.Filename) || doc.Filename == "." || doc.Filename == "..") {
-			return fmt.Sprintf("%s: filename %q must be a plain file name without folders", entry, doc.Filename)
+		if doc.Filename != "" && !portableName(doc.Filename) {
+			return fmt.Sprintf("%s: filename %q must be a plain file name without folders or any of <>:\"/\\|?*", entry, doc.Filename)
 		}
 		name := doc.Filename
 		if doc.URL != "" {
@@ -190,15 +237,20 @@ func prepareUserRecipe(item *Item, baseDir string) string {
 				return entry + ": " + err.Error()
 			}
 		} else {
-			resolved, err := resolveUserPath(doc.Path, baseDir)
-			if err != nil {
-				return fmt.Sprintf("%s: %v", entry, err)
+			if resolve {
+				resolved, err := resolveUserPath(doc.Path, baseDir)
+				if err != nil {
+					return fmt.Sprintf("%s: %v", entry, err)
+				}
+				doc.Path = resolved
 			}
-			doc.Path = resolved
 			if name == "" {
 				// A folder's contents are only known when it is read; its own
 				// name is still the first path segment they are saved under.
-				name = filepath.Base(resolved)
+				name = filepath.Base(filepath.Clean(doc.Path))
+			}
+			if !portableName(name) {
+				return fmt.Sprintf("%s: path %q ends in a name that cannot be stored on every drive", entry, doc.Path)
 			}
 		}
 		key := strings.ToLower(name)

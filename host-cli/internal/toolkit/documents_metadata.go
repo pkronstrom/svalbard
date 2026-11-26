@@ -22,8 +22,8 @@ type DocumentMetadata struct {
 
 // WriteDocumentsMetadata writes .svalbard/documents.json for the realized
 // documents of collections, keyed by slash-separated vault-relative path.
-// A document whose collection definition is not available on this computer
-// keeps the metadata an earlier apply recorded. Without any documents, a
+// A document whose collection definition, or whose local source, is not
+// available on this computer keeps the metadata an earlier apply recorded. Without any documents, a
 // stale file is removed.
 func WriteDocumentsMetadata(root string, entries []manifest.RealizedEntry, recipes map[string]catalog.Item) error {
 	path := filepath.Join(root, svalbardDir, documentsFile)
@@ -44,8 +44,8 @@ func WriteDocumentsMetadata(root string, entries []manifest.RealizedEntry, recip
 		if !loaded {
 			if recipe, ok := recipes[entry.ID]; ok && recipe.IsCollection() {
 				if expected, err := catalog.ExpectedDocuments(recipe); err == nil {
-					docs = make(map[string]catalog.Document, len(expected))
-					for _, doc := range expected {
+					docs = make(map[string]catalog.Document, len(expected.Documents))
+					for _, doc := range expected.Documents {
 						docs[doc.RelPath] = doc
 					}
 				}

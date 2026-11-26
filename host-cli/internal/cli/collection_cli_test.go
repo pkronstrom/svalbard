@@ -88,3 +88,46 @@ func TestUserCollectionCLIFlow(t *testing.T) {
 		t.Error("wizard config does not offer the user collection")
 	}
 }
+
+// TestCollectionPlanOnAnotherComputer plans a vault whose collection is not
+// defined in this computer's config folder: the copy on the vault is used,
+// and the command says so.
+func TestCollectionPlanOnAnotherComputer(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	vault := t.TempDir()
+	m := manifest.New("test")
+	m.Desired.Items = []string{"car-manuals"}
+	m.Realized.Entries = []manifest.RealizedEntry{
+		{ID: "car-manuals", Type: "pdf", Filename: "volvo.pdf", RelativePath: filepath.Join("books", "car-manuals", "volvo.pdf"), SizeBytes: 9},
+		{ID: "car-manuals", Type: "pdf", Filename: "trailer.pdf", RelativePath: filepath.Join("books", "car-manuals", "trailer.pdf"), SizeBytes: 9},
+	}
+	if err := manifest.Save(filepath.Join(vault, "manifest.yaml"), m); err != nil {
+		t.Fatal(err)
+	}
+	copyDir := filepath.Join(vault, ".svalbard", "recipes")
+	if err := os.MkdirAll(copyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	definition := "documents:\n  - url: https://example.test/volvo.pdf\n  - url: https://example.test/hmmwv.pdf\n  - path: ~/Documents/manuals/trailer.pdf\n"
+	if err := os.WriteFile(filepath.Join(copyDir, "car-manuals.yaml"), []byte(definition), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	cmd := NewRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"plan", "--vault", vault})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if want := "note: car-manuals is not defined on this computer; using the vault's copy of its recipe\n"; errOut.String() != want {
+		t.Errorf("stderr = %q, want %q", errOut.String(), want)
+	}
+	want := "download: 1\n  + car-manuals\nremove: 0\nunmanaged: 0\n" +
+		"update car-manuals: +1 document\n" +
+		"car-manuals: kept trailer.pdf: cannot read ~/Documents/manuals/trailer.pdf (defined on another computer)\n"
+	if out.String() != want {
+		t.Errorf("plan = %q, want %q", out.String(), want)
+	}
+}

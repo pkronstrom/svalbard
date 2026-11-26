@@ -54,7 +54,18 @@ func (v *collectionVault) catalog() *catalog.Catalog {
 	if skipped := cat.LoadUserRecipes(v.recipes); len(skipped) > 0 {
 		v.t.Fatalf("collection skipped: %v", skipped)
 	}
+	// As the CLI does: what this computer does not define comes from the
+	// copy the vault keeps.
+	cat.LoadVaultRecipes(catalog.VaultRecipeDir(v.root))
 	return cat
+}
+
+func (v *collectionVault) recipeCopy(id string) string {
+	data, err := os.ReadFile(filepath.Join(catalog.VaultRecipeDir(v.root), id+".yaml"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func (v *collectionVault) apply() error {
@@ -183,6 +194,10 @@ func TestCollectionLifecycle(t *testing.T) {
 	if got, want := v.plan(), "download: 0\nremove: 0\nunmanaged: 0\n"; got != want {
 		t.Fatalf("plan after apply = %q, want nothing to do", got)
 	}
+	definition, _ := os.ReadFile(filepath.Join(v.recipes, "manuals.yaml"))
+	if got := v.recipeCopy("manuals"); got != string(definition) {
+		t.Fatalf("the vault's recipe copy = %q, want the definition", got)
+	}
 
 	// Edit: one document added, one dropped.
 	mu.Lock()
@@ -209,6 +224,9 @@ func TestCollectionLifecycle(t *testing.T) {
 	if _, stale := meta["books/manuals/b.pdf"]; stale || len(meta) != 3 {
 		t.Errorf("documents.json after edit = %v", meta)
 	}
+	if got := v.recipeCopy("manuals"); !strings.Contains(got, "/c.pdf") || strings.Contains(got, "/b.pdf") {
+		t.Fatalf("the vault's recipe copy did not follow the edit: %q", got)
+	}
 
 	// Remove, on a computer that does not even have the definition.
 	m := v.manifest()
@@ -230,6 +248,9 @@ func TestCollectionLifecycle(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(v.root, ".svalbard", "documents.json")); !os.IsNotExist(err) {
 		t.Errorf("documents.json left behind: %v", err)
+	}
+	if got := v.recipeCopy("manuals"); got != "" {
+		t.Errorf("the vault's recipe copy left behind: %q", got)
 	}
 }
 
@@ -296,19 +317,61 @@ func TestBuildPlanDetectsCollectionDrift(t *testing.T) {
 	if got, want := v.plan(), update+"1 document changed\n"; got != want {
 		t.Fatalf("plan with a changed local file = %q, want %q", got, want)
 	}
-	// A local source that cannot be read pauses the collection.
+	// A local source that cannot be read is no reason to do anything: its
+	// installed document is kept and said so.
 	if err := os.Remove(local); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := v.plan(), nothing+"manuals: cannot read "+local+": no such file or directory; updates paused\n"; got != want {
+	if got, want := v.plan(), nothing+"manuals: kept trailer.pdf: cannot read "+local+" (no such file or directory)\n"; got != want {
 		t.Fatalf("plan with an unreadable source = %q, want %q", got, want)
+	}
+	// One the vault holds nothing from is a document that is missing.
+	v.define("manuals", definition+"  - path: "+filepath.Join(src, "never-there")+"\n")
+	want := "download: 1\n  + manuals\nremove: 0\nunmanaged: 0\n" +
+		"manuals: kept trailer.pdf: cannot read " + local + " (no such file or directory)\n" +
+		"manuals: cannot read " + filepath.Join(src, "never-there") + " (no such file or directory)\n"
+	if got := v.plan(); got != want {
+		t.Fatalf("plan with a source that was never installed = %q, want %q", got, want)
+	}
+}
+
+// On a computer without the definition the vault's copy of the recipe is
+// used: URL documents are planned as usual, and documents that came from the
+// other computer's disk are kept and named one by one.
+func TestBuildPlanUsesTheVaultCopyOnAnotherComputer(t *testing.T) {
+	v := newCollectionVault(t, "manuals")
+	copyDir := catalog.VaultRecipeDir(v.root)
+	if err := os.MkdirAll(copyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	definition := "documents:\n  - url: https://example.test/a.pdf\n  - url: https://example.test/new.pdf\n" +
+		"  - title: Trailer\n    path: ~/Documents/manuals/trailer.pdf\n  - path: ~/Documents/manuals/workshop/\n"
+	if err := os.WriteFile(filepath.Join(copyDir, "manuals.yaml"), []byte(definition), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v.realize("manuals", "a.pdf", fakePDF("a"))
+	v.realize("manuals", "trailer.pdf", fakePDF("trailer"))
+	v.realize("manuals", "workshop/engine/timing.pdf", fakePDF("timing"))
+	v.realize("manuals", "dropped.pdf", fakePDF("dropped"))
+
+	want := "download: 1\n  + manuals\nremove: 0\nunmanaged: 0\n" +
+		"update manuals: +1 document, -1 document\n" +
+		"manuals: kept trailer.pdf: cannot read ~/Documents/manuals/trailer.pdf (defined on another computer)\n" +
+		"manuals: kept workshop/engine/timing.pdf: cannot read ~/Documents/manuals/workshop/ (defined on another computer)\n"
+	if got := v.plan(); got != want {
+		t.Fatalf("plan from the vault's copy = %q, want %q", got, want)
+	}
+	// The definition on this computer wins as soon as there is one.
+	v.define("manuals", "  - url: https://example.test/a.pdf\n")
+	if got, want := v.plan(), "download: 1\n  + manuals\nremove: 0\nunmanaged: 0\nupdate manuals: -3 documents\n"; got != want {
+		t.Fatalf("plan with a local definition = %q, want %q", got, want)
 	}
 }
 
 func TestBuildPlanPausesCollectionWithoutDefinition(t *testing.T) {
 	v := newCollectionVault(t, "manuals")
 	v.realize("manuals", "a.pdf", fakePDF("a"))
-	if got, want := v.plan(), "download: 0\nremove: 0\nunmanaged: 0\nmanuals: definition not found here; updates paused\n"; got != want {
+	if got, want := v.plan(), "download: 0\nremove: 0\nunmanaged: 0\nmanuals: definition not found here or on the vault; updates paused\n"; got != want {
 		t.Fatalf("plan without the definition = %q, want %q", got, want)
 	}
 }

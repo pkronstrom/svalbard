@@ -272,7 +272,7 @@ func TestAssembleDocumentsMirrorsLocalFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff := DiffDocuments(recipe, docs, entries); diff != (DocumentDiff{Changed: 1, Removed: 1}) {
+	if diff := DiffDocuments(recipe, docs, entries); !reflect.DeepEqual(diff, DocumentDiff{Changed: 1, Removed: 1}) {
 		t.Fatalf("diff after local edits = %+v", diff)
 	}
 	if entries, err = assemble(t, root, body, entries); err != nil {
@@ -287,20 +287,101 @@ func TestAssembleDocumentsMirrorsLocalFolders(t *testing.T) {
 	if got := vaultFiles(t, root, "books"); !reflect.DeepEqual(got, want[:2]) {
 		t.Fatalf("files after local edits = %v, want %v", got, want[:2])
 	}
+}
 
-	// A source folder that cannot be read fails the job and deletes nothing.
+// A local source that is missing, unplugged or empty on this computer says
+// nothing about the documents it held. Their installed files must survive it.
+func TestAssembleDocumentsKeepsFilesOfUnreadableLocalSources(t *testing.T) {
+	server := newDocumentServer(t, map[string]string{"/a.pdf": fakePDF("alpha"), "/b.pdf": fakePDF("bravo")})
+	src, root := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(src, "trailer.pdf"), fakePDF("trailer"))
+	writeFile(t, filepath.Join(src, "workshop", "brakes.pdf"), fakePDF("brakes"))
+	writeFile(t, filepath.Join(src, "workshop", "engine", "timing.pdf"), fakePDF("timing"))
+	url := func(name string) string { return "  - url: " + server.URL + "/" + name + "\n" }
+	local := "  - path: " + filepath.Join(src, "trailer.pdf") + "\n  - path: " + filepath.Join(src, "workshop") + "\n"
+
+	entries, err := assemble(t, root, url("a.pdf")+local, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := []string{"books/manuals/a.pdf", "books/manuals/trailer.pdf", "books/manuals/workshop/brakes.pdf", "books/manuals/workshop/engine/timing.pdf"}
+	if got := vaultFiles(t, root, "books"); !reflect.DeepEqual(got, installed) {
+		t.Fatalf("files = %v, want %v", got, installed)
+	}
+
+	check := func(step string, entries []manifest.RealizedEntry, err error, want []string) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("%s: %v", step, err)
+		}
+		if got := vaultFiles(t, root, "books"); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: files = %v, want %v", step, got, want)
+		}
+		if got := entryPaths(entries); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: entries = %v, want %v", step, got, want)
+		}
+	}
+
+	// The folder is there but empty, as a cloud folder is before it syncs.
 	if err := os.Rename(filepath.Join(src, "workshop"), filepath.Join(src, "elsewhere")); err != nil {
 		t.Fatal(err)
 	}
-	kept, err := assemble(t, root, body, entries)
-	if err == nil || !strings.Contains(err.Error(), "cannot read") {
-		t.Fatalf("err = %v, want the unreadable folder", err)
+	if err := os.MkdirAll(filepath.Join(src, "workshop"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(entryPaths(kept), entryPaths(entries)) {
-		t.Fatalf("entries after unreadable source = %v, want them unchanged", entryPaths(kept))
+	entries, err = assemble(t, root, url("a.pdf")+local, entries)
+	check("empty folder", entries, err, installed)
+
+	// The folder and the single file are gone, and the rest of the list
+	// changes: the change is applied, the unreadable sources are left alone.
+	if err := os.Remove(filepath.Join(src, "workshop")); err != nil {
+		t.Fatal(err)
 	}
-	if got := vaultFiles(t, root, "books"); !reflect.DeepEqual(got, want[:2]) {
-		t.Fatalf("files after unreadable source = %v, want them kept", got)
+	if err := os.Remove(filepath.Join(src, "trailer.pdf")); err != nil {
+		t.Fatal(err)
+	}
+	recipe, _ := collectionCatalog(t, "manuals", url("b.pdf")+local).RecipeByID("manuals")
+	set, err := catalog.ExpectedDocuments(recipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diff := DiffDocuments(recipe, set, entries)
+	if diff.Added != 1 || diff.Removed != 1 || diff.Changed != 0 || len(diff.Missing) != 0 {
+		t.Fatalf("diff = %+v, want one added, one removed and nothing missing", diff)
+	}
+	var kept []string
+	for _, doc := range diff.Kept {
+		kept = append(kept, doc.RelPath+" <- "+doc.Source.Path)
+	}
+	wantKept := []string{
+		"trailer.pdf <- " + filepath.Join(src, "trailer.pdf"),
+		"workshop/brakes.pdf <- " + filepath.Join(src, "workshop"),
+		"workshop/engine/timing.pdf <- " + filepath.Join(src, "workshop"),
+	}
+	if !reflect.DeepEqual(kept, wantKept) {
+		t.Fatalf("kept = %v, want %v", kept, wantKept)
+	}
+	entries, err = assemble(t, root, url("b.pdf")+local, entries)
+	check("missing sources", entries, err, []string{"books/manuals/b.pdf", "books/manuals/trailer.pdf", "books/manuals/workshop/brakes.pdf", "books/manuals/workshop/engine/timing.pdf"})
+
+	// Taking the entry out of the list is how its documents are removed.
+	entries, err = assemble(t, root, url("b.pdf")+"  - path: "+filepath.Join(src, "trailer.pdf")+"\n", entries)
+	check("folder entry dropped", entries, err, []string{"books/manuals/b.pdf", "books/manuals/trailer.pdf"})
+
+	// A source the vault holds nothing from cannot be installed from here:
+	// that fails the item like a dead URL, and still deletes nothing.
+	body := url("b.pdf") + "  - path: " + filepath.Join(src, "trailer.pdf") + "\n  - path: " + filepath.Join(src, "never-there") + "\n"
+	recipe, _ = collectionCatalog(t, "manuals", body).RecipeByID("manuals")
+	set, _ = catalog.ExpectedDocuments(recipe)
+	if diff := DiffDocuments(recipe, set, entries); !diff.Any() || len(diff.Missing) != 1 {
+		t.Fatalf("diff with a source that was never installed = %+v", diff)
+	}
+	kept2, err := assemble(t, root, body, entries)
+	if err == nil || !strings.Contains(err.Error(), filepath.Join(src, "never-there")+": cannot read") {
+		t.Fatalf("err = %v, want the unreadable source named", err)
+	}
+	if got := entryPaths(kept2); !reflect.DeepEqual(got, entryPaths(entries)) {
+		t.Fatalf("entries after the failure = %v, want them unchanged", got)
 	}
 }
 
