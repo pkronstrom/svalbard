@@ -38,15 +38,18 @@ func RunConfiguredIndex(ctx context.Context, root, strategy string, w io.Writer,
 		return err
 	}
 	defer release()
-	// A fresh tools-only vault has no archive directory, no documents and no
-	// search database, and gets none. Existing indexes and recorded archives
-	// or documents still require a readable source directory, so a missing
-	// mount/directory cannot silently prune their data.
+	// A fresh tools-only vault has no archive directory, no documents (books,
+	// skills or library quickstarts) and no search database, and gets none.
+	// Existing indexes and recorded archives or documents still require a
+	// readable source directory, so a missing mount/directory cannot silently
+	// prune their data.
 	if _, statErr := os.Stat(filepath.Join(root, "zim")); os.IsNotExist(statErr) {
 		m, manifestErr := manifest.Load(filepath.Join(root, "manifest.yaml"))
 		hasSources := false
 		for _, entry := range m.Realized.Entries {
-			hasSources = hasSources || entry.Type == "zim" || strings.HasPrefix(filepath.ToSlash(entry.RelativePath), documentsDir+"/")
+			// The trailing slash lets an entry that is a folder (skills/skills-core)
+			// count like one that is a file below it.
+			hasSources = hasSources || entry.Type == "zim" || IsDocumentSource(filepath.ToSlash(entry.RelativePath)+"/")
 		}
 		documents, _ := ScanDocuments(root)
 		if _, dbErr := os.Stat(filepath.Join(root, "data", "search.db")); manifestErr == nil && m.Version == 2 && !hasSources && len(documents) == 0 && os.IsNotExist(dbErr) {

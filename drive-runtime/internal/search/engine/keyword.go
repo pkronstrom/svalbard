@@ -25,6 +25,10 @@ const (
 	// articles of other sources.
 	pagesPerDocument = 3
 
+	// sectionsPerSkill is the same bound for the sections of one skill, over
+	// all its files; see skillBound.
+	sectionsPerSkill = 3
+
 	// rankedScan bounds the rows read past the limit while pages over
 	// pagesPerDocument are skipped.
 	rankedScan = 2000
@@ -45,20 +49,35 @@ var stopWords = map[string]bool{
 // KeywordOptions narrows a keyword search.
 type KeywordOptions struct {
 	// Source is a search scope as InScope reads it: a filename from the
-	// sources table, a folder of documents ending in "/", or empty for every
-	// source.
+	// sources table, a folder ending in "/", SkillScope, or empty for every
+	// knowledge source.
 	Source string
 	Limit  int
+	// AnyWord also returns articles that have only one or a few of the
+	// words, after those with more. Knowledge search leaves them out as
+	// being about something else; among a drive's few skills the nearest one
+	// is worth more than nothing.
+	AnyWord bool
 }
 
+// skillRoots is the SQL condition that a source joined as src is a skill
+// file or a library quickstart: IsSkillSource in SQL. GLOB compares case as
+// Go does, and neither root holds a character GLOB reads as a pattern.
+const skillRoots = `(src.filename GLOB '` + SkillsDir + `/*' OR src.filename GLOB '` + LibraryDocsDir + `/*')`
+
 // scopeClause is the SQL condition for a search scope on the sources table
-// joined as src, with its argument.
-func scopeClause(scope string) (string, any) {
-	if strings.HasSuffix(scope, "/") {
+// joined as src, with its arguments. It reads a scope as InScope does.
+func scopeClause(scope string) (string, []any) {
+	switch {
+	case scope == "":
+		return ` AND NOT ` + skillRoots, nil
+	case scope == SkillScope:
+		return ` AND ` + skillRoots, nil
+	case strings.HasSuffix(scope, "/"):
 		// substr, not LIKE: a folder name may hold "%" or "_".
-		return ` AND substr(src.filename, 1, length(?)) = ?`, scope
+		return ` AND substr(src.filename, 1, length(?)) = ?`, []any{scope, scope}
 	}
-	return ` AND src.filename = ?`, scope
+	return ` AND src.filename = ?`, []any{scope}
 }
 
 // KeywordMatches is the outcome of Search.
@@ -153,7 +172,10 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	}
 	// Two words have no "most": an article with one of them is a search for
 	// that word alone.
-	if len(matches.Words)-len(matches.Missing) < 2 || len(matches.Words) < 3 {
+	if !opts.AnyWord && (len(matches.Words)-len(matches.Missing) < 2 || len(matches.Words) < 3) {
+		return matches, ctx.Err()
+	}
+	if len(matches.Words) < 2 || len(matches.Words) == len(matches.Missing) {
 		return matches, ctx.Err()
 	}
 
@@ -179,7 +201,7 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	// An article with half of the words or fewer is about something else.
 	enough := partial[:0]
 	for _, result := range partial {
-		if 2*len(result.Matched) > len(matches.Words) {
+		if opts.AnyWord || 2*len(result.Matched) > len(matches.Words) {
 			enough = append(enough, result)
 		}
 	}
@@ -193,8 +215,9 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 }
 
 // ranked runs one FTS5 query ordered by the title-weighted rank. Unless the
-// scope is a single document, it keeps at most pagesPerDocument pages of any
-// one document and returns the documents that had more.
+// scope is a single document or skill, it keeps at most pagesPerDocument
+// pages of any one document and sectionsPerSkill sections of any one skill,
+// and returns those that had more, as scopes that show the rest.
 func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int) ([]Result, []string, error) {
 	statement := `SELECT a.id, src.filename, a.path, a.title,
                 snippet(articles_fts, 1, '»', '«', '...', 12)
@@ -202,18 +225,13 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id
          WHERE articles_fts MATCH ? AND rank MATCH '` + keywordRank + `'`
-	args := []any{ftsQuery}
-	if source != "" {
-		clause, arg := scopeClause(source)
-		statement += clause
-		args = append(args, arg)
-		if strings.Count(clause, "?") == 2 {
-			args = append(args, arg)
-		}
-	}
+	clause, scopeArgs := scopeClause(source)
+	statement += clause
+	args := append([]any{ftsQuery}, scopeArgs...)
 	// FTS5 hands the rows out in rank order, so reading stops as soon as the
 	// limit is filled; the generous LIMIT only bounds the skipping.
 	capped := !IsDocumentSource(source) || strings.HasSuffix(source, "/")
+	skills := e.newSkillBound(ctx, source)
 	scan := limit
 	if capped {
 		scan = limit + rankedScan
@@ -242,6 +260,12 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
 				continue
 			}
 		}
+		if skip, rest := skills.over(r.Filename); skip {
+			if rest != "" {
+				more = append(more, rest)
+			}
+			continue
+		}
 		r.Snippet = snippet.String
 		results = append(results, r)
 	}
@@ -251,18 +275,11 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
 // missingWords returns the words that no article of the searched sources
 // contains, so a caller can tell "not on this drive" from "not together".
 func (e *Engine) missingWords(ctx context.Context, words []string, source string) ([]string, error) {
-	statement := `SELECT 1 FROM articles_fts WHERE articles_fts MATCH ? LIMIT 1`
-	var scopeArgs []any
-	if source != "" {
-		clause, arg := scopeClause(source)
-		statement = `SELECT 1 FROM articles_fts
+	clause, scopeArgs := scopeClause(source)
+	statement := `SELECT 1 FROM articles_fts
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id
          WHERE articles_fts MATCH ?` + clause + ` LIMIT 1`
-		for range strings.Count(clause, "?") {
-			scopeArgs = append(scopeArgs, arg)
-		}
-	}
 	var missing []string
 	for _, word := range words {
 		args := append([]any{ftsTerm(word)}, scopeArgs...)

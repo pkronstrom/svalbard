@@ -143,21 +143,34 @@ func extension(filename string) string {
 
 // documentFolder returns the scope of a folder of documents, "books/<name>/",
 // when name is one that holds indexed documents, and how many it holds. The
-// name may come with or without the books/ prefix and a trailing slash.
+// name may come with or without the books/ prefix and a trailing slash. A
+// skill root (skills, lib/js) or a folder below one is a scope as well, when
+// it is named with its root.
 func documentFolder(name string, filenames []string) (string, int) {
 	name = strings.Trim(strings.TrimSpace(name), "/")
+	for _, root := range []string{engine.SkillsDir, engine.LibraryDocsDir} {
+		if strings.EqualFold(name, root) || len(name) > len(root) && strings.EqualFold(name[:len(root)+1], root+"/") {
+			// With nothing there, the name may still be a document
+			// collection's: one called "skills" is books/skills/.
+			if folder, count := folderScope(name+"/", filenames, engine.IsSkillSource); count > 0 {
+				return folder, count
+			}
+		}
+	}
 	name = strings.TrimPrefix(name, engine.DocumentsDir+"/")
 	if name == "" || name == engine.DocumentsDir {
 		return "", 0
 	}
+	return folderScope(engine.DocumentsDir+"/"+name+"/", filenames, engine.IsDocumentSource)
+}
+
+// folderScope finds the indexed sources of one kind below prefix, compared
+// without regard to case, and returns the prefix as the index spells it.
+func folderScope(prefix string, filenames []string, kind func(string) bool) (string, int) {
 	count := 0
 	folder := ""
 	for _, filename := range filenames {
-		if !engine.IsDocumentSource(filename) {
-			continue
-		}
-		prefix := engine.DocumentsDir + "/" + name + "/"
-		if len(filename) > len(prefix) && strings.EqualFold(filename[:len(prefix)], prefix) {
+		if kind(filename) && len(filename) > len(prefix) && strings.EqualFold(filename[:len(prefix)], prefix) {
 			folder = filename[:len(prefix)]
 			count++
 		}

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -84,6 +85,14 @@ func run() error {
 	// menu, so scripts and other programs can read and change a value.
 	if len(os.Args) > 1 && os.Args[1] == "settings" {
 		return settings.Run(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
+	}
+	// Skills subcommand: the same fast path, for an agent that has a shell
+	// and no MCP client.
+	if len(os.Args) > 1 && os.Args[1] == "skills" {
+		if strings.ContainsRune(os.Args[0], filepath.Separator) {
+			skillsProgram = filepath.Join(driveRoot, "run")
+		}
+		return runSkills(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
 	}
 	workDir, err := os.Getwd()
 	if err != nil {
@@ -306,7 +315,7 @@ func reclaimTerminal(fd int) {
 }
 
 func runMCPServe(driveRoot string) error {
-	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	srv := mcp.NewDriveServer(driveRoot)
 	defer srv.Close()
 
 	port, err := netutil.FindAvailablePort("127.0.0.1", 8090)
@@ -326,7 +335,7 @@ func runMCPServe(driveRoot string) error {
 }
 
 func runMCPHTTP(driveRoot string) error {
-	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	srv := mcp.NewDriveServer(driveRoot)
 	defer srv.Close()
 
 	listener, port, err := netutil.Listen("127.0.0.1", 8090)
@@ -340,14 +349,43 @@ func runMCPHTTP(driveRoot string) error {
 }
 
 func runMCP(driveRoot string) error {
-	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	srv := mcp.NewDriveServer(driveRoot)
 	defer srv.Close()
 	return srv.ServeStdio()
 }
 
 func resolveDriveRoot() (string, error) {
-	if driveRoot := os.Getenv("DRIVE_ROOT"); driveRoot != "" {
-		return driveRoot, nil
+	workDir, err := os.Getwd()
+	exe, _ := os.Executable()
+	if root := driveRootFor(os.Getenv("DRIVE_ROOT"), workDir, exe); root != "" {
+		return root, nil
 	}
-	return os.Getwd()
+	return workDir, err
+}
+
+// driveRootFor picks the drive a command runs on: the one the run script
+// names in DRIVE_ROOT, else the working folder when that is a drive, else the
+// drive the binary itself is on (<drive>/.svalbard/runtime/<platform>/), and
+// failing all of these the working folder.
+func driveRootFor(envRoot, workDir, exe string) string {
+	isDrive := func(dir string) bool {
+		info, err := os.Stat(filepath.Join(dir, ".svalbard"))
+		return err == nil && info.IsDir()
+	}
+	if envRoot != "" {
+		return envRoot
+	}
+	if workDir != "" && isDrive(workDir) {
+		return workDir
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	runtimeDir := filepath.Dir(filepath.Dir(exe))
+	if filepath.Base(runtimeDir) == "runtime" && filepath.Base(filepath.Dir(runtimeDir)) == ".svalbard" {
+		if root := filepath.Dir(filepath.Dir(runtimeDir)); isDrive(root) {
+			return root
+		}
+	}
+	return workDir
 }

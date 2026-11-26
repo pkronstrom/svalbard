@@ -300,20 +300,17 @@ func embedQuery(ctx context.Context, query string, port int) ([]float32, error) 
 }
 
 // HybridSnapshot scores vectors only when the same complete contract remains
-// visible in one read transaction after query embedding.
-func HybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, query string, vector []float32, limit int) ([]Result, bool, error) {
-	return hybridSnapshot(ctx, db, contract, query, vector, limit, limit, "", false)
+// visible in one read transaction after query embedding. scope is a search
+// scope as engine.InScope reads it.
+func HybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, query string, vector []float32, limit int, scope string) ([]Result, bool, error) {
+	return hybridSnapshot(ctx, db, contract, query, vector, limit, limit, scope, false)
 }
 
 // HybridSnapshotFull captures complete bodies only after hybrid ranking, source
 // filtering, and the MCP result limit have been decided in one read snapshot.
 // source is a scope as engine.InScope reads it.
 func HybridSnapshotFull(ctx context.Context, db *sql.DB, contract SemanticContract, query string, vector []float32, limit int, source string) ([]Result, bool, error) {
-	candidateLimit := limit
-	if source != "" && candidateLimit < 200 {
-		candidateLimit = 200
-	}
-	return hybridSnapshot(ctx, db, contract, query, vector, candidateLimit, limit, source, true)
+	return hybridSnapshot(ctx, db, contract, query, vector, limit, limit, source, true)
 }
 
 func hybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, query string, vector []float32, candidateLimit, finalLimit int, source string, fullBodies bool) ([]Result, bool, error) {
@@ -334,7 +331,7 @@ func hybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, 
 	if !ok || snapshot != contract {
 		return nil, false, nil
 	}
-	results, err := engine.New(tx).HybridContext(ctx, query, vector, candidateLimit)
+	results, err := engine.New(tx).HybridContext(ctx, query, vector, candidateLimit, source)
 	if err != nil {
 		return nil, false, err
 	}

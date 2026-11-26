@@ -265,7 +265,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	}()
 	exited := make(chan error, 4)
 
-	mcpServer := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	mcpServer := mcp.NewDriveServer(driveRoot)
 	mcpServers := map[string]*mcp.Server{mcp.StreamableHTTPPath: mcpServer}
 	filesURL := ""
 	if files != nil {
