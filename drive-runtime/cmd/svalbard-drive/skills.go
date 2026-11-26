@@ -11,18 +11,25 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 )
 
-const skillsUsage = `Usage:
-  svalbard-drive skills find <words...> [--kind skill|library] [--limit N]
-  svalbard-drive skills read <id> [--file F] [--section S] [--offset N]
+// skillsUsage is what "skills" alone prints. For an agent that was not
+// started from the drive's menu it is the orientation: what this is and how
+// to find a procedure. %[1]s is the program as it was run.
+const skillsUsage = `This is a Svalbard offline drive: reference archives, databases, maps and
+tools that work without a network. Its skills are procedures for building
+things with what is on it (apps, dashboards, documents, firmware).
 
-find lists the skills and JS library quickstarts on this drive that match the
-words, one per line: id, name and description. read prints one of them by its
-id; a long one comes in parts, and the last line then names the next command.
+  %[1]s skills find <words...> [--kind skill|library] [--limit N]
+  %[1]s skills read <id> [--file F] [--section S] [--offset N]
+
+find lists the skills and JS library quickstarts that match the words, one per
+line: id, name and description. read prints one by its id; a long one ends
+with the command for its next part. Read a skill before building.
 `
 
-// skillsProgram is how the next command is spelled in a continuation line:
-// the bare name when it was found on PATH, as in a harness's shell, and the
-// binary's own path when it was run by path, as from a mounted stick.
+// skillsProgram is how the command is spelled in the usage and in a
+// continuation line: the bare name when it was found on PATH, as in a
+// harness's shell, and the drive's run script when it was run by path, as
+// from a mounted stick, where svalbard-drive is not on PATH.
 var skillsProgram = "svalbard-drive"
 
 // runSkills is the skills subcommand: the skill_search and skill_read tools
@@ -30,11 +37,12 @@ var skillsProgram = "svalbard-drive"
 // return and runs nothing a skill holds.
 func runSkills(stdout, stderr io.Writer, driveRoot string, args []string) error {
 	usage := func(problem string) error {
-		fmt.Fprint(stderr, skillsUsage)
+		fmt.Fprintf(stderr, skillsUsage, shellWord(skillsProgram))
 		return errors.New(problem)
 	}
-	if len(args) == 0 {
-		return usage("skills needs a command: find or read")
+	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintf(stdout, skillsUsage, shellWord(skillsProgram))
+		return nil
 	}
 	words, flags, err := splitSkillArgs(args[1:])
 	if err != nil {

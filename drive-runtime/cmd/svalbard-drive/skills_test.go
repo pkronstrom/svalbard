@@ -166,7 +166,7 @@ func TestSkillsReadPrintsContinuation(t *testing.T) {
 
 func TestSkillsUnknownSubcommandShowsUsage(t *testing.T) {
 	root := newSkillsDrive(t)
-	for _, args := range [][]string{{"list"}, {}, {"find", "chart", "--colour", "red"}, {"read"}, {"read", "a", "b"}, {"find", "chart", "--limit", "many"}, {"read", "a", "--offset"}} {
+	for _, args := range [][]string{{"list"}, {"find", "chart", "--colour", "red"}, {"read"}, {"read", "a", "b"}, {"find", "chart", "--limit", "many"}, {"read", "a", "--offset"}} {
 		out, errOut, err := skills(t, root, args...)
 		if err == nil || out != "" {
 			t.Errorf("%v: stdout %q, err %v; want an error and nothing on stdout", args, out, err)
@@ -174,6 +174,12 @@ func TestSkillsUnknownSubcommandShowsUsage(t *testing.T) {
 		if !strings.Contains(errOut, "svalbard-drive skills find <words...>") || !strings.Contains(errOut, "svalbard-drive skills read <id>") {
 			t.Errorf("%v: stderr = %q, want the usage", args, errOut)
 		}
+	}
+	// Alone it says what the drive is and how to find a procedure: for an
+	// agent that was not started from the menu this is the orientation.
+	out, errOut, err := skills(t, root)
+	if err != nil || errOut != "" || !strings.Contains(out, "Svalbard offline drive") || !strings.Contains(out, "svalbard-drive skills find <words...>") || strings.Count(out, "\n") > 12 {
+		t.Errorf("skills alone: %q, stderr %q, %v", out, errOut, err)
 	}
 	// It is a fast path: no actions.json is needed, as for settings.
 	t.Setenv("DRIVE_ROOT", root)
@@ -216,10 +222,13 @@ func TestDriveRootIsFoundFromTheExecutable(t *testing.T) {
 func TestSkillsContinuationNamesTheProgramAsItWasRun(t *testing.T) {
 	root := newSkillsDrive(t)
 	old := skillsProgram
-	skillsProgram = "/Volumes/My Stick/.svalbard/runtime/macos-arm64/svalbard-drive"
+	skillsProgram = "/Volumes/My Stick/run"
 	t.Cleanup(func() { skillsProgram = old })
 	out, _, err := skills(t, root, "read", "skills/skills-core/long")
-	if err != nil || !strings.Contains(out, "\ncontinues: '/Volumes/My Stick/.svalbard/runtime/macos-arm64/svalbard-drive' skills read skills/skills-core/long --offset ") {
+	if err != nil || !strings.Contains(out, "\ncontinues: '/Volumes/My Stick/run' skills read skills/skills-core/long --offset ") {
 		t.Fatalf("continuation = %q, %v", out[max(0, len(out)-160):], err)
+	}
+	if out, _, _ = skills(t, root); !strings.Contains(out, "  '/Volumes/My Stick/run' skills find <words...>") {
+		t.Errorf("usage = %q", out)
 	}
 }

@@ -89,8 +89,8 @@ func run() error {
 	// Skills subcommand: the same fast path, for an agent that has a shell
 	// and no MCP client.
 	if len(os.Args) > 1 && os.Args[1] == "skills" {
-		if exe, err := os.Executable(); err == nil && strings.ContainsRune(os.Args[0], filepath.Separator) {
-			skillsProgram = exe
+		if strings.ContainsRune(os.Args[0], filepath.Separator) {
+			skillsProgram = filepath.Join(driveRoot, "run")
 		}
 		return runSkills(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
 	}
