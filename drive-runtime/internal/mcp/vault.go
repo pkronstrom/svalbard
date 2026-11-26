@@ -3,8 +3,10 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 )
 
 // VaultCapability exposes drive inventory via the MCP "vault" tool.
@@ -24,7 +26,7 @@ func (c *VaultCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "sources",
-			Desc: "List all content sources with descriptions and tags. CALL THIS FIRST to understand what is available before using search or query tools. Returns archive names, types, descriptions, topics, and sizes.",
+			Desc: "List all content sources with descriptions and tags. CALL THIS FIRST to understand what is available before using search or query tools. Returns archive names, types, descriptions, topics, and sizes. A book (a PDF document) also has its path, which is its source name for search, its title, how many of its pages are searchable, and a note when some or all of it is not.",
 			Params: []ParamDef{
 				{Name: "type", Type: "string", Desc: "Optional source type filter", Enum: []string{"zim", "database", "map", "book"}},
 			},
@@ -71,9 +73,21 @@ func (c *VaultCapability) handleSources(params map[string]any) (ActionResult, er
 		return ActionResult{}, fmt.Errorf("listing sources: %w", err)
 	}
 
+	documents := c.indexedDocuments()
 	// Enrich with recipe metadata
 	for i := range sources {
-		if recipe, ok := c.meta.RecipeForFile(sources[i].Name); ok {
+		if doc, ok := documents[sources[i].Path]; ok {
+			pages := doc.Pages
+			sources[i].Title, sources[i].PagesIndexed, sources[i].Note = doc.Title, &pages, doc.Note
+		}
+		// A book in a folder is matched by its path only: every document of
+		// a collection is an entry of the same recipe in the manifest, and
+		// two collections may hold a file of the same name.
+		recipe, ok := c.meta.RecipeForFile(sources[i].Path)
+		if !ok && strings.Count(sources[i].Path, "/") <= 1 {
+			recipe, ok = c.meta.RecipeForFile(sources[i].Name)
+		}
+		if ok {
 			if sources[i].Description == "" && recipe.Description != "" {
 				sources[i].Description = recipe.Description
 			}
@@ -84,6 +98,25 @@ func (c *VaultCapability) handleSources(params map[string]any) (ActionResult, er
 	}
 
 	return ActionResult{Data: sources}, nil
+}
+
+// indexedDocuments returns what the search index holds about each document,
+// by its path on the drive. A drive without an index has none.
+func (c *VaultCapability) indexedDocuments() map[string]engine.Document {
+	db, err := openSearchDB(c.driveRoot)
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+	documents, err := engine.New(db).Documents(context.Background())
+	if err != nil {
+		return nil
+	}
+	byPath := make(map[string]engine.Document, len(documents))
+	for _, doc := range documents {
+		byPath[doc.Filename] = doc
+	}
+	return byPath
 }
 
 func (c *VaultCapability) handleDatabases() (ActionResult, error) {

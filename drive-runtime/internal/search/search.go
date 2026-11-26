@@ -52,7 +52,7 @@ func BestMode(c Capabilities) Mode {
 
 func RenderResults(w io.Writer, results []Result) {
 	for i, result := range results {
-		label := strings.TrimSuffix(result.Filename, ".zim")
+		label := SourceLabel(result.Filename)
 		title := result.Title
 		if result.ChunkHeader != "" && result.ChunkHeader != result.Title {
 			title = result.ChunkHeader
@@ -79,7 +79,7 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 	mode := info.BestMode
 
 	fmt.Fprintln(stdout)
-	fmt.Fprintf(stdout, "Cross-ZIM Search (%d sources, %d articles, %s)\n", info.SourceCount, info.ArticleCount, mode)
+	fmt.Fprintf(stdout, "Search (%d sources, %d articles, %s)\n", info.SourceCount, info.ArticleCount, mode)
 	fmt.Fprintln(stdout, "────────────────────────────────")
 
 	reader := bufio.NewReader(stdin)
@@ -144,8 +144,12 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 			return nil
 		}
 		if idx, err := strconv.Atoi(choice); err == nil && idx >= 1 && idx <= len(response.Results) {
-			if err := session.OpenResult(response.Results[idx-1]); err != nil {
-				fmt.Fprintf(stdout, "  kiwix-serve not available. Article: %s / %s\n", strings.TrimSuffix(response.Results[idx-1].Filename, ".zim"), response.Results[idx-1].Path)
+			if chosen := response.Results[idx-1]; session.OpenResult(chosen) != nil {
+				if IsDocumentSource(chosen.Filename) {
+					fmt.Fprintf(stdout, "  Could not open the document. It is on the drive at %s, %s\n", chosen.Filename, chosen.Path)
+				} else {
+					fmt.Fprintf(stdout, "  kiwix-serve not available. Article: %s / %s\n", SourceLabel(chosen.Filename), chosen.Path)
+				}
 				query = ""
 				continue
 			}

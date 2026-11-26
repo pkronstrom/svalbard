@@ -2,6 +2,7 @@ package searchdb
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -699,5 +700,46 @@ func TestLegacySourceWithoutIdentityIsNotCurrent(t *testing.T) {
 	}
 	if len(sources) != 1 || sources[0].IdentityCurrent(Source{Filename: "legacy.zim", UUID: "uuid", Size: 1, ModTimeNS: 1}) {
 		t.Fatalf("legacy source unexpectedly current: %#v", sources)
+	}
+}
+
+func TestSourceNoteIsStoredReplacedAndMigrated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "search.db")
+	// A database from before documents has no note column.
+	legacy, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`CREATE TABLE sources (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT UNIQUE NOT NULL, title TEXT NOT NULL, indexed_at TEXT, source_uuid TEXT, source_size INTEGER, source_mtime_ns INTEGER);
+		INSERT INTO sources (filename, title, source_uuid, source_size, source_mtime_ns) VALUES ('wiki.zim', 'Wiki', 'uuid', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	legacy.Close()
+
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("opening a database without the note column: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	scanned := Source{Filename: "books/manuals/trailer.pdf", Title: "Trailer", UUID: "sha256:1", Size: 2, ModTimeNS: 3, Note: "scanned: no text layer, needs OCR"}
+	if err := db.ReplaceSource(ctx, scanned, nil); err != nil {
+		t.Fatal(err)
+	}
+	sources, err := db.IndexedSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 2 || sources[0] != scanned || sources[1].Note != "" || !sources[1].IdentityCurrent(Source{UUID: "uuid", Size: 1, ModTimeNS: 1}) {
+		t.Fatalf("sources = %+v", sources)
+	}
+
+	// Indexing the document again after OCR clears the note.
+	scanned.Note, scanned.UUID = "", "sha256:2"
+	if err := db.ReplaceSource(ctx, scanned, []Article{{Path: "page/1", Title: "Trailer, p. 1", Body: "towing capacity"}}); err != nil {
+		t.Fatal(err)
+	}
+	if sources, _ = db.IndexedSources(); sources[0] != scanned {
+		t.Fatalf("source after replacement = %+v", sources[0])
 	}
 }

@@ -51,6 +51,9 @@ type ProgressFunc func(ProgressEvent)
 type downloadJob struct {
 	id     string
 	recipe catalog.Item
+	// realized holds a document collection's current entries, so its job
+	// fetches only the documents that are missing or changed.
+	realized []manifest.RealizedEntry
 }
 
 // downloadResult collects the outcome of a single download job.
@@ -58,6 +61,9 @@ type downloadResult struct {
 	id      string
 	entries []manifest.RealizedEntry
 	err     error
+	// partial marks entries as the item's complete realized set even though
+	// err is set: a document collection keeps the documents that arrived.
+	partial bool
 	ack     chan struct{}
 }
 
@@ -110,12 +116,15 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 			os.RemoveAll(filepath.Join(root, e.RelativePath))
 		}
 	}
-	var filtered []manifest.RealizedEntry
+	var filtered, removed []manifest.RealizedEntry
 	for _, e := range m.Realized.Entries {
 		if _, ok := removeSet[e.ID]; !ok {
 			filtered = append(filtered, e)
+		} else {
+			removed = append(removed, e)
 		}
 	}
+	removeCollectionDirs(root, removed)
 	snapshot := *m
 	snapshot.Realized.Entries = filtered
 	if len(plan.ToRemove) > 0 {
@@ -169,6 +178,8 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 		}
 
 		switch {
+		case recipe.IsCollection():
+			httpJobs = append(httpJobs, downloadJob{id: id, recipe: recipe, realized: collectionEntries(m.Realized.Entries, id)})
 		case recipe.URL != "" || recipe.URLPattern != "" || len(recipe.Platforms) > 0 || len(recipe.Bundle) > 0:
 			httpJobs = append(httpJobs, downloadJob{id: id, recipe: recipe})
 		case recipe.Strategy == "build" && recipe.Build != nil:
@@ -206,6 +217,15 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 					slog.Warn("job failed", "id", res.id, "error", res.err)
 					applyErrors = append(applyErrors, fmt.Errorf("%s: %w", res.id, res.err))
 					levelFailed = true
+					if res.partial {
+						snapshot := *m
+						snapshot.Realized.Entries = replaceEntriesForID(snapshot.Realized.Entries, res.id, res.entries)
+						if err := checkpointManifest(snapshot); err != nil {
+							applyErrors = append(applyErrors, fmt.Errorf("%s: checkpointing: %w", res.id, err))
+						} else {
+							recordCollection(root, m.Realized.Entries, cat, res.id)
+						}
+					}
 					return
 				}
 				snapshot := *m
@@ -216,6 +236,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 					levelFailed = true
 					return
 				}
+				recordCollection(root, m.Realized.Entries, cat, res.id)
 				for _, id := range plannedIDsCoveredBy(res.entries, plan.ToDownload) {
 					progress(ProgressEvent{ID: id, Status: tui.StatusDone})
 				}
@@ -275,6 +296,12 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	}
 	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars, Menus: menus, PlatformIORecipes: platformIORecipes, PlatformIOPlatforms: platforms, Recipes: recipes}); err != nil {
 		return fmt.Errorf("generating toolkit: %w", err)
+	}
+	if err := toolkit.WriteDocumentsMetadata(root, m.Realized.Entries, recipes); err != nil {
+		return fmt.Errorf("writing document metadata: %w", err)
+	}
+	if err := syncRecipeCopies(root, m, cat); err != nil {
+		return fmt.Errorf("writing the vault's recipe copies: %w", err)
 	}
 	if err := syncMapViewer(root, m.Realized.Entries); err != nil {
 		return fmt.Errorf("generating map viewer: %w", err)
@@ -419,6 +446,11 @@ func executeJob(
 	var entries []manifest.RealizedEntry
 	var err error
 	switch {
+	case job.recipe.IsCollection():
+		entries, err = assembleDocuments(ctx, root, job.id, job.recipe, job.realized, dlProgress)
+		if err != nil {
+			return downloadResult{id: job.id, entries: entries, err: err, partial: true}
+		}
 	case len(job.recipe.Bundle) > 0:
 		var entry manifest.RealizedEntry
 		entry, err = assembleBundle(ctx, root, job.id, job.recipe, dlProgress)

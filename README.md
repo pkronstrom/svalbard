@@ -220,4 +220,4 @@ Set `SVALBARD_CACHE_DIRS=/path/one:/path/two` to reuse already-downloaded files 
 
 ## License
 
-[GPL-3.0](LICENSE) — Free to use, modify, and distribute. Derivatives must remain open source. Individual datasets on provisioned drives carry their own licenses.
+[GPL-3.0](LICENSE) — Free to use, modify, and distribute. Derivatives must remain open source. Individual datasets on provisioned drives carry their own licenses. Third-party software bundled in the CLI is listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

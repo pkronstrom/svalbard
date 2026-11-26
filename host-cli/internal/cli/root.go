@@ -16,7 +16,6 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
-	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 	"github.com/pkronstrom/svalbard/host-cli/internal/volumes"
 	hosttui "github.com/pkronstrom/svalbard/host-tui"
@@ -130,8 +129,16 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p := planner.Build(m)
-			return commands.WritePlan(cmd.OutOrStdout(), p)
+			cat, err := loadVaultCatalog(cmd.ErrOrStderr(), vaultRoot)
+			if err != nil {
+				return err
+			}
+			p, documents := commands.BuildPlan(m, cat)
+			if err := commands.WritePlan(cmd.OutOrStdout(), p); err != nil {
+				return err
+			}
+			commands.WriteDocumentPlans(cmd.OutOrStdout(), documents)
+			return nil
 		},
 	}
 
@@ -164,10 +171,11 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cat, err := loadCatalog(cmd.ErrOrStderr())
+			cat, err := loadVaultCatalog(cmd.ErrOrStderr(), vaultRoot)
 			if err != nil {
 				return err
 			}
+			commands.WriteVaultDocumentNotes(cmd.ErrOrStderr(), vaultRoot, cat)
 			if err := commands.ApplyVault(ctx, vaultRoot, cat); err != nil {
 				return err
 			}
@@ -185,7 +193,7 @@ func NewRootCommand() *cobra.Command {
 
 	indexCmd := &cobra.Command{
 		Use:   "index",
-		Short: "Build full-text search index from ZIM files in the vault",
+		Short: "Build full-text search index from ZIM files and documents in the vault",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -395,14 +403,31 @@ func newPresetCommand() *cobra.Command {
 }
 
 // loadCatalog loads the catalog and prints one warning to w for each user
-// preset it skipped.
+// recipe and user preset it skipped.
 func loadCatalog(w io.Writer) (*catalog.Catalog, error) {
 	cat, err := catalog.LoadCatalog()
 	if err != nil {
 		return nil, fmt.Errorf("loading catalog: %w", err)
 	}
+	for _, skipped := range cat.SkippedUserRecipes() {
+		fmt.Fprintf(w, "warning: %s\n", skipped)
+	}
 	for _, skipped := range cat.SkippedUserPresets() {
 		fmt.Fprintf(w, "warning: %s\n", skipped)
+	}
+	return cat, nil
+}
+
+// loadVaultCatalog is loadCatalog for a command that works on a vault. A
+// user recipe the vault holds but this computer does not define is loaded
+// from the copy the vault keeps of it, and w is told so.
+func loadVaultCatalog(w io.Writer, vaultRoot string) (*catalog.Catalog, error) {
+	cat, err := loadCatalog(w)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range cat.LoadVaultRecipes(catalog.VaultRecipeDir(vaultRoot)) {
+		fmt.Fprintf(w, "note: %s is not defined on this computer; using the vault's copy of its recipe\n", id)
 	}
 	return cat, nil
 }
@@ -642,12 +667,11 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return hosttui.PlanSummary{}, err
 		}
-		p := planner.Build(m)
-
-		cat, err := catalog.LoadCatalog()
+		cat, err := loadVaultCatalog(io.Discard, root)
 		if err != nil {
 			return hosttui.PlanSummary{}, err
 		}
+		p, _ := commands.BuildPlan(m, cat)
 
 		platforms := m.Desired.Options.HostPlatforms
 		var summary hosttui.PlanSummary
@@ -706,7 +730,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return err
 		}
-		cat, err := catalog.LoadCatalog()
+		cat, err := loadVaultCatalog(io.Discard, root)
 		if err != nil {
 			return err
 		}

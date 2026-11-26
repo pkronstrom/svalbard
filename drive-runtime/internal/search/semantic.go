@@ -307,6 +307,7 @@ func HybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, 
 
 // HybridSnapshotFull captures complete bodies only after hybrid ranking, source
 // filtering, and the MCP result limit have been decided in one read snapshot.
+// source is a scope as engine.InScope reads it.
 func HybridSnapshotFull(ctx context.Context, db *sql.DB, contract SemanticContract, query string, vector []float32, limit int, source string) ([]Result, bool, error) {
 	candidateLimit := limit
 	if source != "" && candidateLimit < 200 {
@@ -342,7 +343,7 @@ func hybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, 
 	}
 	filtered := results[:0]
 	for _, result := range results {
-		if source == "" || strings.TrimSuffix(result.Filename, ".zim") == source {
+		if engine.InScope(result.Filename, source) {
 			filtered = append(filtered, result)
 		}
 	}
