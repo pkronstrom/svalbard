@@ -18,7 +18,27 @@ The assistant runs on your own computer and answers from what is on the drive. I
 
 > Car won’t start. Old Toyota, petrol engine, the starter just clicks.
 
-Ask the way you would ask a person. The assistant searches the survival and repair archives on the drive, reads what it finds and names the pages it used. Ask it to save what it makes, such as a checklist, and it writes a page to the workspace that you can open again later or print.
+> What should I put on a mild burn?
+
+> I have a day in Tallinn. What should I see, and how do I get from the ferry port to the old town?
+
+> When should I plant potatoes in southern Finland, and how deep?
+
+> What tyre pressure does the manual for my 2012 Corolla give for a full load?
+
+Ask the way you would ask a person. The assistant searches the survival, repair, first-aid, travel and gardening archives on the drive, reads what it finds and names the pages it used. The last question needs your car’s manual on the drive: add it as one of [your own documents](#your-own-documents). The first-aid material is reference, not medical advice.
+
+## Make something
+
+The assistant can also write things and save them in the drive’s `workspace/` folder.
+
+> My cabin has a 200 W solar panel and a 100 Ah 12 V battery. Make me a page where I enter what I plug in and for how many hours a day, and it tells me whether the battery lasts the weekend. Take the numbers from the solar pages on the drive.
+
+> Write a JSCAD model of a wall bracket for a 25 mm pipe, 4 mm thick, with two screw holes, so I can open it in JSCAD and export an STL.
+
+> Write ESP32 firmware that reads a soil-moisture sensor on pin 34 every ten minutes and switches the pump relay on pin 26 when the soil is dry. Make it a PlatformIO project.
+
+The calculator is one HTML file that opens in any browser. JSCAD runs from the drive’s **Apps** menu. The firmware builds offline with the PlatformIO toolchain in the `esp32-dev` pack (`./run embedded`); flashing needs the board plugged in.
 
 ### What a session looks like
 
@@ -38,9 +58,9 @@ Choose **Library**, open an installed archive, and search for the article title.
 
 ![Kiwix displaying the archived Wikiciv article on paper with its search box and article text.](docs/kiwix-paper.webp)
 
-### Stack map layers for a field trip
+### Maps without a connection
 
-Open **Maps**, choose a basemap, and switch the overlays on or off. Around Helsinki harbour you can see where HSY marks public water posts and where SYKE marks protected areas, while keeping the coastline and streets in view. Pan and zoom work offline. **Turn-by-turn directions and route calculation are still planned.**
+Open **Maps**, choose a basemap, and switch the overlays on or off. When the water is cut off in Helsinki, turn on HSY’s public water posts to find the nearest one; before a hike, add SYKE’s protected areas and rivers. Pan and zoom work offline. **Turn-by-turn directions and route calculation are still planned.**
 
 ![Svalbard Maps showing Helsinki harbour with the topographic basemap, public water posts and protected areas enabled.](docs/offline-map-helsinki.webp)
 
