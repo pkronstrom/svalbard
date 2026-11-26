@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 	_ "github.com/ncruces/go-sqlite3/driver"
+	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 )
 
 func fixtureZIM(name string) string { return filepath.Join("..", "zimext", "testdata", name) }
