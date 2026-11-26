@@ -62,6 +62,7 @@ type Launch struct {
 	ModelName   string // id llama-server reports for the model
 	LlamaURL    string // OpenAI-compatible base URL, ending in /v1
 	MCPURL      string // Streamable HTTP endpoint of the drive's MCP server
+	Wiki        bool   // the drive's MCP server offers the wiki tools
 	FilesURL    string // Streamable HTTP endpoint of the file tools; empty when they are off
 	Port        int
 }
@@ -76,7 +77,13 @@ type Launch struct {
 // and still persist.
 func Environment(l Launch) map[string]string {
 	origin := fmt.Sprintf("http://localhost:%d;http://127.0.0.1:%d", l.Port, l.Port)
-	toolServers := []any{toolServer(mcpServerID, "Svalbard vault", "Search and read the content on this drive", l.MCPURL)}
+	// The wiki tools are part of the vault's server: in a chat they switch
+	// on and off together with vault search.
+	vault := "Search and read the content on this drive"
+	if l.Wiki {
+		vault += ", and read and write the pages of its wiki"
+	}
+	toolServers := []any{toolServer(mcpServerID, "Svalbard vault", vault, l.MCPURL)}
 	toolIDs := []string{"server:mcp:" + mcpServerID}
 	if l.FilesURL != "" {
 		toolServers = append(toolServers, toolServer(filesServerID, "Svalbard files", "Read and save files in the drive's workspace folder", l.FilesURL))
@@ -300,6 +307,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		ModelName:   modelName,
 		LlamaURL:    llamaRoot + "/v1",
 		MCPURL:      fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
+		Wiki:        mcp.WikiInstalled(driveRoot),
 		FilesURL:    filesURL,
 		Port:        port,
 	}))...)

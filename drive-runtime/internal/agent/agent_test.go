@@ -630,3 +630,102 @@ func TestPiDriveContextFollowsTheDriveButKeepsUserEdits(t *testing.T) {
 		t.Errorf("user-edited AGENTS.md was overwritten:\n%s", data)
 	}
 }
+
+// installWiki marks the wiki's recipe as installed on the drive, which is
+// what makes the drive's MCP server offer the wiki tools.
+func installWiki(t *testing.T, driveRoot string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(driveRoot, ".svalbard"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recipes := `{"silverbullet": {"id": "silverbullet", "type": "binary", "description": "SilverBullet wiki", "tags": []}}`
+	if err := os.WriteFile(filepath.Join(driveRoot, ".svalbard", "recipes.json"), []byte(recipes), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPiIsToldAboutTheWikiOnlyWhenItIsInstalled(t *testing.T) {
+	contextFor := func(driveRoot string) string {
+		t.Helper()
+		cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen", 32768)
+		if err != nil {
+			t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+		}
+		data, err := os.ReadFile(filepath.Join(cfg.Env["PI_CODING_AGENT_DIR"], "AGENTS.md"))
+		if err != nil {
+			t.Fatalf("drive context file not written: %v", err)
+		}
+		return string(data)
+	}
+
+	without := contextFor(t.TempDir())
+	if strings.Contains(without, "wiki") {
+		t.Errorf("AGENTS.md mentions a wiki the drive does not have:\n%s", without)
+	}
+
+	driveRoot := t.TempDir()
+	installWiki(t, driveRoot)
+	with := contextFor(driveRoot)
+	// A model told only that the drive is a read-only library does not try
+	// to save anything.
+	for _, want := range []string{"The drive also has a wiki", "which you can write", "mcp__svalbard__wiki_create", "mcp__svalbard__wiki_search", "mcp__svalbard__wiki_read"} {
+		if !strings.Contains(with, want) {
+			t.Errorf("AGENTS.md missing %q:\n%s", want, with)
+		}
+	}
+	// The wiki's paragraph is the only difference, and it sits before the rules.
+	paragraph, rules := strings.Index(with, "The drive also has a wiki"), strings.Index(with, "Rules:")
+	if paragraph < 0 || rules < paragraph {
+		t.Errorf("the wiki paragraph is not before the rules:\n%s", with)
+	}
+	if strings.Contains(with, "%!") || strings.Contains(without, "%!") {
+		t.Errorf("AGENTS.md has a formatting slip:\n%s", with)
+	}
+
+	// The file follows the drive: a wiki added later reaches the next launch.
+	later := t.TempDir()
+	if before := contextFor(later); strings.Contains(before, "wiki") {
+		t.Fatalf("AGENTS.md mentions the wiki too early:\n%s", before)
+	}
+	installWiki(t, later)
+	if after := contextFor(later); !strings.Contains(after, "mcp__svalbard__wiki_create") {
+		t.Errorf("AGENTS.md did not gain the wiki after it was installed:\n%s", after)
+	}
+}
+
+func TestOmpGetsTheWikiToolsAndPromptLineOnlyWhenInstalled(t *testing.T) {
+	launch := func(driveRoot string) (args, prompt string) {
+		t.Helper()
+		cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "omp", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen", 32768)
+		if err != nil {
+			t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+		}
+		data, err := os.ReadFile(filepath.Join(cfg.Env["PI_CODING_AGENT_DIR"], "lean-prompt.md"))
+		if err != nil {
+			t.Fatalf("lean prompt not written: %v", err)
+		}
+		return strings.Join(cfg.Args, " "), string(data)
+	}
+	wikiTools := []string{"wiki_list", "wiki_read", "wiki_search", "wiki_create", "wiki_append", "wiki_edit", "wiki_move", "wiki_delete"}
+
+	args, prompt := launch(t.TempDir())
+	if strings.Contains(args, "wiki") || strings.Contains(prompt, "wiki") {
+		t.Errorf("omp was offered a wiki the drive does not have:\n%s\n%s", args, prompt)
+	}
+
+	driveRoot := t.TempDir()
+	installWiki(t, driveRoot)
+	args, prompt = launch(driveRoot)
+	// omp enables only the tools it is given by name.
+	for _, tool := range wikiTools {
+		if !strings.Contains(args, "mcp__svalbard_"+tool) {
+			t.Errorf("Args missing mcp__svalbard_%s: %s", tool, args)
+		}
+	}
+	if !strings.Contains(args, "mcp__svalbard_search,") || !strings.Contains(args, "mcp__svalbard_vault_sources") {
+		t.Errorf("Args lost the vault tools: %s", args)
+	}
+	if !strings.Contains(prompt, "wiki tools read and write the user's own notes") {
+		t.Errorf("lean prompt missing the wiki line:\n%s", prompt)
+	}
+}

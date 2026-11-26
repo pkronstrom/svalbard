@@ -290,7 +290,6 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 
 	// Collect env vars and menu specs from all realized recipes.
 	envVars := make(map[string]string)
-	menus := make(map[string]catalog.MenuSpec)
 	platformIORecipes := make(map[string]catalog.Item)
 	recipes := make(map[string]catalog.Item)
 	for _, e := range m.Realized.Entries {
@@ -302,18 +301,9 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 			for k, v := range recipe.Env {
 				envVars[k] = v
 			}
-			if recipe.Menu != nil {
-				spec := *recipe.Menu
-				// Use recipe description as label fallback when menu has no label.
-				if spec.Label == "" && recipe.Description != "" {
-					spec.Label = recipe.Description
-				}
-				menus[e.ID] = spec
-			} else if recipe.Description != "" {
-				menus[e.ID] = catalog.MenuSpec{Label: recipe.Description}
-			}
 		}
 	}
+	menus := toolkit.MenuSpecs(recipes)
 
 	// Regenerate runtime assets.
 	presetName := ""

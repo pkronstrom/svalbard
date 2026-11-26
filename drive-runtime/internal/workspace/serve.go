@@ -107,14 +107,14 @@ func (w *Workspace) handler(port int) http.Handler {
 				return
 			}
 			index := path.Join(rel, "index.html")
-			if indexInfo, err := w.root.Stat(index); err == nil && indexInfo.Mode().IsRegular() {
+			if indexInfo, err := w.root.Stat(index); err == nil && indexInfo.Mode().IsRegular() && w.serves(index) {
 				rel, info = index, indexInfo
 			} else {
 				w.serveListing(rw, r, rel)
 				return
 			}
 		}
-		if !info.Mode().IsRegular() {
+		if !info.Mode().IsRegular() || !w.serves(rel) {
 			http.NotFound(rw, r)
 			return
 		}
@@ -126,6 +126,11 @@ func (w *Workspace) handler(port int) http.Handler {
 		defer file.Close()
 		http.ServeContent(rw, r, path.Base(rel), info.ModTime(), file)
 	})
+}
+
+// serves reports whether the file rel is one this folder serves.
+func (w *Workspace) serves(rel string) bool {
+	return w.opts.Serves == nil || w.opts.Serves(path.Base(rel))
 }
 
 // serveListing writes a plain index of one workspace folder.
@@ -147,7 +152,7 @@ func (w *Workspace) serveListing(rw http.ResponseWriter, r *http.Request, rel st
 	slices.SortFunc(entries, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
 	for _, entry := range entries {
 		name := entry.Name()
-		if strings.HasPrefix(name, ".") {
+		if strings.HasPrefix(name, ".") || (!entry.IsDir() && !w.serves(name)) {
 			continue
 		}
 		href := url.PathEscape(name)

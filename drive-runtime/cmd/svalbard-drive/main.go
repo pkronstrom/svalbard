@@ -21,6 +21,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/chat"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/embedded"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/folder"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/maps"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
@@ -33,6 +34,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/share"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/shell"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/verify"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
 func main() {
@@ -127,7 +129,10 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 		return runMCPServe(driveRoot)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// SIGHUP is the terminal window being closed: the action stops as it
+	// does on Ctrl+C, so its servers end and what they kept for the run
+	// (the wiki's state folder and socket) is removed.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
 	switch invocation.ActionID {
@@ -143,6 +148,12 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 		return chat.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
 	case "open-webui":
 		return openwebui.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
+	case "wiki":
+		return wiki.Run(ctx, os.Stdout, driveRoot, nil)
+	case "documents":
+		return folder.Documents(ctx, os.Stdout, driveRoot, invocation.Args["path"], nil)
+	case "workspace":
+		return folder.Workspace(ctx, os.Stdout, driveRoot, nil)
 	case "agent":
 		return agent.Run(ctx, os.Stdout, driveRoot, invocation.Args["client"], invocation.Args["model"])
 	case "serve-all":

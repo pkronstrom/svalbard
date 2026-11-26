@@ -37,7 +37,9 @@ func ScanZIMFiles(root string) ([]string, error) {
 
 	var files []string
 	for _, e := range entries {
-		if e.IsDir() {
+		// On an exFAT stick macOS keeps a "._name.zim" file beside each
+		// archive, which is not one.
+		if e.IsDir() || strings.HasPrefix(e.Name(), "._") {
 			continue
 		}
 		if strings.HasSuffix(strings.ToLower(e.Name()), ".zim") {

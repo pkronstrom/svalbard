@@ -198,3 +198,29 @@ func availablePort(t *testing.T) int {
 	defer listener.Close()
 	return listener.Addr().(*net.TCPAddr).Port
 }
+
+func TestZIMFilesLeavesOutAppleDoubleCompanions(t *testing.T) {
+	driveRoot := t.TempDir()
+	zimDir := filepath.Join(driveRoot, "zim")
+	if err := os.MkdirAll(zimDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// What macOS leaves beside an archive on an exFAT stick has the
+	// archive's suffix and none of its content.
+	for _, name := range []string{"wikem.zim", "._wikem.zim", "nhs.zim", "._nhs.zim", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(zimDir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	zims, err := ZIMFiles(driveRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(zimDir, "nhs.zim"), filepath.Join(zimDir, "wikem.zim")}
+	if len(zims) != 2 || zims[0] != want[0] || zims[1] != want[1] {
+		t.Errorf("ZIMFiles() = %v, want %v", zims, want)
+	}
+	if zims, err := ZIMFiles(t.TempDir()); err != nil || len(zims) != 0 {
+		t.Errorf("ZIMFiles() on a drive without archives = %v, %v", zims, err)
+	}
+}
