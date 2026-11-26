@@ -6,13 +6,14 @@ requires: [llama-server]
 
 ## Steps
 
-`<folder>` is the skill folder that `skill_read` returned, for example
+`<folder>` is the skill folder that `skill_read` returned (keep the quotes
+around it in commands: a drive's path can hold spaces), for example
 `/Volumes/SVALBARD/skills/skills-core/local-models`.
 
 1. See what the drive has and what fits:
 
    ```sh
-   sh <folder>/scripts/models.sh
+   sh "<folder>"/scripts/models.sh
    ```
 
    It prints this computer's memory, each chat model with its size and the
@@ -40,7 +41,7 @@ requires: [llama-server]
    (it must print `ok`):
 
    ```sh
-   sh <folder>/examples/check.sh choice.txt
+   sh "<folder>"/examples/check.sh choice.txt
    ```
 
 ## Rules

@@ -24,10 +24,11 @@ tool list shows them with a prefix, such as `mcp__svalbard__search`.
    question, tell the user the drive does not have it. Anything you add from
    your own knowledge, say so: it was not checked against the drive.
 6. Check your result when you saved the answer to a file. It must print
-   `ok`; `<folder>` is the skill folder that `skill_read` returned:
+   `ok`; `<folder>` is the skill folder that `skill_read` returned (keep the quotes
+   around it: a drive's path can hold spaces):
 
    ```sh
-   sh <folder>/examples/check.sh answer.md
+   sh "<folder>"/examples/check.sh answer.md
    ```
 
 ## Without the drive's tools
@@ -36,9 +37,9 @@ An agent with a shell but without these tools (one not started from the
 drive's menu) calls them through the script, with the same arguments:
 
 ```sh
-sh <folder>/scripts/mcp_call.sh vault_sources
-sh <folder>/scripts/mcp_call.sh search '{"query": "water filter", "limit": 5}'
-sh <folder>/scripts/mcp_call.sh search_read '{"source": "<source from a result>", "path": "<path from a result>"}'
+sh "<folder>"/scripts/mcp_call.sh vault_sources
+sh "<folder>"/scripts/mcp_call.sh search '{"query": "water filter", "limit": 5}'
+sh "<folder>"/scripts/mcp_call.sh search_read '{"source": "<source from a result>", "path": "<path from a result>"}'
 ```
 
 ## Good searches

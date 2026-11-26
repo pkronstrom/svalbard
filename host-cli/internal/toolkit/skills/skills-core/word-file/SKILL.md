@@ -6,7 +6,8 @@ requires: [py-docs]
 
 ## Steps
 
-`<folder>` is the skill folder that `skill_read` returned, for example
+`<folder>` is the skill folder that `skill_read` returned (keep the quotes
+around it in commands: a drive's path can hold spaces), for example
 `/Volumes/SVALBARD/skills/skills-core/word-file`. Write your files in the
 user's working folder, never inside `<folder>`.
 
@@ -38,19 +39,19 @@ user's working folder, never inside `<folder>`.
 2. Build the document:
 
    ```sh
-   py-docs <folder>/scripts/docx_tool.py create plan.md plan.docx
+   py-docs "<folder>"/scripts/docx_tool.py create plan.md plan.docx
    ```
 
 3. Read it back and compare with what the user asked for:
 
    ```sh
-   py-docs <folder>/scripts/docx_tool.py read plan.docx
+   py-docs "<folder>"/scripts/docx_tool.py read plan.docx
    ```
 
 4. Check your result. It must print `ok`:
 
    ```sh
-   sh <folder>/examples/check.sh plan.docx
+   sh "<folder>"/examples/check.sh plan.docx
    ```
 
    Add `--heading "Document title"` to require that heading.
@@ -62,7 +63,7 @@ user's working folder, never inside `<folder>`.
   included, in document order.
 - Fill a template: put `{{name}}` style placeholders in a .docx (made with
   `create`, or the user's own), write `{"name": "Aino"}` to `values.json`,
-  then `py-docs <folder>/scripts/docx_tool.py fill template.docx values.json out.docx`.
+  then `py-docs "<folder>"/scripts/docx_tool.py fill template.docx values.json out.docx`.
   It names any placeholder left without a value.
 - Fonts, margins, headers and footers: write a python-docx script
   (`docx.Document()`, `section.header`, `run.font.size = Pt(11)`) and run it

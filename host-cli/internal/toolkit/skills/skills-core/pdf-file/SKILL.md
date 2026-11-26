@@ -6,7 +6,8 @@ requires: [py-docs]
 
 ## Steps
 
-`<folder>` is the skill folder that `skill_read` returned, for example
+`<folder>` is the skill folder that `skill_read` returned (keep the quotes
+around it in commands: a drive's path can hold spaces), for example
 `/Volumes/SVALBARD/skills/skills-core/pdf-file`. Write your files in the
 user's working folder, never inside `<folder>`.
 
@@ -37,10 +38,10 @@ user's working folder, never inside `<folder>`.
    found relative to the markdown file):
 
    ```sh
-   py-docs <folder>/scripts/pdf_tool.py create report.md report.pdf
+   py-docs "<folder>"/scripts/pdf_tool.py create report.md report.pdf
    ```
 
-3. For existing PDFs, run `py-docs <folder>/scripts/pdf_tool.py` with one of:
+3. For existing PDFs, run `py-docs "<folder>"/scripts/pdf_tool.py` with one of:
    - join files: `merge all.pdf a.pdf b.pdf`
    - take pages: `pages in.pdf out.pdf 2-4,7`
    - one file per page: `split in.pdf pages/`
@@ -52,7 +53,7 @@ user's working folder, never inside `<folder>`.
 4. Check your result. It must print `ok`:
 
    ```sh
-   sh <folder>/examples/check.sh report.pdf
+   sh "<folder>"/examples/check.sh report.pdf
    ```
 
    Add `--pages N` to require N pages, `--text "words"` to require text.

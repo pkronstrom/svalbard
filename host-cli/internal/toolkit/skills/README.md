@@ -33,9 +33,11 @@ skill folder's name is the skill's name.
 - 300 to 800 tokens. The model has the harness prompt, the tools, the drive
   context and the page it is writing in the same window.
 - Give exact commands. Name the skill's own files by the path `skill_read`
-  returns as `folder` (write `<folder>/scripts/x.py` and say so), never
-  "from this skill's folder": a model told that copies its work into the
-  skill. Work goes in the user's working folder.
+  returns as `folder`, quoted: write `"<folder>"/scripts/x.py` and say to
+  keep the quotes, since a drive's path can hold spaces (a second stick
+  mounts as `/Volumes/SVALBARD 1`). Never write "from this skill's folder":
+  a model told that copies its work into the skill. Work goes in the
+  user's working folder.
 - Python scripts run with `py-docs <script> <args>`: the drive's Python with
   the document libraries, on PATH in every harness shell.
 - The last step is "Check your result", running `examples/check.sh` on what
@@ -55,17 +57,22 @@ Plain links in prose are allowed for attribution.
 
 ## examples/check.sh
 
-`sh examples/check.sh [artifact]`, run from an empty work folder with
-`DRIVE` set to the vault and `<vault>/bin/<platform>` and the folder of
-`svalbard-drive` first on PATH:
+`sh examples/check.sh [artifact] [options]`, with `DRIVE` set to the vault
+and `<vault>/bin/<platform>` and the folder of `svalbard-drive` first on
+PATH:
 
-- without an argument it produces the reference output in the work folder
-  by the skill's own steps and validates it;
-- with an argument it validates that file (what a model produced) by the
-  same rules.
+- with an argument it validates that file (what a model produced), and
+  writes nothing in the current folder;
+- without one it is a self-test: it produces the reference output by the
+  skill's own steps and validates it, in its own `mktemp -d` folder, never
+  the current one. A model that drops the argument must not have its work
+  overwritten, so the self-test's file names also differ from the ones the
+  steps use (`example-*`).
 
 It exits 0 only when validation passes and prints the reason on its last
-line when it fails. It finds the skill's files from its own path
+line when it fails. When the vault has nothing to test (no search index,
+for example) it exits 77 and says why: the run check reports SKIP, not
+PASS. It finds the skill's files from its own path
 (`$(dirname "$0")/..`). `scripts/skill-run-check.sh <vault> [skill...]` runs
 the checks with the network denied.
 

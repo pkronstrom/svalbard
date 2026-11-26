@@ -6,7 +6,8 @@ requires: [py-docs]
 
 ## Steps
 
-`<folder>` is the skill folder that `skill_read` returned, for example
+`<folder>` is the skill folder that `skill_read` returned (keep the quotes
+around it in commands: a drive's path can hold spaces), for example
 `/Volumes/SVALBARD/skills/skills-core/spreadsheet-file`. Write your files in
 the user's working folder, never inside `<folder>`.
 
@@ -22,7 +23,7 @@ the user's working folder, never inside `<folder>`.
 2. Make the workbook:
 
    ```sh
-   py-docs <folder>/scripts/xlsx_tool.py create budget.csv budget.xlsx --total Amount
+   py-docs "<folder>"/scripts/xlsx_tool.py create budget.csv budget.xlsx --total Amount
    ```
 
    `--total Amount` adds a "Total" row with `=SUM(...)` under that column;
@@ -30,14 +31,14 @@ the user's working folder, never inside `<folder>`.
 3. Read it back and compare with what the user asked for:
 
    ```sh
-   py-docs <folder>/scripts/xlsx_tool.py read budget.xlsx
+   py-docs "<folder>"/scripts/xlsx_tool.py read budget.xlsx
    ```
 
 4. Check your result. It must print `ok` (drop `--need-sum` when there is no
    total row):
 
    ```sh
-   sh <folder>/examples/check.sh budget.xlsx --need-sum
+   sh "<folder>"/examples/check.sh budget.xlsx --need-sum
    ```
 
 5. Tell the user the file's full path. Formula results appear when the file
@@ -48,10 +49,10 @@ the user's working folder, never inside `<folder>`.
 - JSON instead of CSV: a list of objects (`[{"Item": "Rent", "Amount": 800}]`),
   a list of rows, or `{"Sheet 1": rows, "Sheet 2": rows}` for several sheets.
 - `--sheet NAME` names the sheet.
-- `py-docs <folder>/scripts/xlsx_tool.py info file.xlsx` lists sheets, sizes
+- `py-docs "<folder>"/scripts/xlsx_tool.py info file.xlsx` lists sheets, sizes
   and headers; `read file.xlsx --sheet NAME` reads another sheet.
 - `read --values` prints the values a spreadsheet program saved instead of
   formulas; for a file made here, formulas have no saved values yet.
 - Charts, number formats, colours: write a short script with openpyxl and
-  run it with `py-docs script.py`. `<folder>/references/openpyxl.md` has
+  run it with `py-docs script.py`. `"<folder>"/references/openpyxl.md` has
   tested snippets.

@@ -6,7 +6,8 @@ requires: [py-docs]
 
 ## Steps
 
-`<folder>` is the skill folder that `skill_read` returned, for example
+`<folder>` is the skill folder that `skill_read` returned (keep the quotes
+around it in commands: a drive's path can hold spaces), for example
 `/Volumes/SVALBARD/skills/skills-core/slides-file`. Write your files in the
 user's working folder, never inside `<folder>`.
 
@@ -38,19 +39,19 @@ user's working folder, never inside `<folder>`.
 2. Build the presentation (16:9; add `--4x3` for old projectors):
 
    ```sh
-   py-docs <folder>/scripts/pptx_tool.py create deck.md deck.pptx
+   py-docs "<folder>"/scripts/pptx_tool.py create deck.md deck.pptx
    ```
 
 3. Read it back and compare with what the user asked for:
 
    ```sh
-   py-docs <folder>/scripts/pptx_tool.py read deck.pptx
+   py-docs "<folder>"/scripts/pptx_tool.py read deck.pptx
    ```
 
 4. Check your result. It must print `ok`:
 
    ```sh
-   sh <folder>/examples/check.sh deck.pptx
+   sh "<folder>"/examples/check.sh deck.pptx
    ```
 
    Add `--slides N` to require N slides (the title slide counts).
