@@ -824,3 +824,46 @@ func TestSkillReadGivesWholePathsOnlyOverStdio(t *testing.T) {
 		_ = srv.Close()
 	}
 }
+
+// A library's reference file (<quickstart>.reference.md) belongs to its
+// quickstart: found through it, listed and read as its file.
+func TestLibraryReferenceGroupsWithItsQuickstart(t *testing.T) {
+	f := newSkillFixture(t)
+	f.file("lib/js/js-core/docs/chartjs.reference.md", "# chart.js 4.5.0 reference\n")
+	indexSkillFile(t, f.db, "lib/js/js-core/docs/chartjs.reference.md", "chart.js 4.5.0 reference",
+		[2]string{"Overview", "# chart.js 4.5.0 reference"},
+		[2]string{"Logarithmic Axis", "## Logarithmic Axis\n\nThe logarithmic scale is for data spanning orders of magnitude."})
+	f.file("lib/js/js-maps/docs/orphan.reference.md", "# orphan reference\n")
+	indexSkillFile(t, f.db, "lib/js/js-maps/docs/orphan.reference.md", "orphan reference",
+		[2]string{"Overview", "# orphan reference\n\nA logarithmic thing without a quickstart."})
+
+	items, _ := f.search(map[string]any{"query": "logarithmic scale", "kind": "library"})
+	ids := skillIDs(items)
+	if !slices.Contains(ids, "lib/js/js-core/docs/chartjs.md") || slices.Contains(ids, "lib/js/js-core/docs/chartjs.reference.md") {
+		t.Fatalf("search = %v, want the quickstart standing for its reference", ids)
+	}
+	for _, item := range items {
+		if item.ID == "lib/js/js-core/docs/chartjs.md" && item.File != "chartjs.reference.md" {
+			t.Errorf("chart.js result names file %q, want the reference file", item.File)
+		}
+	}
+	if !slices.Contains(ids, "lib/js/js-maps/docs/orphan.reference.md") {
+		t.Errorf("a reference file without its quickstart is missing: %v", ids)
+	}
+
+	read, err := f.read(map[string]any{"id": "lib/js/js-core/docs/chartjs.md"})
+	if err != nil || !slices.Equal(read.Files, []string{"chartjs.reference.md"}) || read.Folder != "lib/js/js-core/docs" {
+		t.Fatalf("read = %+v, %v; want the reference file listed in the docs folder", read, err)
+	}
+	ref, err := f.read(map[string]any{"id": "chartjs", "file": "chartjs.reference.md", "section": "Logarithmic Axis"})
+	if err != nil || ref.File != "chartjs.reference.md" || !strings.Contains(ref.Body, "orders of magnitude") {
+		t.Fatalf("reference read = %+v, %v", ref, err)
+	}
+	if _, err := f.read(map[string]any{"id": "chartjs", "file": "../js-maps/docs/orphan.reference.md"}); err == nil {
+		t.Error("a file of another library was read through chart.js")
+	}
+	_, note := f.search(map[string]any{"query": "zeppelin", "kind": "library"})
+	if strings.Count(note, "Chart.js") != 1 || strings.Contains(note, "chart.js 4.5.0 reference") {
+		t.Errorf("holdings = %q, want chart.js once", note)
+	}
+}

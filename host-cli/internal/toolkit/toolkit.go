@@ -207,6 +207,9 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 			opts[0].Notice(notice)
 		}
 	}
+	if err := writeLibraryDocs(root, entries, recipes, libraryDocTree()); err != nil {
+		return err
+	}
 	if err := writeRecipesMetadata(root, entries, recipes); err != nil {
 		return err
 	}

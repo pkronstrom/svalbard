@@ -50,6 +50,7 @@ type locker struct {
 // packageMetadata is the part of the registry's document for a package that
 // resolution needs.
 type packageMetadata struct {
+	DistTags map[string]string          `json:"dist-tags"`
 	Versions map[string]versionMetadata `json:"versions"`
 }
 
@@ -304,6 +305,13 @@ func (l *locker) pick(ctx context.Context, name string, rng versionRange) (versi
 		}
 		l.metadata[name] = meta
 	}
+	// The version tagged latest wins when the range allows it, as npm
+	// picks: some projects publish newer builds that are not latest.
+	if tagged, ok := meta.Versions[meta.DistTags["latest"]]; ok {
+		if v, ok := parseVersion(tagged.Version); ok && rng.allows(v) {
+			return tagged, nil
+		}
+	}
 	available := make([]string, 0, len(meta.Versions))
 	for v := range meta.Versions {
 		available = append(available, v)
@@ -481,7 +489,7 @@ func unpack(n *node, tree string) error {
 }
 
 var licenseRe = regexp.MustCompile(`(?i)^(licen[cs]e|copying|notice)([.-].*)?$`)
-var readmeRe = regexp.MustCompile(`(?i)^readme(\..*)?$`)
+var readmeRe = regexp.MustCompile(`(?i)^readme(\.(md|markdown|txt))?$`)
 
 // source is one node's trimmed bundle entry.
 type source struct {

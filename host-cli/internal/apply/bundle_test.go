@@ -350,8 +350,12 @@ func TestApplyJSLibWritesOneArchive(t *testing.T) {
 	if len(got) != len(want)+1 {
 		t.Errorf("archive holds %d files, want %d: %v", len(got), len(want)+1, got)
 	}
-	if _, err := os.Stat(filepath.Join(root, "lib", "js", "js-test")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, "lib", "js", "js-test", "node_modules")); !os.IsNotExist(err) {
 		t.Errorf("a tree was left beside the archive: %v", err)
+	}
+	// Its folder holds the docs only: d3's README stands in for a quickstart.
+	if docs, err := os.ReadDir(filepath.Join(root, "lib", "js", "js-test")); err != nil || len(docs) != 1 || docs[0].Name() != "docs" {
+		t.Errorf("lib/js/js-test holds %v, %v; want docs/ only", docs, err)
 	}
 	entry := m.Realized.Entries[0]
 	data, _ := os.ReadFile(archive)

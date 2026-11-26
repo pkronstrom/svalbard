@@ -187,6 +187,7 @@ func writeRecipe(outPath string, spec lockSpec, nodes []*node, sources []source,
 		if lic := field(entry, "license"); lic == nil || lic.Value == "" {
 			setField(entry, "license", scalar(n.license))
 		}
+		setField(entry, "quickstart", scalar(libraryDocName(n.name)))
 	}
 	setField(root, "libraries", libs)
 

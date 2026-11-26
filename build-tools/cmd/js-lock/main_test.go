@@ -38,6 +38,7 @@ func tgz(t *testing.T, files map[string]string) []byte {
 
 type fakePackage struct {
 	name, version string
+	latest        bool // tagged latest
 	deps          map[string]string
 	files         map[string]string
 	badIntegrity  bool
@@ -49,6 +50,7 @@ func fakeRegistry(t *testing.T, packages []fakePackage, extra map[string][]byte)
 	t.Helper()
 	docs := map[string]map[string]any{}
 	tarballs := map[string][]byte{}
+	tags := map[string]map[string]string{}
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if body, ok := tarballs[r.URL.Path]; ok {
@@ -65,7 +67,7 @@ func fakeRegistry(t *testing.T, packages []fakePackage, extra map[string][]byte)
 			http.NotFound(w, r)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"name": name, "versions": doc})
+		json.NewEncoder(w).Encode(map[string]any{"name": name, "versions": doc, "dist-tags": tags[name]})
 	}))
 	t.Cleanup(server.Close)
 	for _, p := range packages {
@@ -79,6 +81,9 @@ func fakeRegistry(t *testing.T, packages []fakePackage, extra map[string][]byte)
 		if p.badIntegrity {
 			other := sha512.Sum512([]byte("something else"))
 			integrity = "sha512-" + base64.StdEncoding.EncodeToString(other[:])
+		}
+		if p.latest {
+			tags[p.name] = map[string]string{"latest": p.version}
 		}
 		tarPath := "/" + p.name + "/-/" + filepath.Base(p.name) + "-" + p.version + ".tgz"
 		tarballs[tarPath] = body
@@ -305,5 +310,19 @@ func TestSemverRanges(t *testing.T) {
 		if got := r.allows(v); got != tc.want {
 			t.Errorf("%s allows %s = %v, want %v", tc.rng, tc.version, got, tc.want)
 		}
+	}
+}
+
+func TestJSLockPrefersTheLatestTag(t *testing.T) {
+	server := fakeRegistry(t, []fakePackage{
+		{name: "tone", version: "15.1.22", latest: true, files: map[string]string{"index.js": `export default 1;`}},
+		{name: "tone", version: "15.5.73", files: map[string]string{"index.js": `export default 2;`}},
+	}, nil)
+	out := filepath.Join(t.TempDir(), "js-test.yaml")
+	if err := runLock(t, server, lockSpec{ID: "js-test", Packages: map[string]string{"tone": "15.x"}}, out); err != nil {
+		t.Fatal(err)
+	}
+	if r := readRecipe(t, out); r.Libraries[0].Version != "15.1.22" {
+		t.Errorf("version = %s, want the latest tag's 15.1.22", r.Libraries[0].Version)
 	}
 }
