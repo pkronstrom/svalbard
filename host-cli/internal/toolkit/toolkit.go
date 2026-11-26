@@ -160,7 +160,8 @@ type GenerateOpts struct {
 }
 
 // Generate creates the .svalbard/actions.json runtime config under root,
-// along with the recipe metadata, PlatformIO inventory and root scripts.
+// along with the recipe metadata, PlatformIO inventory, root scripts and the
+// AGENTS.md that orients an agent started on the drive.
 // entries is the list of realized manifest entries; presetName is recorded in
 // the config for the drive-runtime to identify which preset was applied.
 func Generate(root string, entries []manifest.RealizedEntry, presetName string, opts ...GenerateOpts) error {
@@ -205,6 +206,9 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 		envVars = opts[0].EnvVars
 	}
 	if err := writeRootScripts(root, envVars); err != nil {
+		return err
+	}
+	if err := writeAgentsMD(root, entries, menus); err != nil {
 		return err
 	}
 	if err := writeChecksums(root, entries); err != nil {
