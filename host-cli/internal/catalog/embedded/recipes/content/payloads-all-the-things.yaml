@@ -18,7 +18,8 @@ build:
              "-P", "{workdir}/site",
              "{source_url}"]
     - exec: warc2zim
-      args: ["--output", "{output}", "--name", "{id}",
+      args: ["--output", "{vault}/zim", "--zim-file", "{id}.zim",
+             "--failed-items", "{workdir}/fails", "--name", "{id}",
              "--title", "PayloadsAllTheThings",
              "--description", "Web attack payloads and bypass techniques",
              "{workdir}/{id}.warc.gz"]
