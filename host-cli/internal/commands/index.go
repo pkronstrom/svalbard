@@ -119,64 +119,21 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 	for _, doc := range documents {
 		present[doc] = true
 	}
+	readers := newReaderSet()
+	defer readers.Close()
 	for _, zf := range zimFiles {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		present[zf] = true
-		path := filepath.Join(root, "zim", zf)
-		identity, err := archiveSourceIdentity(ctx, path, zf)
+		names, err := indexZIM(ctx, db, root, zf, force, indexedByFilename, readers, w, notify)
 		if err != nil {
-			notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
-			return fmt.Errorf("reading identity for %s: %w", zf, err)
-		}
-		if !force && indexedByFilename[zf].IdentityCurrent(identity) {
-			notify(IndexProgress{File: zf, Status: "skip", Detail: "already indexed"})
-			continue
-		}
-
-		notify(IndexProgress{File: zf, Status: "extracting", Detail: "extracting articles..."})
-
-		articles, title, uuid, err := zimext.ExtractArticlesContext(ctx, path)
-		if err != nil {
-			notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
-			return fmt.Errorf("extracting articles from %s: %w", zf, err)
-		}
-		if title == "" {
-			title = strings.TrimSuffix(zf, filepath.Ext(zf))
-		}
-		if err := ctx.Err(); err != nil {
 			return err
 		}
-		current, err := archiveSourceIdentity(ctx, path, zf)
-		if err != nil {
-			return fmt.Errorf("rechecking identity for %s: %w", zf, err)
+		for _, name := range names {
+			present[name] = true
 		}
-		if current.UUID != uuid || !identity.IdentityCurrent(current) {
-			return fmt.Errorf("source %s changed during extraction; retry indexing", zf)
-		}
-
-		notify(IndexProgress{
-			File: zf, Status: "extracting",
-			Detail:  fmt.Sprintf("inserting %d articles...", len(articles)),
-			Current: int64(len(articles)), Total: int64(len(articles)),
-		})
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		identity.Title = title
-		if err := db.ReplaceSource(ctx, identity, articles); err != nil {
-			return fmt.Errorf("replacing articles for %s: %w", zf, err)
-		}
-
-		notify(IndexProgress{
-			File: zf, Status: "done",
-			Detail:  fmt.Sprintf("%d articles", len(articles)),
-			Current: int64(len(articles)), Total: int64(len(articles)),
-		})
 	}
-	if err := indexDocuments(ctx, root, documents, force, db, indexedByFilename, w, notify); err != nil {
+	if err := indexDocuments(ctx, root, documents, force, db, indexedByFilename, readers, w, notify); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {

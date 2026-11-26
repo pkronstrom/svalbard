@@ -292,7 +292,7 @@ func (r documentRoot) scan(root string) ([]string, error) {
 // all (a permission or disk error) is reported and skipped, keeping whatever
 // the index held for it; one document never stops the others. The caller
 // holds the writer lock and prunes sources that are no longer present.
-func indexDocuments(ctx context.Context, root string, documents []string, force bool, db *searchdb.DB, indexed map[string]searchdb.Source, w io.Writer, notify func(IndexProgress)) error {
+func indexDocuments(ctx context.Context, root string, documents []string, force bool, db *searchdb.DB, indexed map[string]searchdb.Source, readers *readerSet, w io.Writer, notify func(IndexProgress)) error {
 	if len(documents) == 0 {
 		return nil
 	}
@@ -366,24 +366,15 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 		}
 	}
 
-	readers := map[string]documentReader{}
-	defer func() {
-		for _, reader := range readers {
-			reader.Close()
-		}
-	}()
 	for _, doc := range pending {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		ext := strings.ToLower(path.Ext(doc.rel))
 		kind := documentKinds[ext]
-		reader, ok := readers[ext]
-		if !ok {
-			if reader, err = kind.open(); err != nil {
-				return err
-			}
-			readers[ext] = reader
+		reader, err := readers.get(ext)
+		if err != nil {
+			return err
 		}
 		notify(IndexProgress{File: doc.rel, Status: "extracting", Detail: "reading " + kind.unit + "s..."})
 		// skip leaves the index as it was for this document and goes on.
