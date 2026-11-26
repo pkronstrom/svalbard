@@ -31,8 +31,12 @@ func TestRealCatalogPinsTheWikiForEveryPlatform(t *testing.T) {
 		t.Errorf("type = %q, license = %+v; want a binary under MIT", item.Type, item.License)
 	}
 
-	if len(item.Settings) != 2 {
-		t.Fatalf("silverbullet settings = %+v, want open_browser and fs_watch", item.Settings)
+	if len(item.Settings) != 3 {
+		t.Fatalf("silverbullet settings = %+v, want open_browser, fs_watch and live_pages", item.Settings)
+	}
+	// The owner's default: agents may use what SilverBullet offers.
+	if s := item.Settings[2]; s.Name != "live_pages" || s.Type != "bool" || s.Default != true {
+		t.Errorf("setting 2 = %+v, want live_pages as a bool defaulting to true", s)
 	}
 	if s := item.Settings[0]; s.Name != "open_browser" || s.Type != "bool" || s.Default != true {
 		t.Errorf("setting 0 = %+v, want open_browser as a bool defaulting to true", s)

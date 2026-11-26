@@ -31,6 +31,32 @@ func TestSeedWritesTheStartPageIntoAnEmptyFolderOnly(t *testing.T) {
 		}
 	}
 
+	// The help page comes with it. Its query examples are live, outside any
+	// code block, because a model copies an example with what surrounds it.
+	help, err := os.ReadFile(filepath.Join(dir, "Help", "Live pages.md"))
+	if err != nil || string(help) != HelpText() {
+		t.Fatalf("help page = %d bytes (%v), want the built-in text", len(help), err)
+	}
+	for _, want := range []string{"index.pages()", "templates.pageItem(p)", "templates.taskItem(t)", "index.tasks()", "command.define", "Library/"} {
+		if !strings.Contains(string(help), want) {
+			t.Errorf("help page does not mention %q", want)
+		}
+	}
+	// The launcher restores a help page that is missing, and leaves one the
+	// user changed.
+	if err := os.WriteFile(filepath.Join(dir, "Help", "Live pages.md"), []byte("my notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SeedHelp(dir); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "Help", "Live pages.md")); string(data) != "my notes\n" {
+		t.Errorf("the user's help page was replaced: %q", data)
+	}
+	if err := os.RemoveAll(filepath.Join(dir, "Help")); err != nil {
+		t.Fatal(err)
+	}
+
 	// A start page the user changed, or deleted while other pages exist, is
 	// left as it is.
 	if err := os.WriteFile(filepath.Join(dir, "index.md"), []byte("mine\n"), 0o644); err != nil {

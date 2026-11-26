@@ -15,11 +15,14 @@ import (
 )
 
 // newWiki returns the wiki tools on a fresh drive, with no wiki open in a
-// browser and a fixed clock, and the drive's root.
+// browser, a fixed clock and the live_pages setting off, and the drive's
+// root. The tests of what the tools refuse run with the setting off; the
+// owner's default, on, has its own.
 func newWiki(t *testing.T) (*WikiCapability, string) {
 	t.Helper()
 	root := t.TempDir()
 	cap := NewWikiCapability(root)
+	cap.live = func() bool { return false }
 	cap.running = func() string { return "" }
 	cap.now = func() time.Time { return time.Date(2026, 11, 26, 18, 55, 3, 0, time.UTC) }
 	t.Cleanup(func() { cap.Close() })
@@ -312,8 +315,8 @@ func TestWikiCreateWritesAPageAndRefusesAnExistingOne(t *testing.T) {
 	wantWikiError(t, cap, "create", map[string]any{"content": "x"}, "missing required parameter: page")
 	// A page SilverBullet could not show is not written.
 	wantWikiError(t, cap, "create", map[string]any{"page": "Dose: adults", "content": "x"}, `contains ":"`)
-	if entries, _ := os.ReadDir(wiki.Dir(root)); len(entries) != 2 {
-		t.Errorf("wiki folder = %v, want only index.md and Projects", entries)
+	if entries, _ := os.ReadDir(wiki.Dir(root)); len(entries) != 3 {
+		t.Errorf("wiki folder = %v, want only index.md, the Help folder and Projects", entries)
 	}
 
 	big := strings.Repeat("x", 2<<20+1)
@@ -582,8 +585,10 @@ func TestWikiSearchThatFindsNothingSaysWhatTheWikiHolds(t *testing.T) {
 func TestWikiSearchOnAnEmptyWikiSaysSo(t *testing.T) {
 	cap, root := newWiki(t)
 	mustCallWiki(t, cap, "list", nil)
-	if err := os.Remove(filepath.Join(wiki.Dir(root), "index.md")); err != nil {
-		t.Fatal(err)
+	for _, seeded := range []string{"index.md", "Help"} {
+		if err := os.RemoveAll(filepath.Join(wiki.Dir(root), seeded)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	out := mustCallWiki(t, cap, "search", map[string]any{"query": "anything"})
 	if want := "The wiki has no pages yet, so there is nothing to find. Create a page with wiki_create."; out != want {
@@ -951,7 +956,7 @@ func TestWikiToolsDoNotWriteTheWikisOwnScripts(t *testing.T) {
 		"file name of page": {"create", map[string]any{"page": "Library/Helper.md", "content": script}},
 	} {
 		out, err := callWiki(t, cap, call.action, call.params)
-		if err == nil || !strings.Contains(err.Error(), "under Library/") || !strings.Contains(err.Error(), "do not change those pages") {
+		if err == nil || !strings.Contains(err.Error(), "under Library/") || !strings.Contains(err.Error(), "write plain text only") {
 			t.Errorf("%s: wiki_%s = %q, %v; want the Library refusal", name, call.action, out, err)
 		}
 	}
@@ -1145,4 +1150,134 @@ func TestWikiMoveCanChangeOnlyTheLetterCase(t *testing.T) {
 	}
 	// The same name again is still nothing to do.
 	wantWikiError(t, cap, "move", map[string]any{"page": "Projects/Garden Plan", "new_name": "projects/Garden Plan"}, "nothing would move")
+}
+
+// The owner's default: agents may use what SilverBullet offers. A page is
+// then a program an agent can write, which the design's Security section
+// states as an accepted risk.
+func TestWikiToolsWriteLivePagesWhenTheSettingIsOn(t *testing.T) {
+	cap, root := newWiki(t)
+	cap.live = func() bool { return true }
+
+	query := "# Projects\n\n${query[[\n  from p = index.pages()\n  where p.name:startsWith(\"Projects/\")\n  select templates.pageItem(p)\n]]}\n"
+	out := mustCallWiki(t, cap, "create", map[string]any{"page": "Projects overview", "content": query})
+	if strings.Contains(out, "The text had") {
+		t.Errorf("create = %s, want no note: nothing was changed", out)
+	}
+	if got := readPageFile(t, root, "Projects overview"); got != query {
+		t.Errorf("page = %q\nwant   %q", got, query)
+	}
+	mustCallWiki(t, cap, "append", map[string]any{"page": "Projects overview", "content": "Count: ${#query[[from p = index.pages()]]}"})
+	mustCallWiki(t, cap, "edit", map[string]any{"page": "Projects overview", "old_text": "# Projects", "new_text": "# Projects on ${os.date(\"%Y-%m-%d\")}"})
+	got := readPageFile(t, root, "Projects overview")
+	if !strings.Contains(got, "Count: ${#query[[from p = index.pages()]]}") || !strings.Contains(got, `# Projects on ${os.date("%Y-%m-%d")}`) || strings.Contains(got, `\${`) {
+		t.Errorf("page = %q, want the expressions as written", got)
+	}
+
+	// A script for the whole wiki, on a Library page.
+	script := "```space-lua\ncommand.define {\n  name = \"Say hello\",\n  run = function() editor.flashNotification(\"Hello\") end\n}\n```\n"
+	mustCallWiki(t, cap, "create", map[string]any{"page": "Library/My commands", "content": script})
+	if got := readPageFile(t, root, "Library/My commands"); got != script {
+		t.Errorf("library page = %q", got)
+	}
+	mustCallWiki(t, cap, "move", map[string]any{"page": "Library/My commands", "new_name": "Library/Commands"})
+	mustCallWiki(t, cap, "delete", map[string]any{"page": "Library/Commands"})
+
+	// What keeps a page inside the wiki does not depend on the setting.
+	wantWikiError(t, cap, "create", map[string]any{"page": "../outside", "content": "${x}"}, `contains ".."`)
+	wantWikiError(t, cap, "create", map[string]any{"page": "Library/.hidden", "content": "x"}, "starting with a dot")
+}
+
+func TestWikiRefusalsNameTheSettingThatIsOff(t *testing.T) {
+	cap, _ := newWiki(t)
+	wantWikiError(t, cap, "create", map[string]any{"page": "Library/Helper", "content": "x"}, "the setting silverbullet.live_pages is off", "tell the user")
+	out := mustCallWiki(t, cap, "create", map[string]any{"page": "Sum", "content": "${1+1}"})
+	if !strings.Contains(out, "the setting silverbullet.live_pages is off") || !strings.Contains(out, `saved as "\${"`) {
+		t.Errorf("create = %s, want the note to name the setting", out)
+	}
+}
+
+// The tool descriptions carry one clause about live pages, and only while
+// the setting allows them: the syntax is on a page a model reads when it
+// needs it, not in every prompt.
+func TestWikiDescriptionPointsToTheHelpPageWhenLivePagesAreOn(t *testing.T) {
+	cap, _ := newWiki(t)
+	total := func() (create string, size int) {
+		for _, action := range cap.Actions() {
+			size += len(action.Desc)
+			if action.Name == "create" {
+				create = action.Desc
+			}
+		}
+		return create, size
+	}
+	off, offSize := total()
+	if strings.Contains(off, "Help/") || strings.Contains(off, "live") {
+		t.Errorf("create description with the setting off = %q", off)
+	}
+	cap.live = func() bool { return true }
+	on, onSize := total()
+	if !strings.Contains(on, "first read the page Help/Live pages and copy its syntax") {
+		t.Errorf("create description = %q, want it to name the help page", on)
+	}
+	if added := onSize - offSize; added > 120 {
+		t.Errorf("live pages add %d characters to the tool descriptions, want one clause", added)
+	}
+}
+
+// The page the descriptions name can be read on a drive whose wiki was never
+// opened in the browser, and whose folder was not empty when first used.
+func TestWikiReadAnswersForTheHelpPageWhenItHasNoFile(t *testing.T) {
+	cap, root := newWiki(t)
+	writePage(t, root, "Garden", "beans\n")
+	out := mustCallWiki(t, cap, "read", map[string]any{"page": "Help/Live pages"})
+	if !strings.Contains(out, `"page":"Help/Live pages"`) || !strings.Contains(out, "index.pages()") || !strings.Contains(out, "templates.pageItem(p)") {
+		t.Errorf("read = %.300s, want the built-in help text", out)
+	}
+	if _, err := os.Stat(filepath.Join(wiki.Dir(root), "Help")); err == nil {
+		t.Error("reading the help page wrote it")
+	}
+	// The user's own version wins once there is a file.
+	writePage(t, root, "Help/Live pages", "my own notes\n")
+	if out := mustCallWiki(t, cap, "read", map[string]any{"page": "Help/Live pages"}); !strings.Contains(out, "my own notes") {
+		t.Errorf("read = %s, want the page on the drive", out)
+	}
+	// It fits one read: a model must not have to page through it.
+	if size := len([]rune(wiki.HelpText())); size > readChars {
+		t.Errorf("the help page is %d characters, more than one read of %d", size, readChars)
+	}
+}
+
+func TestLivePagesFollowTheDriveSetting(t *testing.T) {
+	schema := `{"version": 1, "groups": [{"owner": "silverbullet", "label": "Wiki", "settings": [
+  {"name": "live_pages", "type": "bool", "default": true, "label": "Agents may write live pages", "description": "Let the AI clients write queries, expressions and scripts into wiki pages."}
+]}]}`
+	for name, tc := range map[string]struct {
+		schema, values string
+		want           bool
+	}{
+		"no schema":      {"", "", true},
+		"default":        {schema, "", true},
+		"switched off":   {schema, `{"silverbullet": {"live_pages": false}}`, false},
+		"invalid value":  {schema, `{"silverbullet": {"live_pages": "maybe"}}`, true},
+		"another recipe": {schema, `{"open-webui": {"file_tools": false}}`, true},
+	} {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, ".svalbard"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for file, content := range map[string]string{"settings.schema.json": tc.schema, "settings.json": tc.values} {
+			if content == "" {
+				continue
+			}
+			if err := os.WriteFile(filepath.Join(root, ".svalbard", file), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cap := NewWikiCapability(root)
+		if got := cap.live(); got != tc.want {
+			t.Errorf("%s: live pages = %v, want %v", name, got, tc.want)
+		}
+		cap.Close()
+	}
 }

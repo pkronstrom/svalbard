@@ -146,6 +146,8 @@ func Start(ctx context.Context, driveRoot string, prefs *settings.Store) (*Insta
 	if err := Seed(pages); err != nil {
 		return nil, fmt.Errorf("the wiki's start page cannot be written: %w", err)
 	}
+	// Not worth failing for: the tools answer for the page when it is missing.
+	_ = SeedHelp(pages)
 
 	// The state is on the computer, not the drive: the search index uses
 	// memory-mapped files and locks, which exFAT serves badly, and it

@@ -31,6 +31,11 @@ settings:
   choices: [auto, poll]
   label: Notice changed pages
   description: How the wiki sees pages changed on the drive. Use poll if changes do not show up.
+- name: live_pages
+  type: bool
+  default: true
+  label: Agents may write live pages
+  description: Let the AI clients write queries, expressions and scripts into wiki pages. Off means plain text only.
 license:
   id: MIT
   attribution: Zef Hemel and SilverBullet contributors

@@ -673,6 +673,24 @@ func TestPiIsToldAboutTheWikiOnlyWhenItIsInstalled(t *testing.T) {
 			t.Errorf("AGENTS.md missing %q:\n%s", want, with)
 		}
 	}
+	// With live pages on, the default, the model is sent to the help page
+	// before it writes a page that computes something.
+	if !strings.Contains(with, "read the page `Help/Live pages`") {
+		t.Errorf("AGENTS.md does not point to the help page:\n%s", with)
+	}
+	plain := t.TempDir()
+	installWiki(t, plain)
+	schema := `{"version": 1, "groups": [{"owner": "silverbullet", "label": "Wiki", "settings": [
+  {"name": "live_pages", "type": "bool", "default": true, "label": "Agents may write live pages", "description": "Let the AI clients write queries, expressions and scripts into wiki pages."}
+]}]}`
+	for file, content := range map[string]string{"settings.schema.json": schema, "settings.json": `{"silverbullet": {"live_pages": false}}`} {
+		if err := os.WriteFile(filepath.Join(plain, ".svalbard", file), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if off := contextFor(plain); strings.Contains(off, "Help/Live pages") || !strings.Contains(off, "The drive also has a wiki") {
+		t.Errorf("AGENTS.md with live pages off:\n%s", off)
+	}
 	// The wiki's paragraph is the only difference, and it sits before the rules.
 	paragraph, rules := strings.Index(with, "The drive also has a wiki"), strings.Index(with, "Rules:")
 	if paragraph < 0 || rules < paragraph {

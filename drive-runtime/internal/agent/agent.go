@@ -21,6 +21,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
 type LaunchConfig struct {
@@ -313,12 +314,22 @@ const piWikiContext = `
 The drive also has a wiki, the user's own notebook, which you can write. To save what you found, create a page with ` + "`mcp__svalbard__wiki_create`" + `; ` + "`mcp__svalbard__wiki_search`" + ` and ` + "`mcp__svalbard__wiki_read`" + ` look in the notes already there.
 `
 
+// piLivePagesContext sends the model to the wiki's help page before it writes
+// a page that computes something. Told only in the tool's description, a 4B
+// model made up a syntax; the page holds the one that works.
+const piLivePagesContext = `A wiki page can update by itself (a live list of pages, a count, open tasks). Before writing such a page, read the page ` + "`" + wiki.HelpPage + "`" + ` with ` + "`mcp__svalbard__wiki_read`" + ` and copy its syntax exactly.
+`
+
 // piContext is the context file for the drive at driveRoot, with the wiki's
-// paragraph when the drive's server offers the wiki tools.
-func piContext(driveRoot string, wiki bool) string {
+// paragraph when the drive's server offers the wiki tools, and the pointer
+// to the help page when they may write live pages.
+func piContext(driveRoot string, hasWiki bool) string {
 	paragraph := ""
-	if wiki {
+	if hasWiki {
 		paragraph = piWikiContext
+		if wiki.LivePages(driveRoot) {
+			paragraph += piLivePagesContext
+		}
 	}
 	return fmt.Sprintf(piDriveContext, driveRoot, paragraph)
 }

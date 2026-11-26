@@ -7,12 +7,15 @@ package wiki
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
 )
 
 const (
@@ -61,9 +64,9 @@ This is the wiki on your Svalbard drive: your own notes, next to the reference l
 This is the start page. Change it as you like.
 `
 
-// Seed writes the start page into the page folder dir when the folder holds
-// nothing yet. A folder with any page in it is left alone, so a start page
-// the user deleted stays deleted.
+// Seed writes the start page and the help page into the page folder dir
+// when the folder holds nothing yet. A folder with any page in it is left
+// alone, so a start page the user deleted stays deleted.
 func Seed(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -75,7 +78,45 @@ func Seed(dir string) error {
 			return nil
 		}
 	}
-	return os.WriteFile(filepath.Join(dir, "index.md"), []byte(seedPage), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "index.md"), []byte(seedPage), 0o644); err != nil {
+		return err
+	}
+	return SeedHelp(dir)
+}
+
+// SeedHelp writes the help page when it is missing. The launcher does this
+// at every start, so a wiki made before the page existed gets it and the
+// user finds it in the page list. The tools answer a read of the page from
+// HelpText when there is no file.
+func SeedHelp(dir string) error {
+	help := filepath.Join(dir, filepath.FromSlash(HelpPage)+".md")
+	if _, err := os.Stat(help); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(help), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(help, []byte(helpPage), 0o644)
+}
+
+// HelpText is what SeedHelp writes.
+func HelpText() string { return helpPage }
+
+// settingLivePages is declared by the silverbullet recipe.
+const settingLivePages = RecipeID + ".live_pages"
+
+// LivePagesSetting is the setting's key, for a refusal to name.
+const LivePagesSetting = settingLivePages
+
+// LivePages reports whether the wiki tools may write what SilverBullet runs:
+// ${...} expressions, space-lua blocks and pages under Library/. The owner's
+// default is yes, and a drive whose schema does not declare the setting gets
+// the default. A page is then a program an agent can write; see the design's
+// Security section for what that risks.
+func LivePages(driveRoot string) bool {
+	prefs := settings.OpenForAction(driveRoot, io.Discard)
+	_, declared := prefs.Lookup(settingLivePages)
+	return !declared || prefs.Bool(settingLivePages)
 }
 
 // PageURL is the address of the page name in the wiki served at base.

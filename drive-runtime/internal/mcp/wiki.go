@@ -65,9 +65,11 @@ type WikiCapability struct {
 
 	// running returns the address of the wiki when its launcher is up, for
 	// the link a write returns. now stamps a deleted page's name in the
-	// trash. Both are fields so tests can set them.
+	// trash. live reports the live_pages setting: whether the tools may
+	// write what SilverBullet runs. All are fields so tests can set them.
 	running func() string
 	now     func() time.Time
+	live    func() bool
 }
 
 // NewWikiCapability creates the wiki tools for the drive at driveRoot.
@@ -76,6 +78,8 @@ func NewWikiCapability(driveRoot string) *WikiCapability {
 		driveRoot: driveRoot,
 		running:   func() string { return wiki.RunningURL(driveRoot) },
 		now:       time.Now,
+		// Read at each write, so the setting takes effect without a restart.
+		live: func() bool { return wiki.LivePages(driveRoot) },
 	}
 }
 
@@ -83,6 +87,12 @@ func (c *WikiCapability) Tool() string { return "wiki" }
 
 func (c *WikiCapability) Actions() []ActionDef {
 	const pageDesc = `Page name, for example: ` + pageExample + `. No ".md"; "/" puts the page in a folder.`
+	// One clause, not a syntax guide: the page it names is read only by a
+	// model that needs it.
+	livePages := ""
+	if c.live() {
+		livePages = " For a page with a live query or a script, first read the page " + wiki.HelpPage + " and copy its syntax."
+	}
 	return []ActionDef{
 		{
 			Name: "list",
@@ -113,7 +123,7 @@ func (c *WikiCapability) Actions() []ActionDef {
 		{
 			Name:   "create",
 			Writes: true,
-			Desc:   "Create a new wiki page. Fails if the page exists: then use wiki_append or wiki_edit. Returns the page's name and, when the wiki is open in the browser, a Markdown link to it: put that link in your reply exactly as returned.",
+			Desc:   "Create a new wiki page. Fails if the page exists: then use wiki_append or wiki_edit. Returns the page's name and, when the wiki is open in the browser, a Markdown link to it: put that link in your reply exactly as returned." + livePages,
 			Params: []ParamDef{
 				{Name: "page", Type: "string", Required: true, Desc: pageDesc},
 				{Name: "content", Type: "string", Required: true, Desc: "The page's text in Markdown. Link to another page with [[Page name]]."},
@@ -392,14 +402,38 @@ func (c *WikiCapability) resolvePage(ws *workspace.Workspace, params map[string]
 // is opened, with the browser's full reach on the wiki's address.
 const libraryFolder = "Library"
 
-// writable refuses a page the tools must not change. A model acts on text it
-// read from the vault, and that text must not become code in the user's
-// browser.
-func writable(p page) error {
+// writable refuses a page the tools must not change. With live pages on,
+// the owner's default, every page is theirs to write. With it off, a model
+// acting on text it read in the vault cannot turn that text into code in
+// the user's browser.
+func (c *WikiCapability) writable(p page) error {
+	if c.live() {
+		return nil
+	}
 	if first, _, nested := strings.Cut(p.name, "/"); nested && strings.EqualFold(first, libraryFolder) {
-		return fmt.Errorf("page %q is under %s/, where the wiki keeps its own scripts and settings; the wiki tools do not change those pages. Choose a name outside %s/.", p.name, libraryFolder, libraryFolder)
+		return fmt.Errorf("page %q is under %s/, where the wiki runs scripts, and the setting %s is off, so the wiki tools write plain text only. Choose a name outside %s/, or tell the user that the setting has to be on.", p.name, libraryFolder, wiki.LivePagesSetting, libraryFolder)
 	}
 	return nil
+}
+
+// plainText makes the Lua expressions in text a tool is about to write
+// inert, unless live pages are on. It returns the text to write and a note
+// for the model when the text was changed.
+func (c *WikiCapability) plainText(text string) (string, string) {
+	if c.live() {
+		return text, ""
+	}
+	inert, count := inertText(text)
+	return inert, inertNote(count)
+}
+
+// addsNoCode is the check that a write added no expression, which applies
+// only with live pages off.
+func (c *WikiCapability) addsNoCode(before, after string) error {
+	if c.live() {
+		return nil
+	}
+	return noNewCode(before, after)
 }
 
 // luaExpressions finds the "${" in text that SilverBullet would evaluate as
@@ -493,7 +527,7 @@ func inertNote(count int) string {
 	if count == 0 {
 		return ""
 	}
-	return fmt.Sprintf("The text had \"${\" %s outside a code block. The wiki would run that as code, so it was saved as \"\\${\", which the wiki shows as the same text.", times(count))
+	return fmt.Sprintf("The text had \"${\" %s outside a code block. The wiki would run that as code, and the setting %s is off, so it was saved as \"\\${\", which the wiki shows as the same text.", times(count), wiki.LivePagesSetting)
 }
 
 func times(count int) string {
@@ -508,7 +542,7 @@ func times(count int) string {
 // already there. What the user wrote stays; the tools add none.
 func noNewCode(before, after string) error {
 	if len(luaExpressions(after)) > len(luaExpressions(before)) {
-		return fmt.Errorf("this change would join text on the page into \"${\", which the wiki would run as code when the page is opened. Leave a space between \"$\" and \"{\", or put it inside backticks.")
+		return fmt.Errorf("this change would join text on the page into \"${\", which the wiki would run as code when the page is opened, and the setting %s is off. Leave a space between \"$\" and \"{\", or put it inside backticks.", wiki.LivePagesSetting)
 	}
 	return nil
 }
@@ -574,6 +608,11 @@ func (c *WikiCapability) pageError(ws *workspace.Workspace, p page, err error) e
 		return fmt.Errorf("%s is a folder, not a page; list it with wiki_list", quoted)
 	}
 	return errors.New(strings.ReplaceAll(err.Error(), p.rel, quoted))
+}
+
+func statOf(ws *workspace.Workspace, p page) error {
+	_, err := ws.Stat(p.rel)
+	return err
 }
 
 // readPage loads the text of the page p.
@@ -842,6 +881,11 @@ func (c *WikiCapability) handleRead(params map[string]any) (ActionResult, error)
 		}
 	}
 	content, err := c.readPage(ws, p)
+	if err != nil && p.name == wiki.HelpPage && errors.Is(statOf(ws, p), fs.ErrNotExist) {
+		// The tool descriptions send a model to this page; a wiki that was
+		// never opened in the browser has no file for it yet.
+		content, err = wiki.HelpText(), nil
+	}
 	if err != nil {
 		return ActionResult{}, err
 	}
@@ -1089,10 +1133,10 @@ func (c *WikiCapability) handleCreate(params map[string]any) (ActionResult, erro
 	if err != nil {
 		return ActionResult{}, err
 	}
-	if err := writable(p); err != nil {
+	if err := c.writable(p); err != nil {
 		return ActionResult{}, err
 	}
-	content, inert := inertText(content)
+	content, inert := c.plainText(content)
 	c.writing.Lock()
 	defer c.writing.Unlock()
 	if _, err := ws.Stat(p.rel); err == nil {
@@ -1103,7 +1147,7 @@ func (c *WikiCapability) handleCreate(params map[string]any) (ActionResult, erro
 		return ActionResult{}, err
 	}
 	change, note := c.changed(p, len(content))
-	return ActionResult{Data: change, Text: joinNotes(inertNote(inert), note)}, nil
+	return ActionResult{Data: change, Text: joinNotes(inert, note)}, nil
 }
 
 func (c *WikiCapability) handleAppend(params map[string]any) (ActionResult, error) {
@@ -1119,10 +1163,10 @@ func (c *WikiCapability) handleAppend(params map[string]any) (ActionResult, erro
 	if err != nil {
 		return ActionResult{}, err
 	}
-	if err := writable(p); err != nil {
+	if err := c.writable(p); err != nil {
 		return ActionResult{}, err
 	}
-	content, inert := inertText(content)
+	content, inert := c.plainText(content)
 	c.writing.Lock()
 	defer c.writing.Unlock()
 	existing := ""
@@ -1135,14 +1179,14 @@ func (c *WikiCapability) handleAppend(params map[string]any) (ActionResult, erro
 	if before := strings.TrimRight(existing, "\n"); before != "" {
 		updated = before + "\n\n" + updated
 	}
-	if err := noNewCode(existing, updated); err != nil {
+	if err := c.addsNoCode(existing, updated); err != nil {
 		return ActionResult{}, err
 	}
 	if err := c.writePage(ws, p, updated); err != nil {
 		return ActionResult{}, err
 	}
 	change, note := c.changed(p, len(updated))
-	return ActionResult{Data: change, Text: joinNotes(inertNote(inert), note)}, nil
+	return ActionResult{Data: change, Text: joinNotes(inert, note)}, nil
 }
 
 func endWithNewline(content string) string {
@@ -1158,7 +1202,7 @@ func (c *WikiCapability) handleEdit(params map[string]any) (ActionResult, error)
 	if err != nil {
 		return ActionResult{}, err
 	}
-	if err := writable(p); err != nil {
+	if err := c.writable(p); err != nil {
 		return ActionResult{}, err
 	}
 	c.writing.Lock()
@@ -1183,16 +1227,16 @@ func (c *WikiCapability) handleEdit(params map[string]any) (ActionResult, error)
 	case count > 1:
 		return ActionResult{}, fmt.Errorf("old_text occurs %d times in page %q. Add more of the surrounding text so it matches once.", count, p.name)
 	}
-	newText, inert := inertText(newText)
+	newText, inert := c.plainText(newText)
 	updated := strings.Replace(content, oldText, newText, 1)
-	if err := noNewCode(content, updated); err != nil {
+	if err := c.addsNoCode(content, updated); err != nil {
 		return ActionResult{}, err
 	}
 	if err := c.writePage(ws, p, updated); err != nil {
 		return ActionResult{}, err
 	}
 	change, note := c.changed(p, len(updated))
-	return ActionResult{Data: change, Text: joinNotes(inertNote(inert), note)}, nil
+	return ActionResult{Data: change, Text: joinNotes(inert, note)}, nil
 }
 
 func (c *WikiCapability) handleMove(params map[string]any) (ActionResult, error) {
@@ -1225,7 +1269,7 @@ func (c *WikiCapability) handleMove(params map[string]any) (ActionResult, error)
 		return ActionResult{}, fmt.Errorf("page and new_name are the same, so nothing would move")
 	}
 	for _, p := range []page{from, to} {
-		if err := writable(p); err != nil {
+		if err := c.writable(p); err != nil {
 			return ActionResult{}, err
 		}
 	}
@@ -1284,7 +1328,7 @@ func (c *WikiCapability) handleDelete(params map[string]any) (ActionResult, erro
 	if err != nil {
 		return ActionResult{}, err
 	}
-	if err := writable(p); err != nil {
+	if err := c.writable(p); err != nil {
 		return ActionResult{}, err
 	}
 	c.writing.Lock()
