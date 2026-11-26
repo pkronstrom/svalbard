@@ -85,6 +85,11 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "settings" {
 		return settings.Run(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
 	}
+	// Skills subcommand: the same fast path, for an agent that has a shell
+	// and no MCP client.
+	if len(os.Args) > 1 && os.Args[1] == "skills" {
+		return runSkills(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
+	}
 	workDir, err := os.Getwd()
 	if err != nil {
 		workDir = driveRoot
