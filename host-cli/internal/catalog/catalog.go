@@ -75,6 +75,11 @@ type Item struct {
 	// in their place, for a package that ships a smaller dependency set than
 	// its metadata declares.
 	RequirementsFrom string `yaml:"requirements_from,omitempty"`
+	// PythonLauncher names a command written to bin/<platform>/ that runs the
+	// drive's Python with the package tree on PYTHONPATH, for packages used
+	// as libraries by scripts rather than through entry points. A package
+	// with a launcher must install on every platform of the vault.
+	PythonLauncher string `yaml:"python_launcher,omitempty"`
 }
 
 // BundleSource is one pinned download of an item bundle. An archive (.zip, .tgz

@@ -283,3 +283,79 @@ func TestPythonVersionFromSpec(t *testing.T) {
 		}
 	}
 }
+
+func newLauncherTestCatalog(t *testing.T) (*catalog.Catalog, catalog.Item) {
+	t.Helper()
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"python.yaml": {Data: []byte("id: svalbard-python\ntype: python-venv\npython: \"3.12\"\nstrategy: build\nbuild: {family: python-venv}\n")},
+		"docs.yaml":   {Data: []byte("id: py-docs\ntype: python-package\nvenv: svalbard-python\npackages: [docpkg==1.0]\npython_launcher: py-docs\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe, _ := cat.RecipeByID("svalbard-python")
+	return cat, recipe
+}
+
+func TestPythonLauncherWrapper(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newLauncherTestCatalog(t)
+	fakeUV(t, nil)
+	platforms := []string{"linux-arm64", "macos-arm64"}
+	if _, err := buildPythonVenv(root, recipe, cat, Options{Platforms: platforms}); err != nil {
+		t.Fatal(err)
+	}
+	pythons := map[string]string{
+		"linux-arm64": "python/cpython-3.12.14-linux-aarch64-gnu/bin/python3.12",
+		"macos-arm64": "python/cpython-3.12.14-macos-aarch64-none/bin/python3.12",
+	}
+	for _, platform := range platforms {
+		path := filepath.Join(root, "bin", platform, "py-docs")
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o755 {
+			t.Errorf("%s mode = %v, want 0755", path, info.Mode().Perm())
+		}
+		data, _ := os.ReadFile(path)
+		want := "#!/bin/sh\n" +
+			"DRIVE=\"$(cd \"$(dirname \"$0\")/../..\" && pwd)\"\n" +
+			"PY=\"$DRIVE/runtime/python/" + platform + "\"\n" +
+			"PYTHONPATH=\"$PY/tools/py-docs\" PYTHONNOUSERSITE=1 exec \"$PY/" + pythons[platform] + "\" \"$@\"\n"
+		if string(data) != want {
+			t.Errorf("%s =\n%s\nwant\n%s", path, data, want)
+		}
+	}
+}
+
+func TestPythonLauncherWithoutEntryPoints(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newLauncherTestCatalog(t)
+	fakeUV(t, nil)
+	entries, err := buildPythonVenv(root, recipe, cat, Options{Platforms: []string{"macos-arm64"}, DesiredIDs: map[string]bool{"py-docs": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, e := range entries {
+		ids = append(ids, e.ID+":"+filepath.ToSlash(e.RelativePath))
+	}
+	want := []string{"py-docs:runtime/python/macos-arm64/tools/py-docs", "svalbard-python:runtime/python"}
+	if !slices.Equal(ids, want) {
+		t.Fatalf("entries = %v, want %v", ids, want)
+	}
+}
+
+func TestPythonLauncherFailsWithoutWheels(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newLauncherTestCatalog(t)
+	fakeUV(t, map[string]bool{"docpkg/aarch64-manylinux_2_28": true})
+	_, err := buildPythonVenv(root, recipe, cat, Options{Platforms: []string{"macos-arm64", "linux-arm64"}})
+	if err == nil || !strings.Contains(err.Error(), "py-docs") || !strings.Contains(err.Error(), "linux-arm64") {
+		t.Fatalf("err = %v, want a failure naming py-docs and linux-arm64", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", "linux-arm64", "py-docs")); !os.IsNotExist(err) {
+		t.Errorf("launcher written for a platform without wheels: %v", err)
+	}
+}

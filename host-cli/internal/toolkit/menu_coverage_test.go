@@ -49,6 +49,7 @@ var supportOnlyRecipes = map[string][]string{
 	"server that the Local AI entries start":               {"llama-server"},
 	"builds the Python environment during apply":           {"uv"},
 	"PlatformIO itself: the Embedded Dev Shell runs it":    {"platformio-core", "espidf-python"},
+	"Python libraries the AI clients' document skills run": {"py-docs"},
 	"dependency of the map viewer, which has its own rows": {"go-pmtiles", "dufs"},
 	// Command-line tools: launching them from the menu is a later phase.
 	noEntryYet: {
