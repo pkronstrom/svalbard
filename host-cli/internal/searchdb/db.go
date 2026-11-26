@@ -124,6 +124,7 @@ func Open(path string) (*DB, error) {
 		{"source_size", "INTEGER"},
 		{"source_mtime_ns", "INTEGER"},
 		{"note", "TEXT"},
+		{"reader_version", "INTEGER"},
 	} {
 		var present int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, tableForColumn(column.name), column.name).Scan(&present); err != nil {
@@ -241,12 +242,17 @@ type Source struct {
 	// Note says why a source is not, or not fully, searchable: a scanned or
 	// password-protected document. Empty for a fully indexed source.
 	Note string
+	// ReaderVersion is the version of the reader that indexed the source, 0
+	// for a row written before versions were recorded. Like the identity it
+	// is a cache key, not a checksum: a ZIM indexed by an older reader is
+	// read again.
+	ReaderVersion int
 }
 
 // IndexedSources returns all currently indexed source identities. Legacy rows
 // without an identity are returned with an empty UUID and are never current.
 func (d *DB) IndexedSources() ([]Source, error) {
-	rows, err := d.db.Query(`SELECT filename, title, COALESCE(source_uuid, ''), COALESCE(source_size, 0), COALESCE(source_mtime_ns, 0), COALESCE(note, '') FROM sources ORDER BY filename`)
+	rows, err := d.db.Query(`SELECT filename, title, COALESCE(source_uuid, ''), COALESCE(source_size, 0), COALESCE(source_mtime_ns, 0), COALESCE(note, ''), COALESCE(reader_version, 0) FROM sources ORDER BY filename`)
 	if err != nil {
 		return nil, fmt.Errorf("searchdb: query sources: %w", err)
 	}
@@ -255,12 +261,54 @@ func (d *DB) IndexedSources() ([]Source, error) {
 	var sources []Source
 	for rows.Next() {
 		var source Source
-		if err := rows.Scan(&source.Filename, &source.Title, &source.UUID, &source.Size, &source.ModTimeNS, &source.Note); err != nil {
+		if err := rows.Scan(&source.Filename, &source.Title, &source.UUID, &source.Size, &source.ModTimeNS, &source.Note, &source.ReaderVersion); err != nil {
 			return nil, fmt.Errorf("searchdb: scan source: %w", err)
 		}
 		sources = append(sources, source)
 	}
 	return sources, rows.Err()
+}
+
+// SetSourceReaderVersion records the reader version of an indexed source
+// without touching its articles. The ZIM pass calls it last, once the
+// archive's documents are all indexed, so a run cut short leaves the archive
+// to be visited again.
+func (d *DB) SetSourceReaderVersion(ctx context.Context, filename string, version int) error {
+	result, err := d.db.ExecContext(ctx, `UPDATE sources SET reader_version = ? WHERE filename = ?`, version, filename)
+	if err != nil {
+		return fmt.Errorf("searchdb: set reader version of %s: %w", filename, err)
+	}
+	if n, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("searchdb: set reader version of %s: %w", filename, err)
+	} else if n == 0 {
+		return fmt.Errorf("searchdb: set reader version: %s is not indexed", filename)
+	}
+	return nil
+}
+
+// ArticleHead is an indexed article's path and title.
+type ArticleHead struct {
+	Path  string
+	Title string
+}
+
+// ArticleHeads lists the paths and titles of one source's articles, in path
+// order.
+func (d *DB) ArticleHeads(filename string) ([]ArticleHead, error) {
+	rows, err := d.db.Query(`SELECT a.path, a.title FROM articles a JOIN sources s ON s.id = a.source_id WHERE s.filename = ? ORDER BY a.path`, filename)
+	if err != nil {
+		return nil, fmt.Errorf("searchdb: article heads of %s: %w", filename, err)
+	}
+	defer rows.Close()
+	var heads []ArticleHead
+	for rows.Next() {
+		var head ArticleHead
+		if err := rows.Scan(&head.Path, &head.Title); err != nil {
+			return nil, fmt.Errorf("searchdb: scan article head: %w", err)
+		}
+		heads = append(heads, head)
+	}
+	return heads, rows.Err()
 }
 
 // IdentityCurrent reports whether a persisted source has the same complete
@@ -297,9 +345,9 @@ func (d *DB) ReplaceSource(ctx context.Context, source Source, articles []Articl
 	if source.Note != "" {
 		note = source.Note
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO sources (filename, title, indexed_at, source_uuid, source_size, source_mtime_ns, note) VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(filename) DO UPDATE SET title=excluded.title, indexed_at=excluded.indexed_at, source_uuid=excluded.source_uuid, source_size=excluded.source_size, source_mtime_ns=excluded.source_mtime_ns, note=excluded.note`,
-		source.Filename, source.Title, now, source.UUID, source.Size, source.ModTimeNS, note); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sources (filename, title, indexed_at, source_uuid, source_size, source_mtime_ns, note, reader_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(filename) DO UPDATE SET title=excluded.title, indexed_at=excluded.indexed_at, source_uuid=excluded.source_uuid, source_size=excluded.source_size, source_mtime_ns=excluded.source_mtime_ns, note=excluded.note, reader_version=excluded.reader_version`,
+		source.Filename, source.Title, now, source.UUID, source.Size, source.ModTimeNS, note, source.ReaderVersion); err != nil {
 		return fmt.Errorf("searchdb: replace source: %w", err)
 	}
 	var sourceID int64
