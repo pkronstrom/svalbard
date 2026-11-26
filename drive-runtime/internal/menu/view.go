@@ -22,6 +22,9 @@ func renderView(m Model) string {
 	if m.searchActive {
 		return renderSearchView(m)
 	}
+	if m.settingsActive {
+		return renderSettingsView(m)
+	}
 	if m.showingOutput {
 		return renderOutputView(m)
 	}

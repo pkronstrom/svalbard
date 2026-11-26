@@ -166,3 +166,59 @@ func HumanSize(size int64) string {
 		return fmt.Sprintf("%.0f KB", float64(size)/float64(kb))
 	}
 }
+
+// ReadManifestRecipes maps each realized file of the vault to the recipe that
+// installed it, by file name and by drive-relative path. A recipe's id is not
+// its file's name: the wikem recipe installs wikem_en_all_maxi_2026-04.zim.
+//
+// Like ReadManifestMetadata it reads the manifest line by line; the runtime
+// carries no YAML parser. It understands the block form the host writes:
+// a top-level "realized:" with "- id:" entries holding "filename:" and
+// "relative_path:" scalars.
+func ReadManifestRecipes(path string) (map[string]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return map[string]string{}, err
+	}
+	defer file.Close()
+
+	recipes := map[string]string{}
+	inRealized, id := false, ""
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		raw := scanner.Text()
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if raw[0] != ' ' && raw[0] != '\t' && raw[0] != '-' {
+			inRealized, id = strings.HasPrefix(line, "realized:"), ""
+			continue
+		}
+		if !inRealized {
+			continue
+		}
+		if value, ok := manifestScalar(line, "- id:"); ok {
+			id = value
+			continue
+		}
+		if strings.HasPrefix(line, "- ") {
+			id = "" // an entry that does not start with its id
+		}
+		for _, key := range []string{"filename:", "relative_path:"} {
+			if value, ok := manifestScalar(line, key); ok && id != "" && value != "" {
+				recipes[filepath.ToSlash(value)] = id
+			}
+		}
+	}
+	return recipes, scanner.Err()
+}
+
+// manifestScalar returns the value of "key value" with any quotes removed.
+func manifestScalar(line, key string) (string, bool) {
+	rest, ok := strings.CutPrefix(line, key)
+	if !ok {
+		return "", false
+	}
+	return strings.Trim(strings.TrimSpace(rest), `"'`), true
+}

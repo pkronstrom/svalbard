@@ -152,13 +152,29 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 	}
 
 	if effectiveMode == ModeKeyword {
-		results, err = s.eng.KeywordContext(ctx, query, limit)
+		matches, err := s.eng.Search(ctx, query, engine.KeywordOptions{Limit: limit})
 		if err != nil {
 			return SearchResponse{}, err
 		}
 		if err := ctx.Err(); err != nil {
 			return SearchResponse{}, err
 		}
+		results = matches.Results
+		// Partial matches follow the complete ones; say where they start, and
+		// name the words that are nowhere in the index.
+		var notes []string
+		if status != "" {
+			notes = append(notes, status)
+		}
+		if partial := len(results) - matches.Exact; partial > 0 && matches.Exact > 0 {
+			notes = append(notes, fmt.Sprintf("First %d have every word; the rest are partial matches", matches.Exact))
+		} else if partial > 0 {
+			notes = append(notes, "No result has every word; showing partial matches")
+		}
+		if len(matches.Missing) > 0 {
+			notes = append(notes, "No article mentions: "+strings.Join(matches.Missing, ", "))
+		}
+		status = strings.Join(notes, ". ")
 	}
 
 	return SearchResponse{

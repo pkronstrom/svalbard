@@ -29,6 +29,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/openwebui"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/serveall"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/share"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/shell"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/verify"
@@ -76,6 +77,11 @@ func run() error {
 	driveRoot, err := resolveDriveRoot()
 	if err != nil {
 		return err
+	}
+	// Settings subcommand: a fast path that needs neither actions.json nor the
+	// menu, so scripts and other programs can read and change a value.
+	if len(os.Args) > 1 && os.Args[1] == "settings" {
+		return settings.Run(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
 	}
 	workDir, err := os.Getwd()
 	if err != nil {
