@@ -8,10 +8,15 @@ tags:
 depth: reference-only
 size_gb: 0.063
 platforms:
-  linux-x86_64: https://github.com/anomalyco/opencode/releases/download/v1.19.4/opencode-linux-x64-baseline-musl.tar.gz
-  linux-arm64: https://github.com/anomalyco/opencode/releases/download/v1.19.4/opencode-linux-arm64-musl.tar.gz
-  macos-arm64: https://github.com/anomalyco/opencode/releases/download/v1.19.4/opencode-darwin-arm64.zip
-  macos-x86_64: https://github.com/anomalyco/opencode/releases/download/v1.19.4/opencode-darwin-x64-baseline.zip
+  linux-x86_64: https://github.com/anomalyco/opencode/releases/download/v1.19.6/opencode-linux-x64-baseline-musl.tar.gz
+  linux-arm64: https://github.com/anomalyco/opencode/releases/download/v1.19.6/opencode-linux-arm64-musl.tar.gz
+  macos-arm64: https://github.com/anomalyco/opencode/releases/download/v1.19.6/opencode-darwin-arm64.zip
+  macos-x86_64: https://github.com/anomalyco/opencode/releases/download/v1.19.6/opencode-darwin-x64-baseline.zip
+platform_sha256:
+  linux-x86_64: bc6b0d702163d859161ee8e43ea3f16d1bd43b305ac7ce17742eb01ba72489f3
+  linux-arm64: 45407388777dfc1894591c9727c169f202ad92c75757038950630a0fbb12ca97
+  macos-arm64: c0be3f34dde2fdcb31b25120f303c6ed5b69b828f16e5e0fbecff21a882adda1
+  macos-x86_64: 5f08d3f7d7555fdef8025f57aef89c5bc2448460827d4e225f815a308ce6976b
 description: OpenCode terminal coding assistant
 menu:
   group: local-ai

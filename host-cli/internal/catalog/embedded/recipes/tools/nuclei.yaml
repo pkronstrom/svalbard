@@ -10,6 +10,11 @@ platforms:
   linux-arm64: https://github.com/projectdiscovery/nuclei/releases/download/v3.11.1/nuclei_3.11.1_linux_arm64.zip
   macos-arm64: https://github.com/projectdiscovery/nuclei/releases/download/v3.11.1/nuclei_3.11.1_macOS_arm64.zip
   macos-x86_64: https://github.com/projectdiscovery/nuclei/releases/download/v3.11.1/nuclei_3.11.1_macOS_amd64.zip
+platform_sha256:
+  linux-x86_64: ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6
+  linux-arm64: 8044e3d9768ba0a744b2872c1a87e813006f013da97ca9f50f7661a4203bec07
+  macos-arm64: 7d7e291addd1fc29a9bf8d089afe878a9799b20229cbea2fb1693fc40fd4c5f0
+  macos-x86_64: 75c47ce11e9dbd4288a1c895ed85e3c4df9f4acb8237d6d178da6dccd1628f2a
 description: Template-based vulnerability scanner (pair with nuclei-templates dataset)
 license:
   id: MIT

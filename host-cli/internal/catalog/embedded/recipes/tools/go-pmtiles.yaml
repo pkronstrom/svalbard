@@ -11,6 +11,11 @@ platforms:
   linux-arm64: https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles_1.31.2_Linux_arm64.tar.gz
   macos-arm64: https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles-1.31.2_Darwin_arm64.zip
   macos-x86_64: https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles-1.31.2_Darwin_x86_64.zip
+platform_sha256:
+  linux-x86_64: 3ed7dbf4ec2e6dfe5e25b6f70d1ffc932729f93c86db353bf514dd71010a312f
+  linux-arm64: f8bd47e7ea866863489cad588fbaf2f31f42e5821f7a03f009b3769f05801cb1
+  macos-arm64: 40528f7f616fcbf91207cd48c8fc023d213f6d86c0cbf1f748732803d1880f3d
+  macos-x86_64: 1f0dc02eee6c58312dd6c509faee1b5c32f0596568af1bf51f1b034e7a88a65b
 description: go-pmtiles — PMTiles CLI for serving and extracting map tiles
 license:
   id: BSD-3-Clause

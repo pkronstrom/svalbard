@@ -69,7 +69,7 @@ ENV MAGIC=/usr/share/misc/magic.mgc
 COPY --from=go-builder /usr/local/bin/zim-dither /usr/local/bin/
 COPY --from=go-builder /usr/local/bin/zim-compact /usr/local/bin/
 
-COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /usr/local/bin/uv
 
 RUN apk add --no-cache --virtual .build-deps gcc g++ musl-dev python3-dev \
     && pip install --no-cache-dir \

@@ -6,10 +6,15 @@ tags:
 depth: reference-only
 size_gb: 0.015
 platforms:
-  linux-x86_64: https://github.com/epi052/feroxbuster/releases/download/v2.13.1/x86_64-linux-feroxbuster.zip
-  linux-arm64: https://github.com/epi052/feroxbuster/releases/download/v2.13.1/aarch64-linux-feroxbuster.zip
-  macos-arm64: https://github.com/epi052/feroxbuster/releases/download/v2.13.1/aarch64-macos-feroxbuster.zip
-  macos-x86_64: https://github.com/epi052/feroxbuster/releases/download/v2.13.1/x86_64-macos-feroxbuster.zip
+  linux-x86_64: https://github.com/epi052/feroxbuster/releases/download/v2.14.0/x86_64-linux-feroxbuster.zip
+  linux-arm64: https://github.com/epi052/feroxbuster/releases/download/v2.14.0/aarch64-linux-feroxbuster.zip
+  macos-arm64: https://github.com/epi052/feroxbuster/releases/download/v2.14.0/aarch64-macos-feroxbuster.zip
+  macos-x86_64: https://github.com/epi052/feroxbuster/releases/download/v2.14.0/x86_64-macos-feroxbuster.zip
+platform_sha256:
+  linux-x86_64: 8eab53f2506d26d2a79a394c87e591a6469fd2e3dfc8af3b8c94e3f93f970a0c
+  linux-arm64: 8b3c30a2baf249963331ac1f9417e44eeadc00774b127e2452786a4f32a9a7ea
+  macos-arm64: 54d4800140619b9b7262095d4a04fa108dd56582005f918d45e5d9caff2c5f38
+  macos-x86_64: 2167c88a3d63f5091d8f2938e3f110db96334402669cfb0bdd45fd0b89ca0449
 description: Fast recursive content discovery tool
 license:
   id: MIT

@@ -10,6 +10,11 @@ platforms:
   linux-arm64: https://github.com/projectdiscovery/httpx/releases/download/v1.12.0/httpx_1.12.0_linux_arm64.zip
   macos-arm64: https://github.com/projectdiscovery/httpx/releases/download/v1.12.0/httpx_1.12.0_macOS_arm64.zip
   macos-x86_64: https://github.com/projectdiscovery/httpx/releases/download/v1.12.0/httpx_1.12.0_macOS_amd64.zip
+platform_sha256:
+  linux-x86_64: 9d8439e8b6c9aa7d1e2314817a392e00d5178da3af5652f7475f88868f418f76
+  linux-arm64: fd7b123c1dfbc3d69f19f524e4eebcd6ec06b9a6cbd56813c76f11645197331e
+  macos-arm64: 21d60328b383dba8a9fe249ac76b12edda4ec2e52a9cb21876c0a79123675569
+  macos-x86_64: 16760b5e2122b66f57b9fbdb59f564b1181507c093d6a36066f40e5de38e8fa9
 description: Multi-purpose HTTP toolkit — probing, tech detection, fingerprinting
 license:
   id: MIT

@@ -8,10 +8,15 @@ tags:
 depth: reference-only
 size_gb: 0.043
 platforms:
-  linux-x86_64: https://github.com/earendil-works/pi/releases/download/v1.4.0/pi-linux-x64.tar.gz
-  linux-arm64: https://github.com/earendil-works/pi/releases/download/v1.4.0/pi-linux-arm64.tar.gz
-  macos-arm64: https://github.com/earendil-works/pi/releases/download/v1.4.0/pi-darwin-arm64.tar.gz
-  macos-x86_64: https://github.com/earendil-works/pi/releases/download/v1.4.0/pi-darwin-x64.tar.gz
+  linux-x86_64: https://github.com/earendil-works/pi/releases/download/v1.6.0/pi-linux-x64.tar.gz
+  linux-arm64: https://github.com/earendil-works/pi/releases/download/v1.6.0/pi-linux-arm64.tar.gz
+  macos-arm64: https://github.com/earendil-works/pi/releases/download/v1.6.0/pi-darwin-arm64.tar.gz
+  macos-x86_64: https://github.com/earendil-works/pi/releases/download/v1.6.0/pi-darwin-x64.tar.gz
+platform_sha256:
+  linux-x86_64: ef77dbe4379b3bdeb425a1e1b862fa3c915c255000dfe4965c98eee96a5765d1
+  linux-arm64: 5404547b9739be596d50ae7142c52535899e8e7dd37a7bace9be593e0355b468
+  macos-arm64: 6429287b7ae98d726ec577815d14fd680e7c587e89ecc5153b4a145dc4adba33
+  macos-x86_64: 5b69cd87c3b00e74cce2d1499df3b7a1ec73632f11abf64696d110f0f4dc4192
 description: pi terminal coding agent (self-contained Bun binary)
 menu:
   group: local-ai

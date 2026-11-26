@@ -10,6 +10,11 @@ platforms:
   linux-arm64: https://github.com/jpillora/chisel/releases/download/v1.12.0/chisel_1.12.0_linux_arm64.gz
   macos-arm64: https://github.com/jpillora/chisel/releases/download/v1.12.0/chisel_1.12.0_darwin_arm64.gz
   macos-x86_64: https://github.com/jpillora/chisel/releases/download/v1.12.0/chisel_1.12.0_darwin_amd64.gz
+platform_sha256:
+  linux-x86_64: f3f180f1d93aa72cce4e6386f98cc06569a0146fbd65eb4423cf83e6434bcfe6
+  linux-arm64: 2ec6152cd2c74fe0146d4d79e4e7aa174521368c56e433d55e023a92ea404ec3
+  macos-arm64: 707a4b932eea214765146504a0df246cefc415b4297af65a80dd67cf69ba85a9
+  macos-x86_64: 4aeae36c867f11c8e8c3f2b913a0e063ea3c6d29e1c14a52ed2e6eef8cfc4395
 description: TCP/UDP tunnel over HTTP secured via SSH
 license:
   id: MIT

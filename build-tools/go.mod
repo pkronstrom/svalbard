@@ -6,7 +6,7 @@ require github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 
 require (
 	github.com/stazelabs/gozim v0.1.0
-	golang.org/x/image v0.47.0
+	golang.org/x/image v0.48.0
 )
 
 require (
