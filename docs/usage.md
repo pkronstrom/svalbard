@@ -219,6 +219,13 @@ Opening it shows the PDF in your browser at that page. A search lists at most th
 
 AI tools connected to the drive get the same pages through `search` and `search_read`, with the page number to cite. They can limit a search to one document or to a whole collection (`books/car-manuals`).
 
+The collection also has its own entry in the drive's menu, under `Library` → `Documents`, with the number of documents beside it. Opening it lists the collection's files in your browser, and so does `./run car-manuals`. The entry is named after the id ("Car Manuals") and described by the `description:`; to name it yourself, add this to the collection file:
+
+```yaml
+menu:
+  label: Car and trailer manuals
+```
+
 ### Another computer, a missing folder
 
 - **The vault keeps a copy of the collection file** in `.svalbard/recipes/`. On a computer that does not have your file, plan and apply use that copy and say so. Your own file wins when it exists.

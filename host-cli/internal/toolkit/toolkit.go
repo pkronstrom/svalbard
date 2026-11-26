@@ -88,6 +88,7 @@ type menuItem struct {
 	Label       string     `json:"label"`
 	Description string     `json:"description"`
 	Subheader   string     `json:"subheader,omitempty"`
+	Note        string     `json:"note,omitempty"`
 	Aliases     []string   `json:"aliases,omitempty"`
 	Order       int        `json:"order"`
 	Action      actionSpec `json:"action"`
@@ -164,14 +165,16 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	if len(opts) > 0 && opts[0].Menus != nil {
 		menus = opts[0].Menus
 	}
-	if err := writeActionsConfig(root, entries, presetName, menus); err != nil {
-		return err
-	}
+	var recipes map[string]catalog.Item
 	var platformIORecipes map[string]catalog.Item
 	var platformIOPlatforms []string
 	if len(opts) > 0 {
+		recipes = opts[0].Recipes
 		platformIORecipes = opts[0].PlatformIORecipes
 		platformIOPlatforms = opts[0].PlatformIOPlatforms
+	}
+	if err := writeActionsConfig(root, entries, presetName, menus, recipes); err != nil {
+		return err
 	}
 	if err := writePlatformIOInventory(root, entries, platformIORecipes, platformIOPlatforms); err != nil {
 		return err
@@ -181,10 +184,6 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	}
 	if err := writeAppPages(root, entries); err != nil {
 		return err
-	}
-	var recipes map[string]catalog.Item
-	if len(opts) > 0 {
-		recipes = opts[0].Recipes
 	}
 	if err := writeRecipesMetadata(root, entries, recipes); err != nil {
 		return err
@@ -267,6 +266,7 @@ type builtinCapability struct {
 	Group       string
 	Subheader   string
 	Label       string
+	Note        string
 	Description string
 	Order       int
 	ActionID    string
@@ -293,6 +293,12 @@ var builtinCapabilities = []builtinCapability{
 		Description: "Your own notes on this drive, in the browser. The AI clients can read and write them.", Order: 50, ActionID: "wiki",
 		Aliases:   []string{"wiki"},
 		Condition: func(s driveState) bool { return s.HasWiki }},
+	// The folder Open WebUI's file tools save to, for looking at what is in
+	// it without starting the model.
+	{ID: "workspace", Group: "apps", Subheader: "Apps", Label: "Workspace", Note: "pages the assistant saved",
+		Description: "Open the pages and files the assistant saved from Open WebUI, in the browser.", Order: 60, ActionID: "workspace",
+		Aliases:   []string{"workspace"},
+		Condition: func(s driveState) bool { return s.HasOpenWebUI }},
 	// Sharing
 	{ID: "serve-all", Group: "tools", Subheader: "Sharing", Label: "Serve Everything",
 		Description: "Start all services at once.", Order: 300, ActionID: "serve-all",
@@ -346,11 +352,18 @@ func writeChecksums(root string, entries []manifest.RealizedEntry) error {
 	return os.WriteFile(checksumPath, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 
-func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string, menus map[string]catalog.MenuSpec) error {
+func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetName string, menus map[string]catalog.MenuSpec, recipes map[string]catalog.Item) error {
 	// Collect items per group.
 	grouped := make(map[string][]menuItem)
 	var state driveState
 	hasChatModels := false
+	names := newRunNames()
+	installed := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		installed[e.ID] = true
+	}
+	// A recipe with a file per platform gets one row, not one per file.
+	listed := make(map[string]bool)
 
 	for i, e := range entries {
 		// Track drive state before any continue — all entries contribute.
@@ -382,6 +395,10 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 
 		td, ok := typeDefaults[e.Type]
 		if !ok {
+			continue
+		}
+		// A database opens in SQLiteViz, which is a recipe of its own.
+		if e.Type == "sqlite" && !installed["sqliteviz"] {
 			continue
 		}
 
@@ -417,6 +434,17 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 		if e.Type == "binary" && group == "local-ai" {
 			actionID = "agent"
 		}
+		// Nothing to run means no row: a command-line tool or a server that
+		// another entry starts.
+		if actionID == "" {
+			continue
+		}
+		if e.Type == "binary" {
+			if listed[e.ID] {
+				continue
+			}
+			listed[e.ID] = true
+		}
 
 		// Build default description if not provided by recipe.
 		if desc == "" {
@@ -447,10 +475,13 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			Label:       label,
 			Description: desc,
 			Subheader:   subheader,
-			Aliases:     aliases,
+			Aliases:     names.claim(aliases...),
 			Order:       order,
 			Action:      builtinAction(actionID, args),
 		})
+	}
+	if documents := documentItems(entries, recipes, names); len(documents) > 0 {
+		grouped["library"] = append(grouped["library"], documents...)
 	}
 
 	// Add default "Chat" item (no model arg, auto-selects) when chat models exist.
@@ -475,6 +506,7 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			Label:       cap.Label,
 			Description: cap.Description,
 			Subheader:   cap.Subheader,
+			Note:        cap.Note,
 			Order:       cap.Order,
 			Aliases:     cap.Aliases,
 			Action:      builtinAction(cap.ActionID, cap.Args),
