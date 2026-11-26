@@ -1,13 +1,11 @@
-Personal document library and import artifacts.
+Personal files for this checkout. Everything here except this README is
+gitignored, and no svalbard command reads this folder.
 
-Organize source documents by topic for bundling:
+To put your own files on a vault:
 
-  svalbard import --bundle radio-manuals library/radio/*.pdf
-  svalbard import --bundle medical-refs library/medical/*
+  One local file, copied into the vault's library/ folder:
 
-Import artifacts (ZIMs from web crawls, media, bundles) also
-land here alongside .source.yaml provenance metadata.
+    svalbard import manual.pdf --vault /path/to/vault --add
 
-Attach any registered source to a drive with:
-
-  svalbard attach local:radio-manuals /path/to/drive
+  Many PDFs by URL, file or folder, searchable page by page: write a
+  document collection. See "Your own documents" in docs/usage.md.
