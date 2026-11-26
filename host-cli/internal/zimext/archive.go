@@ -35,9 +35,12 @@ type Archive struct {
 	ns  byte
 }
 
-// OpenArchive opens a ZIM. Close it when done.
+// OpenArchive opens a ZIM. Close it when done. Documents are read once each,
+// so no cluster is worth caching and the file is read, not mapped: with
+// gozim's defaults, a run over 180 PDFs in four ZIMs peaked at 1.6 GB, and
+// at 0.9 GB with this.
 func OpenArchive(filename string) (*Archive, error) {
-	archive, err := zim.Open(filename)
+	archive, err := zim.OpenWithOptions(filename, zim.WithCacheSize(1), zim.WithMmap(false))
 	if err != nil {
 		return nil, fmt.Errorf("open zim: %w", err)
 	}
