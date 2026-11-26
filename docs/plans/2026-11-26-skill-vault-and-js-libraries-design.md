@@ -16,7 +16,7 @@ The owner's personal `~/.skill-vault` and its `/sv` meta-skill (search → read 
 
 ## Goals
 
-- A **generated `AGENTS.md`** that the shell-based drive agents see: what Svalbard is, the offline rules, what this vault contains, and which tools to use for procedures and libraries.
+- A **generated drive context** that the shell-based drive agents see, in each harness's own context file inside its config folder on the drive: what Svalbard is, the offline rules, what this vault contains, and which tools to use for procedures and libraries. Nothing is written to the drive's root (stage 1 measured why: a harness started there reads such a file on top of its own).
 - **A first set of lean, Svalbard-authored skills** (`skills-core`): short SKILL.md procedures written for small local models and for what this stick actually has, covering the use cases of upstream skills (Anthropic's first) rather than shipping those skills. Upstream skill repos pinned as recipes come later.
 - **JS library recipes**: a few themed recipes (`js-core`, `js-3d-cad`, `js-maps`, `js-media`), each pinning npm tarballs plus their dependencies, with a Svalbard-written quickstart per library, and one Python recipe (`py-docs`) for document files.
 - **Search over skills and library quickstarts** through the existing document sources in `data/search.db`, reached through two new MCP tools and a drive CLI command.
@@ -77,7 +77,7 @@ For library sources: pinned npm tarballs (owner agreed). They carry minified and
  js-maps, js-media    (trimmed) lib/js/<recipe>/docs/*.md ─────────┤
  py-docs ─────python-package──▶ tools/py-docs/ + launcher          │ markdown document sources
                                 data/search.db ◀───────────────────┘ (beside books/*.pdf)
-                                AGENTS.md, harness configs
+                                harness configs and context files
                                                                      agent ─ skill_search / skill_read
                                                                            └ svalbard-drive html pack
 ```
@@ -135,8 +135,8 @@ Every skill that ships is verified to work offline, and a skill that doesn't is 
 
 ### Orientation
 
-- `toolkit.Generate` writes `AGENTS.md` at the drive root from installed recipes: offline rules, a one-line inventory per installed area (search sources, maps, databases, apps, skills, JS libraries), and the tool and command names to use. Sections for absent areas are omitted.
-- `agent.PrepareClientLaunchConfig` places the same text where each shell harness reads a global context file in its isolated config: pi and opencode read `AGENTS.md`; goose needs either `CONTEXT_FILE_NAMES` or a `.goosehints` copy (verify against the pinned goose). Tool names in the text use each harness's own MCP prefix (pi `mcp__svalbard__`, omp `mcp__svalbard_`, opencode and goose as their pinned versions name them); omp gets the skills line in its lean system prompt.
+- `agent.DriveContext` is the one builder of the text, from what is installed when a harness starts: offline rules, the areas the drive has (search sources, skills, the wiki), and the tool and command names to use. Sections for absent areas are omitted. Nothing is written to the drive's root.
+- `agent.PrepareClientLaunchConfig` writes it where each shell harness reads a global context file in its isolated config: pi `AGENTS.md` in its agent folder, opencode `$XDG_CONFIG_HOME/opencode/AGENTS.md`, goose `$XDG_CONFIG_HOME/goose/.goosehints` (each checked against the pinned version). Tool names in the text use each harness's own MCP prefix (pi `mcp__svalbard__`, omp `mcp__svalbard_`, opencode and goose as their pinned versions name them); omp gets the skills line in its lean system prompt.
 - It also puts `<drive>/bin/<platform>` and the directory holding `svalbard-drive` on every harness's PATH, so `py-docs` and `svalbard-drive html pack` resolve from an agent's shell. Today agents inherit PATH unchanged.
 - The skill tools are offered only on vaults with a `skills` or `js-lib` recipe, like the wiki tools, so other vaults pay no schema tokens.
 - The MCP server sets its `instructions` to a one-line pointer to `skill_search`. Open WebUI gets that and the two tools, nothing more.

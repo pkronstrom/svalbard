@@ -30,7 +30,7 @@
 2. A user edits a file inside `skills/skills-core/<skill>/` → the next apply overwrites it (the directory is Svalbard-owned) and the apply output says so once, not silently.
 3. `py-docs` on a vault whose platforms include Linux arm64 and macOS → the launcher works on each platform's interpreter (lxml and Pillow wheels for each).
 4. A skill whose `requires:` names a recipe not in the catalog (typo) → `make verify` fails naming the skill and the id.
-5. `skills-core` deselected in the wizard while harnesses stay → `skills/skills-core/` removed (the empty `skills/` root may stay), the index holds no skill source after that apply, AGENTS.md has no skills paragraph, and the skill tools are not offered.
+5. `skills-core` deselected in the wizard while harnesses stay → `skills/skills-core/` removed (the empty `skills/` root may stay), the index holds no skill source after that apply, the harness context files have no skills paragraph at the next launch, and the skill tools are not offered.
 
 Each has a test in the task that owns the code (marked RF1–RF5).
 
