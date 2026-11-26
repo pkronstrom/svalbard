@@ -49,9 +49,9 @@ func (s *Server) buildActionTool(cap Capability, action ActionDef) gomcp.Tool {
 	options := []gomcp.ToolOption{
 		gomcp.WithDescription(action.Desc),
 		gomcp.WithTitleAnnotation(toolName(cap.Tool(), action.Name)),
-		gomcp.WithReadOnlyHintAnnotation(true),
-		gomcp.WithDestructiveHintAnnotation(false),
-		gomcp.WithIdempotentHintAnnotation(true),
+		gomcp.WithReadOnlyHintAnnotation(!action.Writes),
+		gomcp.WithDestructiveHintAnnotation(action.Writes),
+		gomcp.WithIdempotentHintAnnotation(!action.Writes),
 		gomcp.WithOpenWorldHintAnnotation(false),
 	}
 
@@ -171,14 +171,29 @@ func (s *Server) ServeSSE(addr string) error {
 // StreamableHTTPPath is where ServeStreamableHTTP mounts the server.
 const StreamableHTTPPath = "/mcp"
 
+// FilesStreamableHTTPPath is where the Open WebUI action mounts the file
+// tools, beside the drive's server on the same listener.
+const FilesStreamableHTTPPath = "/files/mcp"
+
 // ServeStreamableHTTP serves the server over Streamable HTTP on listener until
 // ctx is done. Clients that speak neither stdio nor SSE (Open WebUI) connect
 // here. The listener is closed on return.
 func (s *Server) ServeStreamableHTTP(ctx context.Context, listener net.Listener) error {
+	return ServeStreamableHTTP(ctx, listener, map[string]*Server{StreamableHTTPPath: s})
+}
+
+// ServeStreamableHTTP serves each server at its path on one listener until ctx
+// is done. A client sees every path as a tool server of its own, so it can
+// switch one off and keep the other. The listener is closed on return.
+func ServeStreamableHTTP(ctx context.Context, listener net.Listener, servers map[string]*Server) error {
 	mux := http.NewServeMux()
 	httpServer := &http.Server{Handler: mux}
-	streamable := mcpserver.NewStreamableHTTPServer(s.inner, mcpserver.WithStreamableHTTPServer(httpServer))
-	mux.Handle(StreamableHTTPPath, streamable)
+	var streamables []*mcpserver.StreamableHTTPServer
+	for path, server := range servers {
+		streamable := mcpserver.NewStreamableHTTPServer(server.inner)
+		mux.Handle(path, streamable)
+		streamables = append(streamables, streamable)
+	}
 
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
@@ -188,7 +203,12 @@ func (s *Server) ServeStreamableHTTP(ctx context.Context, listener net.Listener)
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		if err := streamable.Shutdown(shutdownCtx); err != nil {
+		// Sessions hold long-lived streams open; closing them first lets the
+		// HTTP server drain.
+		for _, streamable := range streamables {
+			_ = streamable.Shutdown(shutdownCtx)
+		}
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			_ = httpServer.Close()
 		}
 		if err := <-done; err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -17,6 +17,8 @@ type ActionDef struct {
 	Name   string     `json:"name"`
 	Desc   string     `json:"description"`
 	Params []ParamDef `json:"params"`
+	// Writes marks an action that changes files; the rest are read-only.
+	Writes bool `json:"writes,omitempty"`
 }
 
 // ActionResult carries tool output. Errors use the error return only.
