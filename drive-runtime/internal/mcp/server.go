@@ -118,6 +118,9 @@ type DriveOptions struct {
 	// tier the server offers no wiki tools and reads shorter pieces, so that
 	// a lookup leaves the model room to answer.
 	Context int
+	// Stdio: the client started the server as its own process, so it is on
+	// this computer and can open a file on the drive by its whole path.
+	Stdio bool
 }
 
 // NewDriveServer creates the drive's MCP server: its capabilities and, on a
@@ -140,7 +143,9 @@ func DriveCapabilities(driveRoot string, opts DriveOptions) []Capability {
 	searchTools.read = ReadLimitsFor(opts.Context)
 	caps := []Capability{searchTools}
 	if skillToolsOffered(meta) {
-		caps = append(caps, newSharedSkillCapability(driveRoot, meta, searchTools))
+		skillTools := newSharedSkillCapability(driveRoot, meta, searchTools)
+		skillTools.AbsolutePaths = opts.Stdio
+		caps = append(caps, skillTools)
 	}
 	caps = append(caps,
 		NewVaultCapability(driveRoot, meta),

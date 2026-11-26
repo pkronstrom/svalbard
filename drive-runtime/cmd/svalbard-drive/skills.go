@@ -104,6 +104,7 @@ func runSkills(stdout, stderr io.Writer, driveRoot string, args []string) error 
 	// Keyword search only: one command is not worth loading the embedding
 	// model for.
 	tools.KeywordOnly = true
+	tools.AbsolutePaths = true
 	defer tools.Close()
 	action := map[string]string{"find": "search", "read": "read"}[args[0]]
 	result, err := tools.Handle(context.Background(), action, params)

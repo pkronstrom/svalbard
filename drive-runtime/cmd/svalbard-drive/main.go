@@ -86,6 +86,7 @@ func run() error {
 		if streamable {
 			return runMCPHTTP(drive, opts)
 		}
+		opts.Stdio = true
 		return runMCP(drive, opts)
 	}
 

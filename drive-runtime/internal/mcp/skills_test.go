@@ -408,6 +408,7 @@ func TestSkillReadInParts(t *testing.T) { // RF5
 
 func TestSkillReadListsFiles(t *testing.T) {
 	f := newSkillFixture(t)
+	f.cap.AbsolutePaths = true // a client on stdio
 	result, err := f.read(map[string]any{"id": "skills/skills-core/data-dashboard"})
 	if err != nil {
 		t.Fatal(err)
@@ -778,8 +779,48 @@ func TestNoSkillIndexMessageNamesTheDrive(t *testing.T) {
 	root := t.TempDir()
 	cap := NewSkillCapability(root, DriveMetadata{})
 	defer cap.Close()
+	cap.AbsolutePaths = true
 	result, err := cap.Handle(context.Background(), "search", map[string]any{"query": "chart"})
 	if err != nil || !strings.Contains(result.Text, root) {
 		t.Fatalf("message = %q, %v; want the folder that was looked in", result.Text, err)
+	}
+	// A client that may be on another computer is not told the path.
+	cap.AbsolutePaths = false
+	if result, err := cap.Handle(context.Background(), "search", map[string]any{"query": "chart"}); err != nil || strings.Contains(result.Text, root) || !strings.Contains(result.Text, "no search index") {
+		t.Fatalf("message over HTTP = %q, %v", result.Text, err)
+	}
+}
+
+// Whole paths on this computer go only to a client on stdio, which started
+// the server and is on the same computer. Over HTTP or SSE (the drive's
+// server shared on a network) a client gets paths within the drive: a path
+// of the server's computer is no use there and names its user.
+func TestSkillReadGivesWholePathsOnlyOverStdio(t *testing.T) {
+	f := newSkillFixture(t)
+	if err := os.WriteFile(filepath.Join(f.root, ".svalbard", "recipes.json"), []byte(`{"skills-core": {"id": "skills-core", "type": "skills"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, stdio := range []bool{true, false} {
+		srv := NewDriveServer(f.root, DriveOptions{Stdio: stdio})
+		var tools *SkillCapability
+		for _, cap := range srv.caps {
+			if cap, ok := cap.(*SkillCapability); ok {
+				tools = cap
+			}
+		}
+		result, err := tools.Handle(context.Background(), "read", map[string]any{"id": "skills/skills-core/data-dashboard"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		folder := result.Data.(SkillReadResult).Folder
+		_, notMarkdown := tools.Handle(context.Background(), "read", map[string]any{"id": "skills/skills-core/data-dashboard", "file": "scripts/run.py"})
+		if stdio {
+			if want := filepath.Join(f.root, "skills", "skills-core", "data-dashboard"); folder != want || notMarkdown == nil || !strings.Contains(notMarkdown.Error(), f.root) {
+				t.Errorf("stdio: folder %q, error %v; want whole paths", folder, notMarkdown)
+			}
+		} else if folder != "skills/skills-core/data-dashboard" || notMarkdown == nil || strings.Contains(notMarkdown.Error(), f.root) || !strings.Contains(notMarkdown.Error(), "skills/skills-core/data-dashboard/scripts/run.py") {
+			t.Errorf("HTTP: folder %q, error %v; want paths within the drive", folder, notMarkdown)
+		}
+		_ = srv.Close()
 	}
 }

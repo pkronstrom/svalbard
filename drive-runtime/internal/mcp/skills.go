@@ -62,11 +62,25 @@ const skillServerInstructions = "Procedures for building things on this drive (a
 // skillFolderNote comes with the folder of a skill's files.
 const skillFolderNote = "Copy from the folder; save what you make in your working folder, not there."
 
-// noSkillIndex answers both tools on a drive without a search index. It
-// names the folder that was looked in: run from the wrong place, the command
-// line would otherwise report a drive that has an index as having none.
-func noSkillIndex(driveRoot string) string {
-	return "This vault (" + driveRoot + ") has no search index, so its skills and library quickstarts cannot be searched or read with this tool. They are files on the drive under skills/ and lib/js/. The computer that manages the drive builds the index with 'svalbard index'."
+// noSkillIndex answers both tools on a drive without a search index. To a
+// client on this computer it names the folder that was looked in: run from
+// the wrong place, the command line would otherwise report a drive that has
+// an index as having none.
+func (c *SkillCapability) noSkillIndex() string {
+	vault := "This vault"
+	if c.AbsolutePaths {
+		vault += " (" + c.driveRoot + ")"
+	}
+	return vault + " has no search index, so its skills and library quickstarts cannot be searched or read with this tool. They are files on the drive under skills/ and lib/js/. The computer that manages the drive builds the index with 'svalbard index'."
+}
+
+// place is a path within the drive as the client can use it: whole on this
+// computer, within the drive otherwise.
+func (c *SkillCapability) place(rel string) string {
+	if c.AbsolutePaths {
+		return filepath.Join(c.driveRoot, filepath.FromSlash(rel))
+	}
+	return rel
 }
 
 // SkillCapability exposes the skill tools: skill_search and skill_read.
@@ -85,6 +99,13 @@ type SkillCapability struct {
 
 	// read is the size of one skill_read part.
 	read ReadLimits
+
+	// AbsolutePaths: the client is on this computer (over stdio, or the
+	// command line) and can open a file on the drive, so paths are given
+	// whole. Over HTTP or SSE the client may be on another computer, where a
+	// path of this one is no use and tells it the user's name: it gets paths
+	// within the drive.
+	AbsolutePaths bool
 
 	// KeywordOnly keeps skill_search to keyword search on an index that has
 	// vectors too. The command line sets it: embedding one query means
@@ -213,7 +234,7 @@ func (c *SkillCapability) handleSearch(ctx context.Context, params map[string]an
 
 	db, eng, err := c.getDB()
 	if err != nil {
-		return ActionResult{Text: noSkillIndex(c.driveRoot)}, nil
+		return ActionResult{Text: c.noSkillIndex()}, nil
 	}
 	catalog, err := loadSkillCatalog(ctx, eng)
 	if err != nil {
@@ -327,7 +348,7 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 	}
 	_, eng, err := c.getDB()
 	if err != nil {
-		return ActionResult{Text: noSkillIndex(c.driveRoot)}, nil
+		return ActionResult{Text: c.noSkillIndex()}, nil
 	}
 	catalog, err := loadSkillCatalog(ctx, eng)
 	if err != nil {
@@ -380,7 +401,7 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 	if offset == 0 && file == entry.File && entry.Folder != "" && !text.oneSection {
 		var more string
 		if result.Files, more = c.otherFiles(entry, catalog); len(result.Files) > 0 {
-			result.Folder = filepath.Join(c.driveRoot, filepath.FromSlash(entry.Folder))
+			result.Folder = c.place(entry.Folder)
 			// Given the folder, a small model saved its own page into it.
 			result.Note = skillFolderNote
 		}
@@ -394,7 +415,7 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 // notIndexedError explains a file of a skill that skill_read cannot return.
 func (c *SkillCapability) notIndexedError(entry skillEntry, catalog *skillCatalog, target string) error {
 	if info, err := os.Stat(filepath.Join(c.driveRoot, filepath.FromSlash(target))); err == nil && !info.IsDir() {
-		return fmt.Errorf("%s is not markdown, so skill_read does not hold it. It is a file on this computer: %s", path.Base(target), filepath.Join(c.driveRoot, filepath.FromSlash(target)))
+		return fmt.Errorf("%s is not markdown, so skill_read does not hold it. It is a file on the drive: %s", path.Base(target), c.place(target))
 	}
 	files, _ := c.otherFiles(entry, catalog)
 	if len(files) == 0 {
