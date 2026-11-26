@@ -153,7 +153,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, driveRoot, map[string]any{"exposure": "direct"})); err != nil {
 			return LaunchConfig{}, err
 		}
-		if err := writeGeneratedFile(filepath.Join(configRoot, "AGENTS.md"), fmt.Sprintf(piDriveContext, driveRoot)); err != nil {
+		if err := writeGeneratedFile(filepath.Join(configRoot, "AGENTS.md"), piContext(driveRoot, mcp.WikiInstalled(driveRoot))); err != nil {
 			return LaunchConfig{}, err
 		}
 		if err := ensurePiSettings(filepath.Join(configRoot, "settings.json"), modelName, ctxSize); err != nil {
@@ -204,7 +204,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			return LaunchConfig{}, err
 		}
 		promptPath := filepath.Join(configRoot, "lean-prompt.md")
-		if err := os.WriteFile(promptPath, []byte(ompLeanPrompt), 0o644); err != nil {
+		if err := os.WriteFile(promptPath, []byte(ompPrompt(mcp.WikiInstalled(driveRoot))), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
 		// The lean profile: six file and shell tools plus the drive's MCP
@@ -297,7 +297,7 @@ The drive has an offline library: reference archives, SQLite databases and maps.
 1. ` + "`mcp__svalbard__vault_sources`" + ` lists what is on the drive. Call it first.
 2. ` + "`mcp__svalbard__search`" + ` finds articles by keyword. Use two to four specific words, not a sentence.
 3. ` + "`mcp__svalbard__search_read`" + ` reads one article. Pass the ` + "`source`" + ` and ` + "`path`" + ` from a search result. A long article comes in parts: when the result has ` + "`continues`" + `, call again with the offset it names.
-
+%s
 Rules:
 
 - Name the source you used.
@@ -305,6 +305,23 @@ Rules:
 - Do not repeat a tool call with the same arguments. If it failed twice, stop and tell the user.
 - ` + "`./run`" + ` on the drive is an interactive menu for the user. Do not run it.
 `
+
+// piWikiContext is the one thing on the drive a model may write. Without
+// being told, a model that has just read "there is no internet" and a list
+// of reference tools does not try to save anything.
+const piWikiContext = `
+The drive also has a wiki, the user's own notebook, which you can write. To save what you found, create a page with ` + "`mcp__svalbard__wiki_create`" + `; ` + "`mcp__svalbard__wiki_search`" + ` and ` + "`mcp__svalbard__wiki_read`" + ` look in the notes already there.
+`
+
+// piContext is the context file for the drive at driveRoot, with the wiki's
+// paragraph when the drive's server offers the wiki tools.
+func piContext(driveRoot string, wiki bool) string {
+	paragraph := ""
+	if wiki {
+		paragraph = piWikiContext
+	}
+	return fmt.Sprintf(piDriveContext, driveRoot, paragraph)
+}
 
 // writeGeneratedFile keeps a Svalbard-written file current without touching
 // the user's edits: the file is replaced only while it still matches what
@@ -354,6 +371,15 @@ Inspect the relevant files before changing them. Use the provided tools rather t
 
 There is no network. The svalbard tools search and read the reference material stored on this drive.
 `
+
+// ompPrompt is the lean prompt, with a line about the wiki when the drive's
+// server offers the wiki tools.
+func ompPrompt(wiki bool) string {
+	if !wiki {
+		return ompLeanPrompt
+	}
+	return ompLeanPrompt + "The svalbard wiki tools read and write the user's own notes on this drive: use them when asked to save or look up a note.\n"
+}
 
 // ompModelsYAML is oh-my-pi's provider file for the drive's llama-server. It
 // has no sampling fields: llama-server already applies the per-family sampler.

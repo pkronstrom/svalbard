@@ -13,6 +13,8 @@ import (
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
+
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
 // Server wraps an mcp-go MCPServer and routes calls to Capability instances.
@@ -101,13 +103,33 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 }
 
 // DriveCapabilities returns the capabilities the drive's MCP server exposes.
+// The wiki tools are among them on a drive that has the wiki installed.
 func DriveCapabilities(driveRoot string) []Capability {
 	meta, _ := LoadMetadata(driveRoot)
-	return []Capability{
+	caps := []Capability{
 		NewSearchCapability(driveRoot, meta),
 		NewVaultCapability(driveRoot, meta),
 		NewQueryCapability(driveRoot, meta),
 	}
+	if wikiInstalled(meta) {
+		caps = append(caps, NewWikiCapability(driveRoot))
+	}
+	return caps
+}
+
+// WikiInstalled reports whether the drive's MCP server offers the wiki tools,
+// for the prompts and descriptions that tell a model what it can do.
+func WikiInstalled(driveRoot string) bool {
+	meta, _ := LoadMetadata(driveRoot)
+	return wikiInstalled(meta)
+}
+
+// wikiInstalled is true when apply has installed the wiki's recipe. The
+// tools only need the page folder, but offering them on every drive would
+// add their definitions to every prompt for a wiki nobody can open.
+func wikiInstalled(meta DriveMetadata) bool {
+	_, ok := meta.Recipes[wiki.RecipeID]
+	return ok
 }
 
 // DriveToolNames lists the tool names the drive's MCP server registers, for
