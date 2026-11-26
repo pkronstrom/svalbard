@@ -90,6 +90,29 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 	}
 }
 
+// DriveCapabilities returns the capabilities the drive's MCP server exposes.
+func DriveCapabilities(driveRoot string) []Capability {
+	meta, _ := LoadMetadata(driveRoot)
+	return []Capability{
+		NewSearchCapability(driveRoot, meta),
+		NewVaultCapability(driveRoot, meta),
+		NewQueryCapability(driveRoot, meta),
+	}
+}
+
+// DriveToolNames lists the tool names the drive's MCP server registers, for
+// clients that only enable tools named up front.
+func DriveToolNames(driveRoot string) []string {
+	var names []string
+	for _, cap := range DriveCapabilities(driveRoot) {
+		for _, action := range cap.Actions() {
+			names = append(names, toolName(cap.Tool(), action.Name))
+		}
+		_ = cap.Close()
+	}
+	return names
+}
+
 func toolName(prefix, action string) string {
 	if prefix == action {
 		return action
