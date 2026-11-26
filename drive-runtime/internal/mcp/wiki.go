@@ -881,17 +881,19 @@ type wikiChange struct {
 	Trash string `json:"trash,omitempty"`
 }
 
-// changed describes the page p after a write, with what the user does next
-// to see it.
+// changed describes the page p after a write, with the one thing the user
+// needs to see it: the link while the wiki is open, the file otherwise.
+// Given both, a 4B model told the user the file's path and left the link out.
 func (c *WikiCapability) changed(p page, size int) (wikiChange, string) {
-	change := wikiChange{Page: p.name, File: path.Join(wiki.DirName, p.rel), Bytes: size}
+	change := wikiChange{Page: p.name, Bytes: size}
 	base := c.running()
 	if base == "" {
+		change.File = path.Join(wiki.DirName, p.rel)
 		return change, "The wiki is not open in a browser now. The user opens it with Wiki in the drive's menu, or reads the file."
 	}
 	text := strings.NewReplacer("[", `\[`, "]", `\]`).Replace(p.name)
 	change.Link = fmt.Sprintf("[%s](%s)", text, wiki.PageURL(base, p.name))
-	return change, ""
+	return change, "Put the link in your reply exactly as returned, so the user can open the page."
 }
 
 func (c *WikiCapability) content(params map[string]any, what string) (string, error) {

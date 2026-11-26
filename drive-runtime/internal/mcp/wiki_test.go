@@ -325,8 +325,10 @@ func TestWikiWritesReturnALinkWhileTheWikiIsOpen(t *testing.T) {
 	cap.running = func() string { return "http://localhost:8088" }
 
 	out := mustCallWiki(t, cap, "create", map[string]any{"page": "Projects/Garden [2026]", "content": "x"})
-	want := `{"page":"Projects/Garden [2026]","file":"wiki/Projects/Garden [2026].md","bytes":2,` +
-		`"link":"[Projects/Garden \\[2026\\]](http://localhost:8088/Projects/Garden%20%5B2026%5D)"}`
+	// The link is the one thing to pass on: no file path beside it.
+	want := `{"page":"Projects/Garden [2026]","bytes":2,` +
+		`"link":"[Projects/Garden \\[2026\\]](http://localhost:8088/Projects/Garden%20%5B2026%5D)"}` +
+		"Put the link in your reply exactly as returned, so the user can open the page."
 	if out != want {
 		t.Errorf("create = %s\nwant     %s", out, want)
 	}
@@ -335,8 +337,8 @@ func TestWikiWritesReturnALinkWhileTheWikiIsOpen(t *testing.T) {
 		"edit":   {"page": "Projects/Garden [2026]", "old_text": "x", "new_text": "y"},
 		"move":   {"page": "Projects/Garden [2026]", "new_name": "Garden"},
 	} {
-		if out := mustCallWiki(t, cap, action, params); !strings.Contains(out, `"link":"[`) || strings.Contains(out, "not open") {
-			t.Errorf("%s = %s, want a link and no note about opening the wiki", action, out)
+		if out := mustCallWiki(t, cap, action, params); !strings.Contains(out, `"link":"[`) || strings.Contains(out, "not open") || strings.Contains(out, `"file"`) {
+			t.Errorf("%s = %s, want a link, no file path and no note about opening the wiki", action, out)
 		}
 	}
 }
