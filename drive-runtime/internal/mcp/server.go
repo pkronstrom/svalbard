@@ -1,12 +1,14 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
@@ -80,11 +82,15 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 		}
 
 		if result.Data != nil {
-			data, jErr := json.Marshal(result.Data)
-			if jErr != nil {
+			// Not json.Marshal: it writes "<", ">" and "&" as six-character
+			// escapes, which a model pays for and reads worse.
+			var data bytes.Buffer
+			encoder := json.NewEncoder(&data)
+			encoder.SetEscapeHTML(false)
+			if jErr := encoder.Encode(result.Data); jErr != nil {
 				return nil, fmt.Errorf("marshalling result data: %w", jErr)
 			}
-			toolResult := gomcp.NewToolResultText(string(data))
+			toolResult := gomcp.NewToolResultText(strings.TrimSuffix(data.String(), "\n"))
 			if result.Text != "" {
 				toolResult.Content = append(toolResult.Content, gomcp.TextContent{Type: gomcp.ContentTypeText, Text: result.Text})
 			}

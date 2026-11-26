@@ -27,9 +27,11 @@ var blockElements = map[string]bool{
 	"li": true, "tr": true,
 }
 
-// skipElements is the set of elements whose content should be ignored.
+// skipElements is the set of elements whose content should be ignored: code,
+// and the site navigation an archived web page repeats around every article.
 var skipElements = map[string]bool{
 	"script": true, "style": true,
+	"nav": true, "footer": true, "noscript": true, "svg": true, "template": true,
 }
 
 // kiwixChromeIDs is the set of element IDs that belong to Kiwix serving chrome.
@@ -41,10 +43,21 @@ var kiwixChromeIDs = map[string]bool{
 
 // ExtractText parses rawHTML and returns the plain-text content, title, and internal links.
 func ExtractText(rawHTML string) (Page, error) {
+	return ExtractPage(rawHTML, "")
+}
+
+// ExtractPage is ExtractText for a page whose path inside its archive is
+// known. Link paths are resolved against pagePath, so "../warfarin/" on
+// "medicines/paracetamol/" comes back as "medicines/warfarin/", a path that
+// can be read. Each target is listed once; links to the page itself and to
+// images and other page resources are left out.
+func ExtractPage(rawHTML, pagePath string) (Page, error) {
 	doc, err := html.Parse(strings.NewReader(rawHTML))
 	if err != nil {
 		return Page{}, err
 	}
+	base := &url.URL{Path: "/" + strings.TrimLeft(pagePath, "/")}
+	seen := map[string]bool{strings.TrimLeft(pagePath, "/"): pagePath != ""}
 
 	var page Page
 	var bodyBuf strings.Builder
@@ -72,16 +85,18 @@ func ExtractText(rawHTML string) (Page, error) {
 		if n.Type == html.ElementNode && (n.Data == "title" || n.Data == "h1") && page.Title == "" {
 			page.Title = strings.TrimSpace(collectText(n))
 		}
+		// The title is returned on its own; the body starts with the text.
+		if n.Type == html.ElementNode && n.Data == "title" {
+			return
+		}
 
 		// Extract internal links.
 		if n.Type == html.ElementNode && n.Data == "a" {
 			if href := getAttr(n, "href"); href != "" {
-				if !isExternal(href) {
-					path := normalizeKiwixPath(href)
-					label := strings.TrimSpace(collectText(n))
-					if path != "" {
-						page.Links = append(page.Links, PageLink{Path: path, Label: label})
-					}
+				if path := resolveLink(base, href); path != "" && !seen[path] {
+					seen[path] = true
+					label := strings.Join(strings.Fields(collectText(n)), " ")
+					page.Links = append(page.Links, PageLink{Path: path, Label: label})
 				}
 			}
 		}
@@ -144,6 +159,40 @@ func isExternal(href string) bool {
 	return strings.HasPrefix(href, "http://") ||
 		strings.HasPrefix(href, "https://") ||
 		strings.HasPrefix(href, "//")
+}
+
+// resourceSuffixes are link targets that are not articles.
+var resourceSuffixes = []string{".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".css", ".js", ".woff", ".woff2"}
+
+// resolveLink returns the archive path an href on the page at base leads to,
+// or "" when it leaves the archive or is not an article.
+func resolveLink(base *url.URL, href string) string {
+	href = strings.TrimSpace(href)
+	lower := strings.ToLower(href)
+	if isExternal(lower) || strings.HasPrefix(lower, "mailto:") || strings.HasPrefix(lower, "javascript:") ||
+		strings.HasPrefix(lower, "tel:") || strings.HasPrefix(lower, "data:") {
+		return ""
+	}
+	var path string
+	if strings.HasPrefix(href, "/") {
+		path = normalizeKiwixPath(href)
+	} else {
+		ref, err := url.Parse(href)
+		if err != nil {
+			return ""
+		}
+		ref.Fragment, ref.RawQuery = "", ""
+		if ref.Path == "" {
+			return ""
+		}
+		path = strings.TrimLeft(base.ResolveReference(ref).Path, "/")
+	}
+	for _, suffix := range resourceSuffixes {
+		if strings.HasSuffix(strings.ToLower(path), suffix) {
+			return ""
+		}
+	}
+	return path
 }
 
 // normalizeKiwixPath strips the /content/bookname/ prefix from Kiwix content paths

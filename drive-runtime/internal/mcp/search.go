@@ -4,8 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io"
-	"net/http"
+	"html"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -49,20 +48,21 @@ func (c *SearchCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "search",
-			Desc: "Search packaged ZIM archives by keyword. Call vault_sources first to see available archives and their topics. Use specific terms relevant to the archive content (e.g. 'acetaminophen dosage' not 'medicine'). Results include exact source and path — pass these to search_read unchanged. Do not use for SQLite data; use query_sql instead.",
+			Desc: "Search the drive's archives by keyword. Use two to four specific words (\"paracetamol dose\", not a sentence). Articles with every word come first; if there are few, articles with most of the words follow, marked with the words they matched. Pass a result's source and path to search_read. vault_sources lists the archives. Not for SQLite data: use query_sql.",
 			Params: []ParamDef{
-				{Name: "query", Type: "string", Required: true, Desc: "Keyword query to search for, for example: nmap, grep, package manager"},
-				{Name: "source", Type: "string", Desc: "Optional ZIM source name to restrict results to one archive, for example: wikipedia_en_100_mini_2026-04"},
-				{Name: "detail", Type: "string", Desc: "How much result content to return: link, snippet, or full article text", Default: "snippet", Enum: []string{"link", "snippet", "full"}},
-				{Name: "limit", Type: "integer", Desc: "Maximum number of results to return, from 1 to 50", Default: 10},
+				{Name: "query", Type: "string", Required: true, Desc: "Keywords, for example: nmap port scan"},
+				{Name: "source", Type: "string", Desc: "Restrict to one archive, by its name from vault_sources"},
+				{Name: "detail", Type: "string", Desc: "link: titles only. snippet: a matching line. full: the opening of up to 5 articles", Default: "snippet", Enum: []string{"link", "snippet", "full"}},
+				{Name: "limit", Type: "integer", Desc: "Maximum results, 1 to 50", Default: defaultSearchLimit},
 			},
 		},
 		{
 			Name: "read",
-			Desc: "Read or browse a ZIM archive. Omit path to get the main page with navigable links (use this to discover what's inside an archive). Include path to read a specific article. Use the exact path from search results or from links returned by a previous read.",
+			Desc: "Read an article from an archive. Long articles come in parts: when the result has \"continues\", call again with the offset it names. Omit path for the archive's main page. Paths come from search results and from the links of a page already read.",
 			Params: []ParamDef{
-				{Name: "source", Type: "string", Required: true, Desc: "ZIM source name without the .zim extension, for example: wikipedia_en_100_mini_2026-04"},
-				{Name: "path", Type: "string", Desc: "Article path inside the ZIM. Omit to browse the main page and see available categories/links."},
+				{Name: "source", Type: "string", Required: true, Desc: "Archive name, as in search results"},
+				{Name: "path", Type: "string", Desc: "Article path, as in search results. Omit for the main page."},
+				{Name: "offset", Type: "integer", Desc: "Character to start from, for the next part of a long article", Default: 0},
 			},
 		},
 	}
@@ -98,15 +98,24 @@ func (c *SearchCapability) Close() error {
 	return nil
 }
 
+const (
+	defaultSearchLimit = 8
+
+	// fullDetailChars is how much of each article a full-detail search
+	// returns. Five of them stay below a third of a 16K context; search_read
+	// has the rest.
+	fullDetailChars = 1500
+)
+
 // searchResultItem is the JSON shape returned for search results.
 type searchResultItem struct {
-	Source   string            `json:"source"`
-	Path     string            `json:"path"`
-	Title    string            `json:"title"`
-	ReadHint string            `json:"read_hint,omitempty"`
-	Snippet  string            `json:"snippet,omitempty"`
-	Body     string            `json:"body,omitempty"`
-	Links    []search.PageLink `json:"links,omitempty"`
+	Source  string `json:"source"`
+	Path    string `json:"path"`
+	Title   string `json:"title"`
+	Snippet string `json:"snippet,omitempty"`
+	Body    string `json:"body,omitempty"`
+	// Matched lists the query words a partial match contains.
+	Matched []string `json:"matched,omitempty"`
 }
 
 func (c *SearchCapability) getDB() (*sql.DB, *engine.Engine, error) {
@@ -124,17 +133,14 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	if query == "" {
 		return ActionResult{}, fmt.Errorf("missing required parameter: query")
 	}
-	sourceFilter := normalizeSourceName(getString(params, "source"))
 
 	detail := "snippet"
 	if d, ok := params["detail"].(string); ok && d != "" {
 		detail = d
 	}
 
-	limit := 10
-	if l, ok := params["limit"].(float64); ok {
-		limit = int(l)
-	} else if l, ok := params["limit"].(int); ok {
+	limit := defaultSearchLimit
+	if l, ok := intParam(params, "limit"); ok {
 		limit = l
 	}
 	if limit < 1 {
@@ -151,6 +157,14 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	if err != nil {
 		return ActionResult{}, err
 	}
+	// source is the indexed filename; sourceFilter is the name tools use.
+	source, sourceFilter := "", ""
+	if requested := getString(params, "source"); requested != "" {
+		if source, err = c.resolveSource(ctx, requested, false); err != nil {
+			return ActionResult{}, err
+		}
+		sourceFilter = sourceName(source)
+	}
 
 	// Fetch more results when filtering by source, then trim.
 	// Use 200 to avoid missing source-specific hits that rank below global top-N.
@@ -164,9 +178,10 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	// Try hybrid search if a completed semantic contract is available.
 	var results []engine.Result
 	hybridUsed := false
-	advisory := ""
-	if !semanticComplete {
-		advisory = "Hybrid unavailable, fell back to keyword"
+	var advisory []string
+	// A drive indexed for keywords only has nothing to fall back from.
+	if !semanticComplete && semanticRecorded(db) {
+		advisory = append(advisory, "Hybrid unavailable, fell back to keyword")
 	}
 	if semanticComplete {
 		queryVec, embedErr := c.embedBackend.Embed(ctx, contract, query)
@@ -184,45 +199,52 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			}
 		}
 		if embedErr != nil || results == nil {
-			advisory = "Hybrid unavailable, fell back to keyword"
+			advisory = append(advisory, "Hybrid unavailable, fell back to keyword")
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return ActionResult{}, err
 	}
 
-	// Fallback to keyword search.
-	if results == nil {
-		hybridUsed = false
-		results, err = eng.KeywordContext(ctx, query, fetchLimit)
+	if hybridUsed {
+		if sourceFilter != "" {
+			filtered := make([]engine.Result, 0, len(results))
+			for _, r := range results {
+				if sourceName(r.Filename) == sourceFilter {
+					filtered = append(filtered, r)
+				}
+			}
+			results = filtered
+		}
+		if len(results) > limit {
+			results = results[:limit]
+		}
+	} else {
+		// Fallback to keyword search.
+		matches, err := eng.Search(ctx, query, engine.KeywordOptions{Source: source, Limit: limit})
 		if err != nil {
 			return ActionResult{}, fmt.Errorf("search failed: %w", err)
 		}
 		if err := ctx.Err(); err != nil {
 			return ActionResult{}, err
 		}
-	}
-
-	if sourceFilter != "" {
-		filtered := make([]engine.Result, 0, len(results))
-		for _, r := range results {
-			if normalizeSourceName(r.Filename) == sourceFilter {
-				filtered = append(filtered, r)
-			}
+		results = matches.Results
+		scope := "on the drive"
+		if sourceFilter != "" {
+			scope = "in " + sourceFilter
 		}
-		results = filtered
-	}
-	if len(results) > limit {
-		results = results[:limit]
+		if note := keywordAdvisory(matches, scope); note != "" {
+			advisory = append(advisory, note)
+		}
 	}
 
 	items := make([]searchResultItem, 0, len(results))
 	for _, r := range results {
 		item := searchResultItem{
-			Source:   normalizeSourceName(r.Filename),
-			Path:     r.Path,
-			Title:    r.Title,
-			ReadHint: "Use search_read with this exact source and path",
+			Source:  sourceName(r.Filename),
+			Path:    r.Path,
+			Title:   r.Title,
+			Matched: r.Matched,
 		}
 
 		// Prepend chunk header for section context (e.g., "Water Purification > Solar disinfection")
@@ -232,32 +254,28 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 
 		switch detail {
 		case "snippet":
-			item.Snippet = r.Snippet
+			item.Snippet = html.UnescapeString(r.Snippet)
 			// If FTS snippet is empty, try article body from DB
 			if !hybridUsed && item.Snippet == "" {
 				if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
-					if len(body) > 200 {
-						body = body[:200] + "..."
-					}
-					item.Snippet = body
+					item.Snippet = opening(body, 200)
 				}
 			}
 		case "full":
 			// Try reading from search.db first (fast, no kiwix needed)
 			if hybridUsed {
 				// HybridSnapshot captured this body in its verified read snapshot.
-				item.Body = r.Body
+				item.Body = opening(r.Body, fullDetailChars)
 			} else if r.Body != "" {
-				item.Body = r.Body
+				item.Body = opening(r.Body, fullDetailChars)
 			} else if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
-				item.Body = body
+				item.Body = opening(body, fullDetailChars)
 			} else {
 				// Fallback to kiwix for full HTML content
-				if page, fetchErr := c.fetchPage(normalizeSourceName(r.Filename), r.Path); fetchErr == nil {
-					item.Body = page.Body
-					item.Links = page.Links
+				if page, _, fetchErr := c.fetchPage(ctx, sourceName(r.Filename), strings.TrimLeft(r.Path, "/")); fetchErr == nil {
+					item.Body = opening(page.Body, fullDetailChars)
 				} else {
-					item.Snippet = r.Snippet // last resort
+					item.Snippet = html.UnescapeString(r.Snippet) // last resort
 				}
 			}
 		}
@@ -265,43 +283,45 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		items = append(items, item)
 	}
 
-	return ActionResult{Data: items, Text: advisory}, nil
+	return ActionResult{Data: items, Text: strings.Join(advisory, ". ")}, nil
 }
 
-func (c *SearchCapability) handleRead(_ context.Context, params map[string]any) (ActionResult, error) {
-	source, _ := params["source"].(string)
-	if source == "" {
-		return ActionResult{}, fmt.Errorf("missing required parameter: source")
+// keywordAdvisory says, for the model reading the results, how far they are
+// from what was asked. It states what the index knows and leaves the next
+// step to the model: told to "try other words", a small model keeps trying.
+func keywordAdvisory(matches engine.KeywordMatches, scope string) string {
+	absent := ""
+	if len(matches.Missing) > 0 {
+		absent = "No article " + scope + " mentions: " + strings.Join(matches.Missing, ", ") + "."
 	}
-	path, _ := params["path"].(string)
-
-	// Try Kiwix first — gives full HTML with links (best experience)
-	if page, err := c.fetchPage(source, path); err == nil {
-		return ActionResult{Data: searchResultItem{
-			Source: source,
-			Path:   path,
-			Title:  page.Title,
-			Body:   page.Body,
-			Links:  page.Links,
-		}}, nil
+	partial := len(matches.Results) - matches.Exact
+	switch {
+	case len(matches.Results) == 0 && absent != "":
+		return "Nothing found. " + absent
+	case len(matches.Results) == 0:
+		return "Nothing found: no article " + scope + " has these words together."
+	case matches.Exact == 0:
+		return strings.TrimSpace("No article has all of the words. " + absent + " These have most of them; \"matched\" lists which.")
+	case partial > 0:
+		return strings.TrimSpace(fmt.Sprintf("The first %d have every word. The rest have only the words in \"matched\". ", matches.Exact) + absent)
 	}
+	return ""
+}
 
-	// Fallback to search.db via engine (partial body, no links, but no Kiwix needed)
-	if path != "" {
-		_, eng, err := c.getDB()
-		if err == nil {
-			if body, err := eng.ReadArticle(source, path); err == nil && body != "" {
-				return ActionResult{Data: searchResultItem{
-					Source: source,
-					Path:   path,
-					Title:  path,
-					Body:   body,
-				}}, nil
-			}
-		}
+// semanticRecorded reports whether the index was ever built for hybrid
+// search, complete or not.
+func semanticRecorded(db *sql.DB) bool {
+	var state string
+	return db.QueryRow("SELECT value FROM meta WHERE key='semantic_state'").Scan(&state) == nil
+}
+
+// opening returns the start of an indexed text, cut at a character boundary.
+func opening(text string, limit int) string {
+	text = html.UnescapeString(text)
+	if runes := []rune(text); len(runes) > limit {
+		return strings.TrimSpace(string(runes[:limit])) + "..."
 	}
-
-	return ActionResult{}, fmt.Errorf("article not found: %s/%s", source, path)
+	return text
 }
 
 func getString(params map[string]any, key string) string {
@@ -309,9 +329,10 @@ func getString(params map[string]any, key string) string {
 	return value
 }
 
-func normalizeSourceName(source string) string {
-	return strings.TrimSuffix(source, ".zim")
-}
+// kiwixBasePort is where the search for a free kiwix-serve port starts. It is
+// a variable so this package's tests can stay clear of other packages' tests,
+// which run at the same time and start their own stand-in servers from 8080.
+var kiwixBasePort = 8080
 
 // ensureKiwix starts kiwix-serve lazily.
 func (c *SearchCapability) ensureKiwix() error {
@@ -328,7 +349,7 @@ func (c *SearchCapability) ensureKiwix() error {
 			return
 		}
 
-		port, err := netutil.FindAvailablePort("127.0.0.1", 8080)
+		port, err := netutil.FindAvailablePort("127.0.0.1", kiwixBasePort)
 		if err != nil {
 			c.kiwixErr = err
 			return
@@ -342,29 +363,4 @@ func (c *SearchCapability) ensureKiwix() error {
 		c.kiwixPort = port
 	})
 	return c.kiwixErr
-}
-
-func (c *SearchCapability) fetchPage(source, path string) (search.Page, error) {
-	if err := c.ensureKiwix(); err != nil {
-		return search.Page{}, fmt.Errorf("kiwix-serve unavailable: %w", err)
-	}
-
-	pageURL := fmt.Sprintf("http://127.0.0.1:%d/content/%s/%s", c.kiwixPort, source, path)
-
-	resp, err := http.Get(pageURL)
-	if err != nil {
-		return search.Page{}, fmt.Errorf("fetching page: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return search.Page{}, fmt.Errorf("kiwix returned status %d for %s/%s", resp.StatusCode, source, path)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return search.Page{}, fmt.Errorf("reading page body: %w", err)
-	}
-
-	return search.ExtractText(string(body))
 }
