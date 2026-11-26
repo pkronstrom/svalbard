@@ -38,6 +38,27 @@ Each has a test in the task that owns the code (marked RF1–RF5).
 
 ---
 
+## Owner direction, 2026-11-26: the smallest footprint that works
+
+The packed HTML is small because the bundler keeps only what a page imports, so the stick needs one usable build of each library and nothing else. On exFAT with 128 KB clusters the cost is the number of files, not their bytes: `@jscad/modeling` is 1.6 MB in 1,100 files, which allocates about 140 MB.
+
+- Per library the stick holds at most: the one browser build the quickstart imports (plus only the addon files a quickstart or skill names, for libraries such as Three.js), `package.json`, the licence, one quickstart, and one reference file.
+- No alternative formats (UMD beside ESM, minified beside unminified), source maps, `src/` trees or test files. A self-contained single-file build is preferred wherever the project publishes one and it packs.
+- Type definitions are not shipped as trees. Where a library needs them as reference, they are concatenated into the one reference file.
+- Budgets are enforced by a catalog test: a maximum file count and allocated size (at 128 KB per file) per library and per recipe, with the measured numbers in the checkpoint. A recipe that exceeds its budget fails `make verify`.
+
+**Decided: each JS library recipe is one archive on the stick, read in place.**
+- `lib/js/<recipe>.zip` holds the recipe's `node_modules` tree (still trimmed to the one build per library, the addon files that are named, `package.json` and licences). Apply writes the archive; nothing is unpacked on the stick.
+- `svalbard-drive html pack` resolves and loads modules from inside the archives through its esbuild resolve and load plugins. The portable-directory output and anything served live extract only the files they use, at that moment.
+- Quickstarts and reference files stay loose under `lib/js/<recipe>/docs/`, because the document pass indexes files by vault path and the search contracts stay as they are.
+- `maplibre-vendor` stays as loose files: the map viewer loads it directly in the browser.
+- The budget test counts files on the stick (the archive, the docs) and the archive's size; the per-library content rules still apply to what goes into the archive.
+- A user `js-lib` recipe gets the same treatment.
+
+**Decided: the reference file is the project's own documentation at the pinned version**, its repository's Markdown docs joined into one file per library, licence checked per project and recorded in `libraries:`. Where a project has no Markdown docs (HTML or generated references, Three.js for example), the reference file is the README plus the concatenated type definitions, and the library is listed in the checkpoint as a documentation gap with a size for closing it.
+
+Why, for the record: on exFAT with 128 KB clusters space goes by file count; measured on a real install, a tree of 19,532 small files with 553 MB of content takes 2.94 GB.
+
 ### Task 1: Natural Earth reaches the query tools (prerequisite, may already be live-broken)
 
 **Files:**
