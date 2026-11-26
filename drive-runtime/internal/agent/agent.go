@@ -222,7 +222,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			return LaunchConfig{}, err
 		}
 		promptPath := filepath.Join(configRoot, "lean-prompt.md")
-		if err := os.WriteFile(promptPath, []byte(ompPrompt(mcp.WikiInstalled(driveRoot), mcp.SkillsInstalled(driveRoot), mcp.LibrariesInstalled(driveRoot))), 0o644); err != nil {
+		if err := os.WriteFile(promptPath, []byte(ompPrompt(driveRoot)), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
 		// The lean profile: six file and shell tools plus the drive's MCP
@@ -353,17 +353,22 @@ Inspect the relevant files before changing them. Use the provided tools rather t
 There is no network. The svalbard tools search and read the reference material stored on this drive.
 `
 
-// ompPrompt is the lean prompt, with a line about the wiki when the drive's
-// server offers the wiki tools, and the lines of the drive context about
-// skills and libraries when the drive has them. omp runs with --no-rules and
-// reads no context file, so this prompt is all the orientation it gets.
-func ompPrompt(wiki, skills, libraries bool) string {
+// ompPrompt is the lean prompt for the drive at driveRoot, with a line about
+// the wiki when the drive's server offers the wiki tools, and the lines of
+// the drive context about skills and libraries when the drive has them. omp
+// runs with --no-rules and reads no generated context file, so this prompt
+// is the orientation it gets.
+func ompPrompt(driveRoot string) string {
 	prompt := ompLeanPrompt
-	if wiki {
+	if mcp.WikiInstalled(driveRoot) {
 		prompt += "The svalbard wiki tools read and write the user's own notes on this drive: use them when asked to save or look up a note.\n"
 	}
-	if skills || libraries {
-		prompt += buildingContext(OmpToolPrefix, skills, libraries) + "\n"
+	building := ContextOptions{
+		DriveRoot: driveRoot, ToolPrefix: OmpToolPrefix,
+		Skills: mcp.SkillsInstalled(driveRoot), Libraries: mcp.LibrariesInstalled(driveRoot), NoIndex: !searchIndexed(driveRoot),
+	}
+	if building.Skills || building.Libraries {
+		prompt += buildingContext(building) + "\n"
 	}
 	return prompt
 }

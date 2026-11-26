@@ -27,6 +27,21 @@ func installRecipes(t *testing.T, driveRoot string, recipes ...[2]string) {
 	if err := os.WriteFile(filepath.Join(driveRoot, ".svalbard", "recipes.json"), []byte("{"+strings.Join(entries, ",")+"}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A drive that was applied has a search index unless its strategy is
+	// "none"; removeIndex takes it away again.
+	if err := os.MkdirAll(filepath.Join(driveRoot, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(driveRoot, "data", "search.db"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func removeIndex(t *testing.T, driveRoot string) {
+	t.Helper()
+	if err := os.Remove(filepath.Join(driveRoot, "data", "search.db")); err != nil {
+		t.Fatal(err)
+	}
 }
 
 var (
@@ -101,6 +116,9 @@ func TestDriveContextGolden(t *testing.T) {
 		"drive_context_skills.golden":    {Skills: true},
 		"drive_context_libraries.golden": {Libraries: true},
 		"drive_context_plain.golden":     {},
+		// Without a search index the skills are read as files.
+		"drive_context_noindex.golden":        {Skills: true, Libraries: true, NoIndex: true},
+		"drive_context_skills_noindex.golden": {Skills: true, NoIndex: true},
 	} {
 		path := filepath.Join("testdata", name)
 		got := agent.DriveContext(opts)
@@ -129,9 +147,47 @@ func TestDriveContextBudget(t *testing.T) {
 			longest = prefix
 		}
 	}
-	all := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/SVALBARD", ToolPrefix: longest, Wiki: true, LivePages: true, Skills: true, Libraries: true})
-	if words := len(strings.Fields(all)); words > 260 {
-		t.Errorf("the drive context with every area is %d words, over the budget of 260:\n%s", words, all)
+	for _, noIndex := range []bool{false, true} {
+		all := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/SVALBARD", ToolPrefix: longest, Wiki: true, LivePages: true, Skills: true, Libraries: true, NoIndex: noIndex})
+		if words := len(strings.Fields(all)); words > 260 {
+			t.Errorf("the drive context with every area (no index: %v) is %d words, over the budget of 260:\n%s", noIndex, words, all)
+		}
+	}
+}
+
+// A drive applied with the index strategy "none" has skills and no way to
+// search them: the context sends the model to their folder, not to a tool
+// that can only answer that there is no index.
+func TestDriveContextSaysWhenThereIsNoIndex(t *testing.T) {
+	text := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/STICK", ToolPrefix: "mcp__svalbard__", Skills: true, Libraries: true, NoIndex: true})
+	if strings.Contains(text, "skill_search") || strings.Contains(text, "skill_read") {
+		t.Errorf("a drive without an index is told to search its skills:\n%s", text)
+	}
+	for _, want := range []string{"no search index", "`/Volumes/STICK/skills/`", "SKILL.md", "svalbard-drive html pack"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("context missing %q:\n%s", want, text)
+		}
+	}
+	// NoIndex alone says nothing: a drive without skills has nothing to find.
+	if plain := agent.DriveContext(agent.ContextOptions{NoIndex: true}); strings.Contains(plain, "index") {
+		t.Errorf("a drive without skills:\n%s", plain)
+	}
+
+	// It follows the drive: pi and omp are told when the index is gone and
+	// when it is back.
+	driveRoot := t.TempDir()
+	installRecipes(t, driveRoot, skillsRecipe)
+	removeIndex(t, driveRoot)
+	pi := readFile(t, filepath.Join(prepare(t, driveRoot, "pi").Env["PI_CODING_AGENT_DIR"], "AGENTS.md"))
+	omp := readFile(t, filepath.Join(prepare(t, driveRoot, "omp").Env["PI_CODING_AGENT_DIR"], "lean-prompt.md"))
+	for name, text := range map[string]string{"pi": pi, "omp": omp} {
+		if strings.Contains(text, "skill_search") || !strings.Contains(text, "no search index") || !strings.Contains(text, filepath.ToSlash(filepath.Join(driveRoot, "skills"))+"/") {
+			t.Errorf("%s without an index:\n%s", name, text)
+		}
+	}
+	installRecipes(t, driveRoot, skillsRecipe)
+	if pi = readFile(t, filepath.Join(prepare(t, driveRoot, "pi").Env["PI_CODING_AGENT_DIR"], "AGENTS.md")); !strings.Contains(pi, "`mcp__svalbard__skill_search`") {
+		t.Errorf("pi after the index came back:\n%s", pi)
 	}
 }
 

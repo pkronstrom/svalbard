@@ -314,7 +314,10 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	if len(platforms) == 0 {
 		platforms = []string{hostPlatform()}
 	}
-	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{EnvVars: envVars, Menus: menus, PlatformIORecipes: platformIORecipes, PlatformIOPlatforms: platforms, Recipes: recipes}); err != nil {
+	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{
+		EnvVars: envVars, Menus: menus, PlatformIORecipes: platformIORecipes, PlatformIOPlatforms: platforms, Recipes: recipes,
+		NoSearchIndex: strings.EqualFold(strings.TrimSpace(m.Desired.Options.IndexStrategy), "none"),
+	}); err != nil {
 		return fmt.Errorf("generating toolkit: %w", err)
 	}
 	if err := toolkit.WriteDocumentsMetadata(root, m.Realized.Entries, recipes); err != nil {

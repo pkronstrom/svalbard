@@ -35,7 +35,7 @@ const agentsMDPrefixNote = "\nYour harness may prefix tool names with the server
 // DriveContext) without a mount point and with bare tool names; the modules
 // share no code, and the golden files in that package's testdata hold the
 // two texts together.
-func agentsMDText(skills, libraries bool) string {
+func agentsMDText(skills, libraries, noIndex bool) string {
 	var b strings.Builder
 	b.WriteString("# Svalbard offline drive\n\n")
 	b.WriteString("You run from a Svalbard USB drive. There is no internet. Do not try curl, wget, git clone, pip install, npm install or any other download. They fail.\n\n")
@@ -43,9 +43,15 @@ func agentsMDText(skills, libraries bool) string {
 	b.WriteString("1. `vault_sources` lists what is on the drive. Call it first.\n")
 	b.WriteString("2. `search` finds articles by keyword.\n")
 	b.WriteString("3. `search_read` reads one article. Pass the `source` and `path` from a search result.\n")
+	const what = "To build something (an app, dashboard, map, document, firmware), "
+	const only = " Use only the libraries and tools it names; they are on this drive."
 	var building []string
-	if skills {
-		building = append(building, "To build something (an app, dashboard, map, document, firmware), first find a procedure with `skill_search`, read it with `skill_read` and follow it. Use only the libraries and tools it names; they are on this drive.")
+	switch {
+	case skills && noIndex:
+		// The skill tools have nothing to search without an index.
+		building = append(building, what+"first read a procedure: with no search index, list `skills/` and read the fitting SKILL.md."+only)
+	case skills:
+		building = append(building, what+"first find a procedure with `skill_search`, read it with `skill_read` and follow it."+only)
 	}
 	if libraries {
 		building = append(building, "Pack HTML with `svalbard-drive html pack`; never link a CDN.")
@@ -64,8 +70,9 @@ func agentsMDText(skills, libraries bool) string {
 
 // writeAgentsMD keeps the AGENTS.md at the drive's root in step with what is
 // installed: written when the drive has an AI harness or skills, removed
-// when it has neither. A file the user wrote or edited is left as it is.
-func writeAgentsMD(root string, entries []manifest.RealizedEntry, menus map[string]catalog.MenuSpec) error {
+// when it has neither. noIndex says the vault is applied without a search
+// index. A file the user wrote or edited is left as it is.
+func writeAgentsMD(root string, entries []manifest.RealizedEntry, menus map[string]catalog.MenuSpec, noIndex bool) error {
 	var harness, skills, libraries bool
 	for _, entry := range entries {
 		switch {
@@ -83,7 +90,7 @@ func writeAgentsMD(root string, entries []manifest.RealizedEntry, menus map[stri
 	if !harness && !skills && !libraries {
 		return removeGeneratedFileHost(path, markerPath)
 	}
-	return writeGeneratedFileHost(path, markerPath, agentsMDText(skills, libraries))
+	return writeGeneratedFileHost(path, markerPath, agentsMDText(skills, libraries, noIndex))
 }
 
 // writeGeneratedFileHost keeps a Svalbard-written file current without

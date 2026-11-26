@@ -23,16 +23,22 @@ func driveContextGolden(t *testing.T, name string) string {
 }
 
 func TestAgentsMDTextMatchesTheDriveContext(t *testing.T) {
-	for name, areas := range map[string][2]bool{
-		"drive_context.golden":           {true, true},
-		"drive_context_skills.golden":    {true, false},
-		"drive_context_libraries.golden": {false, true},
-		"drive_context_plain.golden":     {false, false},
+	for name, areas := range map[string][3]bool{
+		"drive_context.golden":                {true, true, false},
+		"drive_context_skills.golden":         {true, false, false},
+		"drive_context_libraries.golden":      {false, true, false},
+		"drive_context_plain.golden":          {false, false, false},
+		"drive_context_noindex.golden":        {true, true, true},
+		"drive_context_skills_noindex.golden": {true, false, true},
 	} {
 		want := driveContextGolden(t, name) + agentsMDPrefixNote
-		if got := agentsMDText(areas[0], areas[1]); got != want {
-			t.Errorf("agentsMDText(skills %v, libraries %v) differs from %s plus the prefix sentence; change agentsmd.go and drive-runtime/internal/agent/context.go together.\ngot:\n%s\nwant:\n%s", areas[0], areas[1], name, got, want)
+		if got := agentsMDText(areas[0], areas[1], areas[2]); got != want {
+			t.Errorf("agentsMDText(skills %v, libraries %v, no index %v) differs from %s plus the prefix sentence; change agentsmd.go and drive-runtime/internal/agent/context.go together.\ngot:\n%s\nwant:\n%s", areas[0], areas[1], areas[2], name, got, want)
 		}
+	}
+	// Without skills the index makes no difference to the text.
+	if agentsMDText(false, true, true) != agentsMDText(false, true, false) {
+		t.Error("a vault without skills is told about its index")
 	}
 	if !strings.Contains(agentsMDPrefixNote, "`svalbard`") {
 		t.Errorf("prefix note = %q", agentsMDPrefixNote)
@@ -85,6 +91,13 @@ func TestGenerateWritesRootAgentsMD(t *testing.T) {
 	generate(root, wiki, pi)
 	if got := read(root); got != driveContextGolden(t, "drive_context_plain.golden")+agentsMDPrefixNote {
 		t.Errorf("root AGENTS.md with a harness and no skills:\n%s", got)
+	}
+	// A vault applied without a search index says so.
+	if err := Generate(root, []manifest.RealizedEntry{wiki, skills}, "test", GenerateOpts{Menus: menus, NoSearchIndex: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(root); got != driveContextGolden(t, "drive_context_skills_noindex.golden")+agentsMDPrefixNote || strings.Contains(got, "skill_search") {
+		t.Errorf("root AGENTS.md without a search index:\n%s", got)
 	}
 	// With no harness and no skills there is nobody to orient.
 	generate(root, wiki, kiwix)

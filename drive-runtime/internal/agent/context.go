@@ -38,6 +38,9 @@ type ContextOptions struct {
 	Wiki, LivePages bool
 	// Skills: a skills recipe is installed. Libraries: JS libraries are.
 	Skills, Libraries bool
+	// NoIndex: the drive has no search index, so the skill tools find
+	// nothing and the skills are read as files.
+	NoIndex bool
 }
 
 // DriveContext is the context file of a shell harness on the drive: what a
@@ -67,7 +70,7 @@ func DriveContext(opts ContextOptions) string {
 	b.WriteString("2. " + tool("search") + " finds articles by keyword.\n")
 	b.WriteString("3. " + tool("search_read") + " reads one article. Pass the `source` and `path` from a search result.\n")
 	if opts.Skills || opts.Libraries {
-		b.WriteString("\n" + buildingContext(opts.ToolPrefix, opts.Skills, opts.Libraries) + "\n")
+		b.WriteString("\n" + buildingContext(opts) + "\n")
 	}
 	if opts.Wiki {
 		// The wiki is the one thing on the drive a model may write. Without
@@ -91,12 +94,23 @@ func DriveContext(opts ContextOptions) string {
 // buildingContext sends a model that is asked to make something to the
 // drive's skills first, and keeps it off the network for libraries. Left to
 // itself a small model writes a page that loads its libraries from a CDN.
-func buildingContext(prefix string, skills, libraries bool) string {
+// Without a search index the skill tools have nothing to search, and the
+// model is sent to the skills' folder.
+func buildingContext(opts ContextOptions) string {
+	const what = "To build something (an app, dashboard, map, document, firmware), "
+	const only = " Use only the libraries and tools it names; they are on this drive."
 	var sentences []string
-	if skills {
-		sentences = append(sentences, "To build something (an app, dashboard, map, document, firmware), first find a procedure with `"+prefix+"skill_search`, read it with `"+prefix+"skill_read` and follow it. Use only the libraries and tools it names; they are on this drive.")
+	switch {
+	case opts.Skills && opts.NoIndex:
+		folder := "skills/"
+		if opts.DriveRoot != "" {
+			folder = filepath.ToSlash(filepath.Join(opts.DriveRoot, "skills")) + "/"
+		}
+		sentences = append(sentences, what+"first read a procedure: with no search index, list `"+folder+"` and read the fitting SKILL.md."+only)
+	case opts.Skills:
+		sentences = append(sentences, what+"first find a procedure with `"+opts.ToolPrefix+"skill_search`, read it with `"+opts.ToolPrefix+"skill_read` and follow it."+only)
 	}
-	if libraries {
+	if opts.Libraries {
 		sentences = append(sentences, "Pack HTML with `svalbard-drive html pack`; never link a CDN.")
 	}
 	return strings.Join(sentences, " ")
@@ -113,7 +127,15 @@ func driveContextFor(driveRoot, toolPrefix string) string {
 		LivePages:  hasWiki && wiki.LivePages(driveRoot),
 		Skills:     mcp.SkillsInstalled(driveRoot),
 		Libraries:  mcp.LibrariesInstalled(driveRoot),
+		NoIndex:    !searchIndexed(driveRoot),
 	})
+}
+
+// searchIndexed reports whether the drive has a search index. A vault applied
+// with the index strategy "none" has none.
+func searchIndexed(driveRoot string) bool {
+	_, err := os.Stat(filepath.Join(driveRoot, "data", "search.db"))
+	return err == nil
 }
 
 // drivePathEnv puts the drive's tools first on a harness's PATH, so that what
