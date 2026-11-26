@@ -4,6 +4,8 @@ Status: phase A done 2026-11-26 on macOS arm64. Not run on Linux, Intel Mac or a
 
 Scope: work items 1 to 5 of the [research](research/2026-11-26-open-webui.md). llama.cpp's own page stays the default Chat entry and is untouched. Open WebUI is an opt-in recipe, in no pack or preset.
 
+The workspace file tools added afterwards are recorded in [File tools for the workspace](#file-tools-for-the-workspace) at the end.
+
 ## Resulting user path
 
 1. Add `open-webui` to a vault that has a chat model and apply. The recipe pulls `svalbard-python` and `llama-server` as dependencies in the wizard; the plain `svalbard add` command adds only what it is given, so `uv`, `svalbard-python` and `llama-server` must be named there (existing behaviour, see follow-ups).
@@ -94,3 +96,99 @@ Real run on this Mac (64 GB, internal SSD), CLI and runtime built from the branc
 | `svalbard add` resolves dependencies like the wizard | S | M if removal must also drop automatic dependencies |
 | Empty MCP results say "none" instead of nothing | S | — |
 | Upgrade routine for each Open WebUI pin bump | S per bump | M when a release changes config keys |
+
+## File tools for the workspace
+
+Status: done 2026-11-26 on macOS arm64, on top of phase A. Not run on Linux, Intel Mac or a physical stick.
+
+Scope: let a chat in Open WebUI save what it found. The model searches the vault, writes or edits a file such as an HTML page in one folder on the drive, and gives a link that opens it. The terminal harnesses are untouched: they have file tools of their own, and the stdio MCP server still lists the eight vault tools.
+
+### Resulting user path
+
+1. `./run open-webui` prints a second address, `Workspace:  http://localhost:8086/ (files the assistant saves, in <drive>/workspace)`. Nothing new opens in the browser.
+2. A new chat has two tool servers switched on, **Svalbard vault** and **Svalbard files**. Each has its own switch in the chat's Tools menu.
+3. "Search the vault for X and Y, read both and save a page as notes.html" produces `<drive>/workspace/notes.html` and a reply with a clickable link to it. "Change the heading in notes.html" edits the same file.
+4. The folder is an ordinary folder at the root of the stick. Files put there by hand can be read and edited by the model, and the address above lists them.
+
+```text
+┌─────────────────────────┐ tools ┌──────────────────────────────────────┐
+│ Open WebUI        :8084 │──────▶│ svalbard-drive __native-open-webui   │
+│ (browser page, chat)    │       │  :8090/mcp        vault, 8 tools     │
+└────────────┬────────────┘       │  :8090/files/mcp  file_list, _read,  │
+             │ link in a reply    │                   _write, _edit      │
+             ▼                    │  :8086            read-only pages    │
+┌─────────────────────────┐ GET   │                   own origin, CSP    │
+│ generated page    :8086 │◀──────│                                      │
+└─────────────────────────┘       └──────────────────┬───────────────────┘
+                                                     │ only this folder
+                                             <drive>/workspace/
+```
+
+### Decisions
+
+- **One folder, `<drive>/workspace/`**, created when the action starts. If it cannot be created (read-only stick, a file of that name) the action says "File tools are off" and continues with chat and vault search.
+- **Four tools and no more**: `file_list`, `file_read`, `file_write`, `file_edit`. No delete, move or execute. Open WebUI prefixes them with the server id, so the model sees `workspace_file_write`.
+- **Two checks on every path.** `Resolve` rejects absolute paths, `..`, backslashes, names starting with a dot, and anything whose deepest existing part resolves outside the folder through a symlink, with an error that says what to send instead. All file access then goes through an `os.Root` opened on the folder, which refuses an escape on its own if a path ever reaches it unchecked. A link that stays inside the folder is followed.
+- **Dot names are refused, unlisted and unserved.** They are the atomic writer's temporary files and the host's litter (`.DS_Store`, `._name`).
+- **Limits**: 2 MiB per written file; `file_read` returns at most 20,000 bytes per call (about 6,000 tokens) and loads no file over 8 MiB; `file_list` goes two levels down by default, five at most, 200 entries at most. Binary or non-UTF-8 files are refused for read and edit.
+- **Writes are atomic**: a temporary file in the same folder, synced and renamed.
+- **`file_edit` replaces one exact occurrence.** Absent text and text that occurs more than once are errors that leave the file alone; `replace_all` replaces every occurrence. When the text is absent but one line matches apart from indentation, the error quotes that line.
+- **A tool server of its own, on the listener the action already held.** `mcp.ServeStreamableHTTP` now mounts several servers by path; the file tools are at `/files/mcp` and get their own entry in `TOOL_SERVER_CONNECTIONS` and in the default `toolIds`. `svalbard-drive mcp` in all three modes is unchanged.
+- **Pages are served from a different origin than Open WebUI**, on a third listener bound to 127.0.0.1 (preferred port 8086), read-only. Each response carries `Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src data: blob: 'self'; font-src data: 'self'; media-src data: blob: 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-site` and `Cache-Control: no-store`. A request whose `Host` is not `localhost` or `127.0.0.1` on that port gets 403, and everything outside the folder is the same 404. Folders get a plain index unless they hold an `index.html`.
+- **`'self'` is allowed** for scripts, styles, images, fonts and media so a page can use other workspace files. It still cannot fetch, post a form or load from another origin. A page can navigate away; no header prevents that.
+- **`same-site`, not `same-origin`**, so Open WebUI (localhost on another port) can show an image the model saved, while a page on any other site cannot embed workspace files.
+- **The on/off decision is one function**, `fileToolsEnabled` in `drive-runtime/internal/openwebui`, which returns true until the stick's settings store exists.
+- **No system prompt and no model metadata were added.** Both models used the tools from their descriptions alone. Three things were changed after watching real runs, all in the tools:
+  - `file_read` now says "give only the path" and marks the line range as "only for a very long file". With the first wording Qwen3.5 4B read a 314-line page in 22 calls of ten to fifty lines.
+  - The link is spelled `http://localhost:<port>/...`, not `127.0.0.1`. The model copied `127.0.0.1:8086` into its reply as `127.0.0.806` in one chat.
+  - `file_write` and `file_edit` return a ready Markdown link (`"link":"[page.html](http://localhost:8086/page.html)"`) and say to put it in the reply as returned. Given a bare URL the model put it in backticks in one chat, which Open WebUI does not make clickable.
+- **Tool annotations follow the action**: `file_write` and `file_edit` are no longer announced as read-only (`ActionDef.Writes`).
+
+### Verified, and how
+
+Unit tests (`make verify`, 56 tested packages, and `make build`):
+
+- Workspace: accepted and cleaned paths; every escape (absolute, home, `..` in any position, backslash, NUL, dot names, a symlink to an outside folder or file, a dangling symlink, a symlinked parent with missing folders below it); the same escapes sent straight to the file operations without the check; atomic replacement with no leftover; the size cap at and over the limit; a folder or a file in the way; folders, oversized files, a named pipe and a missing file refused for reading without naming the host path.
+- Static server: the header values and each CSP directive, no `connect-src` and no remote source; folder index, redirect to the slash, `index.html` preferred, hidden files absent; 404 for `..`, a doubled slash, an absolute host path, both symlink kinds, a hidden file and the drive's own manifest; 405 for POST, PUT and DELETE; 403 for a foreign `Host`; the port released on cancellation.
+- Tools: list (empty workspace, depth, the 200-entry cap, hidden files and outward links left out), read (whole, by line range, continued part by part until the file is rebuilt byte for byte, one over-long line, binary and non-UTF-8 refused), write (parents created, replacement, the size cap, the link with spaces, brackets and parentheses), edit (one occurrence, absent, ambiguous, `replace_all`, the indentation hint, deletion, an edit that would exceed the cap), and all four tools against every escape with the outside directory and the drive's manifest checked afterwards.
+- Servers: the drive server has exactly the eight vault tools and creates no workspace; the file tools carry write hints; two servers on one listener each list their own tools, a write over HTTP lands in the folder, and a refused path comes back as a tool error; a write request with a form content type or a foreign `Host`, which is what a page on another site could send, is refused, while the same request from a local client writes.
+- Action: both tool servers and both default tool ids with file tools on, one of each with them off; a start against stand-in servers serves both MCP paths, writes through the file tools into `<drive>/workspace`, serves that file from a localhost origin other than Open WebUI's with the CSP, prints the workspace address, opens only Open WebUI, and closes every port on cancellation; a drive whose `workspace` is a file starts without file tools and says so.
+
+Real run on this Mac (64 GB, internal SSD), runtime built from the branch and applied to a copy of the phase A scratch vault (`wikem`, NHS medicines, keyword index), 32K context, driven through the page itself in an isolated browser profile with `open` replaced by a no-op:
+
+- A new chat showed "Tools 2", both switches on. With **Svalbard files** switched off the model still searched and read the vault, made no request to `/files/mcp`, wrote no file and said it had no tool to save one.
+- **Qwen3.5 4B, final build, three chats** (burns and paracetamol, ibuprofen against paracetamol, hypothermia and frostbite). Each write turn was two searches, two article reads and one `file_write`: 5 tool calls in 4 model requests, 35 to 57 s, 1,700 to 4,100 tokens generated, and a reply with a clickable link. The pages were 3.9 to 11 KB of styled HTML naming both source articles. Each edit turn was one whole-file read and one or two `file_edit` calls: 3 or 4 model requests, 18 to 28 s. In one of the three the note that was asked for "at the very top" was added as an HTML comment, so the tool call succeeded and the page did not visibly change there.
+- **Qwen3.5 4B, earlier builds, five chats**: all five write turns produced the page (24 to 78 s). The link was right and clickable in three, mistyped in one and in backticks in one, which led to the two link changes above. All five edits changed the file as asked, except that one replaced the footer line where it was asked to add one, in 4, 25, 4, 3 and 10 model requests; the 25 led to the `file_read` wording, and the 10 (two "not found" errors from wrong indentation, each recovered) led to the indentation hint.
+- **Granite 4.2 3B, final build, three chats**: three of three pages written and linked, 6 or 7 tool calls in 7 or 8 model requests, 77 to 145 s, pages of 0.9 to 1.6 KB. Three of three edits applied correctly: one with `file_edit` in 238 s (9,000 tokens generated, nearly all reasoning), two by rewriting the whole file with `file_write` in 49 and 65 s. Its content was weaker: one search with `limit=1` read a less relevant article, and doses were paraphrased loosely.
+- Context peaked at 17,100 tokens for Qwen (the 25-request edit; 13,000 on the final build) and 19,100 for Granite, with no truncation. The first request of a chat is about 2,250 tokens with both tool servers, against 1,500 with the vault alone.
+- The link from the first chat, fetched with curl, returned the file byte for byte with the headers above. In the browser the page rendered with its styles; from inside it a fetch to its own origin, to Open WebUI and to the MCP server all failed, an image from Open WebUI's origin was blocked and a `data:` image loaded. From Open WebUI's page a workspace image loaded through `localhost` and was blocked through `127.0.0.1`, and a fetch of a workspace page could not be read.
+- Against the running server: `/../manifest.yaml`, `/..%2fmanifest.yaml`, `/%2e%2e/manifest.yaml`, `//etc/passwd`, `/.svalbard/recipes.json`, the Open WebUI secret and a symlink to `/etc/hosts` all returned 404, POST returned 405, and a foreign `Host` 403.
+- The real binary's `mcp --drive` over stdio listed the eight vault tools and created no workspace folder.
+- With a second Open WebUI instance from another vault running on this machine, the action moved to free ports (Open WebUI 8085, MCP 8091, workspace 8086) and a write through `/files/mcp` returned a link that served the file.
+- Ctrl+C, eight stops: exit status 0 on the seven where it was recorded; after the first and the last no process and no listener was left, and every restart got the same ports back. The no-op `open` recorded one call per start, for Open WebUI's address only.
+
+### Not verified
+
+- Linux and Intel Mac: the code is the same and cross-compiles, never run. Linux cannot be run on this machine.
+- A physical stick: exFAT (which has no symlinks and no permission bits), a rename over an existing file there, and pulling the stick during a write.
+- Contexts under 32K. The 8K choice probably cannot hold two articles and a page.
+- Whether the pages say what the articles say. They were read, not checked line by line; the 4B model called WikEM "Wikipedia" and wrote "Original article" links that lead nowhere, because search results carry no address a page could link to.
+- Larger models, and anything but HTML and short notes.
+- Wall times are indicative: another llama-server ran on the same machine during part of the runs.
+- One start test (`TestRunStartsEverythingAndStopsItOnCancel`) failed once in thirteen runs under the race detector and did not reproduce. The action picks free ports for its two child servers before they bind, and other Open WebUI instances were starting on this machine at the time; the listeners added here are held from the start.
+
+### Follow-ups
+
+| Item | Size | Risk that could change the size |
+|---|---|---|
+| Read the on/off switch from the stick's settings | S | M if it must be changeable from the menu before each launch |
+| Delete and move | S | M if deletion needs a trash folder or a confirmation in the page |
+| A workspace on a host folder | S | M if one stick must remember a different folder per host |
+| Open the result automatically | S | M if the signal has to come from Open WebUI and not from the tool call |
+| The same tools in llama.cpp's built-in page | M | L if that page cannot be given a tool server at start |
+| Read PDF and Office files | M | L if it needs an extractor shipped per platform |
+| Versions or undo | M | L if it needs its own page to browse them |
+| Search inside workspace files, to cut reads of long files | S | M if it should share the vault's index |
+| Addresses for vault articles, so a page can link to its sources | M | L if kiwix must run on a fixed port for the life of the stick |
+| Hold the child servers' ports instead of probing them | S | M if llama-server cannot take an inherited socket |
+| Check the 8K and 16K context choices with file tools on | S | M if tool definitions must be trimmed for them |
