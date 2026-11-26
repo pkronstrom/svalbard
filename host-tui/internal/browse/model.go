@@ -24,6 +24,9 @@ type Config struct {
 	DesiredItems []string
 	FreeGB       float64
 	SaveDesired  func(ids []string) error // nil for read-only mode
+	// ResolveDeps returns the dependencies a selection requires; nil skips
+	// dependency resolution.
+	ResolveDeps func(selectedIDs map[string]bool) (autoDeps map[string]bool, missingIDs []string)
 }
 
 // PresetOption mirrors wizard.PresetOption for Browse's preset cycling.
@@ -40,6 +43,7 @@ type Model struct {
 	initialIDs map[string]bool
 	readOnly   bool
 	saveFunc   func(ids []string) error
+	resolve    func(map[string]bool) (map[string]bool, []string)
 
 	// Save prompt
 	showSavePrompt bool
@@ -69,7 +73,7 @@ func New(cfg Config) Model {
 	})
 	tp.ReserveLines = 11 // detail(3) + summary(1) + shell chrome(7)
 
-	return Model{
+	m := Model{
 		picker:     tp,
 		presets:    cfg.Presets,
 		presetIdx:  -1,
@@ -78,6 +82,25 @@ func New(cfg Config) Model {
 		saveFunc:   cfg.SaveDesired,
 		keys:       tui.DefaultKeyMap(),
 	}
+	if !m.readOnly {
+		m.resolve = cfg.ResolveDeps
+		// A dependency the saved selection lacks is added now, and counts
+		// as unchanged so that leaving without edits asks nothing.
+		m.recalcDeps()
+		for _, id := range m.picker.CheckedIDSlice() {
+			m.initialIDs[id] = true
+		}
+	}
+	return m
+}
+
+// recalcDeps selects the dependencies the user's selection requires.
+func (m *Model) recalcDeps() {
+	if m.resolve == nil {
+		return
+	}
+	autoDeps, _ := m.resolve(m.picker.UserSelection())
+	m.picker.SetAutoDependencies(autoDeps)
 }
 
 // Init satisfies tea.Model.
@@ -101,7 +124,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Let tree picker handle navigation/toggle first.
-		if m.picker.Update(msg) {
+		result := m.picker.UpdateWithResult(msg)
+		if result == tui.UpdateToggled {
+			m.recalcDeps()
+		}
+		if result != tui.UpdateNone {
 			return m, nil
 		}
 
@@ -175,6 +202,7 @@ func (m Model) saveAndPlan() tea.Cmd {
 func (m *Model) cyclePreset() {
 	m.presetIdx = (m.presetIdx + 1) % len(m.presets)
 	m.picker.ReplaceUserSelection(m.presets[m.presetIdx].SourceIDs)
+	m.recalcDeps()
 }
 
 // View renders the browse screen.

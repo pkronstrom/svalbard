@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/pkronstrom/svalbard/host-tui/internal/browse"
 	"github.com/pkronstrom/svalbard/host-tui/internal/plan"
 	"github.com/pkronstrom/svalbard/host-tui/internal/wizard"
 )
@@ -130,5 +131,20 @@ func TestApplySuccessSkipsDisabledConfiguredIndex(t *testing.T) {
 	app = updated.(*appModel)
 	if app.screen != screenDashboard || calls != 0 {
 		t.Fatalf("disabled indexing state = screen %d calls %d", app.screen, calls)
+	}
+}
+
+func TestBackFromBrowseOpenedFromPlanReturnsToDashboard(t *testing.T) {
+	app := newAppModel(nil, nil, &DashboardDeps{})
+	app.screen, app.vaultPath = screenPlan, "vault"
+	updated, _ := app.Update(plan.BrowseMsg{})
+	app = updated.(*appModel)
+	if app.screen != screenBrowse {
+		t.Fatalf("screen = %d, want browse", app.screen)
+	}
+	updated, _ = app.Update(browse.BackMsg{})
+	app = updated.(*appModel)
+	if app.screen != screenDashboard {
+		t.Fatalf("screen = %d, want the dashboard", app.screen)
 	}
 }

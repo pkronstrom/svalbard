@@ -72,8 +72,8 @@ func (m Model) View() string {
 	case stagePath:
 		footer = tui.FooterHints(
 			tui.KeyBinding{Key: "enter", Label: "Enter: confirm"},
-			tui.KeyBinding{Key: "j", Label: "j/k: quick select"},
-			tui.KeyBinding{Key: "esc", Label: "q/Esc: back"},
+			tui.KeyBinding{Key: "down", Label: "↑/↓: quick select"},
+			tui.KeyBinding{Key: "esc", Label: "Esc: back"},
 		)
 	case stagePlatforms:
 		footer = tui.FooterHints(

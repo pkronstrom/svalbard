@@ -539,3 +539,24 @@ func TestWizardShortViewportShowsPickerAndReviewValidation(t *testing.T) {
 		t.Fatalf("short review viewport hid validation:\n%s", out)
 	}
 }
+
+func TestPathFieldTakesLettersThatAreKeysElsewhere(t *testing.T) {
+	cfg := testConfig()
+	cfg.PrefillPath = "/tmp/"
+	m := New(cfg)
+	for _, r := range "jkq" {
+		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(Model)
+		if cmd != nil {
+			if _, back := cmd().(BackMsg); back {
+				t.Fatalf("typing %q left the wizard", r)
+			}
+		}
+	}
+	if got := m.pathPicker.input.Value(); got != "/tmp/jkq" {
+		t.Fatalf("path = %q, want /tmp/jkq", got)
+	}
+	if m.stage != stagePath {
+		t.Fatalf("stage = %d, want the path stage", m.stage)
+	}
+}

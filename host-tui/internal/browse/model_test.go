@@ -323,3 +323,51 @@ func sameIDs(got, want []string) bool {
 	}
 	return true
 }
+
+// needsServer resolves like the catalog does for ZIMs: wiki-en requires
+// osm-extract here, standing in for a server dependency.
+func needsServer(selected map[string]bool) (map[string]bool, []string) {
+	deps := map[string]bool{}
+	if selected["wiki-en"] {
+		deps["osm-extract"] = true
+	}
+	return deps, nil
+}
+
+func TestBrowseSelectsDependenciesOfToggledItems(t *testing.T) {
+	var saved []string
+	m := sizedBrowse(Config{
+		PackGroups:  samplePackGroups(),
+		FreeGB:      500,
+		SaveDesired: func(ids []string) error { saved = ids; return nil },
+		ResolveDeps: needsServer,
+	})
+	for _, id := range m.picker.CheckedIDSlice() {
+		t.Fatalf("%s is selected in an empty vault", id)
+	}
+	m.picker.ReplaceUserSelection([]string{"wiki-en"})
+	m.recalcDeps()
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = result.(Model)
+	if !containsID(saved, "wiki-en") || !containsID(saved, "osm-extract") {
+		t.Fatalf("saved %v, want wiki-en and its dependency", saved)
+	}
+}
+
+func TestBrowseAddsAMissingDependencyWithoutAskingToSave(t *testing.T) {
+	m := sizedBrowse(Config{
+		PackGroups:   samplePackGroups(),
+		DesiredItems: []string{"wiki-en"},
+		FreeGB:       500,
+		SaveDesired:  func([]string) error { return nil },
+		ResolveDeps:  needsServer,
+	})
+	if !containsID(m.picker.CheckedIDSlice(), "osm-extract") {
+		t.Fatal("the dependency of a saved item is not selected")
+	}
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = result.(Model)
+	if m.showSavePrompt || cmd == nil {
+		t.Fatal("leaving without edits asked to save")
+	}
+}

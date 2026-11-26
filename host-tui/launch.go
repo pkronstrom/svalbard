@@ -209,6 +209,7 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.dashboard.Init(), m.sendSize())
 
 	case plan.BrowseMsg:
+		m.prevScreen = screenDashboard
 		m.screen = screenBrowse
 		m.browse = m.newBrowse(false)
 		return m, m.sendSize()
@@ -329,10 +330,12 @@ func (m *appModel) returnFromBrowse() tea.Cmd {
 	if m.prevScreen == screenWelcome {
 		m.screen = screenWelcome
 		m.welcome = welcome.New()
-	} else {
-		m.screen = screenDashboard
+		return m.sendSize()
 	}
-	return m.sendSize()
+	// Reload the dashboard: a saved selection changes its counts.
+	m.screen = screenDashboard
+	m.dashboard = m.newDashboard(m.vaultPath)
+	return tea.Batch(m.dashboard.Init(), m.sendSize())
 }
 
 func (m *appModel) defaultWizardConfig() WizardConfig {
@@ -440,6 +443,7 @@ func (m *appModel) newBrowse(readOnly bool) browse.Model {
 			}
 		}
 		cfg.SaveDesired = m.deps.SaveDesiredItems
+		cfg.ResolveDeps = m.deps.ResolveDeps
 	}
 	return browse.New(cfg)
 }

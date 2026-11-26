@@ -120,8 +120,9 @@ func (m pathPickerModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case m.keys.ForceQuit.Matches(msg):
 		return m, tea.Quit
 
-	case m.keys.MoveDown.Matches(msg):
-		// Only navigate options when input is not focused, or move from input to first option.
+	// Only the arrow keys move through the volumes: letters, j and k
+	// included, belong to the path.
+	case msg.Type == tea.KeyDown:
 		if m.cursor < len(m.options)-1 {
 			m.cursor++
 			m.input.SetValue(filepath.Join(m.options[m.cursor].path, "svalbard-vault"))
@@ -130,7 +131,7 @@ func (m pathPickerModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case m.keys.MoveUp.Matches(msg):
+	case msg.Type == tea.KeyUp:
 		if m.cursor > -1 {
 			m.cursor--
 			if m.cursor >= 0 {
@@ -218,7 +219,7 @@ func (m pathPickerModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(m.theme.Help.Render("  Enter: confirm  j/k: quick select  Esc: back"))
+	b.WriteString(m.theme.Help.Render("  Enter: confirm  ↑/↓: quick select  Esc: back"))
 
 	return b.String()
 }

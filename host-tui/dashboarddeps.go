@@ -34,6 +34,9 @@ type DashboardDeps struct {
 	// Static catalog data (for Browse)
 	PackGroups []PackGroup
 	Presets    []PresetOption
+	// ResolveDeps returns the dependencies a selection requires and the ones
+	// the catalog lacks, as the wizard's resolver does.
+	ResolveDeps func(selectedIDs map[string]bool) (autoDeps map[string]bool, missingIDs []string)
 
 	// RebuildForVault returns a new DashboardDeps targeting a different vault path.
 	// Used when the user opens a different vault via the Open Vault screen.

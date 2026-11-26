@@ -847,6 +847,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 	if wizConfig != nil {
 		deps.PackGroups = wizConfig.PackGroups
 		deps.Presets = wizConfig.Presets
+		deps.ResolveDeps = wizConfig.ResolveDeps
 		if wizConfig.ForPlatforms != nil {
 			// Browse estimates sizes for the open vault's platforms.
 			if root, err := ResolveVaultRoot(vaultFlag); err == nil {
