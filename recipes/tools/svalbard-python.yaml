@@ -5,6 +5,7 @@ tags:
 - computing
 depth: reference-only
 size_gb: 0.11
+file_count: 1858
 python: "3.12"
 strategy: build
 build:

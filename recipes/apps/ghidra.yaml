@@ -6,6 +6,7 @@ tags:
 - ctf
 depth: reference-only
 size_gb: 0.7
+file_count: 6823
 strategy: build
 build:
   family: app-bundle

@@ -6,6 +6,7 @@ tags:
 - agentic
 depth: reference-only
 size_gb: 0.58
+file_count: 21977
 venv: svalbard-python
 deps: [svalbard-python, llama-server]
 packages:

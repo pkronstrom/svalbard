@@ -226,10 +226,14 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
-				return writeJSON(cmd.OutOrStdout(), commands.BuildStatus(cat, m))
+			report := commands.BuildStatus(cat, m)
+			if usage, err := commands.MeasureVault(vaultRoot); err == nil {
+				report.Usage = &usage
 			}
-			return commands.WriteStatus(cmd.OutOrStdout(), cat, m)
+			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+				return writeJSON(cmd.OutOrStdout(), report)
+			}
+			return commands.WriteStatusReport(cmd.OutOrStdout(), report, m)
 		},
 	}
 	statusCmd.Flags().Bool("json", false, "print the status as JSON")
@@ -436,6 +440,9 @@ func initWithoutWizard(cmd *cobra.Command, args []string, presetName string, add
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "Created vault at %s: %d items, %s, for %s\n", path, len(ids),
 		sizeOf(cat, ids, platforms), strings.Join(platforms, ", "))
+	if cluster, err := commands.ClusterSize(path); err == nil {
+		commands.WriteClusterWarning(cmd.ErrOrStderr(), commands.EstimateSpace(cat, ids, platforms, cluster))
+	}
 	if runApply, _ := cmd.Flags().GetBool("apply"); !runApply {
 		fmt.Fprintf(out, "Run \"svalbard apply --vault %s\" to download\n", path)
 		return nil
@@ -797,6 +804,15 @@ func buildWizardConfig(prefillPath string, warn io.Writer) (hosttui.WizardConfig
 		},
 		ForPlatforms: func(platforms []string) ([]hosttui.PresetOption, []hosttui.PackGroup) {
 			return wizardCatalog(cat, platforms)
+		},
+		StorageNote: func(path string, ids, platforms []string) string {
+			cluster, err := commands.ClusterSize(path)
+			if err != nil {
+				return ""
+			}
+			var note strings.Builder
+			commands.WriteClusterWarning(&note, commands.EstimateSpace(cat, ids, platforms, cluster))
+			return strings.TrimRight(note.String(), "\n")
 		},
 	}, nil
 }

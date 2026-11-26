@@ -6,6 +6,7 @@ tags:
 - ctf
 depth: reference-only
 size_gb: 0.43
+file_count: 5991
 venv: svalbard-python
 packages:
 - angr==10.0.7
