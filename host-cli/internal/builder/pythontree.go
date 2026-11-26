@@ -7,11 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 // treeLinkCopyLimit is the largest file a symlink in an installed tree is
@@ -43,21 +48,30 @@ func installTree(ctx context.Context, root, workdir string, env []string, comman
 	}
 	defer os.Remove(clean)
 
-	spec, err := json.Marshal(map[string]any{"env": env, "commands": commands})
+	owner := containerOwner()
+	spec, err := json.Marshal(map[string]any{"env": env, "commands": commands, "owner": owner})
 	if err != nil {
 		return err
 	}
 	if _, err := runToolCommand(ctx, root, workdir, BaseToolsImage, "python3", []string{"-c", containerInstallScript, string(spec), raw}); err != nil {
 		return err
 	}
-	if err := rewriteTreeArchive(raw, clean, skip); err != nil {
+	dropped, err := rewriteTreeArchive(raw, clean, skip)
+	if err != nil {
 		return err
+	}
+	for _, link := range dropped {
+		slog.Info("python tree: link left out", "tree", dest, "link", link)
 	}
 	staging := dest + ".partial"
 	if err := os.RemoveAll(staging); err != nil {
 		return err
 	}
-	if _, err := runToolCommand(ctx, root, workdir, BaseToolsImage, "python3", []string{"-c", containerUnpackScript, clean, staging}); err != nil {
+	unpack := []string{"-c", containerUnpackScript, clean, staging}
+	if owner != nil {
+		unpack = append(unpack, fmt.Sprintf("%d:%d", owner[0], owner[1]))
+	}
+	if _, err := runToolCommand(ctx, root, workdir, BaseToolsImage, "python3", unpack); err != nil {
 		_ = os.RemoveAll(staging)
 		return err
 	}
@@ -67,10 +81,22 @@ func installTree(ctx context.Context, root, workdir string, env []string, comman
 	return os.Rename(staging, dest)
 }
 
+// containerOwner is the user and group the containers give what they write,
+// nil to leave it to Docker. Docker Desktop maps a container's files to this
+// computer's user; Docker on Linux would leave them owned by root, in the
+// user's own cache dir and on the vault.
+var containerOwner = func() []int {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	return []int{os.Getuid(), os.Getgid()}
+}
+
 // containerInstallScript runs a JSON list of commands with {dir} replaced by a
 // new directory inside the container and archives that directory. A failed
 // command exits with its status and no traceback, so its own error ends the
-// output the build reports.
+// output the build reports. With an owner, everything in the archive's
+// directory (the build dir with uv's cache) is handed to it.
 const containerInstallScript = `import json, os, subprocess, sys, tarfile, tempfile
 spec, archive = json.loads(sys.argv[1]), sys.argv[2]
 d = tempfile.mkdtemp()
@@ -81,13 +107,31 @@ for command in spec["commands"]:
         sys.exit(code)
 with tarfile.open(archive, "w") as tar:
     tar.add(d, arcname=".")
+if spec.get("owner"):
+    uid, gid = spec["owner"]
+    top = os.path.dirname(archive)
+    for base, dirs, files in os.walk(top):
+        for name in [base] + [os.path.join(base, n) for n in dirs + files]:
+            try:
+                os.lchown(name, uid, gid)
+            except OSError:
+                pass
 `
 
 // containerUnpackScript unpacks a rewritten archive (directories and regular
-// files only) into a new directory, creating each file with its mode.
+// files only) into a new directory, creating each file with its mode, and
+// hands what it creates to an optional uid:gid.
 const containerUnpackScript = `import os, shutil, sys, tarfile
 archive, dest = sys.argv[1], sys.argv[2]
+owner = [int(n) for n in sys.argv[3].split(":")] if len(sys.argv) > 3 else None
+def own(path):
+    if owner:
+        try:
+            os.lchown(path, *owner)
+        except OSError:
+            pass
 os.makedirs(dest)
+own(dest)
 with tarfile.open(archive) as tar:
     for member in tar:
         path = os.path.join(dest, member.name)
@@ -95,11 +139,15 @@ with tarfile.open(archive) as tar:
             os.makedirs(path, exist_ok=True)
         elif member.isfile():
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, member.mode & 0o777)
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, member.mode & 0o777)
+            except FileExistsError:
+                sys.exit(member.name + " already exists: this volume holds two names of the tree as one (case or Unicode normalization)")
             with os.fdopen(fd, "wb") as out, tar.extractfile(member) as data:
                 shutil.copyfileobj(data, out, 1 << 20)
         else:
             sys.exit("unexpected archive entry " + member.name)
+        own(path)
 `
 
 // installInterpreter installs the python-build-standalone build request into
@@ -125,9 +173,13 @@ func createTempPath(dir, pattern string) (string, error) {
 //   - a link to a file becomes a copy of it, unless the file is large: then a
 //     link in bin/ becomes a script that execs the file (python, python3) and
 //     any other is left out (libpython3.12.so, which only a linker reads)
-//   - a link to a directory or out of the tree is left out
-//   - names that still differ only in case fail
-func rewriteTreeArchive(src, dst string, skip func(string) bool) error {
+//   - a link to a directory, out of the tree or to a path the tree lacks
+//     (such as one through a linked directory) is left out
+//   - names that one of those volumes would still hold as one fail: names
+//     that differ only in case (full Unicode folding) or normalization
+//
+// It returns each link it left out, with the reason.
+func rewriteTreeArchive(src, dst string, skip func(string) bool) ([]string, error) {
 	type entry struct {
 		header *tar.Header
 		target string // links: the archive path the link resolves from, "" if it leaves the tree
@@ -158,12 +210,13 @@ func rewriteTreeArchive(src, dst string, skip func(string) bool) error {
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Each link resolves to a regular file or is left out.
 	resolved := map[string]string{}
 	copied := map[string][]byte{}
+	var dropped []string
 	for _, name := range order {
 		e := entries[name]
 		if e.header.Typeflag != tar.TypeSymlink && e.header.Typeflag != tar.TypeLink {
@@ -178,11 +231,20 @@ func rewriteTreeArchive(src, dst string, skip func(string) bool) error {
 			target = next.target
 		}
 		t, ok := entries[target]
-		if !ok || t.header.Typeflag != tar.TypeReg {
+		switch {
+		case e.target == "":
+			dropped = append(dropped, name+" (leads out of the tree)")
+			continue
+		case !ok:
+			dropped = append(dropped, name+" (its target is not a file in the tree)")
+			continue
+		case t.header.Typeflag != tar.TypeReg:
+			dropped = append(dropped, name+" (links a directory)")
 			continue
 		}
 		size := t.header.Size
 		if size > treeLinkCopyLimit && path.Base(path.Dir(name)) != "bin" {
+			dropped = append(dropped, fmt.Sprintf("%s (links a %d-byte file outside bin/)", name, size))
 			continue
 		}
 		resolved[name] = target
@@ -192,21 +254,22 @@ func rewriteTreeArchive(src, dst string, skip func(string) bool) error {
 	}
 
 	folded := map[string]string{}
+	fold := cases.Fold()
 	for _, name := range order {
 		e := entries[name]
 		if (e.header.Typeflag == tar.TypeSymlink || e.header.Typeflag == tar.TypeLink) && resolved[name] == "" {
 			continue
 		}
-		key := strings.ToLower(name)
+		key := norm.NFD.String(fold.String(name))
 		if other, ok := folded[key]; ok {
-			return fmt.Errorf("installed Python tree has names that differ only in case, which exFAT and macOS volumes cannot hold: %s, %s", other, name)
+			return nil, fmt.Errorf("installed Python tree has names that differ only in case or Unicode normalization, which exFAT and macOS volumes hold as one: %s, %s", other, name)
 		}
 		folded[key] = name
 	}
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tw := tar.NewWriter(out)
 	header := func(name string, typ byte, mode, size int64, from *tar.Header) *tar.Header {
@@ -253,7 +316,10 @@ func rewriteTreeArchive(src, dst string, skip func(string) bool) error {
 					err = relErr
 					break
 				}
-				data = []byte(fmt.Sprintf("#!/bin/sh\nexec \"$(dirname -- \"$0\")/%s\" \"$@\"\n", filepath.ToSlash(rel)))
+				// Called through a link of its own, the script finds its
+				// directory as the interpreter's scripts do; realpath is
+				// missing on macOS before 13.
+				data = []byte(fmt.Sprintf("#!/bin/sh\nself=$(realpath -- \"$0\" 2>/dev/null) || self=$0\nexec \"$(dirname -- \"$self\")/%s\" \"$@\"\n", filepath.ToSlash(rel)))
 				mode = 0o755
 			}
 			if err = tw.WriteHeader(header(name, tar.TypeReg, mode, int64(len(data)), entries[name].header)); err != nil {
@@ -270,7 +336,7 @@ func rewriteTreeArchive(src, dst string, skip func(string) bool) error {
 	if closeErr := out.Close(); err == nil {
 		err = closeErr
 	}
-	return err
+	return dropped, err
 }
 
 // skipInterpreterEntry reports whether an archive path of a uv python install

@@ -216,6 +216,13 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 		}
 	}
 
+	repairs := pythonRepairJobs(root, m, cat, desiredIDs, buildQueued)
+	buildJobs = append(buildJobs, repairs...)
+	reported := slices.Clone(acquire)
+	for _, job := range repairs {
+		reported = append(reported, job.id)
+	}
+
 	allJobs := append(httpJobs, buildJobs...)
 	// Python packages are materialized by their venv aggregate rather than a
 	// standalone job. Replace explicit package dependencies with that queued
@@ -272,7 +279,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 					return
 				}
 				recordCollection(root, m.Realized.Entries, cat, res.id)
-				for _, id := range plannedIDsCoveredBy(res.entries, acquire) {
+				for _, id := range plannedIDsCoveredBy(res.entries, reported) {
 					progress(ProgressEvent{ID: id, Status: tui.StatusDone})
 				}
 			}()
@@ -345,6 +352,26 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 
 	slog.Info("apply completed", "realized", len(m.Realized.Entries))
 	return nil
+}
+
+// pythonRepairJobs builds each installed venv again whose trees an older
+// builder laid out (symlinks exFAT cannot hold, a uv cache on the vault), so a
+// vault is repaired by its next apply; the build reinstalls only those trees.
+func pythonRepairJobs(root string, m *manifest.Manifest, cat *catalog.Catalog, desired, queued map[string]bool) []downloadJob {
+	platforms := m.Desired.Options.HostPlatforms
+	if len(platforms) == 0 {
+		platforms = []string{hostPlatform()}
+	}
+	var jobs []downloadJob
+	for _, e := range m.Realized.Entries {
+		recipe, ok := cat.RecipeByID(e.ID)
+		if !ok || recipe.Type != "python-venv" || !desired[e.ID] || queued[e.ID] || !builder.PythonTreesNeedRepair(root, platforms) {
+			continue
+		}
+		jobs = append(jobs, downloadJob{id: e.ID, recipe: recipe})
+		queued[e.ID] = true
+	}
+	return jobs
 }
 
 // removePythonCommands deletes the wrappers a Python package's build wrote to

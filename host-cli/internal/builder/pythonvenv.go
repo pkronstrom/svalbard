@@ -113,9 +113,10 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			}
 		}
 
-		// Phase 1: Install the interpreter for this platform.
+		// Phase 1: Install the interpreter for this platform, also over one an
+		// older layout left (symlinks, terminfo).
 		pythonBin := findInstalledPython(interpreterDir, version)
-		if pythonBin == "" {
+		if pythonBin == "" || !pythonLayoutCurrent(interpreterDir+".layout") {
 			slog.Info("installing python", "version", version, "platform", platform)
 			emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventProgress, Message: "installing python " + version + " for " + platform})
 			request := "cpython-" + version + "-" + target.python
@@ -124,6 +125,9 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			}
 			if pythonBin = findInstalledPython(interpreterDir, version); pythonBin == "" {
 				return nil, fmt.Errorf("could not find installed python in %s", interpreterDir)
+			}
+			if err := os.WriteFile(interpreterDir+".layout", []byte(pythonTreeLayoutStamp), 0o644); err != nil {
+				return nil, err
 			}
 		}
 		pythonRel, err := filepath.Rel(platformDir, pythonBin)
@@ -143,6 +147,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				}
 				stamp += "requirements_from: " + pkg.RequirementsFrom + "\n"
 			}
+			stamp += pythonTreeLayoutStamp
 			stampPath := toolDir + ".packages"
 			rebuild := false
 			if existing, err := os.ReadFile(stampPath); err != nil || string(existing) != stamp {
@@ -259,9 +264,50 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			slog.Warn("could not remove old python build files", "path", legacy, "err", err)
 		}
 	}
+	// and the folders around them, when nothing else uses them.
+	_ = os.Remove(filepath.Join(root, ".staging", "build"))
+	_ = os.Remove(filepath.Join(root, ".staging"))
 
 	venvEntry.SizeBytes = dirSize(filepath.Join(root, "runtime", "python"))
 	return append(entries, venvEntry), nil
+}
+
+// pythonTreeLayoutStamp names how installTree lays trees out. The interpreter's
+// python.layout and each package's .packages stamp carry it, so trees an older
+// layout left are installed again; change it when the layout changes.
+const pythonTreeLayoutStamp = "layout: 2 (no symlinks, no terminfo)\n"
+
+func pythonLayoutCurrent(stampPath string) bool {
+	data, err := os.ReadFile(stampPath)
+	return err == nil && string(data) == pythonTreeLayoutStamp
+}
+
+// PythonTreesNeedRepair reports whether a vault holds Python trees for one of
+// platforms in an older layout than this builder writes, or the uv cache older
+// builds left on it, so apply rebuilds the venv even when nothing else asks for
+// it. A stamp without its tree (a removed package) is not a tree.
+func PythonTreesNeedRepair(root string, platforms []string) bool {
+	if _, err := os.Stat(filepath.Join(root, ".staging", "uv-cache")); err == nil {
+		return true
+	}
+	isDir := func(path string) bool {
+		info, err := os.Stat(path)
+		return err == nil && info.IsDir()
+	}
+	for _, platform := range platforms {
+		platformDir := filepath.Join(root, "runtime", "python", platform)
+		if isDir(filepath.Join(platformDir, "python")) && !pythonLayoutCurrent(filepath.Join(platformDir, "python.layout")) {
+			return true
+		}
+		stamps, _ := filepath.Glob(filepath.Join(platformDir, "tools", "*.packages"))
+		for _, stamp := range stamps {
+			data, err := os.ReadFile(stamp)
+			if isDir(strings.TrimSuffix(stamp, ".packages")) && (err != nil || !strings.HasSuffix(string(data), pythonTreeLayoutStamp)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // pythonBuildDir holds uv's cache and the interpreter archives while building,

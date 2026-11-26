@@ -3,10 +3,13 @@ package builder
 import (
 	"archive/tar"
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -137,13 +140,24 @@ func TestRewriteInterpreterArchive(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := rewriteTreeArchive(raw, clean, skipInterpreterEntry); err != nil {
+	dropped, err := rewriteTreeArchive(raw, clean, skipInterpreterEntry)
+	if err != nil {
 		t.Fatal(err)
+	}
+	q := strings.TrimPrefix(p, "./")
+	wantDropped := []string{
+		"cpython-3.12-linux-aarch64-gnu (leads out of the tree)",
+		q + "bin/escape (leads out of the tree)",
+		fmt.Sprintf("%slib/libpython3.12.so (links a %d-byte file outside bin/)", q, len(big)),
+		q + "lib/libdir (links a directory)",
+	}
+	if !slices.Equal(dropped, wantDropped) {
+		t.Errorf("dropped =\n%v\nwant\n%v", dropped, wantDropped)
 	}
 
 	got := map[string]string{}
 	var names []string
-	err := walkTar(clean, func(name string, h *tar.Header, r io.Reader) error {
+	err = walkTar(clean, func(name string, h *tar.Header, r io.Reader) error {
 		data, _ := io.ReadAll(r)
 		names = append(names, name)
 		got[name] = fmt.Sprintf("%c %o %s", h.Typeflag, h.Mode, data)
@@ -152,7 +166,6 @@ func TestRewriteInterpreterArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q := strings.TrimPrefix(p, "./")
 	want := []string{
 		q[:len(q)-1], q + "bin", q + "bin/python3.12", q + "bin/pydoc3.12", q + "lib", q + "lib/libpython3.12.so.1.0", q + "lib/python3.12",
 		q + "bin/pydoc3", q + "bin/python", q + "bin/python3",
@@ -164,24 +177,44 @@ func TestRewriteInterpreterArchive(t *testing.T) {
 		t.Errorf("pydoc3 = %q, want a copy %q", got[q+"bin/pydoc3"], want)
 	}
 	for _, name := range []string{"python", "python3"} {
-		if want := "0 755 #!/bin/sh\nexec \"$(dirname -- \"$0\")/python3.12\" \"$@\"\n"; got[q+"bin/"+name] != want {
+		if want := "0 755 #!/bin/sh\nself=$(realpath -- \"$0\" 2>/dev/null) || self=$0\nexec \"$(dirname -- \"$self\")/python3.12\" \"$@\"\n"; got[q+"bin/"+name] != want {
 			t.Errorf("%s = %q, want a script that runs python3.12", name, got[q+"bin/"+name])
 		}
 	}
 }
 
-func TestRewriteInterpreterArchiveRejectsCaseOnlyDifferences(t *testing.T) {
-	dir := t.TempDir()
-	raw := filepath.Join(dir, "raw.tar")
-	if err := writeTestTar(raw, []testTarEntry{
-		{name: "./cpython-3.12.16-x/lib/Foo.py"},
-		{name: "./cpython-3.12.16-x/lib/foo.py"},
-	}); err != nil {
-		t.Fatal(err)
+func TestRewriteTreeArchiveRejectsNamesAVolumeHoldsAsOne(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"Foo.py", "foo.py"},
+		{"straße.py", "strasse.py"},       // full case folding
+		{"caf\u00e9.py", "cafe\u0301.py"}, // NFC and NFD
+		{"ſ.py", "s.py"},
+	} {
+		dir := t.TempDir()
+		raw := filepath.Join(dir, "raw.tar")
+		if err := writeTestTar(raw, []testTarEntry{
+			{name: "./cpython-3.12.16-x/lib/" + pair[0]},
+			{name: "./cpython-3.12.16-x/lib/" + pair[1]},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := rewriteTreeArchive(raw, filepath.Join(dir, "clean.tar"), nil)
+		if err == nil || !strings.Contains(err.Error(), "differ only in case or Unicode normalization") {
+			t.Errorf("%q and %q: err = %v, want a collision", pair[0], pair[1], err)
+		}
 	}
-	err := rewriteTreeArchive(raw, filepath.Join(dir, "clean.tar"), nil)
-	if err == nil || !strings.Contains(err.Error(), "differ only in case") {
-		t.Fatalf("err = %v, want a case collision", err)
+}
+
+func TestWalkTarRejectsEntriesOutsideTheDirectory(t *testing.T) {
+	for _, name := range []string{"../x", "./a/../../x", "/abs"} {
+		raw := filepath.Join(t.TempDir(), "raw.tar")
+		if err := writeTestTar(raw, []testTarEntry{{name: "./ok"}, {name: name}}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := rewriteTreeArchive(raw, raw+".clean", nil)
+		if err == nil || !strings.Contains(err.Error(), "leaves its directory") {
+			t.Errorf("%s: err = %v, want a refusal", name, err)
+		}
 	}
 }
 
@@ -214,7 +247,7 @@ func TestBuildPythonVenvKeepsBuildFilesOffTheVault(t *testing.T) {
 			}
 		}
 	}
-	for _, legacy := range []string{".staging/uv-cache", ".staging/build/svalbard-python"} {
+	for _, legacy := range []string{".staging/uv-cache", ".staging/build/svalbard-python", ".staging"} {
 		if _, err := os.Stat(filepath.Join(root, legacy)); !os.IsNotExist(err) {
 			t.Errorf("%s left on the vault: %v", legacy, err)
 		}
@@ -245,5 +278,171 @@ func TestBuildPythonVenvKeepsBuildFilesOffTheVault(t *testing.T) {
 	}
 	if _, err := os.Stat(interpreter + ".partial"); !os.IsNotExist(err) {
 		t.Errorf("staging dir left: %v", err)
+	}
+}
+
+// hostPythonContainer runs the container scripts with this computer's python3
+// in place of the tools container, with paths as they are here.
+func hostPythonContainer(t *testing.T, failUnpack bool) *[][]string {
+	t.Helper()
+	var calls [][]string
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("no python3 on this computer")
+	}
+	previous := runToolCommand
+	runToolCommand = func(ctx context.Context, _, _, _, tool string, args []string) (string, error) {
+		if tool != "python3" {
+			t.Fatalf("tool = %s", tool)
+		}
+		calls = append(calls, args)
+		out, err := exec.CommandContext(ctx, python, args...).CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("%w: %s", err, out)
+		}
+		if failUnpack && args[1] == containerUnpackScript {
+			return "", errors.New("container died after writing")
+		}
+		return "", nil
+	}
+	t.Cleanup(func() { runToolCommand = previous })
+	return &calls
+}
+
+func TestInstallTreeRunsTheContainerScripts(t *testing.T) {
+	calls := hostPythonContainer(t, false)
+	previousOwner := containerOwner
+	containerOwner = func() []int { return []int{os.Getuid(), os.Getgid()} }
+	t.Cleanup(func() { containerOwner = previousOwner })
+	root, workdir := t.TempDir(), t.TempDir()
+	dest := filepath.Join(root, "runtime", "python", "linux-arm64", "tools", "pkg")
+	for _, stale := range []string{dest, dest + ".partial"} {
+		if err := os.MkdirAll(stale, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(stale, "stale"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	commands := [][]string{{"sh", "-c", `mkdir -p "$0/bin" "$0/lib" && printf '#!/bin/sh\necho hi\n' > "$0/bin/tool" && chmod 755 "$0/bin/tool" && ln -s tool "$0/bin/alias" && ln -s /etc "$0/lib/etc" && printf %s "$GREETING" > "$0/lib/greeting"`, "{dir}"}}
+	if err := installTree(context.Background(), root, workdir, []string{"GREETING=hello"}, commands, nil, dest); err != nil {
+		t.Fatal(err)
+	}
+	var tree []string
+	_ = filepath.WalkDir(dest, func(path string, d fs.DirEntry, err error) error {
+		rel, _ := filepath.Rel(dest, path)
+		if d.Type()&fs.ModeSymlink != 0 {
+			t.Errorf("symlink %s", rel)
+		}
+		tree = append(tree, filepath.ToSlash(rel))
+		return err
+	})
+	if want := []string{".", "bin", "bin/alias", "bin/tool", "lib", "lib/greeting"}; !slices.Equal(tree, want) {
+		t.Errorf("tree = %v, want %v", tree, want)
+	}
+	out, err := exec.Command(filepath.Join(dest, "bin", "alias")).CombinedOutput()
+	if err != nil || string(out) != "hi\n" {
+		t.Errorf("alias ran %q, %v", out, err)
+	}
+	if greeting, _ := os.ReadFile(filepath.Join(dest, "lib", "greeting")); string(greeting) != "hello" {
+		t.Errorf("commands ran without their environment: greeting %q", greeting)
+	}
+	if info, err := os.Stat(filepath.Join(dest, "bin", "tool")); err != nil || info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("tool lost its mode: %v %v", info, err)
+	}
+	if _, err := os.Stat(dest + ".partial"); !os.IsNotExist(err) {
+		t.Errorf("staging left: %v", err)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(workdir, "*.tar")); len(leftovers) > 0 {
+		t.Errorf("archives left: %v", leftovers)
+	}
+	// Both containers hand what they write to the owner (on Linux, the user).
+	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	if len(*calls) != 2 || !strings.Contains((*calls)[0][2], fmt.Sprintf(`"owner":[%d,%d]`, os.Getuid(), os.Getgid())) || len((*calls)[1]) != 5 || (*calls)[1][4] != owner {
+		t.Errorf("container calls do not pass the owner: %q", *calls)
+	}
+
+	// A failing command fails the install with its status and leaves dest.
+	err = installTree(context.Background(), root, workdir, nil, [][]string{{"sh", "-c", "echo broken >&2; exit 3"}}, nil, dest)
+	if err == nil || !strings.Contains(err.Error(), "exit status 3") || !strings.Contains(err.Error(), "broken") {
+		t.Errorf("err = %v, want the command's status and output", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "bin", "tool")); err != nil {
+		t.Errorf("failed install touched dest: %v", err)
+	}
+}
+
+func TestInstallTreeCleansAFailedUnpack(t *testing.T) {
+	_ = hostPythonContainer(t, true)
+	root, workdir := t.TempDir(), t.TempDir()
+	dest := filepath.Join(root, "tools", "pkg")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commands := [][]string{{"sh", "-c", `printf x > "$0/file"`, "{dir}"}}
+	if err := installTree(context.Background(), root, workdir, nil, commands, nil, dest); err == nil {
+		t.Fatal("unpack failure not reported")
+	}
+	if _, err := os.Stat(dest + ".partial"); !os.IsNotExist(err) {
+		t.Errorf("staging left after a failed unpack: %v", err)
+	}
+	if _, err := os.Stat(dest); err != nil {
+		t.Errorf("dest removed by a failed unpack: %v", err)
+	}
+}
+
+func TestContainerUnpackNamesAVolumeCollision(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("no python3 on this computer")
+	}
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "clean.tar")
+	if err := writeTestTar(archive, []testTarEntry{{name: "lib/Foo.py"}, {name: "lib/foo.py"}}); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "dest")
+	out, err := exec.Command(python, "-c", containerUnpackScript, archive, dest).CombinedOutput()
+	if _, statErr := os.Stat(filepath.Join(dest, "lib", "Foo.py")); err == nil && statErr == nil {
+		t.Skip("this volume tells the names apart")
+	}
+	if err == nil || !strings.Contains(string(out), "lib/foo.py already exists") || strings.Contains(string(out), "Traceback") {
+		t.Errorf("unpack = %v, %s; want a one-line explanation", err, out)
+	}
+}
+
+func TestInterpreterShimWorksThroughALink(t *testing.T) {
+	dir := t.TempDir()
+	raw, clean := filepath.Join(dir, "raw.tar"), filepath.Join(dir, "clean.tar")
+	// A python3.12 too large to copy, so python3 becomes the script.
+	binary := append([]byte("#!/bin/sh\necho \"real $*\"\nexit 0\n#"), bytes.Repeat([]byte{'x'}, treeLinkCopyLimit)...)
+	if err := writeTestTar(raw, []testTarEntry{
+		{name: "./cpython-3.12.16-x/bin/", dir: true},
+		{name: "./cpython-3.12.16-x/bin/python3.12", data: binary, mode: 0o755},
+		{name: "./cpython-3.12.16-x/bin/python3", link: "python3.12"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rewriteTreeArchive(raw, clean, nil); err != nil {
+		t.Fatal(err)
+	}
+	tree := filepath.Join(dir, "drive with space")
+	if err := extractTestTar(clean, tree); err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := filepath.Join(dir, "home", "bin")
+	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(elsewhere, "python3")
+	if err := os.Symlink(filepath.Join(tree, "cpython-3.12.16-x", "bin", "python3"), link); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Join(tree, "cpython-3.12.16-x", "bin", "python3"), link} {
+		out, err := exec.Command(path, "-V").CombinedOutput()
+		if err != nil || string(out) != "real -V\n" {
+			t.Errorf("%s -V = %q, %v", path, out, err)
+		}
 	}
 }

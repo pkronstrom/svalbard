@@ -2,6 +2,9 @@ package builder
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -32,6 +35,18 @@ func TestBuildPythonVenvE2E(t *testing.T) {
 	}
 	for _, entry := range entries {
 		t.Logf("%s %s %d MB", entry.ID, entry.RelativePath, entry.SizeBytes>>20)
+	}
+	// Run what was built for this computer: the interpreter binary and its
+	// python3 (a copy or a script, never a symlink).
+	if !slices.Contains(platforms, hostPlatformStr()) {
+		return
+	}
+	bin := findInstalledPython(filepath.Join(root, "runtime", "python", hostPlatformStr(), "python"), pythonVersionFromSpec(recipe.Python))
+	for _, python := range []string{bin, filepath.Join(filepath.Dir(bin), "python3")} {
+		out, err := exec.Command(python, "-c", "import ssl, sqlite3, curses, sys; print(sys.version)").CombinedOutput()
+		if err != nil {
+			t.Errorf("%s: %v\n%s", python, err, out)
+		}
 	}
 }
 

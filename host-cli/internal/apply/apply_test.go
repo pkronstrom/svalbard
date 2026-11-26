@@ -851,3 +851,36 @@ func TestApplyRemovesPythonLauncherWithPackage(t *testing.T) {
 		}
 	}
 }
+
+func TestPythonRepairJobsRebuildAVenvOfAnOlderLayout(t *testing.T) {
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"python.yaml": {Data: []byte("id: svalbard-python\ntype: python-venv\npython: \"3.12\"\nstrategy: build\nbuild: {family: python-venv}\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	m := manifest.New("test")
+	m.Desired.Items = []string{"svalbard-python"}
+	m.Desired.Options.HostPlatforms = []string{"linux-arm64"}
+	m.Realized.Entries = []manifest.RealizedEntry{{ID: "svalbard-python", Type: "python-venv", RelativePath: "runtime/python"}}
+	desired := map[string]bool{"svalbard-python": true}
+
+	if jobs := pythonRepairJobs(root, &m, cat, desired, map[string]bool{}); len(jobs) != 0 {
+		t.Fatalf("a vault without Python trees queued %v", jobs)
+	}
+	// An interpreter from before layout stamps.
+	if err := os.MkdirAll(filepath.Join(root, "runtime", "python", "linux-arm64", "python", "cpython-3.12.16-linux-aarch64-gnu"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	jobs := pythonRepairJobs(root, &m, cat, desired, map[string]bool{})
+	if len(jobs) != 1 || jobs[0].id != "svalbard-python" {
+		t.Fatalf("jobs = %v, want a rebuild of svalbard-python", jobs)
+	}
+	if jobs := pythonRepairJobs(root, &m, cat, desired, map[string]bool{"svalbard-python": true}); len(jobs) != 0 {
+		t.Errorf("an already queued venv queued again: %v", jobs)
+	}
+	if jobs := pythonRepairJobs(root, &m, cat, map[string]bool{}, map[string]bool{}); len(jobs) != 0 {
+		t.Errorf("a venv being removed queued: %v", jobs)
+	}
+}

@@ -256,7 +256,7 @@ func TestBuildPythonVenvInstallsShippedRequirements(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(stamp) != "slimapp==1.0\nrequirements_from: requirements-slim.txt\n" {
+	if string(stamp) != "slimapp==1.0\nrequirements_from: requirements-slim.txt\n"+pythonTreeLayoutStamp {
 		t.Errorf("stamp = %q", stamp)
 	}
 
@@ -401,5 +401,97 @@ func TestPythonLauncherFailsWithoutWheels(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "bin", "linux-arm64", "py-docs")); !os.IsNotExist(err) {
 		t.Errorf("launcher written for a platform without wheels: %v", err)
+	}
+}
+
+// An older CLI's trees: an interpreter with a python3 symlink and no layout
+// stamp, and a package stamp without the layout line.
+func writeOldLayoutTrees(t *testing.T, root string) {
+	t.Helper()
+	platformDir := filepath.Join(root, "runtime", "python", "linux-arm64")
+	bin := filepath.Join(platformDir, "python", "cpython-3.12.14-linux-aarch64-gnu", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "python3.12"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("python3.12", filepath.Join(bin, "python3")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(platformDir, "tools", "sqlmap"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(platformDir, "tools", "sqlmap.packages"), []byte("sqlmap==1.10.9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildPythonVenvReinstallsTreesOfAnOlderLayout(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newPythonTestCatalog(t)
+	calls := fakeUV(t, nil)
+	writeOldLayoutTrees(t, root)
+	opts := Options{Platforms: []string{"linux-arm64"}, DesiredIDs: map[string]bool{"sqlmap": true}}
+	if !PythonTreesNeedRepair(root, opts.Platforms) {
+		t.Fatal("old layout not detected")
+	}
+
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatal(err)
+	}
+	var ran []string
+	for _, call := range *calls {
+		ran = append(ran, strings.Join(call[1:3], " "))
+	}
+	if !slices.Equal(ran, []string{"python install", "pip install"}) {
+		t.Errorf("uv ran %v, want the interpreter and the package installed again", ran)
+	}
+	python3 := filepath.Join(root, "runtime", "python", "linux-arm64", "python", "cpython-3.12.14-linux-aarch64-gnu", "bin", "python3")
+	if info, err := os.Lstat(python3); err != nil || info.Mode()&os.ModeSymlink != 0 {
+		t.Errorf("python3 still a symlink: %v %v", info, err)
+	}
+	if PythonTreesNeedRepair(root, opts.Platforms) {
+		t.Error("repaired vault still needs repair")
+	}
+	*calls = nil
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("second build ran uv: %v", *calls)
+	}
+}
+
+func TestPythonTreesNeedRepair(t *testing.T) {
+	platforms := []string{"linux-arm64"}
+	if root := t.TempDir(); PythonTreesNeedRepair(root, platforms) {
+		t.Error("an empty vault needs repair")
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".staging", "uv-cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !PythonTreesNeedRepair(root, platforms) {
+		t.Error("a uv cache on the vault needs no repair")
+	}
+	// A platform the vault no longer targets, and a removed package's stamp,
+	// never need it: no build would change them.
+	root = t.TempDir()
+	writeOldLayoutTrees(t, root)
+	if PythonTreesNeedRepair(root, []string{"macos-arm64"}) {
+		t.Error("a platform the vault does not target needs repair")
+	}
+	if err := os.WriteFile(filepath.Join(root, "runtime", "python", "linux-arm64", "python.layout"), []byte(pythonTreeLayoutStamp), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !PythonTreesNeedRepair(root, platforms) {
+		t.Error("a package stamp without the layout needs no repair")
+	}
+	if err := os.Remove(filepath.Join(root, "runtime", "python", "linux-arm64", "tools", "sqlmap")); err != nil {
+		t.Fatal(err)
+	}
+	if PythonTreesNeedRepair(root, platforms) {
+		t.Error("a removed package's stamp needs repair")
 	}
 }
