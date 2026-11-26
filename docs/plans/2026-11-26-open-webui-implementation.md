@@ -127,13 +127,101 @@ What the runs show:
 - **Granite is slower per run despite fewer requests**: about 4,100 output tokens a run against 1,500, most of it thinking, and 51 s against 35 s on average.
 - Neither model produced a malformed call. Small-model tool calling through Open WebUI's native mode held up; choosing what to read is where they fail.
 
-What the tools contributed to the failures (existing behaviour, not changed here):
+What the tools contributed to the failures (existing behaviour at the time; the first three are fixed in the next section):
 
 - `search` returns nothing unless every word matches, with no hint to shorten the query.
 - `search_read` rejects a path without its trailing slash ("article not found"); all four of Qwen's rejected reads in one run were this.
 - `search_read` returned about 3,000 characters of an article with no links, the index's partial body, although `kiwix-serve` had started. Why the full page was not used was not investigated.
 - `search_read` without a path returns the main page, which Granite took for the article it wanted.
 - Every search result ends with "Hybrid unavailable, fell back to keyword", which Granite quoted as a finding.
+
+## Search and read tool fixes
+
+Done the same day on branch `search-tools`, after the comparison above. The tool names and required parameters are unchanged; `search_read` gained an optional `offset`. The index, its schema, the hybrid search path and everything the host writes are untouched.
+
+What changed, in the order a model meets it:
+
+- **The source list describes the sources.** `vault_sources` now carries each archive's description and tags (see below for why it did not).
+- **Search no longer comes back empty when one word is wrong.** Articles with every word still come first. When they do not fill the limit, articles with most of the words (more than half) follow, most words first, each carrying a `matched` list. The note after the results says when this happened and names any word that appears nowhere on the drive ("No article on the drive mentions: Toyota, Corolla, tyre"). A two-word query gets no partial matches: one word of two is a different search.
+- **A search that finds nothing says what the drive holds**: the sources with their one-line topics, and that a subject outside them is not on the drive.
+- **Ranking favours the article about the subject.** A word in the title counts four times one in the body, and the whole word outranks a longer word that starts with it ("lyme" before "lymecycline"). Stop words and surrounding punctuation are dropped from the query; a plural also finds the singular.
+- **The drive's own search screen uses the same search**, and shows the same notes in its status line. Hybrid search keeps its previous candidates and ranking.
+- **Read returns the whole article, 6,000 characters at a time.** A longer article ends with a `continues` line naming the offset for the next part. At most 20 links come with the first part, resolved to paths that can be read.
+- **Read accepts the paths models actually send**: with or without leading or trailing slash, URL-encoded, with spaces for underscores, as the page's web address, in the wrong case, with `.zim` on the source or a unique part of its name, and without leading directories when only one article ends that way. When nothing resolves, the error names up to five existing paths.
+- **Descriptions match.** The two tool descriptions and the drive context written for pi describe the partial matches and the `continues` line, in fewer characters than before.
+- **Smaller answers.** Search results lost the repeated `read_hint`, the default limit is 8, `detail: full` returns the first 1,500 characters of each article and says so, and JSON is no longer HTML-escaped. A keyword-only drive no longer adds "Hybrid unavailable, fell back to keyword" to every result.
+
+**Why reads were cut at about 3,000 characters.** The index stores paths with a leading slash (`/Lyme_disease`), and the read built `/content/<archive>//Lyme_disease`. kiwix-serve answers 404 to the double slash, so every read that used a search result's path fell back to the index, which keeps the first 4,000 characters and no links. Only a read without a path reached kiwix-serve. A second defect sat beside it: page links are relative (`../warfarin/`) and were returned as written, so a link from any page below the archive root could not be read.
+
+Response sizes on the test vault, in characters:
+
+| Call | Before | After |
+|---|---|---|
+| `search` "paracetamol adult dose", defaults | 3,432 (10 results) | 2,201 (8 results) |
+| `search` with the eight-word query Granite used | 42 (no results) | 2,238 (8 partial matches) |
+| `search` "paracetamol adult dose", `detail: full` | 21,090 | 8,624 |
+| `search` for the tyre pressure, nothing found | 42 | 342: the absent words and what the drive holds |
+| `vault_sources` | 225, no descriptions | 520, with descriptions and tags |
+| `search_read` NHS "Paracetamol for adults" (7,276 characters) | 4,134, cut, no links | 6,795: the first 6,000 and a `continues` line |
+| `search_read` WikEM "Lyme disease" (5,980 characters) | 3,153, cut, no links | 7,307: all of it and 20 links |
+| `search_read` NHS main page | 23,576 | 7,853 |
+| All eight tool definitions | 4,772 | 4,728 |
+
+The three questions again, three runs each, same request path, same vault, 32K context. Baseline columns repeat the table above. Means per run; correct answers out of 3.
+
+| Model | Question | Calls before | after | Rejected before | after | Prompt tok before | after | Correct before | after |
+|---|---|---|---|---|---|---|---|---|---|
+| Qwen3.5 4B | 1 single lookup | 7.3 | 2.0 | 4 | 0 | 49,972 | 8,674 | 2 | 3 |
+| Qwen3.5 4B | 2 two sources | 6.7 | 6.0 | 0 | 0 | 19,445 | 40,098 | 2 | 2 |
+| Qwen3.5 4B | 3 not on the drive | 10.7 | 2.0 | 1 | 0 | 39,378 | 5,276 | 3 | 3 |
+| Granite 4.2 3B | 1 single lookup | 3.0 | 2.7 | 0 | 0 | 11,680 | 12,508 | 1 | 3 |
+| Granite 4.2 3B | 2 two sources | 4.0 | 3.3 | 0 | 0 | 17,680 | 21,446 | 0 | 0 |
+| Granite 4.2 3B | 3 not on the drive | 3.7 | 2.7 | 0 | 0 | 12,134 | 9,204 | 3 | 3 |
+
+The runs after the change, one by one, on the final build. Peak context is the largest prompt of the run, which is what has to fit the model's context.
+
+| Model | Q | Run | Calls | Rejected | Read | Answer | Requests | Prompt tok | Output tok | Peak context | Wall s |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Qwen3.5 4B | 1 | 1 | SR | 0 | the right article | correct | 3 | 8,647 | 590 | 4,839 | 9 |
+| Qwen3.5 4B | 1 | 2 | SR | 0 | the right article | correct | 3 | 8,692 | 618 | 4,867 | 9 |
+| Qwen3.5 4B | 1 | 3 | SR | 0 | the right article | correct | 3 | 8,684 | 670 | 4,919 | 10 |
+| Qwen3.5 4B | 2 | 1 | SRRSRSR | 0 | both, and two more | correct | 8 | 61,609 | 1,776 | 13,471 | 31 |
+| Qwen3.5 4B | 2 | 2 | VSRRSR | 0 | both, and one more | correct | 7 | 35,583 | 1,403 | 9,290 | 24 |
+| Qwen3.5 4B | 2 | 3 | VSRSR | 0 | Doxycycline, not Lyme disease | wrong: (a) gave the treatment course | 6 | 23,101 | 1,153 | 6,839 | 21 |
+| Qwen3.5 4B | 3 | 1 | SS | 0 | nothing to read | correct: not on the drive | 3 | 5,244 | 508 | 2,240 | 8 |
+| Qwen3.5 4B | 3 | 2 | VS | 0 | nothing to read | correct: not on the drive | 3 | 5,288 | 496 | 2,306 | 8 |
+| Qwen3.5 4B | 3 | 3 | VS | 0 | nothing to read | correct: not on the drive | 3 | 5,296 | 436 | 2,246 | 7 |
+| Granite 4.2 3B | 1 | 1 | SR | 0 | the right article | correct | 3 | 10,147 | 1,958 | 6,028 | 20 |
+| Granite 4.2 3B | 1 | 2 | VSR | 0 | the right article | correct | 4 | 14,758 | 3,171 | 7,428 | 32 |
+| Granite 4.2 3B | 1 | 3 | VSR | 0 | the right article | correct | 4 | 12,618 | 1,976 | 6,233 | 20 |
+| Granite 4.2 3B | 2 | 1 | SRS | 0 | the Doxycycline article | wrong: (a) the treatment dose, (b) from a snippet | 4 | 25,093 | 6,790 | 12,497 | 79 |
+| Granite 4.2 3B | 2 | 2 | VSS | 0 | nothing | wrong: same | 4 | 14,485 | 4,235 | 6,764 | 51 |
+| Granite 4.2 3B | 2 | 3 | VSRS | 0 | the Lyme disease article | partly: (a) correct, (b) from a snippet | 5 | 24,761 | 5,190 | 9,780 | 73 |
+| Granite 4.2 3B | 3 | 1 | VDS | 0 | nothing to read | correct: not on the drive | 4 | 10,946 | 2,357 | 4,115 | 28 |
+| Granite 4.2 3B | 3 | 2 | VD | 0 | nothing to read | correct: not on the drive, from the source list alone | 3 | 6,528 | 1,952 | 3,592 | 22 |
+| Granite 4.2 3B | 3 | 3 | VDS | 0 | nothing to read | correct: not on the drive | 4 | 10,138 | 2,222 | 3,980 | 26 |
+
+Read of it, with the same caution about nine runs per model:
+
+- **Correct answers went from 7 to 8 of 9 for Qwen3.5 4B and from 4 to 6 of 9 for Granite 4.2 3B.** Both models now open the right article for the single lookup every time; the title weighting puts it first.
+- **Rejected calls went from 5 to 0.** No run needed a retry for a path.
+- **The single lookup costs Qwen a sixth of the prompt tokens it did** (8,674 against 49,972), mostly because the 18-request run with four rejected reads no longer happens.
+- **The unanswerable question costs Qwen 3 requests where it took 11 or 12**, and it took three steps to get there. Naming the words that appear nowhere did nothing (8 to 24 requests over nine runs; the model's reasoning showed it reading the note and trying "tire", "wheel" and "car" next). Giving `vault_sources` its descriptions did not settle it either (6 to 24 over six runs). Making the empty result say what the drive does hold, and that a subject outside it is not there, ended it: 3 requests in six runs of six.
+- **The two-source question is the weak spot for both.** It costs more prompt tokens because whole articles are read where 3,000-character extracts were. Qwen got it right in 5 of 6 runs across the last two builds and in 2 of 3 on the final one; the miss is the baseline's miss, reading the Doxycycline article and reporting the treatment course. Granite no longer declares the fact missing, since its long query now returns results, but reads the first hit and answers part (b) from a snippet.
+- **Every run on the final build stayed below a 16K context.** The largest single prompt was 13,471 tokens. One Granite run on the build before it peaked at 16,158, about 10,000 of that its own thinking, so a 16K context is enough for the tools' output but not always for this model's reasoning on top.
+
+`vault_sources` gave no descriptions on this vault, or on any vault with dated archive names: it looked a recipe up by the file's name without extension (`wikem_en_all_maxi_2026-04`), and `recipes.json` is keyed by recipe id (`wikem`). Qwen took WikEM for Wikipedia. The runtime now maps each file to its recipe through the manifest's realized entries and keeps the old lookup as fallback; nothing the host writes changed.
+
+Limits and choices:
+
+- Hybrid search was not exercised: the test vault has a keyword index only. Its code path keeps the old all-words candidates and ranking by design.
+- The any-word fallback scores every article that has any of the words. On this 5,852-article index that took 9 ms for 3,707 matching articles. On a Wikipedia-sized index it is unmeasured and could take seconds for common words.
+- The near-miss path lookup reads every path of the source, because the index has no index on path. It runs only after kiwix-serve has said 404.
+- The 4,000-character cap on indexed bodies stays. Reads no longer depend on it. Search still sees only the opening of long articles: 365 of the 5,852 articles here (6%) are cut. The index is 65 MB for 15 MB of article text, so lifting the cap costs about four bytes of index per extra character; whether that is worth it needs measuring on a large source.
+- An empty search lists at most 12 sources. On a drive with fifty archives that list says less; untested there.
+- The manifest is read line by line, as the runtime already did for its other fields; it has no YAML parser.
+- Stop words are English only.
+- One tested behaviour changed on purpose: an index that was never built for hybrid search no longer reports a hybrid fallback.
 
 ## Follow-ups
 
@@ -152,7 +240,10 @@ What the tools contributed to the failures (existing behaviour, not changed here
 | `svalbard add` resolves dependencies like the wizard | S | M if removal must also drop automatic dependencies |
 | Empty MCP results say "none" instead of nothing | S | — |
 | A way to start the browser actions without opening the browser (a `--no-open` style switch), for tests and headless hosts | S | M if it should cover every action that opens a browser and be reachable from the menu |
-| MCP search and read for small models: hint on zero hits, accept a path without its trailing slash, full article bodies, drop the hybrid notice | M | L if full bodies need paging to fit small contexts |
+| Make a small model read the second search result when the first does not answer: the two-source question still fails this way | M | L if it needs a default system prompt tuned per model family |
+| Measure the any-word search fallback on a Wikipedia-sized index, and bound it if slow | S | M if common words have to be recognised from the index vocabulary |
+| kiwix-serve start-up accepts any server that answers on its port, so two starts at once can read from the wrong process | S | M if every caller of `StartKiwix` needs a retry on another port |
+| Decide on the 4,000-character cap of indexed bodies and on an index on article path | M | L if a large source makes the index too big for the stick |
 | Repeat the tool-use comparison with more runs and with the larger shipped models | S | M if a default system prompt is added and has to be tuned per family |
 | Upgrade routine for each Open WebUI pin bump | S per bump | M when a release changes config keys |
 

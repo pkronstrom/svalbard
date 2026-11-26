@@ -20,6 +20,10 @@ type Result struct {
 	ChunkHeader string
 	Score       float64
 	Body        string
+	// Partial marks a keyword result that lacks some of the query words;
+	// Matched lists the ones it has.
+	Partial bool
+	Matched []string
 }
 
 // Engine provides keyword and hybrid search over a search.db.

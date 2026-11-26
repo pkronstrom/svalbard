@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
 )
@@ -23,19 +24,37 @@ type RecipeMeta struct {
 type DriveMetadata struct {
 	Manifest map[string]string
 	Recipes  map[string]RecipeMeta
+	// FileRecipes maps a realized file, by name and by drive-relative path,
+	// to the id of the recipe that installed it.
+	FileRecipes map[string]string
+}
+
+// RecipeForFile returns the recipe that describes a content file. The
+// manifest says which recipe installed the file; without an entry there, a
+// recipe named like the file (without its extension) is used.
+func (m DriveMetadata) RecipeForFile(name string) (RecipeMeta, bool) {
+	if id, ok := m.FileRecipes[name]; ok {
+		if recipe, ok := m.Recipes[id]; ok {
+			return recipe, true
+		}
+	}
+	recipe, ok := m.Recipes[strings.TrimSuffix(name, filepath.Ext(name))]
+	return recipe, ok
 }
 
 // LoadMetadata reads manifest.yaml and recipes.json from driveRoot.
 // Missing files are not errors — the corresponding field will be empty.
 func LoadMetadata(driveRoot string) (DriveMetadata, error) {
 	dm := DriveMetadata{
-		Manifest: map[string]string{},
-		Recipes:  map[string]RecipeMeta{},
+		Manifest:    map[string]string{},
+		Recipes:     map[string]RecipeMeta{},
+		FileRecipes: map[string]string{},
 	}
 
 	// Reuse inspect's manifest parser (DRY — same logic used by TUI).
 	manifest, _ := inspect.ReadManifestMetadata(filepath.Join(driveRoot, "manifest.yaml"))
 	dm.Manifest = manifest
+	dm.FileRecipes, _ = inspect.ReadManifestRecipes(filepath.Join(driveRoot, "manifest.yaml"))
 
 	recipes, err := readRecipes(filepath.Join(driveRoot, ".svalbard", "recipes.json"))
 	if err != nil && !os.IsNotExist(err) {

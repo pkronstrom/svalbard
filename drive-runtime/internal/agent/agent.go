@@ -295,8 +295,8 @@ You run from a Svalbard USB drive at ` + "`%s`" + `. There is no internet. Do no
 The drive has an offline library: reference archives, SQLite databases and maps. For a factual question, look it up with the ` + "`mcp__svalbard__`" + ` tools instead of guessing:
 
 1. ` + "`mcp__svalbard__vault_sources`" + ` lists what is on the drive. Call it first.
-2. ` + "`mcp__svalbard__search`" + ` finds articles by keyword.
-3. ` + "`mcp__svalbard__search_read`" + ` reads one article. Pass the exact ` + "`source`" + ` and ` + "`path`" + ` from a search result.
+2. ` + "`mcp__svalbard__search`" + ` finds articles by keyword. Use two to four specific words, not a sentence.
+3. ` + "`mcp__svalbard__search_read`" + ` reads one article. Pass the ` + "`source`" + ` and ` + "`path`" + ` from a search result. A long article comes in parts: when the result has ` + "`continues`" + `, call again with the offset it names.
 
 Rules:
 

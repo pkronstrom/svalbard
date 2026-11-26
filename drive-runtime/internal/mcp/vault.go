@@ -73,7 +73,7 @@ func (c *VaultCapability) handleSources(params map[string]any) (ActionResult, er
 
 	// Enrich with recipe metadata
 	for i := range sources {
-		if recipe, ok := c.meta.Recipes[sources[i].ID]; ok {
+		if recipe, ok := c.meta.RecipeForFile(sources[i].Name); ok {
 			if sources[i].Description == "" && recipe.Description != "" {
 				sources[i].Description = recipe.Description
 			}
@@ -102,12 +102,7 @@ func (c *VaultCapability) handleMaps() (ActionResult, error) {
 
 	// Enrich with recipe metadata
 	for i := range maps {
-		id := maps[i].Name
-		// Try without extension
-		if idx := len(id) - len(".pmtiles"); idx > 0 {
-			id = id[:idx]
-		}
-		if recipe, ok := c.meta.Recipes[id]; ok {
+		if recipe, ok := c.meta.RecipeForFile(maps[i].Name); ok {
 			if maps[i].Category == "" {
 				if cat, ok := recipe.Viewer["category"].(string); ok {
 					maps[i].Category = cat

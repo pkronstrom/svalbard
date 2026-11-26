@@ -202,3 +202,73 @@ func TestMapsListsPMTilesFiles(t *testing.T) {
 		t.Error("expected non-zero size")
 	}
 }
+
+func TestReadManifestRecipesMapsRealizedFilesToRecipeIDs(t *testing.T) {
+	dir := t.TempDir()
+	// As the host writes it: four-space indentation, ids that differ from
+	// file names, and a desired section that must not be read as entries.
+	manifest := `version: 1
+vault:
+    name: test
+desired:
+    presets: []
+    items:
+        - wikem
+        - id: not-an-entry
+    options:
+        region: default
+realized:
+    applied_at: "2026-11-26T13:45:35Z"
+    entries:
+        - id: wikem
+          type: zim
+          filename: wikem_en_all_maxi_2026-04.zim
+          relative_path: zim/wikem_en_all_maxi_2026-04.zim
+          size_bytes: 48676248
+        - id: nhs-medicines
+          type: zim
+          filename: "nhs.uk_en_medicines_2026-09b.zim"
+          relative_path: 'zim/nhs.uk_en_medicines_2026-09b.zim'
+        - type: zim
+          filename: orphan.zim
+        - id: empty-name
+          filename: ""
+trailing:
+    - id: after-realized
+      filename: later.zim
+`
+	path := filepath.Join(dir, "manifest.yaml")
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := inspect.ReadManifestRecipes(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"wikem_en_all_maxi_2026-04.zim":        "wikem",
+		"zim/wikem_en_all_maxi_2026-04.zim":    "wikem",
+		"nhs.uk_en_medicines_2026-09b.zim":     "nhs-medicines",
+		"zim/nhs.uk_en_medicines_2026-09b.zim": "nhs-medicines",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ReadManifestRecipes() = %v, want %v", got, want)
+	}
+	for file, id := range want {
+		if got[file] != id {
+			t.Errorf("recipe for %q = %q, want %q", file, got[file], id)
+		}
+	}
+
+	// A hand-written manifest with nothing realized, and a missing one.
+	if err := os.WriteFile(path, []byte("version: 1\nrealized:\n  entries: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := inspect.ReadManifestRecipes(path); err != nil || len(got) != 0 {
+		t.Errorf("empty manifest: %v, %v", got, err)
+	}
+	if got, err := inspect.ReadManifestRecipes(filepath.Join(dir, "absent.yaml")); err == nil || got == nil {
+		t.Errorf("missing manifest: %v, %v, want an error and an empty map", got, err)
+	}
+}
