@@ -320,7 +320,8 @@ func TestPythonLauncherWrapper(t *testing.T) {
 		}
 		data, _ := os.ReadFile(path)
 		want := "#!/bin/sh\n" +
-			"DRIVE=\"$(cd \"$(dirname \"$0\")/../..\" && pwd)\"\n" +
+			"unset PYTHONHOME\n" +
+			"DRIVE=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/../..\" && pwd)\"\n" +
 			"PY=\"$DRIVE/runtime/python/" + platform + "\"\n" +
 			"PYTHONPATH=\"$PY/tools/py-docs\" PYTHONNOUSERSITE=1 exec \"$PY/" + pythons[platform] + "\" \"$@\"\n"
 		if string(data) != want {

@@ -234,7 +234,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			if pkg.PythonLauncher != "" {
 				launcher := filepath.Join(binDir, pkg.PythonLauncher)
 				script := fmt.Sprintf(
-					"#!/bin/sh\nDRIVE=\"$(cd \"$(dirname \"$0\")/../..\" && pwd)\"\nPY=\"$DRIVE/runtime/python/%s\"\nPYTHONPATH=\"$PY/tools/%s\" PYTHONNOUSERSITE=1 exec \"$PY/%s\" \"$@\"\n",
+					"#!/bin/sh\nunset PYTHONHOME\nDRIVE=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/../..\" && pwd)\"\nPY=\"$DRIVE/runtime/python/%s\"\nPYTHONPATH=\"$PY/tools/%s\" PYTHONNOUSERSITE=1 exec \"$PY/%s\" \"$@\"\n",
 					platform, pkg.ID, filepath.ToSlash(pythonRel),
 				)
 				if err := os.WriteFile(launcher, []byte(script), 0o755); err != nil {

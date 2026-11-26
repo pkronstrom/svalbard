@@ -810,3 +810,44 @@ func TestApplyWritesAndRemovesEmbeddedSkills(t *testing.T) {
 		t.Fatalf("recipes.json still lists a skills recipe: %s", recipes)
 	}
 }
+
+func TestApplyRemovesPythonLauncherWithPackage(t *testing.T) {
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"python.yaml": {Data: []byte("id: svalbard-python\ntype: python-venv\npython: \"3.12\"\nstrategy: build\nbuild: {family: python-venv}\n")},
+		"docs.yaml":   {Data: []byte("id: py-docs\ntype: python-package\nvenv: svalbard-python\npackages: [docpkg==1.0]\nentry_points: [docs-cli]\npython_launcher: py-docs\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	m := manifest.New("test")
+	for _, platform := range []string{"macos-arm64", "linux-arm64"} {
+		tree := filepath.Join("runtime", "python", platform, "tools", "py-docs")
+		if err := os.MkdirAll(filepath.Join(root, tree), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"py-docs", "docs-cli", "other-tool"} {
+			path := filepath.Join(root, "bin", platform, name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		m.Realized.Entries = append(m.Realized.Entries, manifest.RealizedEntry{ID: "py-docs", Type: "python-package", Filename: "py-docs", RelativePath: tree})
+	}
+	if err := Run(context.Background(), root, &m, planner.Plan{ToRemove: []string{"py-docs"}}, cat); err != nil {
+		t.Fatal(err)
+	}
+	for _, platform := range []string{"macos-arm64", "linux-arm64"} {
+		for _, name := range []string{"py-docs", "docs-cli"} {
+			if _, err := os.Stat(filepath.Join(root, "bin", platform, name)); !os.IsNotExist(err) {
+				t.Errorf("bin/%s/%s kept after its package was removed: %v", platform, name, err)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(root, "bin", platform, "other-tool")); err != nil {
+			t.Errorf("another tool's command removed: %v", err)
+		}
+	}
+}

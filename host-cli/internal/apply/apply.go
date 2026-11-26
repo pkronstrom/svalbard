@@ -134,6 +134,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 			os.RemoveAll(path)
 			// The downloader's record of where the file came from.
 			os.Remove(path + ".download.json")
+			removePythonCommands(root, e, cat)
 		}
 	}
 	var filtered, removed []manifest.RealizedEntry
@@ -344,6 +345,34 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 
 	slog.Info("apply completed", "realized", len(m.Realized.Entries))
 	return nil
+}
+
+// removePythonCommands deletes the wrappers a Python package's build wrote to
+// bin/<platform>/ (entry points and launcher) along with its package tree
+// runtime/python/<platform>/tools/<id>, so nothing on PATH runs a package
+// that is gone.
+func removePythonCommands(root string, e manifest.RealizedEntry, cat *catalog.Catalog) {
+	if e.Type != "python-package" {
+		return
+	}
+	recipe, ok := cat.RecipeByID(e.ID)
+	if !ok {
+		return
+	}
+	parts := strings.Split(filepath.ToSlash(e.RelativePath), "/")
+	if len(parts) != 5 || parts[0] != "runtime" || parts[1] != "python" || parts[3] != "tools" {
+		return
+	}
+	commands := slices.Clone(recipe.EntryPoints)
+	if recipe.PythonLauncher != "" {
+		commands = append(commands, recipe.PythonLauncher)
+	}
+	for _, name := range commands {
+		if name == "" || name != filepath.Base(name) {
+			continue
+		}
+		os.Remove(filepath.Join(root, "bin", parts[2], name))
+	}
 }
 
 func schedulerDependencies(recipe catalog.Item, cat *catalog.Catalog) []string {
