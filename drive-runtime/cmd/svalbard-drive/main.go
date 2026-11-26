@@ -26,6 +26,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/menu"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/openwebui"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/serveall"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/share"
@@ -134,6 +135,8 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 		return maps.Run(ctx, os.Stdout, driveRoot, nil)
 	case "chat":
 		return chat.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
+	case "open-webui":
+		return openwebui.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
 	case "agent":
 		return agent.Run(ctx, os.Stdout, driveRoot, invocation.Args["client"], invocation.Args["model"])
 	case "serve-all":

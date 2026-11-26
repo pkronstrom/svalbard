@@ -1,0 +1,398 @@
+// Package openwebui starts Open WebUI from the drive: one llama-server model,
+// the drive's MCP server over Streamable HTTP, and Open WebUI itself, all on
+// localhost with every setting supplied by environment.
+package openwebui
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/browser"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/contextpicker"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
+)
+
+const (
+	recipeID = "open-webui"
+
+	// mcpServerID names the drive's tool server inside Open WebUI, which
+	// prefixes every tool with it ("svalbard_search").
+	mcpServerID = "svalbard"
+)
+
+// pickContext is a package var so tests can skip the terminal picker.
+var pickContext = contextpicker.Pick
+
+// Launch is one start of Open WebUI: where its state lives and which local
+// servers it talks to.
+type Launch struct {
+	RuntimeRoot string // <drive>/.svalbard/runtime/open-webui
+	SecretKey   string
+	ModelName   string // id llama-server reports for the model
+	LlamaURL    string // OpenAI-compatible base URL, ending in /v1
+	MCPURL      string // Streamable HTTP endpoint of the drive's MCP server
+	Port        int
+}
+
+// Environment returns everything Open WebUI needs from its environment. It is
+// the complete environment apart from locale and PATH: Open WebUI reads
+// several hundred variables, and one inherited from the host (a second API
+// endpoint, a proxy, a database URL) would send chats off the drive.
+//
+// Persistent config is off, so these values win on every start and ports may
+// change between runs. Chats and each user's own settings are database rows
+// and still persist.
+func Environment(l Launch) map[string]string {
+	origin := fmt.Sprintf("http://localhost:%d;http://127.0.0.1:%d", l.Port, l.Port)
+	env := map[string]string{
+		// State. STATIC_DIR is rewritten on every start and would otherwise be
+		// inside the installed package; the temporary directory holds uploads
+		// in flight.
+		"HOME":                filepath.Join(l.RuntimeRoot, "home"),
+		"XDG_CONFIG_HOME":     filepath.Join(l.RuntimeRoot, "config"),
+		"XDG_CACHE_HOME":      filepath.Join(l.RuntimeRoot, "cache"),
+		"XDG_DATA_HOME":       filepath.Join(l.RuntimeRoot, "share"),
+		"TMPDIR":              filepath.Join(l.RuntimeRoot, "tmp"),
+		"DATA_DIR":            filepath.Join(l.RuntimeRoot, "data"),
+		"STATIC_DIR":          filepath.Join(l.RuntimeRoot, "static"),
+		"PYTHONPYCACHEPREFIX": filepath.Join(l.RuntimeRoot, "pycache"),
+		"WEBUI_SECRET_KEY":    l.SecretKey,
+
+		// The slim dependency set is installed; this switch stops Open WebUI
+		// importing what the full set would provide.
+		"USE_SLIM_DOCKER":          "true",
+		"OFFLINE_MODE":             "true",
+		"WEBUI_AUTH":               "False",
+		"ENABLE_PERSISTENT_CONFIG": "False",
+		// Without sign-in any page in the host's browser could otherwise read
+		// the chats through the default "*" origin.
+		"CORS_ALLOW_ORIGIN": origin,
+
+		"ENABLE_OLLAMA_API":   "False",
+		"ENABLE_OPENAI_API":   "True",
+		"OPENAI_API_BASE_URL": l.LlamaURL,
+		"OPENAI_API_KEY":      "local",
+		"OPENAI_API_CONFIGS": mustJSON(map[string]any{"0": map[string]any{
+			"enable": true, "provider": "llama.cpp", "connection_type": "local", "auth_type": "none",
+		}}),
+		"DEFAULT_MODELS": l.ModelName,
+		// A model still loading from a slow drive answers the list late.
+		"AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST": "30",
+
+		"TOOL_SERVER_CONNECTIONS": mustJSON([]any{map[string]any{
+			"type": "mcp", "url": l.MCPURL, "path": "", "auth_type": "none", "key": "",
+			"config": map[string]any{"enable": true},
+			"info": map[string]any{
+				"id": mcpServerID, "name": "Svalbard vault",
+				"description": "Search and read the content on this drive",
+			},
+		}}),
+		"DEFAULT_MODEL_METADATA": mustJSON(map[string]any{
+			// Vision stays off until the runtime loads a projector with the model.
+			"capabilities": map[string]any{
+				"file_upload": true, "vision": false,
+				"web_search": false, "code_interpreter": false, "image_generation": false, "memory": false,
+			},
+			"toolIds":      []string{"server:mcp:" + mcpServerID},
+			"builtinTools": builtinTools(),
+		}),
+
+		// Each of these is a second model request queued behind the user's turn
+		// on a one-slot server.
+		"ENABLE_TITLE_GENERATION":           "False",
+		"ENABLE_TAGS_GENERATION":            "False",
+		"ENABLE_FOLLOW_UP_GENERATION":       "False",
+		"ENABLE_AUTOCOMPLETE_GENERATION":    "False",
+		"ENABLE_RETRIEVAL_QUERY_GENERATION": "False",
+		"ENABLE_SEARCH_QUERY_GENERATION":    "False",
+		"ENABLE_IMAGE_PROMPT_GENERATION":    "False",
+
+		// Slim has no vector store, so attached text goes into the context whole.
+		"BYPASS_EMBEDDING_AND_RETRIEVAL": "True",
+	}
+	for _, feature := range []string{
+		"WEB_SEARCH", "CODE_INTERPRETER", "CODE_EXECUTION", "MEMORIES", "CALENDAR", "AUTOMATIONS",
+		"CHANNELS", "COMMUNITY_SHARING", "MESSAGE_RATING", "USER_STATUS",
+	} {
+		env["ENABLE_"+feature] = "False"
+	}
+	return env
+}
+
+// builtinTools keeps the two built-in tool categories that work offline with
+// no back end. Every enabled category adds its tool definitions to each
+// request, and unlisted categories default to on.
+func builtinTools() map[string]bool {
+	tools := map[string]bool{"time": true, "files": true}
+	for _, category := range []string{
+		"user_input", "knowledge", "chats", "users", "subagents", "memory", "web_search",
+		"image_generation", "video_generation", "code_interpreter", "notes", "channels", "skills",
+		"tools", "tasks", "automations", "calendar", "notifications", "visualizations",
+	} {
+		tools[category] = false
+	}
+	return tools
+}
+
+func mustJSON(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
+
+// Run starts the three servers, opens the browser once Open WebUI answers,
+// and stops everything when ctx ends or any server exits.
+func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, opener func(string) error) error {
+	if opener == nil {
+		opener = browser.Open
+	}
+	launcher, err := resolveLauncher(driveRoot)
+	if err != nil {
+		return err
+	}
+	model, err := llamaserve.ResolveModel(driveRoot, selected)
+	if err != nil {
+		return err
+	}
+	llamaBin, err := binary.Resolve("llama-server", driveRoot)
+	if err != nil {
+		return fmt.Errorf("llama-server not found")
+	}
+
+	runtimeRoot := filepath.Join(driveRoot, ".svalbard", "runtime", recipeID)
+	// Uploads in flight do not survive a restart.
+	if err := os.RemoveAll(filepath.Join(runtimeRoot, "tmp")); err != nil {
+		return err
+	}
+	for _, dir := range []string{"home", "config", "cache", "share", "tmp", "data", "static", "pycache"} {
+		if err := os.MkdirAll(filepath.Join(runtimeRoot, dir), 0o755); err != nil {
+			return err
+		}
+	}
+	secret, err := loadSecretKey(filepath.Join(runtimeRoot, "secret"))
+	if err != nil {
+		return err
+	}
+
+	ctxSize := pickContext(llamaserve.ContextForHost())
+
+	// The MCP listener is held from here on. The two child servers bind their
+	// own ports later, so their searches must not land on the same free port.
+	mcpListener, mcpPort, err := netutil.Listen("127.0.0.1", 8090)
+	if err != nil {
+		return err
+	}
+	llamaPort, err := netutil.FindAvailablePort("127.0.0.1", 8082)
+	if err != nil {
+		mcpListener.Close()
+		return err
+	}
+	port, err := netutil.FindAvailablePort("127.0.0.1", 8084)
+	if err == nil && port == llamaPort {
+		port, err = netutil.FindAvailablePort("127.0.0.1", llamaPort+1)
+	}
+	if err != nil {
+		mcpListener.Close()
+		return err
+	}
+	modelName := strings.TrimSuffix(filepath.Base(model), filepath.Ext(model))
+	llamaRoot := fmt.Sprintf("http://127.0.0.1:%d", llamaPort)
+	webuiRoot := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
+	exited := make(chan error, 3)
+
+	mcpServer := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer mcpServer.Close()
+		if err := mcpServer.ServeStreamableHTTP(ctx, mcpListener); err != nil {
+			exited <- fmt.Errorf("MCP server stopped: %w", err)
+		}
+	}()
+
+	fmt.Fprintf(stdout, "Starting llama-server with %s (context %d)\n", modelName, ctxSize)
+	// The alias is the name Open WebUI's model picker shows; without it
+	// llama-server reports the model's full path.
+	llamaArgs := []string{"-m", model, "--alias", modelName, "--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", llamaPort)}
+	llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model, ctxSize)...)
+	llamaCmd := exec.CommandContext(ctx, llamaBin, llamaArgs...)
+	if err := start(llamaCmd, runtimeRoot, "llama-server", stdout, &wg, exited); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(stdout, "Starting Open WebUI")
+	webuiCmd := exec.CommandContext(ctx, launcher, "serve", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port))
+	webuiCmd.Dir = runtimeRoot
+	webuiCmd.Env = append(hostEnvironment(), platform.EnvList(Environment(Launch{
+		RuntimeRoot: runtimeRoot,
+		SecretKey:   secret,
+		ModelName:   modelName,
+		LlamaURL:    llamaRoot + "/v1",
+		MCPURL:      fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
+		Port:        port,
+	}))...)
+	if err := start(webuiCmd, runtimeRoot, recipeID, stdout, &wg, exited); err != nil {
+		return err
+	}
+
+	// A large model read from a slow drive takes minutes, so there is no
+	// deadline: the wait ends when both answer, one exits, or the user stops.
+	fmt.Fprintln(stdout, "Waiting for the model and Open WebUI to be ready (Ctrl+C to stop)...")
+	for _, url := range []string{llamaRoot + "/health", webuiRoot + "/health"} {
+		if err := waitReady(ctx, url, exited); err != nil {
+			return stopped(ctx, err)
+		}
+	}
+
+	url := fmt.Sprintf("http://localhost:%d", port)
+	if err := opener(url); err != nil {
+		fmt.Fprintf(stdout, "  Open: %s\n", url)
+	}
+	fmt.Fprintf(stdout, "Open WebUI: %s\n", url)
+	fmt.Fprintln(stdout, "Press Ctrl+C to stop.")
+
+	select {
+	case err := <-exited:
+		return stopped(ctx, err)
+	case <-ctx.Done():
+		return nil
+	}
+}
+
+// stopped turns a server's exit into the action's result. Ctrl+C reaches the
+// servers and this process together, so an exit just ahead of the
+// cancellation is the user stopping, not a failure.
+func stopped(ctx context.Context, err error) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-time.After(500 * time.Millisecond):
+		return err
+	}
+}
+
+// resolveLauncher returns the wrapper the python-package build wrote for this
+// platform. PATH is not searched: a host install would be a different version
+// with the full dependency set.
+func resolveLauncher(driveRoot string) (string, error) {
+	platformName, err := platform.Detect()
+	if err != nil {
+		return "", err
+	}
+	launcher := filepath.Join(driveRoot, "bin", platformName, recipeID)
+	if info, err := os.Stat(launcher); err != nil || info.IsDir() {
+		return "", fmt.Errorf("Open WebUI is not installed for %s", platformName)
+	}
+	return launcher, nil
+}
+
+// loadSecretKey returns the key that signs Open WebUI's sessions, creating it
+// on first use. Open WebUI would otherwise write one into its working
+// directory, and a key that changed between runs would sign the user out of
+// an open tab.
+func loadSecretKey(path string) (string, error) {
+	if data, err := os.ReadFile(path); err == nil {
+		if key := strings.TrimSpace(string(data)); key != "" {
+			return key, nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	key := hex.EncodeToString(raw)
+	if err := os.WriteFile(path, []byte(key+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// hostEnvironment is what Open WebUI inherits from the host: the PATH its
+// wrapper script needs, and the locale and time zone.
+func hostEnvironment() []string {
+	var env []string
+	for _, key := range []string{"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ"} {
+		if value, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
+}
+
+// start runs cmd with its output in <runtimeRoot>/<name>.log and reports its
+// exit on exited. On cancellation the process gets SIGTERM, so llama-server
+// and Open WebUI's database close cleanly, and is killed if it lingers.
+func start(cmd *exec.Cmd, runtimeRoot, name string, stdout io.Writer, wg *sync.WaitGroup, exited chan<- error) error {
+	logPath := filepath.Join(runtimeRoot, name+".log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 5 * time.Second
+	if err := cmd.Start(); err != nil {
+		logFile.Close()
+		return fmt.Errorf("starting %s: %w", name, err)
+	}
+	fmt.Fprintf(stdout, "  log: %s\n", logPath)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer logFile.Close()
+		err := cmd.Wait()
+		exited <- fmt.Errorf("%s stopped (%v); see %s", name, err, logPath)
+	}()
+	return nil
+}
+
+// waitReady polls url until it answers 200, a server exits, or ctx ends.
+func waitReady(ctx context.Context, url string, exited <-chan error) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if resp, err := client.Get(url); err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		select {
+		case err := <-exited:
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
