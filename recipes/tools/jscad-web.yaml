@@ -6,7 +6,7 @@ depth: reference-only
 size_gb: 0.004
 description: JSCAD — parametric 3D CAD in the browser using JavaScript; exports STL for 3D printing
 menu:
-  group: tools
+  group: apps
   subheader: Apps
   label: JSCAD
   description: Model parts as code and export STL for 3D printing

@@ -6,7 +6,7 @@ depth: reference-only
 size_gb: 0.053
 description: draw.io — diagram editor for flowcharts, circuits, floor plans and network maps, running in the browser
 menu:
-  group: tools
+  group: apps
   subheader: Apps
   label: draw.io
   description: Draw diagrams, flowcharts and floor plans in the browser

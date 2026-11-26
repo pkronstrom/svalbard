@@ -6,7 +6,7 @@ depth: reference-only
 size_gb: 0.008
 description: miniPaint — layered image editor in the browser (crop, resize, layers, filters, text)
 menu:
-  group: tools
+  group: apps
   subheader: Apps
   label: miniPaint
   description: Edit images and photos in the browser
