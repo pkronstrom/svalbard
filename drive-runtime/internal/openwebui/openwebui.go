@@ -46,16 +46,10 @@ const (
 	// keep vault search.
 	filesServerID = "workspace"
 
-	// settingOpenBrowser is declared by the open-webui recipe.
+	// These two are declared by the open-webui recipe.
 	settingOpenBrowser = recipeID + ".open_browser"
+	settingFileTools   = recipeID + ".file_tools"
 )
-
-// fileToolsEnabled decides whether this launch offers the workspace file
-// tools. It is the one place that decision is made: it will read the stick's
-// settings once the settings store exists, and until then they are on.
-func fileToolsEnabled(driveRoot string) bool {
-	return true
-}
 
 // pickContext is a package var so tests can skip the terminal picker.
 var pickContext = contextpicker.Pick
@@ -233,7 +227,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return err
 	}
 	defer mcpListener.Close()
-	files, err := openFileTools(driveRoot)
+	files, err := openFileTools(driveRoot, prefs)
 	if err != nil {
 		// The workspace is an extra; chat and vault search work without it.
 		fmt.Fprintf(stdout, "File tools are off: %v\n", err)
@@ -353,8 +347,8 @@ type fileTools struct {
 }
 
 // openFileTools returns nil when file tools are off for this launch.
-func openFileTools(driveRoot string) (*fileTools, error) {
-	if !fileToolsEnabled(driveRoot) {
+func openFileTools(driveRoot string, prefs *settings.Store) (*fileTools, error) {
+	if !fileToolsEnabled(prefs) {
 		return nil, nil
 	}
 	ws, err := workspace.Open(filepath.Join(driveRoot, workspace.DirName))
@@ -374,6 +368,15 @@ func openFileTools(driveRoot string) (*fileTools, error) {
 func (f *fileTools) Close() {
 	f.listener.Close()
 	f.workspace.Close()
+}
+
+// fileToolsEnabled reads the recipe's file_tools setting, and is the one
+// place that decides whether a launch offers the workspace file tools. A
+// drive whose schema file predates the setting offers them, as the default
+// does.
+func fileToolsEnabled(prefs *settings.Store) bool {
+	_, declared := prefs.Lookup(settingFileTools)
+	return !declared || prefs.Bool(settingFileTools)
 }
 
 // opensBrowser reads the recipe's open_browser setting. A drive whose schema

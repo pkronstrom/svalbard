@@ -22,6 +22,11 @@ settings:
   default: true
   label: Open browser on start
   description: Open the browser when Open WebUI is ready.
+- name: file_tools
+  type: bool
+  default: true
+  label: File tools
+  description: Let the assistant save and edit files in the drive's workspace folder.
 license:
   id: LicenseRef-Open-WebUI
   attribution: Open WebUI Inc. (Timothy Jaeryang Baek); Open WebUI License, BSD-3-Clause terms plus a branding clause

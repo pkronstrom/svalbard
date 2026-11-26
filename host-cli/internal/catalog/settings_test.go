@@ -104,7 +104,7 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 	}
 }
 
-func TestRealCatalogDeclaresOpenWebUIBrowserSetting(t *testing.T) {
+func TestRealCatalogDeclaresOpenWebUISettings(t *testing.T) {
 	cat, err := LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
@@ -113,11 +113,13 @@ func TestRealCatalogDeclaresOpenWebUIBrowserSetting(t *testing.T) {
 	if !ok {
 		t.Fatal("open-webui recipe missing")
 	}
-	if len(item.Settings) != 1 {
-		t.Fatalf("open-webui settings = %+v, want open_browser only", item.Settings)
+	if len(item.Settings) != 2 {
+		t.Fatalf("open-webui settings = %+v, want open_browser and file_tools", item.Settings)
 	}
-	if s := item.Settings[0]; s.Name != "open_browser" || s.Type != "bool" || s.Default != true {
-		t.Errorf("open_browser = %+v, want a bool defaulting to true", s)
+	for i, name := range []string{"open_browser", "file_tools"} {
+		if s := item.Settings[i]; s.Name != name || s.Type != "bool" || s.Default != true {
+			t.Errorf("setting %d = %+v, want %s as a bool defaulting to true", i, s, name)
+		}
 	}
 	// No recipe may take a built-in owner's place.
 	for _, owner := range ReservedSettingOwners {
