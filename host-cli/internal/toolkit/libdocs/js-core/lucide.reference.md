@@ -1,0 +1,286 @@
+# lucide 1.81.0 reference
+
+This is the project's own documentation, joined at the version on this drive. Here nothing is installed or downloaded: import the package by name in a module script and pack the page with `svalbard-drive html pack`. Code blocks marked `not-for-this-stick` and lines starting "Not for this drive:" show package managers, CDN links or downloads; this drive does not use them.
+
+## README
+
+<p align="center">
+  <a href="https://github.com/lucide-icons/lucide">
+Not for this drive:     <img src="https://lucide.dev/package-logos/lucide.svg" alt="Lucide icon library for web applications." width="540">
+  </a>
+</p>
+
+<p align="center">
+Lucide icon library for web applications.
+</p>
+
+<div align="center">
+
+Not for this drive:   [![npm](https://img.shields.io/npm/v/lucide?color=blue)](https://www.npmjs.com/package/lucide)
+Not for this drive:   ![NPM Downloads](https://img.shields.io/npm/dw/lucide)
+  [![License](https://img.shields.io/badge/license-ISC-green)](https://lucide.dev/license)
+</div>
+
+<p align="center">
+  <a href="https://lucide.dev/guide/">About</a>
+  ·
+  <a href="https://lucide.dev/icons/">Icons</a>
+  ·
+  <a href="https://lucide.dev/guide/lucide">Documentation</a>
+  ·
+  <a href="https://lucide.dev/license">License</a>
+</p>
+
+## README: Lucide
+
+Implementation of the Lucide icon library for web applications.
+
+## README: Installation
+
+```not-for-this-stick
+pnpm add lucide
+```
+
+```not-for-this-stick
+npm install lucide
+```
+
+```not-for-this-stick
+yarn add lucide
+```
+
+```not-for-this-stick
+bun add lucide
+```
+
+### CDN
+
+```html
+
+
+
+
+
+```
+
+## README: Documentation
+
+For full documentation, visit [lucide.dev](https://lucide.dev/guide/packages/lucide)
+
+## README: Community
+
+Join the [Discord server](https://discord.gg/EH6nSts) to chat with the maintainers and other users.
+
+## README: License
+
+Lucide is licensed under the ISC license. See [LICENSE](https://lucide.dev/license).
+
+[//]: <> (Sponsors)
+
+## README: Sponsors
+
+<a href="https://vercel.com?utm_source=lucide&utm_campaign=oss">
+Not for this drive:   <img src="https://lucide.dev/vercel.svg" alt="Powered by Vercel" width="200" />
+</a>
+
+[//]: <> (Sponsor tiers start)
+
+### Bronze 🥉
+
+Not for this drive: <a href="https://about.sourcegraph.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://lucide.dev/sponsors/dark/sourcegraph.svg" /><img src="https://lucide.dev/sponsors/sourcegraph.svg" height="48" alt="Sourcegraph – Understand, fix, and automate across your codebase with Sourcegraph's code intelligence platform" /></picture></a>
+&nbsp;&nbsp;
+Not for this drive: <a href="https://opencollective.com/zephyr-cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="https://lucide.dev/sponsors/dark/zephyr-cloud.svg" /><img src="https://lucide.dev/sponsors/zephyr-cloud.svg" height="48" alt="Zephyr Cloud" /></picture></a>
+
+[//]: <> (Sponsor tiers end)
+
+### Other contributors 💸
+
+You can find all our past and non-recurring financial contributors at [our Open Collective page](https://opencollective.com/lucide-icons).
+
+
+## Getting started
+
+This guide will help you get started with Lucide in your Vanilla JavaScript project.
+Make sure you have a your environment set up. If you don't have one yet, you can create a new project using Vite, Parcel or any other boilerplate of your choice.
+
+## Getting started: Installation
+
+### Package Managers
+
+::: code-group
+
+```not-for-this-stick
+pnpm add lucide
+```
+
+```not-for-this-stick
+yarn add lucide
+```
+
+```not-for-this-stick
+npm install lucide
+```
+
+```not-for-this-stick
+bun add lucide
+```
+
+:::
+
+### CDN
+
+```html
+
+
+
+
+
+```
+
+We strongly suggest you anchor to a specific version, such as `https://unpkg.com/lucide@x.xxx.x/dist/umd/lucide.min.js`, rather than using `@latest`. This is because the latest version may introduce breaking changes that could potentially break your application. By anchoring to a specific version, you can ensure that your application remains stable and functional, even if there are updates to the library in the future.
+
+## Getting started: Importing your first icon
+
+Lucide is built with ES Modules, so it's completely tree-shakable.
+
+The `createIcons` function will search for HTMLElements with the attribute `data-lucide` and replace it with the svg from the given icon name.
+
+### Example
+
+```html
+
+<i data-lucide="menu"></i>
+```
+
+```js
+import { createIcons, icons } from 'lucide';
+
+// Caution, this will import all the icons and bundle them.
+createIcons({ icons });
+
+// Recommended way, to include only the icons you need.
+import { createIcons, Menu, ArrowRight, Globe } from 'lucide';
+
+createIcons({
+  icons: {
+    Menu,
+    ArrowRight,
+    Globe
+  }
+});
+```
+
+## Getting started: Advanced Usage
+
+### Additional Options
+
+In the `createIcons` function you can pass some extra parameters:
+
+- you can pass `nameAttr` to adjust the attribute name to replace icons (default is `data-lucide`).
+- you can pass `attrs` to pass additional custom attributes, for instance CSS classes or stroke options.
+- you can pass `root` to provide a custom DOM element the icons should be replaced in (useful when manipulating small sections of a large DOM or elements in the shadow DOM)
+- you can pass `inTemplates: true` to also replace icons inside `<template>` tags.
+
+Here is a full example:
+
+```js
+import { createIcons } from 'lucide';
+
+createIcons({
+  attrs: {
+    class: ['my-custom-class', 'icon'],
+    'stroke-width': 1,
+    stroke: '#333'
+  },
+  nameAttr: 'data-lucide', // attribute for the icon name.
+  root: element, // DOM element to replace icons in.
+  inTemplates: true // Also replace icons inside <template> tags.
+});
+```
+
+### Example using a CDN
+
+```html
+<!DOCTYPE html>
+<body>
+  <i data-lucide="volume-2" class="my-class"></i>
+  <i data-lucide="x"></i>
+  <i data-lucide="menu"></i>
+
+  
+  
+</body>
+```
+
+
+
+## Lucide for Vanilla JavaScript
+
+The core Lucide package for vanilla JavaScript applications. This package allows you to easily add scalable vector icons to any web project without framework dependencies. Perfect for static websites, legacy applications, or when you need lightweight icon integration with maximum browser compatibility.
+
+**What you can accomplish:**
+
+- Add icons to HTML using simple data attributes
+- Dynamically create and insert SVG icons with JavaScript
+- Customize icon appearance with CSS classes and inline styles
+- Tree-shake unused icons to keep bundle sizes minimal
+- Use icons in Vanilla JS with HTML
+
+Lucide is designed to be lightweight and easy to use, making it an excellent choice for projects that require icons without the overhead of a full framework integration.
+
+## Lucide for Vanilla JavaScript: Overview
+
+<OverviewLinkGrid>
+  <OverviewLink v-for="item in lucideSidebar[0].items.slice(1)" :key="item.link" :href="item.link" :title="item.text" :desc="item.desc"/>
+</OverviewLinkGrid>
+
+### Basics
+{{''}}
+
+<OverviewLinkGrid>
+  <OverviewLink v-for="item in lucideSidebar[1].items" :key="item.link" :href="item.link" :title="item.text" :desc="item.desc"/>
+</OverviewLinkGrid>
+
+### Advanced
+{{''}}
+
+<OverviewLinkGrid>
+  <OverviewLink v-for="item in lucideSidebar[2].items" :key="item.link" :href="item.link" :title="item.text" :desc="item.desc"/>
+</OverviewLinkGrid>
+
+### Resources
+{{''}}
+
+<OverviewLinkGrid>
+  <OverviewLink v-for="item in lucideSidebar[3].items" :key="item.link" :href="item.link" :title="item.text" :desc="item.desc"/>
+</OverviewLinkGrid>
+
+
+## Migration from v0
+
+Brand icons are removed in v1. If you are using any of the following icons, you will need to replace them with a custom SVG or an alternative icon:
+
+- Chromium
+- Codepen
+- Codesandbox
+- Dribbble
+- Facebook
+- Figma
+- Framer
+- Github
+- Gitlab
+- Instagram
+- LinkedIn
+- Pocket
+- RailSymbol (based on the British Rail logo)
+- Slack
+
+We recommend to use the official SVG icons provided by the respective brands, most of them can be found on their websites or in their brand guidelines. Alternatively, you can use the icons from [Simple Icons](https://simpleicons.org/), which provides a large collection of brand icons. Also with links to the official Brand Guidelines and SVG icons.
+
+
+## Names
+
+Every icon name in this version, for data-lucide="name" (and as PascalCase in lucide.icons, for example ArrowRight).
+
+a-arrow-down, a-arrow-up, a-large-small, accessibility, activity, ad, air-vent, airplay, alarm-clock, alarm-clock-check, alarm-clock-minus, alarm-clock-off, alarm-clock-plus, alarm-smoke, align-center-horizontal, align-center-vertical, align-end-horizontal, align-end-vertical, align-horizontal-distribute-center, align-horizontal-distribute-end, align-horizontal-distribute-start, align-horizontal-justify-center, align-horizontal-justify-end, align-horizontal-justify-start, align-horizontal-space-around, align-horizontal-space-between, align-start-horizontal, align-start-vertical, align-vertical-distribute-center, align-vertical-distribute-end, align-vertical-distribute-start, align-vertical-justify-center, align-vertical-justify-end, align-vertical-justify-start, align-vertical-space-around, align-vertical-space-between, ambulance, ampersand, ampersands, amphora, anchor, angle, antenna, anvil, aperture, app-window, app-window-mac, app-window-mac-minus, app-window-mac-plus, app-window-minus, app-window-plus, apple, archive, archive-arrow-down, archive-arrow-up, archive-x, armchair, armenian-dram, arrow-big-down, arrow-big-down-dash, arrow-big-left, arrow-big-left-dash, arrow-big-right, arrow-big-right-dash, arrow-big-up, arrow-big-up-dash, arrow-down, arrow-down-0-1, arrow-down-1-0, arrow-down-a-z, arrow-down-from-line, arrow-down-left, arrow-down-narrow-wide, arrow-down-right, arrow-down-to-dot, arrow-down-to-line, arrow-down-up, arrow-down-wide-narrow, arrow-down-z-a, arrow-left, arrow-left-from-line, arrow-left-right, arrow-left-to-line, arrow-right, arrow-right-from-line, arrow-right-left, arrow-right-to-line, arrow-up, arrow-up-0-1, arrow-up-1-0, arrow-up-a-z, arrow-up-down, arrow-up-from-dot, arrow-up-from-line, arrow-up-left, arrow-up-narrow-wide, arrow-up-right, arrow-up-to-line, arrow-up-wide-narrow, arrow-up-z-a, arrows-from-axis-dashed-horizontal, arrows-from-axis-dashed-vertical, arrows-from-axis-horizontal, arrows-from-axis-vertical, arrows-to-axis-dashed-horizontal, arrows-to-axis-dashed-vertical, arrows-to-axis-horizontal, arrows-to-axis-vertical, arrows-up-from-line, asterisk, asterism, astroid, at-sign, atom, audio-lines, audio-lines-off, audio-lines-x, audio-waveform, avocado, award, axe, axis-3d, azerbaijani-manat, baby, backpack, bacon, badge, badge-cent, badge-check, badge-dollar-sign, badge-euro, badge-exclamation-point, badge-indian-rupee, badge-info, badge-japanese-yen, badge-minus, badge-percent, badge-plus, badge-pound-sterling, badge-question-mark, badge-russian-ruble, badge-swiss-franc, badge-turkish-lira, badge-x, baggage-claim, ball-wave, balloon, ban, banana, bandage, bangladeshi-taka, banknote, banknote-arrow-down, banknote-arrow-up, banknote-check, banknote-x, barcode, barrel, baseline, bath, battery, battery-charging, battery-exclamation-point, battery-full, battery-low, battery-medium, battery-plus, beaker, bean, bean-off, bed, bed-double, bed-single, beef, beef-off, beer, beer-off, belarusian-ruble, bell, bell-check, bell-dot, bell-electric, bell-minus, bell-off, bell-plus, bell-ring, between-horizontal-end, between-horizontal-start, between-vertical-end, between-vertical-start, biceps-flexed, bike, binary, binoculars, biohazard, bird, birdhouse, bitcoin, blend, blender, blinds, blocks, bluetooth, bluetooth-connected, bluetooth-off, bluetooth-searching, bolt, bomb, bone, bone-fracture, book, book-a, book-audio, book-bookmark, book-check, book-copy, book-dashed, book-down, book-exclamation-point, book-headphones, book-heart, book-image, book-key, book-lock, book-minus, book-open, book-open-check, book-open-text, book-plus, book-search, book-text, book-type, book-up, book-up-2, book-user, book-x, bookmark, bookmark-check, bookmark-minus, bookmark-off, bookmark-plus, bookmark-x, boom-box, bot, bot-check, bot-message-square, bot-minus, bot-off, bot-plus, bot-x, bottle-wine, bow-arrow, bowl-chopsticks, box, box-dashed, boxes, boxes-linked, braces, brackets, brain, brain-circuit, brain-cog, brain-off, brick-wall, brick-wall-fire, brick-wall-shield, bridge, briefcase, briefcase-business, briefcase-conveyor-belt, briefcase-medical, briefcase-plus, bring-to-front, broccoli, broom, broom-sparkles, brush, brush-cleaning, bubbles, bug, bug-off, bug-play, building, building-complex, building-complex-plus, bus, bus-front, cable, cable-car, cake, cake-slice, calculator, calendar, calendar-1, calendar-arrow-down, calendar-arrow-left, calendar-arrow-right, calendar-arrow-up, calendar-check, calendar-check-2, calendar-chevrons-left, calendar-chevrons-right, calendar-clock, calendar-cog, calendar-days, calendar-fold, calendar-heart, calendar-minus, calendar-minus-2, calendar-off, calendar-plus, calendar-plus-2, calendar-range, calendar-search, calendar-sync, calendar-x, calendar-x-2, calendars, camera, camera-off, can, can-soda, candy, candy-cane, candy-off, cannabis, cannabis-off, cap, captions, captions-off, car, car-battery, car-front, car-taxi-front, caravan, card-sim, carets-from-axis-dashed-horizontal, carets-from-axis-dashed-vertical, carets-from-axis-horizontal, carets-from-axis-vertical, carets-to-axis-dashed-horizontal, carets-to-axis-dashed-vertical, carets-to-axis-horizontal, carets-to-axis-vertical, carrot, carton, carton-off, case-lower, case-sensitive, case-upper, cassette-tape, cast, castle, cat, cctv, cctv-off, certificate, chart-area, chart-bar, chart-bar-big, chart-bar-decreasing, chart-bar-increasing, chart-bar-stacked, chart-bell-curve, chart-candlestick, chart-column, chart-column-big, chart-column-decreasing, chart-column-increasing, chart-column-stacked, chart-gantt, chart-line, chart-network, chart-no-axes-column, chart-no-axes-column-decreasing, chart-no-axes-column-increasing, chart-no-axes-combined, chart-no-axes-gantt, chart-pie, chart-quadrant, chart-radar, chart-scatter, chart-spline, check, check-check, check-line, cheese, chef-hat, cherry, chess-bishop, chess-king, chess-knight, chess-pawn, chess-queen, chess-rook, chevron-down, chevron-first, chevron-last, chevron-left, chevron-right, chevron-up, chevrons-down, chevrons-down-up, chevrons-from-axis-dashed-horizontal, chevrons-from-axis-dashed-vertical, chevrons-from-axis-horizontal, chevrons-from-axis-vertical, chevrons-left, chevrons-left-right, chevrons-left-right-ellipsis, chevrons-right, chevrons-right-left, chevrons-to-axis-dashed-horizontal, chevrons-to-axis-dashed-vertical, chevrons-to-axis-horizontal, chevrons-to-axis-vertical, chevrons-up, chevrons-up-down, chocolate-bar, church, cigarette, cigarette-off, cinema, circle, circle-arrow-down, circle-arrow-down-left-exit, circle-arrow-down-right-exit, circle-arrow-left, circle-arrow-right, circle-arrow-up, circle-arrow-up-left-exit, circle-arrow-up-right-exit, circle-bounce, circle-check, circle-check-big, circle-chevron-down, circle-chevron-left, circle-chevron-right, circle-chevron-up, circle-chevrons-down, circle-chevrons-left, circle-chevrons-right, circle-chevrons-up, circle-dashed, circle-dashed-check, circle-divide, circle-dollar-sign, circle-dot, circle-dot-dashed, circle-ellipsis, circle-equal, circle-euro, circle-exclamation-point, circle-fading-arrow-up, circle-fading-check, circle-fading-play, circle-fading-plus, circle-gauge, circle-letter-a, circle-letter-b, circle-letter-c, circle-letter-d, circle-letter-e, circle-letter-f, circle-letter-g, circle-letter-h, circle-letter-i, circle-letter-j, circle-letter-k, circle-letter-l, circle-letter-m, circle-letter-n, circle-letter-o, circle-letter-p, circle-letter-p-off, circle-letter-q, circle-letter-r, circle-letter-s, circle-letter-t, circle-letter-u, circle-letter-v, circle-letter-w, circle-letter-x, circle-letter-y, circle-letter-z, circle-minus, circle-off, circle-pause, circle-percent, circle-person-arms-spread, circle-pile, circle-play, circle-plus, circle-pound-sterling, circle-power, circle-question-mark, circle-slash, circle-slash-2, circle-small, circle-speed-lines, circle-star, circle-stop, circle-user, circle-user-round, circle-x, circuit-board, citrus, clapperboard, clef-alto, clef-bass, clef-treble, clipboard, clipboard-check, clipboard-clock, clipboard-copy, clipboard-list, clipboard-minus, clipboard-paste, clipboard-pen, clipboard-pen-line, clipboard-plus, clipboard-type, clipboard-x, clock, clock-1, clock-10, clock-11, clock-12, clock-2, clock-3, clock-4, clock-5, clock-6, clock-7, clock-8, clock-9, clock-arrow-down, clock-arrow-left, clock-arrow-right, clock-arrow-up, clock-check, clock-exclamation-point, clock-fading, clock-plus, closed-caption, cloud, cloud-backup, cloud-check, cloud-cog, cloud-download, cloud-drizzle, cloud-exclamation-point, cloud-fog, cloud-hail, cloud-lightning, cloud-moon, cloud-moon-rain, cloud-off, cloud-rain, cloud-rain-wind, cloud-snow, cloud-sun, cloud-sun-rain, cloud-sync, cloud-upload, cloudy, clover, club, code, code-xml, coffee, cog, coins, columns-2, columns-2-plus-left, columns-2-plus-right, columns-3, columns-3-cog, columns-4, combine, command, compass, component, computer, concierge-bell, cone, construction, contact, contact-round, container, contrast, cookie, cooking-pot, copy, copy-check, copy-minus, copy-plus, copy-slash, copy-x, copyleft, corner-down-left, corner-down-right, corner-left-down, corner-left-up, corner-right-down, corner-right-up, corner-up-left, corner-up-right, cpu, cpu-ai, creative-commons, credit-card, credit-card-check, credit-card-minus, credit-card-plus, credit-card-reader, credit-card-x, croissant, crop, cross, crosshair, crown, cuboid, cup-soda, cupcake, currency, cylinder, dam, database, database-arrow-down, database-arrow-up, database-backup, database-check, database-cog, database-minus, database-plus, database-search, database-x, database-zap, decimals-arrow-left, decimals-arrow-right, delete, dessert, diagram-flow-horizontal, diagram-flow-vertical, diagram-sankey, diameter, diamond, diamond-minus, diamond-percent, diamond-plus, dice-1, dice-2, dice-3, dice-4, dice-5, dice-6, dices, diff, disc, disc-2, disc-3, disc-album, divide, dna, dna-off, dock, dog, doghouse, dollar-sign, dome, donut, door-closed, door-closed-cog, door-closed-locked, door-closed-package, door-open, door-stairwell, dot, download, drafting-compass, drama, drill, drone, droplet, droplet-off, droplets, drum, drumstick, dumbbell, ear, ear-off, earbuds, earbuds-off, earth, earth-lock, eclipse, egg, egg-fried, egg-off, eighth-note, eighth-notes, eject, elevator, ellipse, ellipsis, ellipsis-vertical, emirati-dirham, engine, equal, equal-approximately, equal-approximately-not, equal-not, eraser, ethernet-port, euro, ev-charger, exclamation-mark, expand, external-link, eye, eye-closed, eye-dashed, eye-off, face-angry, face-expressionless, face-grinning, face-neutral, face-slightly-frowning, face-slightly-smiling, face-slightly-smiling-plus, factory, fan, fast-forward, faucet, feather, fence, ferris-wheel, file, file-archive, file-axis-3d, file-badge, file-box, file-braces, file-braces-corner, file-chart-column, file-chart-column-increasing, file-chart-line, file-chart-pie, file-check, file-check-corner, file-clock, file-code, file-code-corner, file-cog, file-database, file-diff, file-digit, file-down, file-exclamation-point, file-headphone, file-heart, file-image, file-input, file-key, file-lock, file-minus, file-minus-corner, file-music, file-output, file-pen, file-pen-line, file-play, file-plus, file-plus-corner, file-question-mark, file-scan, file-search, file-search-corner, file-signal, file-sliders, file-spreadsheet, file-stack, file-symlink, file-terminal, file-text, file-text-sparkles, file-type, file-type-corner, file-up, file-user, file-video-camera, file-volume, file-x, file-x-corner, files, film, fingerprint-pattern, fire-extinguisher, fish, fish-off, fish-symbol, fishing-hook, fishing-rod, flag, flag-off, flag-triangle-left, flag-triangle-right, flame, flame-kindling, flashlight, flashlight-off, flask-conical, flask-conical-off, flask-round, flower, flower-2, focus, folder, folder-archive, folder-bookmark, folder-check, folder-clock, folder-closed, folder-code, folder-cog, folder-dot, folder-down, folder-git, folder-git-2, folder-heart, folder-input, folder-kanban, folder-key, folder-lock, folder-minus, folder-network, folder-open, folder-open-dot, folder-output, folder-pen, folder-plus, folder-plus-corner, folder-root, folder-search, folder-search-2, folder-symlink, folder-sync, folder-tree, folder-up, folder-user, folder-users, folder-x, folders, footprints, forklift, form, forward, frame, fuel, fullscreen, funnel, funnel-plus, funnel-x, galaxy, gallery-horizontal, gallery-horizontal-end, gallery-thumbnails, gallery-vertical, gallery-vertical-end, gamepad, gamepad-2, gamepad-directional, gap-horizontal, gap-vertical, gauge, gavel, gem, georgian-lari, germ, germ-off, ghost, gift, git-branch, git-branch-minus, git-branch-plus, git-commit-horizontal, git-commit-vertical, git-compare, git-compare-arrows, git-fork, git-graph, git-merge, git-merge-conflict, git-pull-request, git-pull-request-arrow, git-pull-request-closed, git-pull-request-create, git-pull-request-create-arrow, git-pull-request-draft, glass-water, glasses, globe, globe-ban, globe-check, globe-clock, globe-code, globe-lock, globe-off, globe-plus, globe-x, goal, gpu, graduation-cap, grape, graph-hub, graph-path, graph-ring, graph-star, grid-2x2, grid-2x2-check, grid-2x2-plus, grid-2x2-x, grid-3x2, grid-3x3, grid-3x3-off, grip, grip-horizontal, grip-vertical, groceries, group, guitar, guitar-electric, half-note, ham, hamburger, hammer, hand, hand-coins, hand-fist, hand-grab, hand-heart, hand-helping, hand-metal, hand-platter, hand-truck, handbag, handle-bottom-right, handshake, hard-drive, hard-drive-download, hard-drive-upload, hard-hat, hash, hat-glasses, haze, hd, hdmi-port, heading-1, heading-2, heading-3, heading-4, heading-5, heading-6, headphone-off, headphones, headset, heart, heart-crack, heart-handshake, heart-minus, heart-off, heart-plus, heart-pulse, heart-x, heater, helicopter, hexagon, highlighter, hiking-stick, hockey-stick, hole, hop, hop-off, hospital, hot-air-balloon, hotel, hourglass, hourglass-cog, house, house-arrow-left, house-arrow-right, house-cog, house-heart, house-plug, house-plus, house-wifi, houses, ice-cream-bowl, ice-cream-cone, id-card, id-card-lanyard, image, image-down, image-minus, image-off, image-play, image-plus, image-sparkles, image-up, image-upscale, images, import, inbox, indian-rupee, infinity, info, inspection-panel, italic, iteration-ccw, iteration-cw, iv-bag, jacket, japanese-yen, joystick, kanban, kayak, kazakh-tenge, key, key-round, key-square, keyboard, keyboard-music, keyboard-off, lambda, lamp, lamp-ceiling, lamp-desk, lamp-floor, lamp-wall-down, lamp-wall-up, land-plot, landmark, languages, laptop, laptop-minimal, laptop-minimal-check, laser, lasso, lasso-select, layer-arrow-down, layer-arrow-up, layers, layers-2, layers-arrow-down, layers-arrow-up, layers-minus, layers-plus, layout-arrow-down, layout-arrow-right, layout-dashboard, layout-freeform, layout-grid, layout-grid-circles, layout-grid-plus, layout-list, layout-panel-left, layout-panel-top, layout-template, leaf, leafy-green, lectern, lens, lens-concave, lens-convex, letter-a, letter-b, letter-c, letter-d, letter-e, letter-f, letter-g, letter-h, letter-i, letter-j, letter-k, letter-l, letter-m, letter-n, letter-o, letter-p, letter-q, letter-r, letter-s, letter-spacing, letter-t, letter-u, letter-v, letter-w, letter-x, letter-y, letter-z, letters, library, library-big, life-buoy, ligature, lightbulb, lightbulb-off, lighthouse, line-dot-bottom-vertical, line-dot-left-horizontal, line-dot-right-horizontal, line-dot-top-vertical, line-height, line-squiggle, line-style, link, link-2, link-2-off, list, list-check, list-checks, list-chevrons-down-up, list-chevrons-up-down, list-clock, list-collapse, list-end, list-filter, list-filter-plus, list-indent-decrease, list-indent-increase, list-minus, list-music, list-ordered, list-plus, list-restart, list-sort-ascending, list-sort-descending, list-start, list-todo, list-tree, list-video, list-x, list-x-corner, loader, loader-circle, loader-pinwheel, locate, locate-fixed, locate-off, lock, lock-keyhole, lock-keyhole-open, lock-open, log-in, log-out, logs, lollipop, luggage, magnet, mail, mail-badge, mail-check, mail-clock, mail-dot, mail-exclamation-point, mail-minus, mail-open, mail-pen, mail-plus, mail-question-mark, mail-search, mail-x, mailbox, mails, mango, map, map-minus, map-pin, map-pin-check, map-pin-check-inside, map-pin-house, map-pin-minus, map-pin-minus-inside, map-pin-off, map-pin-pen, map-pin-plus, map-pin-plus-inside, map-pin-search, map-pin-x, map-pin-x-inside, map-pinned, map-plus, margin, margin-bottom, margin-horizontal, margin-left, margin-right, margin-top, margin-vertical, mars, mars-stroke, martini, maximize, maximize-2, medal, megaphone, megaphone-off, memory-stick, menu, merge, message-circle, message-circle-check, message-circle-code, message-circle-dashed, message-circle-dashed-check, message-circle-exclamation-point, message-circle-heart, message-circle-more, message-circle-off, message-circle-plus, message-circle-question-mark, message-circle-reply, message-circle-text, message-circle-x, message-square, message-square-check, message-square-code, message-square-dashed, message-square-diff, message-square-dot, message-square-exclamation-point, message-square-heart, message-square-lock, message-square-more, message-square-off, message-square-plus, message-square-quote, message-square-reply, message-square-share, message-square-text, message-square-x, messages-circle, messages-square, metronome, mic, mic-audio-lines, mic-off, mic-signal, mic-vocal, microchip, microscope, microwave, midi-port, milestone, milk, milk-off, minimize, minimize-2, minus, mirror-rectangular, mirror-round, monitor, monitor-activity, monitor-check, monitor-cloud, monitor-cog, monitor-dot, monitor-down, monitor-off, monitor-pause, monitor-pc, monitor-play, monitor-smartphone, monitor-speaker, monitor-stop, monitor-up, monitor-x, moon, moon-star, mop, mop-sparkles, moped, mosque, motorbike, mound-shovel, mountain, mountain-snow, mouse, mouse-left, mouse-off, mouse-pointer, mouse-pointer-2, mouse-pointer-2-off, mouse-pointer-ban, mouse-pointer-click, mouse-right, mouth, mouth-off, move, move-3d, move-diagonal, move-diagonal-2, move-down, move-down-left, move-down-right, move-horizontal, move-left, move-right, move-up, move-up-left, move-up-right, move-vertical, navigation, navigation-2, navigation-2-off, navigation-off, nepali-rupee, network, newspaper, nfc, nigerian-naira, non-binary, notebook, notebook-dot, notebook-pen, notebook-tabs, notebook-text, notepad-text, notepad-text-dashed, numbers, nut, nut-off, octagon, octagon-exclamation-point, octagon-minus, octagon-pause, octagon-x, omega, opacity, option, orbit, origami, package, package-2, package-arrow-bend-up-left, package-check, package-minus, package-open, package-pen, package-plus, package-question-mark, package-search, package-x, paint-bucket, paint-gun, paint-roller, paintbrush, paintbrush-vertical, palette, panda, panel-bottom, panel-bottom-close, panel-bottom-dashed, panel-bottom-open, panel-left, panel-left-close, panel-left-dashed, panel-left-open, panel-left-right-dashed, panel-right, panel-right-close, panel-right-dashed, panel-right-open, panel-top, panel-top-bottom-dashed, panel-top-close, panel-top-dashed, panel-top-open, panels-left-bottom, panels-right-bottom, panels-top-left, paper-bag, paperclip, parasol, parentheses, park, parking-meter, party-popper, pause, paw-print, pc-case, pen, pen-line, pen-off, pen-tool, pencil, pencil-line, pencil-off, pencil-ruler, pencil-sparkles, pentagon, percent, perfume-bottle, person-standing, phi, philippine-peso, phone, phone-call, phone-forwarded, phone-incoming, phone-log, phone-missed, phone-off, phone-outgoing, pi, piano, pickaxe, picture-in-picture, picture-in-picture-2, piggy-bank, pilcrow, pilcrow-left, pilcrow-right, pill, pill-bottle, pin, pin-off, pipette, pizza, plane, plane-landing, plane-off, plane-takeoff, plant-pot, play, play-off, playing-card, playing-cards, playing-cards-fan, plug, plug-2, plug-zap, plus, pocket-knife, podium, pointer, pointer-off, popcorn, popsicle, pound-sterling, power, power-off, presentation, printer, printer-3d, printer-check, printer-x, projector, proportions, puzzle, pyramid, qr-code, question-mark, quote, rabbit, radar, radiation, radical, radio, radio-off, radio-receiver, radio-tower, radius, rainbow, rat, ratio, receipt, receipt-cent, receipt-euro, receipt-indian-rupee, receipt-japanese-yen, receipt-pound-sterling, receipt-russian-ruble, receipt-swiss-franc, receipt-text, receipt-turkish-lira, rectangle-circle, rectangle-ellipsis, rectangle-goggles, rectangle-horizontal, rectangle-horizontal-play, rectangle-horizontal-plus, rectangle-vertical, recycle, redo, redo-2, redo-dot, refresh-ccw, refresh-ccw-dot, refresh-cw, refresh-cw-off, refrigerator, regex, remove-formatting, repeat, repeat-1, repeat-2, repeat-off, replace, replace-all, reply, reply-all, rewind, ribbon, road, robot-arm, robot-vacuum, rocket, rocking-chair, roller-coaster, rose, rotate-3d, rotate-ccw, rotate-ccw-clock, rotate-ccw-key, rotate-ccw-square, rotate-cw, rotate-cw-clock, rotate-cw-fading-clock, rotate-cw-square, route, route-arrow-right, route-off, router, rows-2, rows-2-plus-bottom, rows-2-plus-top, rows-3, rows-4, rss, rugby-ball, ruler, ruler-dimension-line, russian-ruble, sailboat, salad, sandwich, satellite, satellite-dish, saudi-riyal, save, save-all, save-check, save-off, save-pen, save-plus, scale, scale-3d, scaling, scan, scan-barcode, scan-box, scan-eye, scan-face, scan-heart, scan-line, scan-qr-code, scan-search, scan-square, scan-text, school, scissors, scissors-line-dashed, scooter, scratch-blocks, screen-share, screen-share-off, screw, screwdriver, scroll, scroll-text, search, search-check, search-code, search-exclamation-point, search-slash, search-x, section, send, send-horizontal, send-to-back, separator-horizontal, separator-vertical, server, server-cog, server-crash, server-nas, server-off, server-plus, settings, settings-2, shapes, share, share-2, sheet, shell, shelving-unit, shield, shield-ban, shield-check, shield-cog, shield-cog-corner, shield-ellipsis, shield-exclamation-point, shield-half, shield-house, shield-keyhole, shield-lock, shield-minus, shield-off, shield-plus, shield-question-mark, shield-user, shield-x, ship, ship-cargo, ship-wheel, shirt, shopping-bag, shopping-basket, shopping-cart, shopping-cart-minus, shopping-cart-plus, shovel, shower-head, shredder, shrimp, shrimp-off, shrink, shrub, shuffle, sigma, signal, signal-high, signal-low, signal-medium, signal-zero, signature, signpost, signpost-big, siren, siren-off, sixteenth-notes, skip-back, skip-forward, skull, slash, slice, sliders-horizontal, sliders-vertical, smartphone, smartphone-charging, smartphone-nfc, smartphone-user-round, snail, snowflake, soap-dispenser-droplet, sofa, solar-panel, soup, space, spade, sparkle, sparkles, speaker, speech, spell-check, spell-check-2, spline, spline-pointer, split, spool, sport-shoe, spotlight, spray-can, sprout, square, square-activity, square-arrow-down, square-arrow-down-enter, square-arrow-down-exit, square-arrow-down-left, square-arrow-down-left-enter, square-arrow-down-left-exit, square-arrow-down-right, square-arrow-down-right-enter, square-arrow-down-right-exit, square-arrow-left, square-arrow-left-enter, square-arrow-left-exit, square-arrow-right, square-arrow-right-enter, square-arrow-right-exit, square-arrow-up, square-arrow-up-enter, square-arrow-up-exit, square-arrow-up-left, square-arrow-up-left-enter, square-arrow-up-left-exit, square-arrow-up-right, square-arrow-up-right-enter, square-arrow-up-right-exit, square-asterisk, square-axis-dashed-horizontal, square-axis-dashed-vertical, square-axis-horizontal, square-axis-vertical, square-bookmark, square-bottom-dashed-scissors, square-chart-gantt, square-check, square-check-big, square-chevron-down, square-chevron-left, square-chevron-right, square-chevron-up, square-chevrons-down, square-chevrons-left, square-chevrons-right, square-chevrons-up, square-code, square-dashed, square-dashed-bottom, square-dashed-bottom-code, square-dashed-kanban, square-dashed-mouse-pointer, square-dashed-plus, square-dashed-search, square-dashed-text, square-dashed-top-solid, square-dashed-x, square-dashed-x-corner, square-dimensions, square-divide, square-dot, square-equal, square-exclamation-point, square-function, square-kanban, square-kanban-plus, square-letter-a, square-letter-b, square-letter-c, square-letter-d, square-letter-e, square-letter-f, square-letter-g, square-letter-h, square-letter-i, square-letter-j, square-letter-k, square-letter-l, square-letter-m, square-letter-n, square-letter-o, square-letter-p, square-letter-p-off, square-letter-q, square-letter-r, square-letter-s, square-letter-t, square-letter-u, square-letter-v, square-letter-w, square-letter-x, square-letter-y, square-letter-z, square-library, square-menu, square-minus, square-mouse-pointer, square-off, square-padding, square-padding-bottom, square-padding-horizontal, square-padding-left, square-padding-right, square-padding-top, square-padding-vertical, square-pause, square-pen, square-percent, square-pi, square-pilcrow, square-play, square-plus, square-plus-corner, square-power, square-radical, square-round-corner, square-scissors, square-sigma, square-slash, square-sparkles, square-split-horizontal, square-split-vertical, square-square, square-stack, square-star, square-stop, square-terminal, square-text, square-user, square-user-round, square-x, squares-exclude, squares-intersect, squares-subtract, squares-unite, squircle, squircle-dashed, squirrel, stamp, star, star-check, star-half, star-minus, star-off, star-plus, star-x, steering-wheel, step-back, step-forward, stethoscope, sticker, sticky-note, sticky-note-check, sticky-note-minus, sticky-note-off, sticky-note-plus, sticky-note-x, sticky-notes, stone, store, stretch-horizontal, stretch-vertical, strikethrough, stroke-line-cap-butt, stroke-line-cap-round, stroke-line-cap-square, stroke-line-join-bevel, stroke-line-join-miter, stroke-line-join-round, stroke-width, subscript, summary, sun, sun-dim, sun-medium, sun-moon, sun-snow, sunrise, sunset, superscript, swatch-book, swiss-franc, switch-camera, sword, swords, syringe, table, table-2, table-cells-merge, table-cells-split, table-columns-split, table-of-contents, table-properties, table-rows-split, tablet, tablet-smartphone, tablets, tag, tag-plus, tag-x, tags, tally-1, tally-2, tally-3, tally-4, tally-5, tangent, target, telescope, tent, tent-tree, terminal, test-tube, test-tube-diagonal, test-tubes, text-align-center, text-align-end, text-align-justify, text-align-justify-center, text-align-justify-end, text-align-justify-start, text-align-start, text-cursor, text-cursor-input, text-initial, text-pen, text-quote, text-search, text-wrap, theater, thermometer, thermometer-snowflake, thermometer-sun, thumbs-down, thumbs-up, tic-tac-toe, ticket, ticket-check, ticket-minus, ticket-percent, ticket-plus, ticket-slash, ticket-x, tickets, tickets-plane, timeline, timer, timer-off, timer-reset, toggle-left, toggle-right, toilet, tombstone, tool-case, toolbox, toothbrush, toothbrush-sparkles, tornado, torus, touchpad, touchpad-off, towel-rack, tower-control, toy-brick, tractor, traffic-cone, trailer, train-front, train-front-tunnel, train-high-speed, train-track, tram-front, transgender, trash, trash-leaf, trash-off, tree-deciduous, tree-palm, tree-pine, trees, trending-down, trending-up, trending-up-down, triangle, triangle-dashed, triangle-exclamation-point, triangle-right, trophy, truck, truck-electric, tube-lotion, turkish-lira, turntable, turtle, tv, tv-minimal, tv-minimal-play, type, type-outline, umbrella, umbrella-off, underline, undo, undo-2, undo-dot, ungroup, university, unlink, unlink-2, unplug, upload, usb, usb-c-port, user, user-check, user-cog, user-exclamation-point, user-group, user-key, user-lock, user-minus, user-pen, user-plus, user-round, user-round-arrow-left, user-round-check, user-round-clock, user-round-cog, user-round-exclamation-point, user-round-group, user-round-key, user-round-minus, user-round-pen, user-round-plus, user-round-search, user-round-shield, user-round-star, user-round-x, user-search, user-shield, user-star, user-x, users, users-collaboration, users-round, users-round-collaboration, utensils, utensils-crossed, utility-pole, van, variable, vault, vector-polygon, vector-square, vegan, venetian-mask, venus, venus-and-mars, vibrate, vibrate-off, video, video-off, videotape, view, virus, virus-off, voicemail, volleyball, volume, volume-1, volume-2, volume-off, volume-x, vote, wallet, wallet-cards, wallet-minimal, wallpaper, wand, wand-sparkles, warehouse, warehouse-waves, washing-machine, watch, waves-arrow-down, waves-arrow-up, waves-horizontal, waves-ladder, waves-vertical, waypoints, webcam, webcam-off, webhook, webhook-off, weight, weight-tilde, wheat, wheat-off, whistle, whole-word, wifi, wifi-cog, wifi-high, wifi-lock, wifi-low, wifi-off, wifi-pen, wifi-sync, wifi-zero, wind, wind-arrow-down, wind-arrow-up, wine, wine-off, workflow, worm, wrench, wrench-off, x, x-line-top, zap, zap-off, zodiac-aquarius, zodiac-aries, zodiac-cancer, zodiac-capricorn, zodiac-gemini, zodiac-leo, zodiac-libra, zodiac-ophiuchus, zodiac-pisces, zodiac-sagittarius, zodiac-scorpio, zodiac-taurus, zodiac-virgo, zoom-in, zoom-out
+
