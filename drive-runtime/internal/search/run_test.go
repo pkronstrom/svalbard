@@ -173,6 +173,44 @@ func TestSessionFallsBackToKeywordWhenHybridUnavailable(t *testing.T) {
 	}
 }
 
+func TestSessionShowsPartialMatchesWhenNoResultHasEveryWord(t *testing.T) {
+	root := newSearchDrive(t)
+	session, err := NewSession(root, nil)
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	response, err := session.Search(context.Background(), ModeKeyword, "water desalination essential", 20)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(response.Results) != 1 || response.Results[0].Title != "Water purification" || !response.Results[0].Partial {
+		t.Fatalf("Results = %+v, want the article with two of the three words", response.Results)
+	}
+	if response.Status != "No result has every word; showing partial matches. No article mentions: desalination" {
+		t.Errorf("Status = %q", response.Status)
+	}
+
+	// One word of two is a different search: nothing is shown for it.
+	response, err = session.Search(context.Background(), ModeKeyword, "water desalination", 20)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(response.Results) != 0 || response.Status != "No article mentions: desalination" {
+		t.Errorf("Results = %+v, Status = %q, want no results and the missing word named", response.Results, response.Status)
+	}
+
+	// A complete match says nothing extra.
+	response, err = session.Search(context.Background(), ModeKeyword, "is water essential?", 20)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(response.Results) != 1 || response.Results[0].Partial || response.Status != "" {
+		t.Errorf("Results = %+v, Status = %q, want one complete match and no status", response.Results, response.Status)
+	}
+}
+
 func TestSessionSearchReturnsCancelledContextWithoutKeywordResult(t *testing.T) {
 	root := newSearchDrive(t)
 	session, err := NewSession(root, nil)
