@@ -6,8 +6,8 @@ tags:
 - food
 - general-reference
 depth: overview
-size_gb: 4.2
-url_pattern: https://download.kiwix.org/zim/gutenberg/gutenberg_en_lcc-s_{date}.zim
+size_gb: 3.2
+url_pattern: https://download.kiwix.org/zim/books/gutenberg_en_lcc-s_{date}.zim
 description: Project Gutenberg — Agriculture (LoC class S) public-domain books
 license:
   id: PG-License

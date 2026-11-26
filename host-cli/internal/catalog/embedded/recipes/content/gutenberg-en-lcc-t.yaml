@@ -6,8 +6,8 @@ tags:
 - engineering
 - general-reference
 depth: overview
-size_gb: 12.0
-url_pattern: https://download.kiwix.org/zim/gutenberg/gutenberg_en_lcc-t_{date}.zim
+size_gb: 8.9
+url_pattern: https://download.kiwix.org/zim/books/gutenberg_en_lcc-t_{date}.zim
 description: Project Gutenberg — Technology (LoC class T) public-domain books
 license:
   id: PG-License

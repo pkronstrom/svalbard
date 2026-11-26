@@ -4,9 +4,9 @@ display_group: models
 tags:
 - computing
 - coding
-size_gb: 13.27
+size_gb: 13.37
 filename: Qwen3.8-27B-UD-IQ4_XS.gguf
-url: https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-IQ4_XS.gguf
+url: https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4af51b3542f775b0a8e4b310bfb3f17e01c306c9/Qwen3.8-27B-UD-IQ4_XS.gguf
 description: Qwen3.8 27B (Unsloth UD-IQ4_XS) — dense coding model for 24 GB hosts
   with conservative context; optional MTP via ai/mtp; text-only runtime
 license:

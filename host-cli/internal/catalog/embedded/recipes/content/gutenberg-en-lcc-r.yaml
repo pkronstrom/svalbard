@@ -5,8 +5,8 @@ tags:
 - medicine
 - general-reference
 depth: overview
-size_gb: 1.9
-url_pattern: https://download.kiwix.org/zim/gutenberg/gutenberg_en_lcc-r_{date}.zim
+size_gb: 1.4
+url_pattern: https://download.kiwix.org/zim/books/gutenberg_en_lcc-r_{date}.zim
 description: Project Gutenberg — Medicine (LoC class R) public-domain books
 license:
   id: PG-License

@@ -6,8 +6,8 @@ tags:
 - fire-shelter
 - water
 depth: comprehensive
-size_gb: 2.3
-url_pattern: https://download.kiwix.org/zim/zimit/www.ready.gov_en_{date}.zim
+size_gb: 1.9
+url_pattern: https://download.kiwix.org/zim/zimit/ready.gov_en_all_{date}.zim
 description: Ready.gov — FEMA emergency preparedness guides (disasters, planning, kits, alerts)
 license:
   id: public-domain

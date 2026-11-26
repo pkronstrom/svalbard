@@ -5,8 +5,8 @@ tags:
 - general-reference
 - language
 depth: comprehensive
-size_gb: 1.5
-url_pattern: https://download.kiwix.org/zim/gutenberg/gutenberg_fi_all_{date}.zim
+size_gb: 1.4
+url_pattern: https://download.kiwix.org/zim/books/gutenberg_fi_all_{date}.zim
 description: Project Gutenberg — Finnish-language books
 license:
   id: PG-License
