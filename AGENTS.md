@@ -31,6 +31,7 @@ To add a task, run this from the repo, which sets the project (there are no assi
   - Presets ([checkpoint](docs/plans/2026-10-05-preset-customization-checkpoint.md)): saved `desired.items` is authoritative and preset names are provenance. Keep explicit and automatic selections distinct during wizard edits, and preserve deployment cancellation.
   - Search ([checkpoint](docs/plans/2026-10-06-search-reliability-checkpoint.md)): keyword indexing is automatic by default, `none` skips it, and semantic/full resumes matching contracts. Preserve writer locking, atomic source replacement and publication, exact-model reader compatibility, bounded full-detail snapshots and cancellation.
   - Offline PlatformIO ([checkpoint](docs/plans/2026-11-21-offline-platformio-checkpoint.md)): ready generations are immutable and keyed by vault path and archive content. Keep the cache canonical (espressif32 7.1.3 breaks on symlinked or macOS `/tmp` cache paths), and keep upload and monitor claims hardware-dependent.
+  - Document collections ([checkpoint](docs/plans/2026-11-26-pdf-collections-checkpoint.md)): a collection's realized entries are its complete file set, one per document under `books/<id>/`. A local source that cannot be read keeps its installed files, and a vault's recipe copy never reads `path:` entries from this computer. Documents are index sources named by vault path with one article per page (`page/N`); a missing `books/` or `zim/` is never a prune. PDFium runs on the host only, and the drive reads documents from `search.db` alone.
 
 ## Background records
 
