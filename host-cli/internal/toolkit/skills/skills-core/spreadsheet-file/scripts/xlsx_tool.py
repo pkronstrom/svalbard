@@ -17,6 +17,7 @@ a file no spreadsheet program has opened yet).
 import argparse
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -25,21 +26,22 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 
+NUMBER = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")
+
+
 def number(text):
-    """Return text as int or float when it is one, else unchanged."""
+    """Return text as int or float when it is a plain decimal number, else
+    unchanged: codes with leading zeros ("007"), phone numbers ("+358..."),
+    names that Python would read as numbers ("Nan", "inf") and "1_000"
+    stay text."""
     if not isinstance(text, str):
         return text
     s = text.strip()
     if s.startswith("="):
         return s
-    try:
-        return int(s)
-    except ValueError:
-        pass
-    try:
-        return float(s)
-    except ValueError:
+    if not NUMBER.fullmatch(s):
         return text
+    return float(s) if "." in s else int(s)
 
 
 def load_rows(path):
