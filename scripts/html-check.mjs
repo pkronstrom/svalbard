@@ -47,6 +47,8 @@ if (!opts.page || !fs.existsSync(opts.page)) {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const scratch = fs.mkdtempSync(path.join(process.env.HTML_CHECK_TMP || os.tmpdir(), "html-check-"));
+// The browsers' profiles go with it however the check ends.
+process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
 
 // A static server for --serve: GET and HEAD with byte ranges, nothing else.
 async function startServer(root) {
@@ -336,5 +338,4 @@ for (const [name, run] of browsers) {
   }
 }
 server?.close();
-fs.rmSync(scratch, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);

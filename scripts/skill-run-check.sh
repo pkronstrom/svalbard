@@ -25,19 +25,27 @@ case "$(uname -s)-$(uname -m)" in
   *) printf 'unsupported platform %s\n' "$(uname -sm)" >&2; exit 2 ;;
 esac
 
-# offline runs a command with the network denied. On macOS every socket is
-# denied, Unix sockets included (DNS through mDNSResponder, Docker's
-# socket); a request handed to another process over XPC (`open https://...`)
-# is not. On Linux the new network namespace has no network, but Unix
-# sockets on the file system (systemd-resolved, docker.sock) stay
-# reachable. Both catch what a skill's own scripts would do; neither is a
-# hard boundary.
+# offline runs a command with the network denied, loopback excepted. On
+# macOS every socket is denied, Unix sockets included (DNS through
+# mDNSResponder, Docker's socket), apart from connections to 127.0.0.1, which
+# the HTML skills' browser checks use to talk to their headless browsers; a
+# request handed to another process over XPC (`open https://...`) is not
+# stopped. On Linux the new network namespace has only its own loopback,
+# brought up for the same reason, and Unix sockets on the file system
+# (systemd-resolved, docker.sock) stay reachable. Both catch what a skill's
+# own scripts would do; neither is a hard boundary.
 offline() {
   case $platform in
-    macos-*) sandbox-exec -p '(version 1)(allow default)(deny network*)' "$@" ;;
-    linux-*) unshare -rn "$@" ;;
+    macos-*) sandbox-exec -p '(version 1)(allow default)(deny network*)(allow network-outbound (remote ip "localhost:*"))(allow network-bind (local ip "localhost:*"))(allow network-inbound (local ip "localhost:*"))(allow network-bind (local unix))(allow network-inbound (local unix))' "$@" ;;
+    linux-*) unshare -rn sh -c 'ip link set lo up 2>/dev/null || true; exec "$@"' sh "$@" ;;
   esac
 }
+
+# The HTML skills load their pages in headless browsers through
+# scripts/html-check.sh, inside the sandbox above.
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+export SVALBARD_HTML_CHECK=${SVALBARD_HTML_CHECK:-$here/html-check.sh}
+export HTML_CHECK_CONFINED=1
 
 skills=()
 if [[ $# -eq 0 ]]; then

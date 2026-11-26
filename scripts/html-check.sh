@@ -37,6 +37,12 @@ browser_args=()
 [[ -n $chromium ]] && browser_args+=(--chromium "$chromium")
 [[ -n $firefox ]] && browser_args+=(--firefox "$firefox")
 
+# Already confined to loopback (scripts/skill-run-check.sh): a sandbox
+# cannot be started inside another.
+if [[ -n ${HTML_CHECK_CONFINED:-} ]]; then
+  exec node "$here/html-check.mjs" "${browser_args[@]}" "$@"
+fi
+
 case "$(uname -s)" in
   Darwin)
     export HTML_CHECK_CONFINED=1

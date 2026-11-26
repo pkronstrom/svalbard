@@ -597,7 +597,15 @@ func (p *packer) buildErrors(where string, messages []api.Message) {
 	for _, m := range messages {
 		text := m.Text
 		if m.Location != nil {
-			text = fmt.Sprintf("%s:%d: %s", m.Location.File, m.Location.Line, text)
+			file := m.Location.File
+			if strings.Contains(file, "(module script") || strings.HasPrefix(file, "<stdin>") {
+				file = "line" // the script itself, which where names
+			} else if id, inner, ok := strings.Cut(strings.TrimPrefix(file, libNamespace+":"), ":"); ok {
+				file = id + " " + inner
+			} else {
+				file = filepath.Base(file)
+			}
+			text = fmt.Sprintf("%s %d: %s", file, m.Location.Line, text)
 		}
 		kind := "build"
 		if strings.Contains(m.Text, "network") {
