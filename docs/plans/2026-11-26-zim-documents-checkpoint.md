@@ -46,6 +46,7 @@ The user-facing description is in [docs/usage.md](../usage.md), under `svalbard 
 - Nautilus titles: a title that names a section every book has ("Introduction", "Appendix B") is prefixed with the archive's title like "Part 2"; a slug title becomes words; a title without letters is dropped. "PowerPoint Presentation" is no longer taken as a PDF's title.
 - A document inside an archive matches a loosely given name only when the name holds a `/`, so the archive's own name still finds the archive.
 - EPUB DRM is `rights.xml`, or `encryption.xml` encrypting a content file; font obfuscation alone is not DRM.
+- After the final review: an entry is junk only when it is not a page (an HTML article is never junk by its name: Wikipedia keeps "Node.js" at the path `Node.js`), and a page is a template only when its title is nothing but a placeholder (`{{ title }}`). The upgrade check streams an archive's articles, stops at the first junk entry, and runs only for archives that hold documents. `search_read` of an archive at a document's path (`files/GUIDE02_HomeCan_rev0715.pdf`, or `…/page/2`) reads the document from the index rather than the PDF's bytes from kiwix-serve. The real-ZIM index gave the same counts afterwards: 79 s, 858 MB peak.
 
 ## Scope and limits
 
@@ -55,4 +56,5 @@ The user-facing description is in [docs/usage.md](../usage.md), under `svalbard 
 - **Collection files take PDFs only**; an EPUB is indexed when it is under `books/` by other means.
 - **`search_read` of an archive without kiwix-serve** fails as before, so the list of its documents is only shown when kiwix-serve runs; the documents themselves read without it.
 - **Hybrid search** keeps its own diversity step and is not limited to three pages per document.
+- **From the final review, not fixed:** an unreadable entry size or a failed walk of an archive's entries stops the run (as an unreadable HTML entry already does); the search screen says "on the drive at …" for a document inside an archive it cannot open; a document's overview names its source as `file`; a bare document file name without a `/` is not resolved; two entries with the same file name in different folders of one archive share a catalogue title; two comments still describe two kinds of source.
 - **Not checked:** semantic indexing of the new pages with a real model, Safari, Firefox and Linux opening, Linux hosts, physical sticks.
