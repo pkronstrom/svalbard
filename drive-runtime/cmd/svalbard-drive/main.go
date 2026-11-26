@@ -21,6 +21,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/chat"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/embedded"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/folder"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/maps"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
@@ -146,6 +147,10 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 		return openwebui.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
 	case "wiki":
 		return wiki.Run(ctx, os.Stdout, driveRoot, nil)
+	case "documents":
+		return folder.Documents(ctx, os.Stdout, driveRoot, invocation.Args["path"], nil)
+	case "workspace":
+		return folder.Workspace(ctx, os.Stdout, driveRoot, nil)
 	case "agent":
 		return agent.Run(ctx, os.Stdout, driveRoot, invocation.Args["client"], invocation.Args["model"])
 	case "serve-all":
