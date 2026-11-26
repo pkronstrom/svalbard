@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spur gear</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; display: grid; grid-template-columns: 300px 1fr; height: 100vh; color: #1f2a24; }
+  aside { padding: 16px; background: #f4f1e7; overflow: auto; }
+  h1 { font-size: 1.2rem; margin: 0 0 12px; }
+  label { display: grid; grid-template-columns: 1fr 90px; gap: 8px; align-items: center; margin: 6px 0; font-size: .9rem; }
+  input { width: 100%; box-sizing: border-box; }
+  button { margin-top: 10px; padding: 8px 12px; font-size: .95rem; cursor: pointer; }
+  #info { font-size: .85rem; margin-top: 12px; line-height: 1.5; }
+  #warnings { color: #8a3b12; font-size: .85rem; }
+  #view { position: relative; }
+  #view canvas { display: block; }
+</style>
+</head>
+<body>
+<aside>
+  <h1 id="title">Spur gear</h1>
+  <div id="params"></div>
+  <button id="export">Download STL</button>
+  <div id="info"></div>
+  <div id="warnings"></div>
+</aside>
+<div id="view"></div>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { primitives, booleans, extrusions, geometries, measurements } from "@jscad/modeling";
+import { serialize } from "@jscad/stl-serializer";
+
+// EDIT: parameters (millimetres; each becomes an input in the page)
+const parameters = {
+  title: "Spur gear",
+  module: { label: "Module (mm)", value: 2, min: 0.5, max: 10, step: 0.1 },
+  teeth: { label: "Teeth", value: 20, min: 8, max: 150, step: 1 },
+  thickness: { label: "Thickness (mm)", value: 6, min: 1, max: 100, step: 0.5 },
+  bore: { label: "Bore diameter (mm)", value: 5, min: 0, max: 100, step: 0.1 },
+  pressureAngle: { label: "Pressure angle (°)", value: 20, min: 14.5, max: 25, step: 0.5 },
+  backlash: { label: "Backlash (mm)", value: 0.1, min: 0, max: 1, step: 0.05 },
+};
+// /EDIT
+
+// The tested geometry: an involute spur gear outline, extruded, with the
+// bore cut out. Units are millimetres.
+function gearOutline({ module: m, teeth: z, pressureAngle, backlash }) {
+  const alpha = (pressureAngle * Math.PI) / 180;
+  const r = (m * z) / 2;                  // pitch radius
+  const rb = r * Math.cos(alpha);         // base radius
+  const ra = r + m;                       // tip radius
+  const rf = Math.max(r - 1.25 * m, 0.5); // root radius
+  const inv = a => Math.tan(a) - a;
+  // Half the tooth's angular width at the base circle, less half the backlash.
+  const beta = Math.PI / (2 * z) + inv(alpha) - backlash / (2 * r);
+  const tMax = Math.sqrt((ra / rb) ** 2 - 1);
+  const tMin = rf > rb ? Math.sqrt((rf / rb) ** 2 - 1) : 0;
+  const theta = t => t - Math.atan(t);    // polar angle of the involute point
+  const steps = 10;
+  const pts = [];
+  const polar = (rad, ang) => [rad * Math.cos(ang), rad * Math.sin(ang)];
+  for (let k = 0; k < z; k++) {
+    const c = (2 * Math.PI * k) / z;
+    if (rf < rb) pts.push(polar(rf, c - beta));
+    for (let i = 0; i <= steps; i++) {
+      const t = tMin + ((tMax - tMin) * i) / steps;
+      pts.push(polar(rb * Math.sqrt(1 + t * t), c - beta + theta(t)));
+    }
+    const tipHalf = beta - theta(tMax);
+    for (let i = 1; i < 4; i++) pts.push(polar(ra, c - tipHalf + (2 * tipHalf * i) / 4));
+    for (let i = steps; i >= 0; i--) {
+      const t = tMin + ((tMax - tMin) * i) / steps;
+      pts.push(polar(rb * Math.sqrt(1 + t * t), c + beta - theta(t)));
+    }
+    if (rf < rb) pts.push(polar(rf, c + beta));
+    const from = c + beta - (rf < rb ? 0 : theta(tMin));
+    const to = c + (2 * Math.PI) / z - beta + (rf < rb ? 0 : theta(tMin));
+    const arcSteps = Math.max(1, Math.round(((to - from) * rf) / (0.5 * m)));
+    for (let i = 1; i < arcSteps; i++) pts.push(polar(rf, from + ((to - from) * i) / arcSteps));
+  }
+  // Points closer than a hundredth of the module add nothing and leave the
+  // extruded caps out of step with the walls.
+  const clean = pts.filter((q, i) => {
+    const prev = pts[(i + pts.length - 1) % pts.length];
+    return Math.hypot(q[0] - prev[0], q[1] - prev[1]) > 0.01 * m;
+  });
+  return { points: clean, r, rb, ra, rf, tipThickness: 2 * (beta - theta(tMax)) * ra };
+}
+
+// The bore is cut from the 2D outline before extruding: a 3D subtract
+// leaves edges that meet mid-edge, and slicers call such a mesh not
+// watertight.
+function buildGear(p) {
+  const outline = gearOutline(p);
+  let shape = primitives.polygon({ points: outline.points });
+  if (p.bore > 0) shape = booleans.subtract(shape, primitives.circle({ radius: p.bore / 2, segments: 64 }));
+  return { solid: extrusions.extrudeLinear({ height: p.thickness }, shape), outline };
+}
+
+// Printability checks for a typical 0.4 mm nozzle (see references/printability.md).
+function warnings(p, o) {
+  const w = [];
+  const wall = o.rf - p.bore / 2;
+  if (wall < 2) w.push(`Only ${wall.toFixed(1)} mm between the bore and the tooth roots; keep at least 2 mm.`);
+  if (o.tipThickness < 0.8) w.push(`Teeth are ${o.tipThickness.toFixed(2)} mm thick at the tip; under 0.8 mm prints poorly.`);
+  if (p.module < 0.8) w.push("A module under 0.8 mm is too fine for most FDM printers.");
+  if (p.teeth < 13) w.push("Fewer than 13 teeth at 20° undercuts the roots; expect weaker teeth.");
+  return w;
+}
+
+// --- Page: inputs, preview and export -------------------------------------
+const values = {};
+const form = document.getElementById("params");
+document.getElementById("title").textContent = parameters.title;
+for (const [key, spec] of Object.entries(parameters)) {
+  if (key === "title") continue;
+  values[key] = spec.value;
+  const label = document.createElement("label");
+  label.textContent = spec.label;
+  const input = Object.assign(document.createElement("input"), { type: "number", id: key, value: spec.value, min: spec.min, max: spec.max, step: spec.step });
+  input.addEventListener("change", () => { values[key] = Number(input.value); update(); });
+  label.appendChild(input);
+  form.appendChild(label);
+}
+
+const view = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+view.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xfafaf7);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445544, 2));
+const sun = new THREE.DirectionalLight(0xffffff, 2);
+sun.position.set(50, 80, 100);
+scene.add(sun);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
+const controls = new OrbitControls(camera, renderer.domElement);
+let mesh = null;
+let current = null;
+
+function toThree(solid) {
+  const positions = [];
+  for (const poly of geometries.geom3.toPolygons(solid)) {
+    const v = poly.vertices;
+    for (let i = 1; i < v.length - 1; i++) positions.push(...v[0], ...v[i], ...v[i + 1]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+function update() {
+  const p = { ...values };
+  const { solid, outline } = buildGear(p);
+  current = solid;
+  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
+  mesh = new THREE.Mesh(toThree(solid), new THREE.MeshStandardMaterial({ color: 0x4a7c59, flatShading: true, metalness: 0.1, roughness: 0.6 }));
+  mesh.rotation.x = -Math.PI / 2;
+  scene.add(mesh);
+  const size = outline.ra * 2;
+  camera.position.set(size * 0.9, size * 0.8, size * 0.9);
+  controls.target.set(0, 0, 0);
+  controls.update();
+  const [lo, hi] = measurements.measureBoundingBox(solid);
+  document.getElementById("info").innerHTML =
+    `Pitch diameter ${(outline.r * 2).toFixed(2)} mm<br>Outside diameter ${(outline.ra * 2).toFixed(2)} mm<br>` +
+    `Root diameter ${(outline.rf * 2).toFixed(2)} mm<br>Size ${hi.map((v, i) => (v - lo[i]).toFixed(1)).join(" × ")} mm<br>` +
+    `Volume ${(measurements.measureVolume(solid) / 1000).toFixed(2)} cm³`;
+  document.getElementById("warnings").innerHTML = warnings(p, outline).map(w => `<p>${w}</p>`).join("");
+  // For examples/check.sh: what the preview shows.
+  window.svalbardModel = { triangles: mesh.geometry.attributes.position.count / 3, positions: mesh.geometry.attributes.position.array };
+}
+
+document.getElementById("export").addEventListener("click", () => {
+  const data = serialize({ binary: true }, current);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(data, { type: "model/stl" }));
+  a.download = `gear-m${values.module}-z${values.teeth}.stl`;
+  a.click();
+});
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize);
+resize();
+update();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>
