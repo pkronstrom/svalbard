@@ -137,7 +137,7 @@ The dashboard's Updates screen does the same: every listed item starts ticked, S
 - `local`: a file you imported
 - `by document`: a document collection. `apply` fetches its new and changed documents, and `update` leaves it alone
 
-Python tools cannot be updated this way yet; remove them, apply, and add them back.
+Python tools are updated in place: each tool is reinstalled beside its installed copy, which is kept if that fails, so `--replace` makes no difference to them. Updating `svalbard-python` reinstalls every Python tool on the vault.
 
 ### `svalbard status --vault <path> [--json]`
 

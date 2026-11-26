@@ -31,8 +31,11 @@ type Options struct {
 	Ctx        context.Context
 	Platforms  []string
 	DesiredIDs map[string]bool
-	OnStatus   func(step string) // legacy status adapter
-	OnEvent    func(BuildEvent)
+	// Rebuild names items being updated: their installed copy is rebuilt even
+	// when it matches the recipe, and kept if rebuilding fails.
+	Rebuild  map[string]bool
+	OnStatus func(step string) // legacy status adapter
+	OnEvent  func(BuildEvent)
 }
 
 // Func is the signature for a native builder.

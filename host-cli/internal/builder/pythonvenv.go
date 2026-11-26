@@ -44,7 +44,9 @@ var pythonTargets = map[string]pythonTarget{
 //
 // A package that cannot be installed for a platform (no compatible wheels) is
 // skipped for that platform with a warning; it fails the build only when no
-// platform could install it.
+// platform could install it. A package or venv named in opts.Rebuild is being
+// updated: its trees are reinstalled, and one that fails to reinstall keeps
+// its installed tree and fails the build.
 func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
 	ctx := opts.Ctx
 	if ctx == nil {
@@ -76,6 +78,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 	}
 
 	version := pythonVersionFromSpec(recipe.Python)
+	rebuildAll := opts.Rebuild[recipe.ID]
 	targets := opts.Platforms
 	if len(targets) == 0 {
 		targets = []string{hostPlatformStr()}
@@ -95,7 +98,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 	}
 
 	var entries []manifest.RealizedEntry
-	installed := map[string]bool{}
+	installedOn := map[string]bool{}
 
 	for _, platform := range targets {
 		target, ok := pythonTargets[platform]
@@ -117,7 +120,8 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 
 		// Phase 1: Install the interpreter for this platform.
 		pythonBin := findInstalledPython(interpreterDir, version)
-		if pythonBin == "" {
+		newInterpreter := pythonBin == ""
+		if newInterpreter {
 			slog.Info("installing python", "version", version, "platform", platform)
 			emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventProgress, Message: "installing python " + version + " for " + platform})
 			request := "cpython-" + version + "-" + target.python
@@ -145,11 +149,16 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				}
 				stamp += "requirements_from: " + pkg.RequirementsFrom + "\n"
 			}
+			// Trees are built for one interpreter version. A stamp from before
+			// the version was recorded matches the interpreter already there.
+			legacyStamp := stamp
+			stamp += "python: " + version + "\n"
 			stampPath := toolDir + ".packages"
-			rebuild := false
-			if existing, err := os.ReadFile(stampPath); err != nil || string(existing) != stamp {
-				rebuild = true
-			}
+			existing, stampErr := os.ReadFile(stampPath)
+			installed := stampErr == nil
+			current := installed && (string(existing) == stamp || (!newInterpreter && string(existing) == legacyStamp))
+			updating := installed && (rebuildAll || opts.Rebuild[pkg.ID])
+			rebuild := !current || updating
 			if !rebuild && isPlatformIOPythonPackage(pkg) && !platformIOPythonTreeComplete(toolDir, pkg.EntryPoints) {
 				rebuild = true
 			}
@@ -191,6 +200,9 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				}
 				if err != nil {
 					_ = os.RemoveAll(staging)
+					if updating {
+						return nil, fmt.Errorf("updating %s for %s: %w; its installed copy was kept", pkg.ID, platform, err)
+					}
 					if isPlatformIOPythonPackage(pkg) {
 						return nil, fmt.Errorf("PlatformIO Python package %s could not be installed for required target %s: %w", pkg.ID, platform, err)
 					}
@@ -226,7 +238,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				}
 			}
 
-			installed[pkg.ID] = true
+			installedOn[pkg.ID] = true
 			entries = append(entries, manifest.RealizedEntry{
 				ID:             pkg.ID,
 				Type:           pkg.Type,
@@ -236,10 +248,14 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				SourceStrategy: "build",
 			})
 		}
+		if newInterpreter {
+			// Every tree on this platform now runs on the new interpreter.
+			removeOtherPythons(interpreterDir, version)
+		}
 	}
 
 	for _, pkg := range pkgItems {
-		if !installed[pkg.ID] {
+		if !installedOn[pkg.ID] {
 			return nil, fmt.Errorf("python package %s could not be installed for any of %v", pkg.ID, targets)
 		}
 	}
@@ -286,6 +302,21 @@ func findInstalledPython(installDir, version string) string {
 		}
 	}
 	return ""
+}
+
+// removeOtherPythons deletes the interpreters of a uv-managed install dir
+// other than version, left behind when the venv's Python version changes.
+func removeOtherPythons(installDir, version string) {
+	dirs, _ := os.ReadDir(installDir)
+	for _, dir := range dirs {
+		name := dir.Name()
+		if !strings.HasPrefix(name, "cpython-") || strings.HasPrefix(name, "cpython-"+version+".") || strings.HasPrefix(name, "cpython-"+version+"-") {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(installDir, name)); err != nil {
+			slog.Warn("removing an earlier python", "path", name, "error", err)
+		}
+	}
 }
 
 // hostPlatformStr returns the svalbard platform string for the current machine.

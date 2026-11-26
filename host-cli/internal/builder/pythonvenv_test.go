@@ -49,14 +49,15 @@ func fakeUV(t *testing.T, unavailable map[string]bool) *[][]string {
 		switch strings.Join(uvArgs[:2], " ") {
 		case "python install":
 			request := uvArgs[len(uvArgs)-1]
-			build := filepath.Join(flag("--install-dir"), strings.Replace(request, "3.12", "3.12.14", 1))
+			version := strings.Split(request, "-")[1]
+			build := filepath.Join(flag("--install-dir"), strings.Replace(request, version, version+".14", 1))
 			if err := os.MkdirAll(filepath.Join(build, "bin"), 0o755); err != nil {
 				return "", err
 			}
 			if err := os.Symlink(build, filepath.Join(flag("--install-dir"), request)); err != nil {
 				return "", err
 			}
-			return "", os.WriteFile(filepath.Join(build, "bin", "python3.12"), nil, 0o755)
+			return "", os.WriteFile(filepath.Join(build, "bin", "python"+version), nil, 0o755)
 		case "pip install":
 			if at := slices.Index(uvArgs, "-r"); at >= 0 {
 				if _, err := os.Stat(uvArgs[at+1]); err != nil {
@@ -213,7 +214,7 @@ func TestBuildPythonVenvInstallsShippedRequirements(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(stamp) != "slimapp==1.0\nrequirements_from: requirements-slim.txt\n" {
+	if string(stamp) != "slimapp==1.0\nrequirements_from: requirements-slim.txt\npython: 3.12\n" {
 		t.Errorf("stamp = %q", stamp)
 	}
 
@@ -281,5 +282,111 @@ func TestPythonVersionFromSpec(t *testing.T) {
 		if got := pythonVersionFromSpec(spec); got != want {
 			t.Errorf("pythonVersionFromSpec(%q) = %q, want %q", spec, got, want)
 		}
+	}
+}
+
+// pipInstalls returns the packages uv pip-installed, as package/platform.
+func pipInstalls(calls [][]string) []string {
+	var got []string
+	for _, call := range calls {
+		if !slices.Contains(call, "pip") || slices.Contains(call, "-r") {
+			continue
+		}
+		at := slices.Index(call, "--python-platform")
+		got = append(got, strings.Split(call[len(call)-1], "==")[0]+"/"+call[at+1])
+	}
+	return slices.Compact(got)
+}
+
+func TestBuildPythonVenvTrustsStampsFromBeforeVersions(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newPythonTestCatalog(t)
+	calls := fakeUV(t, nil)
+	opts := Options{Platforms: []string{"linux-arm64"}, DesiredIDs: map[string]bool{"sqlmap": true}}
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatal(err)
+	}
+	stampPath := filepath.Join(root, "runtime", "python", "linux-arm64", "tools", "sqlmap.packages")
+	if err := os.WriteFile(stampPath, []byte("sqlmap==1.10.9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	*calls = nil
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("a stamp without a python line, beside the interpreter it was built for, should be current: %v", *calls)
+	}
+}
+
+func TestBuildPythonVenvRebuildsRequestedPackageOnly(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newPythonTestCatalog(t)
+	calls := fakeUV(t, nil)
+	opts := Options{Platforms: []string{"linux-arm64"}}
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatal(err)
+	}
+	*calls = nil
+	opts.Rebuild = map[string]bool{"sqlmap": true}
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatal(err)
+	}
+	if got := pipInstalls(*calls); !slices.Equal(got, []string{"sqlmap/aarch64-manylinux_2_28"}) {
+		t.Fatalf("an update of sqlmap with unchanged pins should reinstall sqlmap alone, got %v", got)
+	}
+}
+
+func TestBuildPythonVenvFailedUpdateKeepsInstalledTree(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newPythonTestCatalog(t)
+	unavailable := map[string]bool{}
+	fakeUV(t, unavailable)
+	opts := Options{Platforms: []string{"linux-arm64"}, DesiredIDs: map[string]bool{"sqlmap": true}}
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatal(err)
+	}
+	unavailable["sqlmap/aarch64-manylinux_2_28"] = true
+	opts.Rebuild = map[string]bool{"sqlmap": true}
+	_, err := buildPythonVenv(root, recipe, cat, opts)
+	if err == nil || !strings.Contains(err.Error(), "installed copy was kept") {
+		t.Fatalf("err = %v, want a failed update that keeps the installed copy", err)
+	}
+	for _, path := range []string{
+		filepath.Join(root, "runtime", "python", "linux-arm64", "tools", "sqlmap", "bin", "sqlmap"),
+		filepath.Join(root, "bin", "linux-arm64", "sqlmap"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("failed update removed %s: %v", path, err)
+		}
+	}
+}
+
+func TestBuildPythonVenvVersionChangeRebuildsTreesAndDropsOldPython(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newPythonTestCatalog(t)
+	calls := fakeUV(t, nil)
+	opts := Options{Platforms: []string{"linux-arm64"}, DesiredIDs: map[string]bool{"sqlmap": true}}
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatal(err)
+	}
+	*calls = nil
+	recipe.Python = "3.13"
+	opts.Rebuild = map[string]bool{recipe.ID: true}
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatal(err)
+	}
+	if got := pipInstalls(*calls); !slices.Equal(got, []string{"sqlmap/aarch64-manylinux_2_28"}) {
+		t.Fatalf("a new interpreter should reinstall the trees, got %v", got)
+	}
+	pythons, _ := filepath.Glob(filepath.Join(root, "runtime", "python", "linux-arm64", "python", "cpython-*"))
+	for _, dir := range pythons {
+		if strings.Contains(filepath.Base(dir), "3.12") {
+			t.Errorf("the 3.12 interpreter should be gone: %s", dir)
+		}
+	}
+	wrapper, err := os.ReadFile(filepath.Join(root, "bin", "linux-arm64", "sqlmap"))
+	if err != nil || !strings.Contains(string(wrapper), "python3.13") {
+		t.Fatalf("wrapper should run python3.13: %s %v", wrapper, err)
 	}
 }

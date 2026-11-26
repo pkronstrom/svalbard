@@ -54,6 +54,9 @@ type downloadJob struct {
 	// realized holds a document collection's current entries, so its job
 	// fetches only the documents that are missing or changed.
 	realized []manifest.RealizedEntry
+	// rebuild names the items being updated, for builders that keep a cache
+	// of what they installed.
+	rebuild map[string]bool
 }
 
 // downloadResult collects the outcome of a single download job.
@@ -106,9 +109,15 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	recoverAsides(root, m.Realized.Entries)
 	acquire := slices.Concat(plan.ToDownload, plan.ToUpdate)
 	// The installed entries of each item being updated, to set aside while
-	// its job runs.
+	// its job runs. The venv builder updates Python tools in place instead,
+	// keeping each installed tree until its new one is built.
 	previous := make(map[string][]manifest.RealizedEntry, len(plan.ToUpdate))
+	updating := make(map[string]bool, len(plan.ToUpdate))
 	for _, id := range plan.ToUpdate {
+		updating[id] = true
+		if recipe, ok := cat.RecipeByID(id); ok && (recipe.Type == "python-package" || recipe.Type == "python-venv") {
+			continue
+		}
 		for _, e := range m.Realized.Entries {
 			if e.ID == id {
 				previous[id] = append(previous[id], e)
@@ -187,7 +196,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 			// The planner regards an existing venv as complete. Re-run it when a
 			// newly desired package needs a tree below that venv.
 			if !buildQueued[venv.ID] {
-				buildJobs = append(buildJobs, downloadJob{id: venv.ID, recipe: venv})
+				buildJobs = append(buildJobs, downloadJob{id: venv.ID, recipe: venv, rebuild: updating})
 				buildQueued[venv.ID] = true
 			}
 			continue
@@ -200,7 +209,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 			httpJobs = append(httpJobs, downloadJob{id: id, recipe: recipe})
 		case recipe.Strategy == "build" && recipe.Build != nil:
 			if !buildQueued[id] {
-				buildJobs = append(buildJobs, downloadJob{id: id, recipe: recipe})
+				buildJobs = append(buildJobs, downloadJob{id: id, recipe: recipe, rebuild: updating})
 				buildQueued[id] = true
 			}
 		default:
@@ -555,6 +564,7 @@ func executeJob(
 				Ctx:        ctx,
 				Platforms:  platforms,
 				DesiredIDs: desiredIDs,
+				Rebuild:    job.rebuild,
 				OnEvent: func(event builder.BuildEvent) {
 					status := tui.StatusActive
 					if event.State == builder.EventFailed {
