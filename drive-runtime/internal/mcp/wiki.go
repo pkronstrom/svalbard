@@ -402,13 +402,17 @@ func writable(p page) error {
 	return nil
 }
 
-// luaExpressions counts the "${" in text that SilverBullet would evaluate as
-// Lua when the page is shown: every one outside a fenced code block and
-// outside a code span. Lua there reaches the browser's JavaScript.
-func luaExpressions(text string) int {
-	count := 0
+// luaExpressions finds the "${" in text that SilverBullet would evaluate as
+// Lua when the page is shown, and returns where each starts: every one
+// outside a fenced code block and outside a code span, and not escaped with a
+// backslash. Lua there reaches the browser's JavaScript.
+func luaExpressions(text string) []int {
+	var found []int
+	offset := 0      // of the current line in text
 	var fence string // the marker that opened the current fenced block
 	for _, line := range strings.Split(text, "\n") {
+		start := offset
+		offset += len(line) + 1
 		trimmed := strings.TrimLeft(line, " ")
 		if len(line)-len(trimmed) <= 3 {
 			for _, marker := range []string{"```", "~~~"} {
@@ -452,21 +456,72 @@ func luaExpressions(text string) int {
 					continue
 				}
 				i += run + end - 1
+			case line[i] == '\\':
+				// A backslash takes the next character as text, "$" included.
+				i++
 			case line[i] == '$' && i+1 < len(line) && line[i+1] == '{':
-				count++
+				found = append(found, start+i)
 			}
 		}
 	}
-	return count
+	return found
 }
 
-// noNewCode refuses a write that would add a Lua expression to a page. What
-// the user wrote there stays; the tools add none.
+// inertText returns text with every Lua expression in it made plain text,
+// and how many there were. "\${" is shown by the wiki as "${" and not run;
+// that was checked on SilverBullet 3.0.1. The tools change the text and do
+// not refuse it: a model summarising an article that holds "${" has done
+// nothing wrong, and is told what was saved.
+func inertText(text string) (string, int) {
+	found := luaExpressions(text)
+	if len(found) == 0 {
+		return text, 0
+	}
+	var inert strings.Builder
+	last := 0
+	for _, at := range found {
+		inert.WriteString(text[last:at])
+		inert.WriteByte('\\')
+		last = at
+	}
+	inert.WriteString(text[last:])
+	return inert.String(), len(found)
+}
+
+// inertNote tells the model that its text was changed, and how.
+func inertNote(count int) string {
+	if count == 0 {
+		return ""
+	}
+	return fmt.Sprintf("The text had \"${\" %s outside a code block. The wiki would run that as code, so it was saved as \"\\${\", which the wiki shows as the same text.", times(count))
+}
+
+func times(count int) string {
+	if count == 1 {
+		return "once"
+	}
+	return fmt.Sprintf("%d times", count)
+}
+
+// noNewCode refuses a write that would still add a Lua expression to a page
+// after the text supplied was made inert: an edit that joins a "$" and a "{"
+// already there. What the user wrote stays; the tools add none.
 func noNewCode(before, after string) error {
-	if luaExpressions(after) > luaExpressions(before) {
-		return fmt.Errorf("the text has \"${\" outside a code block, which the wiki would run as code when the page is opened. Write it inside backticks or a fenced code block, or leave it out.")
+	if len(luaExpressions(after)) > len(luaExpressions(before)) {
+		return fmt.Errorf("this change would join text on the page into \"${\", which the wiki would run as code when the page is opened. Leave a space between \"$\" and \"{\", or put it inside backticks.")
 	}
 	return nil
+}
+
+// joinNotes puts the notes of one result into one text.
+func joinNotes(notes ...string) string {
+	var kept []string
+	for _, note := range notes {
+		if note != "" {
+			kept = append(kept, note)
+		}
+	}
+	return strings.Join(kept, " ")
 }
 
 // diskSpelling returns name with the letter case its folders and its page
@@ -1037,9 +1092,7 @@ func (c *WikiCapability) handleCreate(params map[string]any) (ActionResult, erro
 	if err := writable(p); err != nil {
 		return ActionResult{}, err
 	}
-	if err := noNewCode("", content); err != nil {
-		return ActionResult{}, err
-	}
+	content, inert := inertText(content)
 	c.writing.Lock()
 	defer c.writing.Unlock()
 	if _, err := ws.Stat(p.rel); err == nil {
@@ -1050,7 +1103,7 @@ func (c *WikiCapability) handleCreate(params map[string]any) (ActionResult, erro
 		return ActionResult{}, err
 	}
 	change, note := c.changed(p, len(content))
-	return ActionResult{Data: change, Text: note}, nil
+	return ActionResult{Data: change, Text: joinNotes(inertNote(inert), note)}, nil
 }
 
 func (c *WikiCapability) handleAppend(params map[string]any) (ActionResult, error) {
@@ -1069,6 +1122,7 @@ func (c *WikiCapability) handleAppend(params map[string]any) (ActionResult, erro
 	if err := writable(p); err != nil {
 		return ActionResult{}, err
 	}
+	content, inert := inertText(content)
 	c.writing.Lock()
 	defer c.writing.Unlock()
 	existing := ""
@@ -1088,7 +1142,7 @@ func (c *WikiCapability) handleAppend(params map[string]any) (ActionResult, erro
 		return ActionResult{}, err
 	}
 	change, note := c.changed(p, len(updated))
-	return ActionResult{Data: change, Text: note}, nil
+	return ActionResult{Data: change, Text: joinNotes(inertNote(inert), note)}, nil
 }
 
 func endWithNewline(content string) string {
@@ -1129,6 +1183,7 @@ func (c *WikiCapability) handleEdit(params map[string]any) (ActionResult, error)
 	case count > 1:
 		return ActionResult{}, fmt.Errorf("old_text occurs %d times in page %q. Add more of the surrounding text so it matches once.", count, p.name)
 	}
+	newText, inert := inertText(newText)
 	updated := strings.Replace(content, oldText, newText, 1)
 	if err := noNewCode(content, updated); err != nil {
 		return ActionResult{}, err
@@ -1137,7 +1192,7 @@ func (c *WikiCapability) handleEdit(params map[string]any) (ActionResult, error)
 		return ActionResult{}, err
 	}
 	change, note := c.changed(p, len(updated))
-	return ActionResult{Data: change, Text: note}, nil
+	return ActionResult{Data: change, Text: joinNotes(inertNote(inert), note)}, nil
 }
 
 func (c *WikiCapability) handleMove(params map[string]any) (ActionResult, error) {

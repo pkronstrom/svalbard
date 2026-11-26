@@ -332,13 +332,17 @@ func TestWikiWritesReturnALinkWhileTheWikiIsOpen(t *testing.T) {
 	if out != want {
 		t.Errorf("create = %s\nwant     %s", out, want)
 	}
-	for action, params := range map[string]map[string]any{
-		"append": {"page": "Projects/Garden [2026]", "content": "more"},
-		"edit":   {"page": "Projects/Garden [2026]", "old_text": "x", "new_text": "y"},
-		"move":   {"page": "Projects/Garden [2026]", "new_name": "Garden"},
+	// In this order: the move takes the page away from the other two.
+	for _, call := range []struct {
+		action string
+		params map[string]any
+	}{
+		{"append", map[string]any{"page": "Projects/Garden [2026]", "content": "more"}},
+		{"edit", map[string]any{"page": "Projects/Garden [2026]", "old_text": "x", "new_text": "y"}},
+		{"move", map[string]any{"page": "Projects/Garden [2026]", "new_name": "Garden"}},
 	} {
-		if out := mustCallWiki(t, cap, action, params); !strings.Contains(out, `"link":"[`) || strings.Contains(out, "not open") || strings.Contains(out, `"file"`) {
-			t.Errorf("%s = %s, want a link, no file path and no note about opening the wiki", action, out)
+		if out := mustCallWiki(t, cap, call.action, call.params); !strings.Contains(out, `"link":"[`) || strings.Contains(out, "not open") || strings.Contains(out, `"file"`) {
+			t.Errorf("%s = %s, want a link, no file path and no note about opening the wiki", call.action, out)
 		}
 	}
 }
@@ -971,42 +975,75 @@ func TestWikiToolsDoNotWriteTheWikisOwnScripts(t *testing.T) {
 }
 
 // SilverBullet evaluates ${...} as Lua when a page is shown, and Lua there
-// reaches the browser's JavaScript.
-func TestWikiToolsAddNoLuaExpressions(t *testing.T) {
+// reaches the browser's JavaScript. What the tools write is shown, not run.
+func TestWikiToolsWriteLuaExpressionsAsPlainText(t *testing.T) {
 	cap, root := newWiki(t)
-	attack := `Dose: ${js.window.fetch("/.fs/index.md", {method = "DELETE"})}`
+	attack := `Dose: ${js.window.fetch("/.fs/index.md", {method = "DELETE"})} and ${1+1}`
+	inert := `Dose: \${js.window.fetch("/.fs/index.md", {method = "DELETE"})} and \${1+1}`
 
-	wantWikiError(t, cap, "create", map[string]any{"page": "Dosing", "content": attack}, `"${" outside a code block`, "inside backticks")
-	if _, err := os.Stat(filepath.Join(wiki.Dir(root), "Dosing.md")); err == nil {
-		t.Error("the refused page was written")
+	// The model is told what was saved, since it differs from what it sent.
+	out := mustCallWiki(t, cap, "create", map[string]any{"page": "Dosing", "content": attack})
+	if !strings.Contains(out, `The text had "${" 2 times outside a code block.`) || !strings.Contains(out, `saved as "\${"`) {
+		t.Errorf("create = %s, want the note about the changed text", out)
 	}
-	writePage(t, root, "Dosing", "Paracetamol.\n\n$\n")
-	wantWikiError(t, cap, "append", map[string]any{"page": "Dosing", "content": attack}, `"${" outside a code block`)
-	// An edit that completes one from pieces already on the page.
-	wantWikiError(t, cap, "edit", map[string]any{"page": "Dosing", "old_text": "$\n", "new_text": "${os.exit()}\n"}, `"${" outside a code block`)
+	if got := readPageFile(t, root, "Dosing"); got != inert+"\n" {
+		t.Errorf("page = %q\nwant   %q", got, inert+"\n")
+	}
+	out = mustCallWiki(t, cap, "append", map[string]any{"page": "Dosing", "content": "Sum: ${1+41}"})
+	if !strings.Contains(out, `The text had "${" once outside a code block.`) {
+		t.Errorf("append = %s, want the note", out)
+	}
+	mustCallWiki(t, cap, "edit", map[string]any{"page": "Dosing", "old_text": "Sum:", "new_text": "Total ${x}:"})
+	if got := readPageFile(t, root, "Dosing"); got != inert+"\n\nTotal \\${x}: \\${1+41}\n" {
+		t.Errorf("page = %q", got)
+	}
+	if found := luaExpressions(readPageFile(t, root, "Dosing")); len(found) != 0 {
+		t.Errorf("the page still holds %d expressions the wiki would run", len(found))
+	}
+
+	// Code that is shown, not run, is left as written, with no note.
+	fenced := "Set the variable:\n\n```sh\necho ${HOME}\n```\n\nor `${HOME}` inline, or ``a ` ${b}``.\n\n~~~\n${also.shown}\n~~~\n\nAlready plain: \\${x}, costs $5 {roughly} and $ {this}.\n"
+	if out := mustCallWiki(t, cap, "create", map[string]any{"page": "Shell", "content": fenced}); strings.Contains(out, "The text had") {
+		t.Errorf("create = %s, want no note for text that runs nothing", out)
+	}
+	if got := readPageFile(t, root, "Shell"); got != fenced {
+		t.Errorf("page = %q\nwant   %q", got, fenced)
+	}
+
+	// A span that never closes, a fence that closed, an indented line, a
+	// backslash that is itself escaped: none hides an expression.
+	for content, want := range map[string]string{
+		"`open ${x}":            "`open \\${x}",
+		"```\ncode\n```\n${x}":  "```\ncode\n```\n\\${x}",
+		"    ${indented}":       "    \\${indented}",
+		"text ``two` ${x}":      "text ``two` \\${x}",
+		`a \\${x}`:              `a \\\${x}`,
+		"```\nopen fence\n${x}": "```\nopen fence\n${x}",
+		"${a}${b}":              "\\${a}\\${b}",
+		"ääkkönen ${x} ja ${y}": "ääkkönen \\${x} ja \\${y}",
+	} {
+		if got, _ := inertText(content); got != want {
+			t.Errorf("inertText(%q) = %q, want %q", content, got, want)
+		}
+		if got, _ := inertText(want); got != want {
+			t.Errorf("inertText(%q) changed text that was already inert: %q", want, got)
+		}
+	}
+
+	// An edit that joins pieces already on the page into an expression.
 	writePage(t, root, "Split", "Total: $\n{1 + 1}\n")
-	wantWikiError(t, cap, "edit", map[string]any{"page": "Split", "old_text": "$\n{", "new_text": "${"}, `"${" outside a code block`)
+	wantWikiError(t, cap, "edit", map[string]any{"page": "Split", "old_text": "\n{1", "new_text": "{1"}, `would join text on the page into "${"`)
 	if got := readPageFile(t, root, "Split"); got != "Total: $\n{1 + 1}\n" {
 		t.Errorf("a refused edit changed the page: %q", got)
-	}
-
-	// Code that is shown, not run: a fenced block and a code span.
-	fenced := "Set the variable:\n\n```sh\necho ${HOME}\n```\n\nor `${HOME}` inline, or ``a ` ${b}``.\n\n~~~\n${also.shown}\n~~~\n"
-	mustCallWiki(t, cap, "create", map[string]any{"page": "Shell", "content": fenced})
-	mustCallWiki(t, cap, "append", map[string]any{"page": "Shell", "content": "Costs $5 {roughly} and $ {this}."})
-	// A span that never closes, or a fence that closed, hides nothing.
-	for _, content := range []string{"`open ${x}", "```\ncode\n```\n${x}", "    ${indented}", "text ``two` ${x}"} {
-		wantWikiError(t, cap, "create", map[string]any{"page": "Tricks", "content": content}, `"${" outside a code block`)
 	}
 
 	// What the user wrote stays, and a tool may edit around it.
 	writePage(t, root, "Queries", "Pages: ${query[[from index.tag \"page\"]]}\n\nNotes: none\n")
 	mustCallWiki(t, cap, "edit", map[string]any{"page": "Queries", "old_text": "Notes: none", "new_text": "Notes: checked"})
-	mustCallWiki(t, cap, "append", map[string]any{"page": "Queries", "content": "More notes."})
-	if got := readPageFile(t, root, "Queries"); !strings.Contains(got, `${query[[from index.tag "page"]]}`) || !strings.Contains(got, "Notes: checked") {
-		t.Errorf("page = %q, want the user's expression kept and the edit made", got)
+	mustCallWiki(t, cap, "append", map[string]any{"page": "Queries", "content": "More ${notes}."})
+	if got := readPageFile(t, root, "Queries"); got != "Pages: ${query[[from index.tag \"page\"]]}\n\nNotes: checked\n\nMore \\${notes}.\n" {
+		t.Errorf("page = %q, want the user's expression kept and the tool's made plain", got)
 	}
-	wantWikiError(t, cap, "append", map[string]any{"page": "Queries", "content": "${1}"}, `"${" outside a code block`)
 }
 
 func TestWikiAppendsSentTogetherAllArrive(t *testing.T) {
