@@ -6,7 +6,7 @@
 
 Seed vault for human knowledge — civilization on a stick.
 
-> **Alpha (v0.4.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
+> **Alpha (v0.5.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
 >
 > **Heads up:** the codebase was recently rewritten from Python to Go. Not every flow has been re-tested end-to-end on the new code path yet, so expect breakages — please file an issue if you hit one.
 
