@@ -24,6 +24,7 @@ To add a task, run this from the repo, which sets the project (there are no assi
 
 - Plan and verify through the user's paths: create and resume a vault, customize its contents, use each installed pack from the stick, update installed recipes, and add or remove items later. User paths, not the presence of recipe files or menu entries, define completion.
 - Verify and repair existing implementations before rebuilding them, and audit the existing seams before planning changes.
+- Test on a minimal vault, never a full preset: only the recipes the change needs and the smallest content that exercises them, such as `qwen-4b`, `wikem` and `nhs-medicines`; `test-comprehensive` is the upper bound. Prefer the shared test vault at `~/.cache/svalbard-scratch/shared-vault/` to a new one: add only what is missing, and clone it (`cp -c -R` on APFS) for a run that changes it. Keep scratch out of macOS `/tmp`, delete clones when the work merges, and say before downloading more than a few GB.
 - Each epic gets its own discovery and implementation plan when it is reached. Triage is not authorization to build every wishlist idea.
 - Opinionated defaults and clear, easy operation are acceptance criteria for every change.
 - Keep acquisition hashes separate from file checksums and builder cache fingerprints. Compute them on recipe load, persist them only after a successful install, and use the existing manifest structure.
