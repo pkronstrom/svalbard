@@ -141,21 +141,29 @@ func TestPiHasRoomToAnswerOnEveryTier(t *testing.T) {
 		if threshold >= ctx || threshold < prompt+1500 {
 			t.Errorf("context %d: pi compacts at %d tokens", ctx, threshold)
 		}
-		// After a lookup and a compaction: the prompt, the page read last
-		// and the summary. That must be under the threshold, or pi compacts
-		// again at every turn, and leave an answer room in what pi may fill.
+		// pi compacts only once the context is past the threshold, so just
+		// below it the answer gets what is left between the threshold and
+		// what pi fills. That must hold an answer.
+		fillable := piContextWindow(ctx) - piSafetyTokens
+		if fillable-threshold < answerTokens {
+			t.Errorf("context %d: just below pi's threshold of %d an answer gets %d tokens, want %d", ctx, threshold, fillable-threshold, answerTokens)
+		}
+		// After a lookup and a compaction: the prompt, the recent messages
+		// pi keeps (at least the page read last, whole) and the summary.
+		// That must be under the threshold, or pi compacts again at the
+		// next request, and leave an answer room in what pi may fill.
 		read := mcp.ReadLimitsFor(ctx)
 		page := int(float64(read.Chars+read.Links*pageLinkChars+pageFrameChars) / pageCharsPerToken)
-		compacted := prompt + page + summaryTokens
+		compacted := prompt + max(page, piKeepRecentTokens(ctx)) + summaryTokens
 		if compacted >= threshold {
-			t.Errorf("context %d: after compaction the context is %d tokens (prompt %d, page %d, summary %d), at or past pi's threshold of %d",
-				ctx, compacted, prompt, page, summaryTokens, threshold)
+			t.Errorf("context %d: after compaction the context is %d tokens (prompt %d, kept %d, summary %d), at or past pi's threshold of %d",
+				ctx, compacted, prompt, max(page, piKeepRecentTokens(ctx)), summaryTokens, threshold)
 		}
-		if fillable := piContextWindow(ctx) - piSafetyTokens; compacted+answerTokens > fillable {
+		if compacted+answerTokens > fillable {
 			t.Errorf("context %d: after a lookup pi may write %d tokens (prompt %d, page %d, summary %d), want %d",
 				ctx, fillable-compacted, prompt, page, summaryTokens, answerTokens)
 		}
-		t.Logf("context %d: prompt %d, page %d, after compaction %d, answer room %d", ctx, prompt, page, compacted, piContextWindow(ctx)-piSafetyTokens-compacted)
+		t.Logf("context %d: prompt %d, page %d, threshold %d, after compaction %d, answer room %d to %d", ctx, prompt, page, threshold, compacted, fillable-threshold, fillable-compacted)
 	}
 	// From the Balanced tier up nothing is adjusted.
 	if piContextWindow(llamaserve.CtxBalanced) != llamaserve.CtxBalanced || piReserveTokens(llamaserve.CtxBalanced) != 8192 {

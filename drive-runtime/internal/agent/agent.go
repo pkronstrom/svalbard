@@ -463,15 +463,34 @@ func piContextWindow(ctxSize int) int {
 }
 
 // piReserveTokens is how much of the window pi keeps free before it compacts
-// the conversation (it compacts above contextWindow - reserveTokens). Below
-// the Balanced tier that is an eighth of the real window, counted from the
-// window pi was told: half of an 8K window, as the larger tiers' rule gives,
-// is less than the prompt alone and would compact at every turn.
+// the conversation (it compacts before a request whose context is past
+// contextWindow - reserveTokens). Below the Balanced tier that is pi's fixed
+// margin and room for an answer: pi does not compact a context just under the
+// threshold, and that context's answer gets what is left above it. Half of
+// an 8K window, as the larger tiers' rule gives, is less than the prompt
+// alone and would compact at every turn.
 func piReserveTokens(ctxSize int) int {
 	if ctxSize >= llamaserve.CtxBalanced {
 		return piMaxTokens(ctxSize)
 	}
-	return piContextWindow(ctxSize) - ctxSize + ctxSize/8
+	return piSafetyTokens + piAnswerTokens
+}
+
+// piAnswerTokens is the least an answer gets below the Balanced tier: a
+// paragraph or two. With an eighth of the window the threshold left 512
+// tokens, and a model that read one more page before answering got 783.
+const piAnswerTokens = 1024
+
+// piKeepRecentTokens is how much of the latest messages pi keeps word for
+// word when it compacts. Below the Balanced tier it is an eighth of the
+// window: with a quarter, the prompt, the summary and what was kept came to
+// 6,018 of an 8K window, a page short of the threshold, so pi compacted again
+// after the next read.
+func piKeepRecentTokens(ctxSize int) int {
+	if ctxSize >= llamaserve.CtxBalanced {
+		return min(ctxSize/4, 20000)
+	}
+	return ctxSize / 8
 }
 
 func piMaxTokens(ctxSize int) int {
@@ -493,7 +512,7 @@ func ensurePiSettings(path, modelName string, ctxSize int) error {
 	}
 	settingsMissing := os.IsNotExist(err)
 
-	defaults := map[string]int{"reserveTokens": piReserveTokens(ctxSize), "keepRecentTokens": min(ctxSize/4, 20000)}
+	defaults := map[string]int{"reserveTokens": piReserveTokens(ctxSize), "keepRecentTokens": piKeepRecentTokens(ctxSize)}
 	sidecarPath := filepath.Join(filepath.Dir(path), ".svalbard-compaction.json")
 	owned, hasOwned, err := readPiCompactionOwnership(sidecarPath)
 	if err != nil {
