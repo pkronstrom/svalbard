@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/svalbard_banner.png" alt="Svalbard" width="100%">
+  <img src="docs/svalbard_banner.png" alt="An Arctic explorer holds a USB drive that projects a map, a botanical study, and a waterwheel drawing beneath the aurora." width="100%">
 </p>
 
 # Svalbard
