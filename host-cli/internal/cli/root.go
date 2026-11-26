@@ -25,12 +25,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version is the release this binary was built from, stamped by the release
+// workflow with -ldflags "-X .../internal/cli.Version=<version>".
+var Version = "dev"
+
 // NewRootCommand returns the top-level svalbard CLI command with all
 // hard-reset subcommands registered.
 func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "svalbard",
-		Short: "Provision and reconcile offline knowledge vaults",
+		Use:     "svalbard",
+		Short:   "Provision and reconcile offline knowledge vaults",
+		Version: Version,
 		// main prints the error once; a failed command is not a usage mistake.
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -47,6 +52,7 @@ func NewRootCommand() *cobra.Command {
 		},
 	}
 
+	root.SetVersionTemplate("svalbard {{.Version}}\n")
 	root.PersistentFlags().String("vault", "", "path to vault root (default: auto-detect from cwd)")
 
 	addCmd := &cobra.Command{
