@@ -11,7 +11,7 @@ target_size_gb: 4
 sources:
 - natural-earth
 - osm-finland
-# mml-maastokartta: re-add once the raster-sheets builder lands (kapsi's tile service is gone)
+# mml-maastokartta: re-add once a published svalbard-tools image has the GDAL PNG and WebP drivers and ToolsImageVersion points at it
 - mml-topo-uusimaa
 - pohjavesialueet
 - luonnonsuojelualueet
