@@ -129,6 +129,15 @@ func remoteSize(ctx context.Context, url string) (int64, bool) {
 }
 
 func copyFile(ctx context.Context, src, dst string, total int64, progress ProgressFunc) error {
+	// A cache on the same APFS volume as the vault (a models folder beside a
+	// test vault) is cloned: no second copy of a multi-gigabyte file.
+	_ = os.Remove(dst)
+	if err := cloneFile(src, dst); err == nil {
+		if progress != nil {
+			progress(total, total)
+		}
+		return nil
+	}
 	in, err := os.Open(src)
 	if err != nil {
 		return err

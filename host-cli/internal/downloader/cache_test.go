@@ -1,6 +1,7 @@
 package downloader
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -222,5 +223,35 @@ func TestCompletedCachePartialRecoversBeforePromotion(t *testing.T) {
 	}
 	if result, err := Download(context.Background(), "http://127.0.0.1:1/unavailable", dest, ""); err != nil || !result.Cached {
 		t.Fatalf("pre-promotion cache recovery failed: %+v %v", result, err)
+	}
+}
+
+func TestCopyFileGivesAnIdenticalFileAndReportsCompletion(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "model.gguf")
+	data := bytes.Repeat([]byte("svalbard"), 4096)
+	if err := os.WriteFile(src, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "vault", "model.gguf.cache.part")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("stale partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var last int64
+	if err := copyFile(context.Background(), src, dst, int64(len(data)), func(done, total int64) { last = done }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatalf("copy differs from the source: %d bytes, want %d", len(got), len(data))
+	}
+	if last != int64(len(data)) {
+		t.Fatalf("progress ended at %d, want %d", last, len(data))
 	}
 }
