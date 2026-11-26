@@ -256,3 +256,63 @@ func newNativeSearchDrive(t *testing.T) string {
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
+
+// runSubcommand runs run() with the given arguments and returns what it wrote
+// to stdout, which is a pipe here as it is under a script.
+func runSubcommand(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	stdout, writeStdout, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldArgs, oldStdout := os.Args, os.Stdout
+	os.Args = append([]string{"svalbard-drive"}, args...)
+	os.Stdout = writeStdout
+	runErr := run()
+	os.Args, os.Stdout = oldArgs, oldStdout
+	if err := writeStdout.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = stdout.Close()
+	return string(output), runErr
+}
+
+func TestSettingsSubcommandNeedsNoActionsFile(t *testing.T) {
+	// A drive with nothing generated on it: no actions.json, no schema file.
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".svalbard"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DRIVE_ROOT", root)
+
+	if out, err := runSubcommand(t, "settings", "ai.context", "balanced"); err != nil || out != "ai.context = balanced\n" {
+		t.Fatalf("set: %q, %v", out, err)
+	}
+	if out, err := runSubcommand(t, "settings", "ai.context"); err != nil || out != "balanced\n" {
+		t.Fatalf("get: %q, %v", out, err)
+	}
+	out, err := runSubcommand(t, "settings")
+	if err != nil || !strings.Contains(out, "Local AI\n  ai.default_model    ask\n  ai.context        * balanced\n") {
+		t.Fatalf("list: %q, %v", out, err)
+	}
+	if strings.ContainsAny(out, "\x1b\r") {
+		t.Errorf("list holds control sequences: %q", out)
+	}
+	saved, err := os.ReadFile(filepath.Join(root, ".svalbard", "settings.json"))
+	if err != nil || !strings.Contains(string(saved), `"context": "balanced"`) {
+		t.Fatalf("settings.json = %q, %v", saved, err)
+	}
+
+	if out, err := runSubcommand(t, "settings", "ai.context", "huge"); err == nil || out != "" ||
+		!strings.Contains(err.Error(), "is not one of ask, auto, fast, balanced, max") {
+		t.Fatalf("bad value: %q, %v", out, err)
+	}
+	// Everything else still needs the generated menu.
+	if _, err := runSubcommand(t, "inspect"); err == nil {
+		t.Fatal("a command other than settings ran without actions.json")
+	}
+}
