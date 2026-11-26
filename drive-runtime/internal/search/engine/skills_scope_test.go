@@ -220,3 +220,63 @@ func TestSearchAnyWordKeepsTheNearestWhenNothingHasMostWords(t *testing.T) {
 		t.Fatalf("knowledge search returned a one-word match: %v", filenames(matches.Results))
 	}
 }
+
+// A long skill file matches with every section: each names the skill in its
+// title. Like a document's pages, only a few of one file's sections are
+// returned, so the files behind it are reached, in keyword search and in both
+// halves of hybrid search.
+func TestSkillSearchReturnsFewSectionsPerFile(t *testing.T) {
+	db := documentDB(t)
+	long := insertDocument(t, db, "skills/skills-core/firmware/SKILL.md", "firmware", "")
+	for number := 1; number <= 300; number++ {
+		id := insertArticle(t, db, long, SectionPath(number), "firmware, Part", "Firmware firmware firmware flashing.")
+		insertEmbedding(t, db, id, "firmware", []float32{1, 0})
+	}
+	for _, name := range []string{"esp32", "arduino", "pico"} {
+		id := insertArticle(t, db, insertDocument(t, db, "skills/skills-core/"+name+"/SKILL.md", name, ""), SectionPath(1), name+", Overview", "Flash firmware to the board.")
+		insertEmbedding(t, db, id, name, []float32{0.6, 0.8})
+	}
+	eng := New(db)
+	perFile := func(results []Result) map[string]int {
+		counts := map[string]int{}
+		for _, result := range results {
+			counts[result.Filename]++
+		}
+		return counts
+	}
+	want := map[string]int{
+		"skills/skills-core/firmware/SKILL.md": sectionsPerSkillFile,
+		"skills/skills-core/esp32/SKILL.md":    1, "skills/skills-core/arduino/SKILL.md": 1, "skills/skills-core/pico/SKILL.md": 1,
+	}
+
+	matches := search(t, db, "firmware", KeywordOptions{Source: SkillScope, Limit: 200})
+	if got := perFile(matches.Results); !reflect.DeepEqual(got, want) {
+		t.Errorf("keyword search: %v, want %v", got, want)
+	}
+	if !reflect.DeepEqual(matches.MorePages, []string{"skills/skills-core/firmware/SKILL.md"}) {
+		t.Errorf("more sections in %v", matches.MorePages)
+	}
+	// Limited to the file itself, every section is available.
+	if one := search(t, db, "firmware", KeywordOptions{Source: "skills/skills-core/firmware/SKILL.md", Limit: 50}); len(one.Results) != 50 {
+		t.Errorf("file scope returned %d results, want 50", len(one.Results))
+	}
+
+	for name, query := range map[string]string{"with keyword candidates": "firmware", "vector scan alone": "zzzunmatched"} {
+		results, err := eng.HybridContext(context.Background(), query, []float32{1, 0}, 200, SkillScope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := perFile(results); !reflect.DeepEqual(got, want) {
+			t.Errorf("hybrid search, %s: %v, want %v", name, got, want)
+		}
+	}
+	// Knowledge sources are not capped here: a document's pages have their
+	// own rule and an archive's articles none.
+	wiki := insertSource(t, db, "wiki.zim")
+	for number := 1; number <= 10; number++ {
+		insertArticle(t, db, wiki, "/Firmware_"+SectionPath(number), "Firmware", "Firmware of a device.")
+	}
+	if results, err := eng.KeywordContext(context.Background(), "firmware", 50, ""); err != nil || len(results) != 10 {
+		t.Errorf("archive articles: %d, %v; want all ten", len(results), err)
+	}
+}
