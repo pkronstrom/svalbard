@@ -107,6 +107,13 @@ func run() error {
 		}
 		return runSkills(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
 	}
+	// html pack: the same fast path, for agents that build pages.
+	if len(os.Args) > 1 && os.Args[1] == "html" {
+		if strings.ContainsRune(os.Args[0], filepath.Separator) {
+			skillsProgram = filepath.Join(driveRoot, "run")
+		}
+		return runHTML(context.Background(), os.Stdout, os.Stderr, driveRoot, os.Args[2:])
+	}
 	workDir, err := os.Getwd()
 	if err != nil {
 		workDir = driveRoot

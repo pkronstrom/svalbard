@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
+	github.com/evanw/esbuild v0.28.2
 	github.com/mark3labs/mcp-go v1.6.0
 	github.com/ncruces/go-sqlite3 v0.38.0
 	github.com/pkronstrom/svalbard/tui v0.0.0-00010101000000-000000000000
