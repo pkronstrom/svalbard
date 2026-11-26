@@ -27,7 +27,7 @@ esac
 # offline runs a command with the network denied.
 offline() {
   case $platform in
-    macos-*) sandbox-exec -p '(version 1)(allow default)(deny network*)' "$@" ;;
+    macos-*) sandbox-exec -p '(version 1)(allow default)(deny network*)(allow network* (local unix))' "$@" ;;
     linux-*) unshare -rn "$@" ;;
   esac
 }
