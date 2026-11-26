@@ -46,6 +46,9 @@ func Run(w io.Writer, driveRoot string) error {
 	if err := printFilesSection(w, driveRoot, "Databases", "data", ".sqlite"); err != nil {
 		return err
 	}
+	if err := printFilesSection(w, driveRoot, "GeoPackages", "data", ".gpkg"); err != nil {
+		return err
+	}
 	if err := printFilesSection(w, driveRoot, "Map tiles", "maps", ".pmtiles"); err != nil {
 		return err
 	}

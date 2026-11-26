@@ -578,6 +578,12 @@ func executeJob(
 		if err == nil {
 			entries = []manifest.RealizedEntry{entry}
 		}
+	case isGeoPackageZip(job.recipe):
+		var entry manifest.RealizedEntry
+		entry, err = installGeoPackageZip(ctx, root, job.id, job.recipe, dlProgress)
+		if err == nil {
+			entries = []manifest.RealizedEntry{entry}
+		}
 	case job.recipe.URL != "" || job.recipe.URLPattern != "":
 		var entry manifest.RealizedEntry
 		entry, err = downloadItem(ctx, root, job.id, job.recipe, dlProgress)

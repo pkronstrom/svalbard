@@ -67,6 +67,7 @@ var TypeDirs = map[string]string{
 	"app":            "apps",
 	"dataset":        "data",
 	"sqlite":         "data",
+	"gpkg":           "data",
 	"python-venv":    "runtime/python",
 	"python-package": "runtime/python",
 	"skills":         "skills",

@@ -1,10 +1,12 @@
 package query
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	_ "github.com/ncruces/go-sqlite3/driver" // register sqlite3 driver
 )
@@ -12,16 +14,23 @@ import (
 // TableSchema describes one table in a SQLite database.
 type TableSchema struct {
 	Name    string           `json:"name"`
-	Columns []string         `json:"columns"`
+	Columns []string         `json:"columns,omitempty"`
 	IsFTS   bool             `json:"is_fts,omitempty"`
 	Samples []map[string]any `json:"samples,omitempty"` // first 3 rows when table specified
 }
 
-// SchemaInfo describes the schema of a SQLite database.
+// SchemaInfo describes the schema of a SQLite database. Note says when the
+// columns were left out of a long list of tables.
 type SchemaInfo struct {
 	Database string        `json:"database"`
 	Tables   []TableSchema `json:"tables"`
+	Note     string        `json:"note,omitempty"`
 }
+
+// maxTablesWithColumns is the longest table list described with every
+// table's columns; Natural Earth's GeoPackage has 183 layers of about 60
+// columns each, more than a model's whole window.
+const maxTablesWithColumns = 25
 
 // Execute runs a read-only SQL query against the named database under driveRoot/data/.
 // It returns result rows as a slice of column-keyed maps.
@@ -68,7 +77,7 @@ func scanRowsIntoMaps(rows *sql.Rows) ([]map[string]any, error) {
 		row := make(map[string]any, len(cols))
 		for i, col := range cols {
 			if b, ok := values[i].([]byte); ok {
-				row[col] = string(b)
+				row[col] = blobValue(b)
 			} else {
 				row[col] = values[i]
 			}
@@ -76,6 +85,18 @@ func scanRowsIntoMaps(rows *sql.Rows) ([]map[string]any, error) {
 		results = append(results, row)
 	}
 	return results, rows.Err()
+}
+
+// blobValue returns text stored as bytes as a string and anything else by its
+// size: binary means nothing to a model and a country's shape is megabytes.
+func blobValue(b []byte) string {
+	if utf8.Valid(b) && !bytes.ContainsRune(b, 0) {
+		return string(b)
+	}
+	if bytes.HasPrefix(b, []byte("GP")) && len(b) >= 8 {
+		return fmt.Sprintf("<GeoPackage geometry, %d bytes>", len(b))
+	}
+	return fmt.Sprintf("<blob, %d bytes>", len(b))
 }
 
 // Describe returns schema information for a database. If table is non-empty,
@@ -102,9 +123,15 @@ func Describe(driveRoot, database, table string) (SchemaInfo, error) {
 		}
 		info.Tables = []TableSchema{ts}
 	} else {
-		tables, err := listTables(db)
+		tables, err := listTables(db, isGeoPackage(dbPath))
 		if err != nil {
 			return SchemaInfo{}, err
+		}
+		if len(tables) > maxTablesWithColumns {
+			for i := range tables {
+				tables[i].Columns = nil
+			}
+			info.Note = fmt.Sprintf("%d tables, so their columns are left out: describe one table to see its columns and sample rows.", len(tables))
 		}
 		info.Tables = tables
 	}
@@ -146,9 +173,20 @@ func openReadOnly(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// listTables returns all user tables with their columns.
-func listTables(db *sql.DB) ([]TableSchema, error) {
-	rows, err := db.Query("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+// isGeoPackage reports whether a database is a GeoPackage, by its extension.
+func isGeoPackage(dbPath string) bool {
+	return strings.EqualFold(filepath.Ext(dbPath), ".gpkg")
+}
+
+// listTables returns all user tables with their columns; for a GeoPackage
+// only its layers (the tables gpkg_contents lists), not its metadata and
+// spatial index tables.
+func listTables(db *sql.DB, geoPackage bool) ([]TableSchema, error) {
+	listing := "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+	if geoPackage {
+		listing = "SELECT name, sql FROM sqlite_master WHERE type='table' AND name IN (SELECT table_name FROM gpkg_contents) ORDER BY name"
+	}
+	rows, err := db.Query(listing)
 	if err != nil {
 		return nil, fmt.Errorf("listing tables: %w", err)
 	}
