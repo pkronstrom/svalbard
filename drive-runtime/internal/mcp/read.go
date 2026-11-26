@@ -69,6 +69,9 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 	if engine.IsDocumentSource(source) {
 		return c.readDocument(ctx, source, rawPath, offset)
 	}
+	if document, page, ok := c.documentInArchive(ctx, source, rawPath); ok {
+		return c.readDocument(ctx, document, page, offset)
+	}
 	if engine.IsSkillSource(source) {
 		return c.readSkillSource(ctx, source, rawPath, offset)
 	}
@@ -126,6 +129,29 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 		}
 	}
 	return ActionResult{Data: result}, nil
+}
+
+// documentInArchive finds the document indexed from inside an archive that a
+// path names: "files/guide.pdf", or "files/guide.pdf/page/2" for a page of it.
+// kiwix-serve would answer the first with the PDF's bytes.
+func (c *SearchCapability) documentInArchive(ctx context.Context, archive, rawPath string) (document, page string, ok bool) {
+	path := strings.Trim(strings.TrimSpace(rawPath), "/")
+	if path == "" || !strings.EqualFold(filepath.Ext(archive), ".zim") {
+		return "", "", false
+	}
+	for _, filename := range c.knownSources(ctx, false) {
+		inside, entry, isEmbedded := engine.EmbeddedArchive(filename)
+		if !isEmbedded || inside != archive {
+			continue
+		}
+		if path == entry {
+			return filename, "", true
+		}
+		if rest, found := strings.CutPrefix(path, entry+"/"); found {
+			return filename, rest, true
+		}
+	}
+	return "", "", false
 }
 
 // readFullPage loads the first candidate path the source has, as text. Only

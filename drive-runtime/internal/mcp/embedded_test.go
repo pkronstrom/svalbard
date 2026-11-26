@@ -129,3 +129,20 @@ func TestSearchReadOfArchiveNamesItsDocuments(t *testing.T) {
 		}
 	}
 }
+
+// A model that splits a document's name from the archive's note into the
+// archive and a path gets the document, not the PDF's bytes from kiwix.
+func TestSearchReadOfArchiveAtADocumentPath(t *testing.T) {
+	f := embeddedFixture(t)
+	got, err := f.read(map[string]any{"source": "usda-2015", "path": "files/GUIDE02_HomeCan_rev0715.pdf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Source != usdaZIM+"/files/GUIDE02_HomeCan_rev0715.pdf" || !strings.Contains(got.Body, "is a document with 3 pages") {
+		t.Fatalf("read = %+v", got)
+	}
+	page, err := f.read(map[string]any{"source": "usda-2015", "path": "/files/GUIDE02_HomeCan_rev0715.pdf/page/2"})
+	if err != nil || page.Page != 2 || !strings.Contains(page.Body, "page 2") {
+		t.Fatalf("read of a page = %+v, %v", page, err)
+	}
+}
