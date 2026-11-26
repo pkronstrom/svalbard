@@ -33,6 +33,7 @@ import (
 const (
 	maxArchiveResponseBytes = 32 << 20
 	archiveWorkers          = 12
+	archivePacedWorkers     = 6
 	archiveUserAgent        = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
@@ -89,6 +90,8 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 	siteInfo := archiveSiteInfo{title: archiveMetadata(recipe, "title", recipe.ID), home: "../../index.html", stylesheet: "../../" + archiveStylesheet}
 	fetcher := newArchiveFetcher(ctx)
 	fetcher.root, fetcher.workdir = root, workdir
+	fetcher.rules = rules
+	fetcher.fileBudget = configInt(recipe.Build.Config, "max_files_mb", fetcher.fileBudget>>20) << 20
 	fetcher.embedVideos = recipe.Build.Config["video_embeds"] == "true"
 	fetcher.videoHeight = configInt(recipe.Build.Config, "video_height", fetcher.videoHeight)
 	fetcher.videoMinutes = configInt(recipe.Build.Config, "max_video_minutes", fetcher.videoMinutes)
@@ -169,10 +172,6 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		results[index] = copied
 		return nil
 	}
-	workers := 1
-	if pdfLinks {
-		workers = archiveWorkers
-	}
 	var group sync.WaitGroup
 	var mutex sync.Mutex
 	var failed error
@@ -185,24 +184,46 @@ func buildContentArchive(root string, recipe catalog.Item, _ *catalog.Catalog, o
 		}
 		return failed != nil
 	}
-	slots := make(chan struct{}, workers)
-	for index := range sources {
-		slots <- struct{}{}
-		if finish(nil) {
-			<-slots
-			break
+	// Sources behind a rate-limited API get a small pool of their own so they
+	// never hold every worker while they wait their turn.
+	pools := [][]int{{}, {}}
+	for index, source := range sources {
+		if pdfLinks && fetcher.paced(source.URL) {
+			pools[1] = append(pools[1], index)
+		} else {
+			pools[0] = append(pools[0], index)
+		}
+	}
+	for pool, indexes := range pools {
+		width := 1
+		if pdfLinks {
+			width = []int{archiveWorkers, archivePacedWorkers}[pool]
 		}
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			defer func() { <-slots }()
-			finish(archiveOne(index))
-			mutex.Lock()
-			finished++
-			if pdfLinks && finished%50 == 0 {
-				slog.Info("archiving links", "id", recipe.ID, "done", finished, "total", len(sources))
+			var workers sync.WaitGroup
+			slots := make(chan struct{}, width)
+			for _, index := range indexes {
+				slots <- struct{}{}
+				if finish(nil) {
+					<-slots
+					break
+				}
+				workers.Add(1)
+				go func() {
+					defer workers.Done()
+					defer func() { <-slots }()
+					finish(archiveOne(index))
+					mutex.Lock()
+					finished++
+					if pdfLinks && finished%50 == 0 {
+						slog.Info("archiving links", "id", recipe.ID, "done", finished, "total", len(sources))
+					}
+					mutex.Unlock()
+				}()
 			}
-			mutex.Unlock()
+			workers.Wait()
 		}()
 	}
 	group.Wait()

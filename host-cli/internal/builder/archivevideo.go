@@ -100,9 +100,12 @@ func archiveMarkVideoEmbeds(fetcher *archiveFetcher, article *archiveArticle, ro
 }
 
 // archiveVideos stores the article's videos and places a player where each
-// was embedded, or at the top for a link to the video itself.
-func archiveVideos(fetcher *archiveFetcher, article *archiveArticle, output, entry string) []archivedPage {
+// was embedded, or at the top for a link to the video itself. It fails only
+// when the article is nothing but videos and none could be stored.
+func archiveVideos(fetcher *archiveFetcher, article *archiveArticle, output, entry string) ([]archivedPage, error) {
 	pages := make([]archivedPage, 0)
+	videoOnly := len(article.Videos) > 0 && strings.TrimSpace(archiveNodeText(article.Content)) == ""
+	var failure error
 	for index, id := range article.Videos {
 		if index >= maxArchiveVideos {
 			break
@@ -110,6 +113,7 @@ func archiveVideos(fetcher *archiveFetcher, article *archiveArticle, output, ent
 		video, err := archiveStoreVideo(fetcher, id, output)
 		if err != nil {
 			slog.Warn("video not archived", "video", id, "err", err)
+			failure = err
 			continue
 		}
 		for _, local := range []string{video.Poster, video.File, video.Captions} {
@@ -140,7 +144,10 @@ func archiveVideos(fetcher *archiveFetcher, article *archiveArticle, output, ent
 			appendArchiveText(article.Content, video.Description)
 		}
 	}
-	return pages
+	if videoOnly && len(pages) == 0 && failure != nil {
+		return nil, failure
+	}
+	return pages, nil
 }
 
 // archiveStoreVideo downloads one YouTube video as WebM (VP9 and Opus where
@@ -163,12 +170,17 @@ func archiveStoreVideo(fetcher *archiveFetcher, id, output string) (archiveVideo
 		"-f", format, "--merge-output-format", "webm", "--recode-video", "webm",
 		"--match-filter", fmt.Sprintf("duration <= %d", fetcher.videoMinutes*60),
 		"--write-info-json", "--write-thumbnail", "--convert-thumbnails", "jpg",
-		"--write-subs", "--write-auto-subs", "--sub-langs", "en,en-orig,en-US,en-GB", "--sub-format", "vtt", "--convert-subs", "vtt",
 		"-o", filepath.Join(directory, "video.%(ext)s"),
 		"https://www.youtube.com/watch?v=" + id,
 	}
-	if _, err := runToolCommand(fetcher.ctx, fetcher.root, fetcher.workdir, BaseToolsImage, "yt-dlp", args); err != nil {
-		return archiveVideo{}, err
+	captions := []string{"--write-subs", "--write-auto-subs", "--sub-langs", "en", "--sub-format", "vtt", "--convert-subs", "vtt"}
+	// YouTube rate-limits caption requests on their own, and yt-dlp then
+	// drops the whole video; a second try goes without captions.
+	if _, err := runToolCommand(fetcher.ctx, fetcher.root, fetcher.workdir, BaseToolsImage, "yt-dlp", append(captions, args...)); err != nil {
+		slog.Warn("video download failed, retrying without captions", "video", id, "err", err)
+		if _, err := runToolCommand(fetcher.ctx, fetcher.root, fetcher.workdir, BaseToolsImage, "yt-dlp", args); err != nil {
+			return archiveVideo{}, err
+		}
 	}
 	if _, err := os.Stat(filepath.Join(directory, "video.webm")); err != nil {
 		return archiveVideo{}, fmt.Errorf("yt-dlp stored no video for %s (longer than %d minutes or unavailable)", id, fetcher.videoMinutes)

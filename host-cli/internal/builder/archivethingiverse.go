@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -14,6 +15,12 @@ import (
 
 // thingiverseAPI is the Thingiverse REST API; tests point it at a local server.
 var thingiverseAPI = "https://api.thingiverse.com"
+
+// thingiverseRequestInterval keeps a token under the API's rate limit. The
+// documented 300 requests per 5 minutes still drew 10-minute bans, at one
+// request per second and again after 165 requests in five and a half
+// minutes; the fetcher slows further if a ban comes anyway.
+const thingiverseRequestInterval = 3 * time.Second
 
 var thingiverseThingPath = regexp.MustCompile(`^/thing:(\d+)`)
 
@@ -97,18 +104,23 @@ func thingiverseArticle(fetcher *archiveFetcher, source *url.URL) (*archiveArtic
 	return article, nil
 }
 
-// thingiverseImageURL prefers the original upload over resized previews.
+// thingiverseImageURL prefers the large display rendition: the CDN answers
+// direct requests for many original uploads with a browser challenge.
 func thingiverseImageURL(image thingiverseImage) string {
-	fallback := ""
+	best, rank := "", 0
 	for _, size := range image.Sizes {
-		if strings.HasPrefix(size.URL, "https://cdn.thingiverse.com/assets/") {
-			return size.URL
+		candidate := 1
+		switch {
+		case size.Type == "display" && size.Size == "large":
+			candidate = 3
+		case size.Type == "preview" && size.Size == "featured":
+			candidate = 2
 		}
-		if fallback == "" || size.Type == "display" && size.Size == "large" {
-			fallback = size.URL
+		if candidate > rank {
+			best, rank = size.URL, candidate
 		}
 	}
-	return fallback
+	return best
 }
 
 func thingiverseGet(fetcher *archiveFetcher, path string, result any) error {

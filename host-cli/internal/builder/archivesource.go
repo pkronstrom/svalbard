@@ -21,7 +21,7 @@ import (
 
 var archiveURLPattern = regexp.MustCompile(`https?://[^\s<>()\[\]{}"']+`)
 
-const archiveProjectVersion = 5
+const archiveProjectVersion = 8
 
 type archiveSource struct {
 	ID   string

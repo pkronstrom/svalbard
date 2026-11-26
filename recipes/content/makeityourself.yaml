@@ -2,8 +2,10 @@ id: makeityourself
 type: zim
 display_group: practical
 tags: [diy, maker, 3d-printing, woodworking, sewing, electronics]
-size_gb: 14
+size_gb: 5.1
 description: "1000+ curated DIY projects archived from makeityourself.org"
+# Projects with many files ship them as one zip; 7z opens it on the stick.
+deps: [kiwix-serve, 7z]
 strategy: build
 build:
   family: content-archive
@@ -13,9 +15,20 @@ build:
   network: true
   title: "Make It Yourself"
   creator: "NODE / makeityourself.org"
+  # Thingiverse projects need THINGIVERSE_TOKEN (an api.thingiverse.com app
+  # token) in the environment; without it they keep only the page summary.
+  # Linked GitHub repositories need GITHUB_TOKEN, as the API allows only 60
+  # requests an hour without one.
+  # Design files (STL, 3MF, PDF, ...) kept per project, in MiB.
+  max_files_mb: 160
+  # YouTube links are stored as WebM. Players embedded in other pages stay
+  # links unless video_embeds is true.
+  video_height: 480
+  max_video_minutes: 60
+  video_embeds: false
   archive_rules:
     - domain: learn.adafruit.com
-      content: "article#content-wrapper"
+      content: "article#content-wrapper .page-content"
       remove: [nav.skip-links, "#adafruit-header", "#adafruit-footer", '[title="Saves"]', '[title="Skill Level"]', '[title="Guide Type"]', .related-guides-wrapper]
     - domain: github.com
       content: article.markdown-body

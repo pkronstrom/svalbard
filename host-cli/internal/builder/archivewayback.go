@@ -14,30 +14,42 @@ var (
 
 // archiveWaybackArticle reads the closest Wayback Machine capture of a page
 // that could not be fetched live. Links resolve against the original address;
-// images and files that fail live are retried through the same capture.
+// images and files that fail live are retried through the same capture. A
+// recent capture can itself be a bot check, so an older one is tried next.
 func archiveWaybackArticle(fetcher *archiveFetcher, source *url.URL, rule *compiledArchiveRule) (*archiveArticle, error) {
-	timestamp, err := archiveWaybackTimestamp(fetcher, source)
-	if err != nil {
-		return nil, err
+	var lastErr error
+	for _, near := range []string{"", archiveWaybackOlder} {
+		timestamp, err := archiveWaybackTimestamp(fetcher, source, near)
+		if err != nil {
+			return nil, err
+		}
+		body, contentType, _, err := fetcher.get(archiveWaybackURL(timestamp, "id_", source), maxArchiveResponseBytes)
+		if err != nil {
+			return nil, err
+		}
+		article, err := archiveParseHTML(fetcher, body, contentType, source, rule)
+		if err == nil {
+			article.Wayback = timestamp
+			return article, nil
+		}
+		lastErr = err
 	}
-	body, contentType, _, err := fetcher.get(archiveWaybackURL(timestamp, "id_", source), maxArchiveResponseBytes)
-	if err != nil {
-		return nil, err
-	}
-	article, err := archiveParseHTML(fetcher, body, contentType, source, rule)
-	if err != nil {
-		return nil, err
-	}
-	article.Wayback = timestamp
-	return article, nil
+	return nil, lastErr
 }
 
-func archiveWaybackTimestamp(fetcher *archiveFetcher, source *url.URL) (string, error) {
+// archiveWaybackOlder is the date the second lookup asks for.
+const archiveWaybackOlder = "2023"
+
+func archiveWaybackTimestamp(fetcher *archiveFetcher, source *url.URL, near string) (string, error) {
 	endpoint, err := url.Parse(archiveWaybackAPI)
 	if err != nil {
 		return "", err
 	}
-	endpoint.RawQuery = url.Values{"url": {source.String()}}.Encode()
+	query := url.Values{"url": {source.String()}}
+	if near != "" {
+		query.Set("timestamp", near)
+	}
+	endpoint.RawQuery = query.Encode()
 	body, _, _, err := fetcher.get(endpoint, 1<<20)
 	if err != nil {
 		return "", err

@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,16 +25,20 @@ import (
 	"github.com/andybalholm/cascadia"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+	"golang.org/x/net/html/charset"
 )
 
 const (
 	maxArchiveImageBytes  = 12 << 20
-	maxArchiveImages      = 80
+	maxArchiveImages      = 150
 	maxArchiveFiles       = 40
-	maxArchiveFileBytes   = 160 << 20
 	maxArchiveVideos      = 3
 	archiveHostConcurrent = 3
 	archiveVideoWorkers   = 2
+	archiveMaxPace        = 30 * time.Second
+	// archiveUnreachableAfter is how many connection failures in a row mark
+	// a host unreachable.
+	archiveUnreachableAfter = 3
 )
 
 // archiveArticle is one curated link reduced to what a reader needs offline.
@@ -46,9 +52,14 @@ type archiveArticle struct {
 	License     string
 	Files       []archiveFile
 	// Videos lists YouTube video IDs to download; Wayback is the timestamp of
-	// the Wayback Machine capture the article came from, if any.
+	// the Wayback Machine capture the article came from, if any. Links are
+	// the page's same-site links, where its subpages are found.
 	Videos  []string
 	Wayback string
+	Links   []*url.URL
+	// PageTitle is the document's own <title>, which names a guide's
+	// chapter when the og:title names only the guide.
+	PageTitle string
 }
 
 type archiveFile struct {
@@ -69,23 +80,41 @@ type archiveFetcher struct {
 	ctx    context.Context
 	client *http.Client
 	hosts  sync.Map
-	// authorization holds an Authorization header value per API host.
+	// authorization holds an Authorization header value per API host, and
+	// pace the least time between requests to a rate-limited host.
 	authorization map[string]string
+	pace          map[string]time.Duration
+	paceMutex     sync.Mutex
+	nextRequest   map[string]time.Time
 	// root and workdir locate the build for tool containers.
 	root, workdir string
 	videos        chan struct{}
-	embedVideos   bool
-	videoHeight   int
-	videoMinutes  int
+	// unreachable counts consecutive connection failures per host; a host
+	// that keeps failing is skipped for the rest of the build.
+	unreachable map[string]int
+	// rules are the recipe's page rules, for pages a project links to.
+	rules        []compiledArchiveRule
+	fileBudget   int
+	embedVideos  bool
+	videoHeight  int
+	videoMinutes int
 }
 
 func newArchiveFetcher(ctx context.Context) *archiveFetcher {
 	fetcher := &archiveFetcher{
-		ctx: ctx, client: &http.Client{Timeout: 90 * time.Second}, authorization: make(map[string]string),
-		videos: make(chan struct{}, archiveVideoWorkers), videoHeight: 480, videoMinutes: 60,
+		ctx: ctx, client: archiveHTTPClient(), authorization: make(map[string]string), unreachable: make(map[string]int),
+		pace: map[string]time.Duration{thingiverseAPIHost(): thingiverseRequestInterval}, nextRequest: make(map[string]time.Time),
+		videos: make(chan struct{}, archiveVideoWorkers), fileBudget: 160 << 20, videoHeight: 480, videoMinutes: 60,
 	}
 	if token := os.Getenv("THINGIVERSE_TOKEN"); token != "" {
 		fetcher.authorization[thingiverseAPIHost()] = "Bearer " + token
+	}
+	// Without a token the GitHub API allows 60 requests an hour, too few
+	// for the repositories of a large collection.
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		if api, err := url.Parse(githubAPI); err == nil {
+			fetcher.authorization[api.Host] = "Bearer " + token
+		}
 	}
 	return fetcher
 }
@@ -99,7 +128,13 @@ func (f *archiveFetcher) request(method string, target *url.URL, body []byte, he
 	slot, _ := f.hosts.LoadOrStore(target.Host, make(chan struct{}, archiveHostConcurrent))
 	slot.(chan struct{}) <- struct{}{}
 	defer func() { <-slot.(chan struct{}) }()
+	if f.skipHost(target.Host) {
+		return nil, "", nil, fmt.Errorf("GET %s: host unreachable, skipped", target)
+	}
 	for attempt := 0; ; attempt++ {
+		if err := f.wait(f.turn(target.Host)); err != nil {
+			return nil, "", nil, err
+		}
 		req, err := http.NewRequestWithContext(f.ctx, method, target.String(), bytes.NewReader(body))
 		if err != nil {
 			return nil, "", nil, err
@@ -112,22 +147,123 @@ func (f *archiveFetcher) request(method string, target *url.URL, body []byte, he
 			req.Header.Set("Authorization", authorization)
 		}
 		response, err := f.client.Do(req)
+		f.recordConnection(target.Host, err)
 		if err != nil {
 			return nil, "", nil, err
 		}
+		delay := time.Duration(2<<attempt) * time.Second
 		switch response.StatusCode {
-		case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-			if attempt < 2 {
+		case http.StatusTooManyRequests:
+			// Rate windows run for minutes; wait them out rather than fail.
+			delay = time.Duration(15<<attempt) * time.Second
+			if seconds, err := strconv.Atoi(response.Header.Get("Retry-After")); err == nil && seconds > 0 {
+				delay = time.Duration(seconds) * time.Second
+			}
+			fallthrough
+		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			if attempt < 4 {
 				response.Body.Close()
-				select {
-				case <-f.ctx.Done():
-					return nil, "", nil, f.ctx.Err()
-				case <-time.After(time.Duration(2<<attempt) * time.Second):
+				slog.Info("archive request retry", "host", target.Host, "status", response.StatusCode, "wait", delay)
+				f.holdHost(target.Host, time.Now().Add(delay))
+				if err := f.wait(time.Now().Add(delay)); err != nil {
+					return nil, "", nil, err
 				}
 				continue
 			}
 		}
 		return archiveReadResponse(response, target, limit)
+	}
+}
+
+// paced reports whether archiving source waits on a rate-limited API, so it
+// can run apart from the main worker pool.
+func (f *archiveFetcher) paced(source *url.URL) bool {
+	switch strings.ToLower(source.Host) {
+	case "www.thingiverse.com", "thingiverse.com":
+		f.paceMutex.Lock()
+		defer f.paceMutex.Unlock()
+		return f.authorization[thingiverseAPIHost()] != "" && f.pace[thingiverseAPIHost()] > 0
+	}
+	return false
+}
+
+// archiveHTTPClient gives up quickly on hosts that do not answer, while still
+// letting large design files finish downloading.
+func archiveHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	transport.TLSHandshakeTimeout = 15 * time.Second
+	transport.ResponseHeaderTimeout = 45 * time.Second
+	return &http.Client{Timeout: 3 * time.Minute, Transport: transport}
+}
+
+func (f *archiveFetcher) skipHost(host string) bool {
+	f.paceMutex.Lock()
+	defer f.paceMutex.Unlock()
+	return f.unreachable[host] >= archiveUnreachableAfter
+}
+
+// recordConnection counts consecutive connection failures; any answer from
+// the host, even an error status, resets the count.
+func (f *archiveFetcher) recordConnection(host string, err error) {
+	f.paceMutex.Lock()
+	defer f.paceMutex.Unlock()
+	if err == nil {
+		delete(f.unreachable, host)
+		return
+	}
+	if f.ctx.Err() == nil {
+		f.unreachable[host]++
+		if f.unreachable[host] == archiveUnreachableAfter {
+			slog.Warn("archive host unreachable, skipping it", "host", host, "err", err)
+		}
+	}
+}
+
+// holdHost keeps every request to a paced host back until the given time,
+// so one rate-limit answer does not turn into one per worker, and halves the
+// host's request rate: its real limit is lower than the pace assumed.
+func (f *archiveFetcher) holdHost(host string, until time.Time) {
+	f.paceMutex.Lock()
+	defer f.paceMutex.Unlock()
+	if f.pace[host] == 0 {
+		return
+	}
+	if until.After(f.nextRequest[host]) {
+		f.nextRequest[host] = until
+		f.pace[host] = min(2*f.pace[host], archiveMaxPace)
+		slog.Info("archive request pace lowered", "host", host, "interval", f.pace[host])
+	}
+}
+
+// turn reserves the next request time for a paced host.
+func (f *archiveFetcher) turn(host string) time.Time {
+	f.paceMutex.Lock()
+	defer f.paceMutex.Unlock()
+	interval := f.pace[host]
+	if interval == 0 {
+		return time.Time{}
+	}
+	next := time.Now()
+	if reserved := f.nextRequest[host]; reserved.After(next) {
+		next = reserved
+	}
+	f.nextRequest[host] = next.Add(interval)
+	return next
+}
+
+func (f *archiveFetcher) wait(until time.Time) error {
+	delay := time.Until(until)
+	if delay <= 0 {
+		return f.ctx.Err()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-f.ctx.Done():
+		return f.ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -198,6 +334,10 @@ func archiveReader(fetcher *archiveFetcher, source archiveSource, output string,
 		}
 		article = fallback
 	}
+	appendArchiveSubpages(fetcher, article, rule)
+	appendArchiveLinkedGuides(fetcher, article, source.URL)
+	repos := archiveRepos(article, source.URL)
+	appendArchiveRepoReadmes(fetcher, article, repos, source.URL)
 	entry := archiveEntryPath(source.URL)
 	pages := []archivedPage{{URL: source.URL.String(), Path: entry, Title: article.Title, HTML: true}}
 
@@ -254,11 +394,16 @@ func archiveReader(fetcher *archiveFetcher, source archiveSource, output string,
 		}
 	}
 
-	pages = append(pages, archiveVideos(fetcher, article, output, entry)...)
+	videos, err := archiveVideos(fetcher, article, output, entry)
+	if err != nil {
+		return nil, err
+	}
+	pages = append(pages, videos...)
 	pages[0].Title = article.Title
 
-	stored := make([]archiveFile, 0, len(files))
-	budget := maxArchiveFileBytes
+	stored := make([]archiveStoredFile, 0, len(files))
+	var anchors [][]*html.Node
+	budget := fetcher.fileBudget
 	for _, file := range files {
 		if len(stored) >= maxArchiveFiles || budget <= 0 {
 			break
@@ -275,10 +420,47 @@ func archiveReader(fetcher *archiveFetcher, source archiveSource, output string,
 			continue
 		}
 		budget -= size
-		pages = append(pages, archivedPage{URL: target.String(), Path: local})
-		stored = append(stored, archiveFile{Name: path.Base(local), URL: archiveRelative(entry, local)})
-		for _, anchor := range file.anchors {
-			archiveSetAttribute(anchor, "href", archiveRelative(entry, local))
+		name := file.Name
+		if name == "" || strings.Contains(name, "://") {
+			name = path.Base(target.Path)
+		}
+		stored = append(stored, archiveStoredFile{Name: path.Base(name), Local: local, Size: size})
+		anchors = append(anchors, file.anchors)
+	}
+	var bundle *archiveStoredFile
+	if len(stored) > archiveBundleAfter {
+		if packed, err := bundleArchiveFiles(output, entry, stored); err == nil {
+			bundle = &packed
+			pages = append(pages, archivedPage{URL: source.URL.String(), Path: packed.Local})
+		}
+	}
+	var packedRepos []archiveStoredFile
+	for _, repo := range repos {
+		if budget <= 0 || fetcher.ctx.Err() != nil {
+			break
+		}
+		packed, err := archiveStoreRepo(fetcher, repo, output, budget)
+		if err != nil {
+			slog.Info("archive repository skipped", "repo", repo.label(), "err", err)
+			continue
+		}
+		budget -= packed.Size
+		pages = append(pages, archivedPage{URL: source.URL.String(), Path: packed.Local})
+		packedRepos = append(packedRepos, packed)
+		for _, anchor := range repo.anchors {
+			archiveSetAttribute(anchor, "href", archiveRelative(entry, packed.Local))
+		}
+	}
+	for index, file := range stored {
+		if bundle == nil {
+			pages = append(pages, archivedPage{URL: source.URL.String(), Path: file.Local})
+		}
+		target := file.Local
+		if bundle != nil {
+			target = bundle.Local
+		}
+		for _, anchor := range anchors[index] {
+			archiveSetAttribute(anchor, "href", archiveRelative(entry, target))
 		}
 	}
 	cleanArchiveContent(article.Content)
@@ -287,7 +469,7 @@ func archiveReader(fetcher *archiveFetcher, source archiveSource, output string,
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return nil, err
 	}
-	page, err := renderArchiveArticle(article, source, stored, site, entry)
+	page, err := renderArchiveArticle(article, source, archiveFilesBox(entry, stored, bundle, packedRepos), site, entry)
 	if err != nil {
 		return nil, err
 	}
@@ -313,19 +495,26 @@ func archiveParseHTML(fetcher *archiveFetcher, body []byte, contentType string, 
 		name := path.Base(final.Path)
 		return &archiveArticle{Base: final, Content: archiveContainer(), Files: []archiveFile{{Name: name, URL: final.String()}}}, nil
 	}
-	document, err := html.Parse(bytes.NewReader(body))
+	// Pages are written out as UTF-8, so decode older encodings first, as
+	// named by the Content-Type header or the page's own meta tag.
+	reader, err := charset.NewReader(bytes.NewReader(body), contentType)
+	if err != nil {
+		reader = bytes.NewReader(body)
+	}
+	document, err := html.Parse(reader)
 	if err != nil {
 		return nil, err
 	}
 	meta := archiveMeta(document)
 	article := &archiveArticle{Base: final, Title: meta["og:title"], Description: meta["og:description"], Image: meta["og:image"], Author: meta["author"]}
+	article.PageTitle = archiveDocumentTitle(document)
 	if article.Title == "" || strings.HasPrefix(article.Title, "|") {
-		article.Title = archiveDocumentTitle(document)
+		article.Title = article.PageTitle
 	}
 	if article.Description == "" {
 		article.Description = meta["description"]
 	}
-	if strings.HasPrefix(article.Title, "Just a moment") {
+	if archiveChallengeTitle.MatchString(article.Title) || archiveChallengePage(document) {
 		return nil, fmt.Errorf("GET %s: blocked by a browser challenge", source)
 	}
 	if base := cascadia.Query(document, cascadia.MustCompile("base[href]")); base != nil {
@@ -334,6 +523,7 @@ func archiveParseHTML(fetcher *archiveFetcher, body []byte, contentType string, 
 		}
 	}
 	resolveArchiveLazyImages(document)
+	article.Links = archiveLinks(document, article.Base)
 	archiveMarkVideoEmbeds(fetcher, article, document)
 	pruneArchiveElements(document)
 	matched := rule != nil && rule.content != nil && cascadia.Query(document, rule.content) != nil
@@ -357,7 +547,6 @@ func archiveParseHTML(fetcher *archiveFetcher, body []byte, contentType string, 
 		article.Title = strings.TrimPrefix(article.Title, "GitHub - ")
 		if parts := strings.Split(strings.Trim(final.Path, "/"), "/"); len(parts) == 2 {
 			article.Title = parts[0] + "/" + parts[1]
-			article.Files = append(article.Files, archiveFile{Name: parts[1] + ".zip", URL: "https://github.com/" + parts[0] + "/" + parts[1] + "/archive/HEAD.zip"})
 		}
 	}
 	return article, nil
@@ -643,7 +832,7 @@ func archiveStoreFile(fetcher *archiveFetcher, target *url.URL, output, name str
 	if err != nil {
 		return "", 0, err
 	}
-	if strings.Contains(contentType, "text/html") {
+	if strings.Contains(contentType, "text/html") || !archiveFileMatches(body, name) {
 		return "", 0, fmt.Errorf("GET %s: not a file", target)
 	}
 	sum := sha256.Sum256([]byte(target.String()))
@@ -733,4 +922,35 @@ func archiveSetAttribute(node *html.Node, key, value string) {
 		}
 	}
 	node.Attr = append(node.Attr, html.Attribute{Key: key, Val: value})
+}
+
+// archiveChallengeText is what bot-check interstitials say in place of the
+// page; a short page saying it is no article.
+var (
+	archiveChallengeTitle = regexp.MustCompile(`(?i)^(just a moment|one moment, please|attention required)`)
+	archiveChallengeText  = regexp.MustCompile(`(?i)request is being verified|checking your browser|verify you are (a )?human|enable javascript and cookies to continue`)
+)
+
+func archiveChallengePage(document *html.Node) bool {
+	body := archiveBody(document)
+	if body == nil {
+		return false
+	}
+	text := archiveNodeText(body)
+	return len(text) < 3000 && archiveChallengeText.MatchString(text)
+}
+
+// archiveFileMatches rejects a download whose bytes are not what its name
+// says, such as an error page saved under a .zip name.
+func archiveFileMatches(body []byte, name string) bool {
+	head := body[:min(len(body), 1024)]
+	switch strings.ToLower(path.Ext(name)) {
+	case ".zip", ".3mf", ".f3d", ".fcstd":
+		return bytes.HasPrefix(body, []byte("PK"))
+	case ".pdf":
+		return bytes.Contains(head, []byte("%PDF"))
+	case ".html", ".htm", ".svg":
+		return true
+	}
+	return !strings.HasPrefix(http.DetectContentType(head), "text/html")
 }

@@ -48,12 +48,20 @@ td,th{border:1px solid var(--line);padding:.3rem .6rem;vertical-align:top}
 blockquote{margin:1rem 0;padding:.1rem 1rem;border-left:3px solid var(--line);color:var(--muted)}
 .files{margin-top:2.5rem;padding:1rem 1.1rem;background:var(--card);border:1px solid var(--line);border-radius:8px}
 .files h2{margin-top:0}
+.files .download{font-weight:600}
+.files .size{color:var(--muted);font-size:.8rem}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.9rem}
 .card{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;text-decoration:none;color:inherit}
 .card img,.card .thumb{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;margin:0;border-radius:0;background:var(--line)}
 .card .title{padding:.5rem .6rem 0;font-weight:600;font-size:.9rem;line-height:1.3}
 .card .host{margin-top:auto;padding:.3rem .6rem .6rem;color:var(--muted);font-size:.75rem}
 .card.unavailable{opacity:.55}
+[hidden]{display:none!important}
+.searchbar{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:.8rem;max-width:76rem;margin:0 auto;padding:.6rem 1.1rem;background:var(--bg);border-bottom:1px solid var(--line)}
+.searchbar input{flex:1;font:inherit;font-size:1rem;padding:.5rem .8rem;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+.searchbar input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+#count{color:var(--muted);font-size:.85rem;white-space:nowrap}
+#nothing{color:var(--muted);margin:2rem 0}
 .contents{display:flex;flex-wrap:wrap;gap:.3rem .5rem;margin:.8rem 0 .4rem}
 .contents a{padding:.15rem .6rem;border:1px solid var(--line);border-radius:999px;background:var(--card);font-size:.8rem;text-decoration:none}
 body.index h2{margin-top:2.6rem;padding-bottom:.3rem;border-bottom:1px solid var(--line);letter-spacing:.04em}
@@ -65,7 +73,7 @@ func archivePageHead(page *bytes.Buffer, title, stylesheet, class string) {
 		template.HTMLEscapeString(title), template.HTMLEscapeString(stylesheet), class)
 }
 
-func renderArchiveArticle(article *archiveArticle, source archiveSource, files []archiveFile, site archiveSiteInfo, entry string) ([]byte, error) {
+func renderArchiveArticle(article *archiveArticle, source archiveSource, files string, site archiveSiteInfo, entry string) ([]byte, error) {
 	var page bytes.Buffer
 	title := article.Title
 	if title == "" {
@@ -110,13 +118,7 @@ func renderArchiveArticle(article *archiveArticle, source archiveSource, files [
 			return nil, err
 		}
 	}
-	if len(files) > 0 {
-		page.WriteString(`<div class="files"><h2>Files</h2><ul>`)
-		for _, file := range files {
-			fmt.Fprintf(&page, `<li><a href="%s">%s</a></li>`, template.HTMLEscapeString(file.URL), template.HTMLEscapeString(file.Name))
-		}
-		page.WriteString(`</ul></div>`)
-	}
+	page.WriteString(files)
 	page.WriteString(`</main></body></html>`)
 	return page.Bytes(), nil
 }
@@ -157,13 +159,15 @@ func writeArchiveThumbnail(project string, pages []archivedPage) string {
 
 func writeArchiveIndex(path, root string, sources []archiveSource, title, origin string) error {
 	var cards, contents bytes.Buffer
-	archived, open := 0, false
+	archived := 0
 	lastTop, lastGroup := "", ""
+	openTop, openGroup := false, false
 	for index, source := range sources {
 		local := filepath.ToSlash(filepath.Join("projects", source.ID, archiveEntryPath(source.URL)))
 		host := strings.TrimPrefix(source.URL.Host, "www.")
-		name, class, thumbnail := source.Label, "card", ""
+		name, class, thumbnail, pageTitle := source.Label, "card", "", ""
 		if project, err := readArchiveProject(filepath.Join(root, "projects", source.ID, "project.json")); err == nil {
+			pageTitle = project.Title
 			if name == "" {
 				name = project.Title
 			}
@@ -186,34 +190,46 @@ func writeArchiveIndex(path, root string, sources []archiveSource, title, origin
 		}
 		top, sub, _ := strings.Cut(group, " / ")
 		if index == 0 || group != lastGroup {
-			if open {
-				cards.WriteString("</div>")
+			if openGroup {
+				cards.WriteString("</div></section>")
 			}
-			if top != lastTop && top != "" {
-				anchor := fmt.Sprintf("section-%d", index)
-				fmt.Fprintf(&cards, `<h2 id="%s">%s</h2>`, anchor, template.HTMLEscapeString(top))
-				fmt.Fprintf(&contents, `<a href="#%s">%s</a>`, anchor, template.HTMLEscapeString(top))
+			if index == 0 || top != lastTop {
+				if openTop {
+					cards.WriteString("</section>")
+				}
+				cards.WriteString(`<section class="top">`)
+				openTop = true
+				if top != "" {
+					anchor := fmt.Sprintf("section-%d", index)
+					fmt.Fprintf(&cards, `<h2 id="%s">%s</h2>`, anchor, template.HTMLEscapeString(top))
+					fmt.Fprintf(&contents, `<a href="#%s">%s</a>`, anchor, template.HTMLEscapeString(top))
+				}
 			}
+			cards.WriteString(`<section class="group">`)
 			if sub != "" {
 				fmt.Fprintf(&cards, "<h3>%s</h3>", template.HTMLEscapeString(sub))
 			}
 			cards.WriteString(`<div class="cards">`)
-			lastTop, lastGroup, open = top, group, true
+			lastTop, lastGroup, openGroup = top, group, true
 		}
-		fmt.Fprintf(&cards, `<a class="%s" href="%s">`, class, archiveIndexHref(local))
+		if source.Author != "" {
+			host = "by " + source.Author + " · " + host
+		}
+		search := strings.ToLower(strings.Join([]string{name, pageTitle, host, group}, " "))
+		fmt.Fprintf(&cards, `<a class="%s" href="%s" data-search="%s">`, class, archiveIndexHref(local), template.HTMLEscapeString(search))
 		if thumbnail != "" {
 			fmt.Fprintf(&cards, `<img loading="lazy" alt="" src="%s">`, archiveIndexHref(thumbnail))
 		} else {
 			cards.WriteString(`<span class="thumb"></span>`)
 		}
-		if source.Author != "" {
-			host = "by " + source.Author + " · " + host
-		}
 		fmt.Fprintf(&cards, `<span class="title">%s</span><span class="host">%s</span></a>`,
 			template.HTMLEscapeString(name), template.HTMLEscapeString(host))
 	}
-	if open {
-		cards.WriteString("</div>")
+	if openGroup {
+		cards.WriteString("</div></section>")
+	}
+	if openTop {
+		cards.WriteString("</section>")
 	}
 	var page bytes.Buffer
 	archivePageHead(&page, title, archiveStylesheet, "index")
@@ -222,11 +238,45 @@ func writeArchiveIndex(path, root string, sources []archiveSource, title, origin
 	if contents.Len() > 0 {
 		fmt.Fprintf(&page, `<p class="contents">%s</p>`, contents.Bytes())
 	}
-	page.WriteString("</header><main>")
+	page.WriteString(`</header><div class="searchbar"><input id="search" type="search" placeholder="Filter projects: words or parts of words, e.g. lamp wood" autocomplete="off" aria-label="Filter projects"><span id="count"></span></div><main>`)
 	page.Write(cards.Bytes())
-	page.WriteString("</main></body></html>")
+	page.WriteString(`<p id="nothing" hidden>No projects match. Kiwix's own search covers the full text of every page.</p></main>`)
+	page.WriteString(archiveIndexScript)
+	page.WriteString("</body></html>")
 	return os.WriteFile(path, page.Bytes(), 0o644)
 }
+
+// archiveIndexScript filters the index cards as the reader types: every word
+// must appear, as a substring, in the card's title, author, site or category.
+// #q=... in the address fills the box, so a filter can be bookmarked.
+const archiveIndexScript = `<script>
+(function () {
+  var box = document.getElementById("search"), count = document.getElementById("count");
+  var fold = function (text) { return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); };
+  var cards = Array.prototype.map.call(document.querySelectorAll(".card"), function (card) {
+    return { node: card, text: fold(card.getAttribute("data-search") || "") };
+  });
+  var sections = document.querySelectorAll(".group, .top");
+  function run() {
+    var terms = fold(box.value).split(/\s+/).filter(Boolean), shown = 0;
+    cards.forEach(function (card) {
+      var match = terms.every(function (term) { return card.text.indexOf(term) >= 0; });
+      card.node.hidden = !match;
+      if (match) shown++;
+    });
+    Array.prototype.forEach.call(sections, function (section) {
+      section.hidden = !section.querySelector(".card:not([hidden])");
+    });
+    count.textContent = terms.length ? shown + " of " + cards.length : "";
+    document.getElementById("nothing").hidden = shown > 0;
+    try { history.replaceState(null, "", terms.length ? "#q=" + encodeURIComponent(box.value) : location.pathname + location.search); } catch (error) {}
+  }
+  box.addEventListener("input", run);
+  box.addEventListener("keydown", function (event) { if (event.key === "Escape") { box.value = ""; run(); } });
+  var query = location.hash.match(/^#q=(.*)$/);
+  if (query) { box.value = decodeURIComponent(query[1]); run(); }
+})();
+</script>`
 
 // archiveOptimizeImage shrinks large photos; it reports false when the
 // original bytes should be kept.
