@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -431,7 +430,7 @@ func (c *SearchCapability) ensureKiwix() error {
 			return
 		}
 
-		zims, err := filepath.Glob(filepath.Join(c.driveRoot, "zim", "*.zim"))
+		zims, err := searchserver.ZIMFiles(c.driveRoot)
 		if err != nil {
 			c.kiwixErr = err
 			return

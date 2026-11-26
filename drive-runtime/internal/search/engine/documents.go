@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -15,6 +16,19 @@ import (
 // with one article per page at the path page/N. A ZIM source name never holds
 // a "/", so the two kinds cannot be confused.
 const DocumentsDir = "books"
+
+// IsDocumentFile reports whether a file below DocumentsDir is a document by
+// its name, and not something a download left beside one (a
+// ".download.json" record, a partial file). The extensions are those of the
+// recipe types the host stores there: keep in sync with TypeDirs in
+// host-cli/internal/toolkit.
+func IsDocumentFile(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".pdf", ".epub":
+		return true
+	}
+	return false
+}
 
 // ErrNoPage is returned for a page a document's index does not hold: it is
 // out of range, blank, or an image without a text layer.

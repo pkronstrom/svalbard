@@ -11,9 +11,13 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/actions"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/folder"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/tui"
 )
+
+// workspaceAction is the built-in that opens the drive's workspace folder.
+const workspaceAction = "workspace"
 
 type actionFinishedMsg struct {
 	err error
@@ -483,6 +487,14 @@ func (m Model) activateItem(item config.MenuItem) (tea.Model, tea.Cmd) {
 		} else if err == nil && builtin.Name == settingsAction {
 			m.openSettings()
 			return m, nil
+		} else if err == nil && builtin.Name == workspaceAction {
+			// The action would say this and end at once, and the menu would
+			// cover the line as it came back.
+			if line, missing := folder.WorkspaceMissing(m.driveRoot); missing {
+				m.lastErr = nil
+				m.status = line
+				return m, nil
+			}
 		}
 	}
 	resolved, err := m.runner.Resolve(item.Action)

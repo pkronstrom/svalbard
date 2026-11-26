@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/tui"
 )
 
@@ -255,6 +256,7 @@ func renderGroupView(b *strings.Builder, m Model) {
 		return
 	}
 
+	noteColumn := menuNoteColumn(visible)
 	currentSubheader := ""
 	for idx, item := range visible {
 		if item.Subheader != "" && item.Subheader != currentSubheader {
@@ -263,18 +265,16 @@ func renderGroupView(b *strings.Builder, m Model) {
 			b.WriteString("\n")
 		}
 
-		label := menuRow(item.Label, false)
-		if item.Subheader != "" {
-			label = menuIndentedRow(item.Label, false)
+		selected := idx == m.itemSelected
+		row := menuItemRow(item, selected)
+		note := menuNote(row, item.Note, noteColumn, m.width)
+		if selected {
+			row = m.theme.Selected.Render(row)
 		}
-		if idx == m.itemSelected {
-			if item.Subheader != "" {
-				label = m.theme.Selected.Render(menuIndentedRow(item.Label, true))
-			} else {
-				label = m.theme.Selected.Render(menuRow(item.Label, true))
-			}
+		b.WriteString(row)
+		if note != "" {
+			b.WriteString(m.theme.Muted.Render(note))
 		}
-		b.WriteString(label)
 		b.WriteString("\n")
 	}
 
@@ -328,4 +328,46 @@ func menuRow(label string, selected bool) string {
 
 func menuIndentedRow(label string, selected bool) string {
 	return menuSubIndent + menuRow(label, selected)
+}
+
+func menuItemRow(item config.MenuItem, selected bool) string {
+	if item.Subheader != "" {
+		return menuIndentedRow(item.Label, selected)
+	}
+	return menuRow(item.Label, selected)
+}
+
+const (
+	menuNoteGap = "   "
+	// menuNoteColumnMax keeps one long label from pushing every note to the
+	// right edge: a row longer than this carries its note right after it.
+	menuNoteColumnMax = 40
+)
+
+// menuNoteColumn is the width the rows that carry a note are padded to, so
+// the notes of a group line up.
+func menuNoteColumn(items []config.MenuItem) int {
+	column := 0
+	for _, item := range items {
+		if item.Note == "" {
+			continue
+		}
+		if width := lipgloss.Width(menuItemRow(item, false)); width <= menuNoteColumnMax {
+			column = max(column, width)
+		}
+	}
+	return column
+}
+
+// menuNote is a row's note with the padding that puts it in the note column,
+// or nothing when the row has no note or the terminal no room for it.
+func menuNote(row, note string, column, width int) string {
+	if note == "" {
+		return ""
+	}
+	padded := strings.Repeat(" ", max(column-lipgloss.Width(row), 0)) + menuNoteGap + note
+	if width > 0 && lipgloss.Width(row)+lipgloss.Width(padded) > width {
+		return ""
+	}
+	return padded
 }

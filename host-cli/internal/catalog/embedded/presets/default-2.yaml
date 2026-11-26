@@ -8,6 +8,7 @@ sources:
 - sqlite3
 - 7z
 - toybox
+- silverbullet
 # ── Reference ──
 - wikiciv
 - cd3wd

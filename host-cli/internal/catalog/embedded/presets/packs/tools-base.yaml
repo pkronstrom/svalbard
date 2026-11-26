@@ -23,6 +23,7 @@ sources:
 - yq
 - toybox
 - dufs
+- silverbullet
 - uv
 - svalbard-python
 - go-pmtiles

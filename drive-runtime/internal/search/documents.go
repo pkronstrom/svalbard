@@ -17,7 +17,8 @@ import (
 // whatever application the host has for PDFs and loses the page. So the
 // session serves the drive's books/ folder on a loopback port for as long as
 // it lives. The workspace server does the serving: read-only, one folder,
-// loopback Host names only, range requests for the viewer.
+// loopback Host names only, range requests for the viewer, and documents
+// only, not the records a download leaves beside them.
 
 // IsDocumentSource reports whether a result's source is a document on the
 // drive rather than a ZIM archive.
@@ -51,7 +52,7 @@ func startDocumentServer(driveRoot string) (*documentServer, error) {
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("the drive has no %s folder", engine.DocumentsDir)
 	}
-	folder, err := workspace.Open(dir)
+	folder, err := workspace.OpenWith(dir, workspace.Options{Serves: engine.IsDocumentFile})
 	if err != nil {
 		return nil, err
 	}

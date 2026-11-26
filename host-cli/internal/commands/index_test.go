@@ -48,6 +48,8 @@ func TestScanZIMFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(zimDir, "wiki.zim"), []byte("fake"), 0o644)
 	os.WriteFile(filepath.Join(zimDir, "ifixit.zim"), []byte("fake"), 0o644)
 	os.WriteFile(filepath.Join(zimDir, "readme.txt"), []byte("not a zim"), 0o644)
+	// What macOS leaves beside an archive on an exFAT stick.
+	os.WriteFile(filepath.Join(zimDir, "._wiki.zim"), []byte("\x00\x05\x16\x07"), 0o644)
 
 	files, err := ScanZIMFiles(root)
 	if err != nil {

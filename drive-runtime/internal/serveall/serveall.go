@@ -14,6 +14,9 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
+	searchserver "github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
 type Service struct {
@@ -33,6 +36,10 @@ func PlanServices(driveRoot string, binaries map[string]string) []Service {
 	if _, err := os.Stat(filepath.Join(driveRoot, "apps", "map", "index.html")); err == nil {
 		plan = append(plan, Service{Name: "map"})
 	}
+	if binaries["silverbullet"] != "" {
+		// The wiki has no login, so it never follows the bind address.
+		plan = append(plan, Service{Name: "wiki", Bind: "127.0.0.1"})
+	}
 	return plan
 }
 
@@ -47,6 +54,9 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 	if path, err := binary.Resolve("llama-server", driveRoot); err == nil {
 		binaries["llama-server"] = path
 	}
+	if path, err := binary.ResolveOnDrive("silverbullet", driveRoot); err == nil {
+		binaries["silverbullet"] = path
+	}
 	plan := PlanServices(driveRoot, binaries)
 
 	var commands []*exec.Cmd
@@ -57,7 +67,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 		if err != nil {
 			return err
 		}
-		zims, _ := filepath.Glob(filepath.Join(driveRoot, "zim", "*.zim"))
+		zims, _ := searchserver.ZIMFiles(driveRoot)
 		args := []string{"--port", fmt.Sprintf("%d", port), "--address", bind}
 		args = append(args, zims...)
 		cmd := exec.CommandContext(ctx, binaries["kiwix-serve"], args...)
@@ -106,6 +116,20 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 	fmt.Fprintf(stdout, "Files:  http://%s:%d\n", bind, filePort)
 	if containsService(plan, "map") {
 		fmt.Fprintf(stdout, "Map:    http://%s:%d/apps/map/\n", bind, filePort)
+	}
+
+	if containsService(plan, "wiki") {
+		// Whatever the other services bind, the wiki stays on this computer:
+		// anyone who can reach it can write it. Its pages are files on the
+		// drive, which Files above shares read-only like the rest.
+		instance, err := wiki.Start(ctx, driveRoot, settings.OpenForAction(driveRoot, stdout))
+		if err != nil {
+			// The other services are worth having without it.
+			fmt.Fprintf(stdout, "Wiki:   not started: %v\n", err)
+		} else {
+			defer instance.Close()
+			fmt.Fprintf(stdout, "Wiki:   %s (local only)\n", instance.URL)
+		}
 	}
 
 	<-ctx.Done()

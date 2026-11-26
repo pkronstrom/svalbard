@@ -239,6 +239,38 @@ func TestEnvironmentConfiguresALocalSignedOutSlimInstance(t *testing.T) {
 	}
 }
 
+func TestEnvironmentDescribesTheWikiOnlyWhenItsToolsAreOffered(t *testing.T) {
+	description := func(l Launch) string {
+		t.Helper()
+		var servers []struct {
+			Info struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"info"`
+		}
+		if err := json.Unmarshal([]byte(Environment(l)["TOOL_SERVER_CONNECTIONS"]), &servers); err != nil || len(servers) == 0 {
+			t.Fatalf("TOOL_SERVER_CONNECTIONS: %v", err)
+		}
+		if servers[0].Info.Name != "Svalbard vault" {
+			t.Fatalf("first tool server = %q, want Svalbard vault", servers[0].Info.Name)
+		}
+		return servers[0].Info.Description
+	}
+	launch := Launch{MCPURL: "http://127.0.0.1:8090/mcp", FilesURL: "http://127.0.0.1:8090/files/mcp", Port: 8084}
+	if got, want := description(launch), "Search and read the content on this drive"; got != want {
+		t.Errorf("description = %q, want %q", got, want)
+	}
+	// The wiki tools have no switch of their own: they are the vault's.
+	launch.Wiki = true
+	if got, want := description(launch), "Search and read the content on this drive, and read and write the pages of its wiki"; got != want {
+		t.Errorf("description with the wiki = %q, want %q", got, want)
+	}
+	var servers []json.RawMessage
+	if err := json.Unmarshal([]byte(Environment(launch)["TOOL_SERVER_CONNECTIONS"]), &servers); err != nil || len(servers) != 2 {
+		t.Errorf("tool servers with the wiki = %d (%v), want the same two", len(servers), err)
+	}
+}
+
 func TestEnvironmentWithoutFileToolsOffersOnlyTheVault(t *testing.T) {
 	env := Environment(Launch{MCPURL: "http://127.0.0.1:8090/mcp", Port: 8084})
 
@@ -478,6 +510,67 @@ func TestRunStartsEverythingAndStopsItOnCancel(t *testing.T) {
 			response.Body.Close()
 			t.Errorf("%s still answers after Run() returned", endpoint)
 		}
+	}
+}
+
+// The vault's tool server carries the wiki tools on a drive that has the
+// wiki, and its description in the chat's Tools menu says so.
+func TestRunTellsOpenWebUIAboutTheWikiOfADriveThatHasOne(t *testing.T) {
+	driveRoot, recordDir := newFakeDrive(t, "open-webui")
+	recipes := `{"silverbullet": {"id": "silverbullet", "type": "binary", "description": "SilverBullet wiki", "tags": []}}`
+	if err := os.MkdirAll(filepath.Join(driveRoot, ".svalbard"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(driveRoot, ".svalbard", "recipes.json"), []byte(recipes), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stdout := &syncBuffer{}
+	opened := make(chan string, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, stdout, driveRoot, "", func(url string) error { opened <- url; return nil })
+	}()
+	select {
+	case <-opened:
+	case err := <-done:
+		t.Fatalf("Run() returned before opening the browser: %v\n%s", err, stdout.String())
+	case <-time.After(30 * time.Second):
+		t.Fatalf("browser was not opened\n%s", stdout.String())
+	}
+
+	described := false
+	for _, entry := range readRecord(t, recordDir, "open-webui").Env {
+		if value, ok := strings.CutPrefix(entry, "TOOL_SERVER_CONNECTIONS="); ok {
+			var servers []struct {
+				Info struct {
+					Description string `json:"description"`
+				} `json:"info"`
+			}
+			if err := json.Unmarshal([]byte(value), &servers); err != nil || len(servers) != 2 {
+				t.Fatalf("TOOL_SERVER_CONNECTIONS = %s (%v), want the vault and the file tools", value, err)
+			}
+			described = strings.Contains(servers[0].Info.Description, "read and write the pages of its wiki")
+		}
+	}
+	if !described {
+		t.Error("the Svalbard vault description does not mention the wiki")
+	}
+	// Starting Open WebUI is not using the wiki: no page folder appears.
+	if _, err := os.Stat(filepath.Join(driveRoot, "wiki")); err == nil {
+		t.Error("starting Open WebUI created the wiki folder")
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() error = %v after cancellation, want nil", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("Run() did not return after cancellation")
 	}
 }
 
