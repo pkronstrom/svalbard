@@ -1,0 +1,48 @@
+name: Release binaries
+
+# Builds the svalbard host CLI for macOS and Linux (arm64 and x86_64) and
+# attaches the archives and SHA256SUMS to the release. Run it by hand with a
+# tag to backfill an existing release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach binaries to, for example v0.6.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      # The release's own source, which may predate this workflow.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+          path: src
+
+      # The build script from the commit running this workflow.
+      - uses: actions/checkout@v7
+        with:
+          path: release-tools
+          sparse-checkout: scripts/build-release.sh
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/host-cli/go.mod
+          cache: false
+
+      - name: Build archives
+        run: release-tools/scripts/build-release.sh "${TAG#v}" dist src
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"

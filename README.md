@@ -68,7 +68,7 @@ This capture used three local PMTiles extracts. The basemap came from National L
 
 ## Install
 
-Download the host binary for your Mac or Linux computer, extract it, and put `svalbard` on your path. To build from a checkout with Go installed, run `make build` and use `bin/svalbard`. Standard downloads use the host binary directly. Recipes that build tools, including the optional Open WebUI install, use Docker during preparation. [Release downloads](https://github.com/pkronstrom/svalbard/releases) · [Usage guide](docs/usage.md)
+Download the host binary for your Mac or Linux computer, extract it, and put `svalbard` on your path. The macOS binaries are not signed yet: if macOS refuses to open one you downloaded in a browser, run `xattr -d com.apple.quarantine svalbard` once. To build from a checkout with Go installed, run `make build` and use `bin/svalbard`. Standard downloads use the host binary directly. Recipes that build tools, including the optional Open WebUI install, use Docker during preparation. [Release downloads](https://github.com/pkronstrom/svalbard/releases) · [Usage guide](docs/usage.md)
 
 ### Prepare the drive
 
