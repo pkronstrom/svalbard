@@ -3,8 +3,9 @@
     uv run --with 'libzim>=3,<4' python make_fixture.py .
 
 book.epub      "Fixture Book": a cover with only an image, chapter 1 "Beginnings" (short) and
-               chapter 2 "The Long Road" (about 40,000 characters of numbered lines L0001 ...).
-drm.epub       a valid EPUB that also has META-INF/encryption.xml, as DRM-protected books do.
+               chapter 2 "The Long Road" (about 49,000 characters of numbered lines L0001 ...,
+               four parts of at most 16,000 characters).
+drm.epub       a valid EPUB whose META-INF/encryption.xml encrypts its chapter, as DRM does.
 documents.zim  "Fixture Library", main page home, laid out like an openZIM nautilus ZIM:
                  home                    text/html   the rendered page
                  home.html               text/html   an unrendered template, <title>{{ title }}</title>
@@ -41,7 +42,9 @@ def epub(path, chapters, title, drm=False):
                    '<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')
         if drm:
             z.writestr("META-INF/encryption.xml",
-                       '<?xml version="1.0"?><encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container"/>')
+                       '<?xml version="1.0"?><encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container"'
+                       ' xmlns:enc="http://www.w3.org/2001/04/xmlenc#"><enc:EncryptedData><enc:CipherData>'
+                       '<enc:CipherReference URI="OEBPS/text/ch1.xhtml"/></enc:CipherData></enc:EncryptedData></encryption>')
         manifest = "".join(f'<item id="i{n}" href="text/{name}" media-type="application/xhtml+xml"/>' for n, (name, _) in enumerate(chapters))
         spine = "".join(f'<itemref idref="i{n}"/>' for n in range(len(chapters)))
         z.writestr("OEBPS/content.opf",

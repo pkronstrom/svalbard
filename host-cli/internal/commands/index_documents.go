@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	// documentsDir is the vault directory of document collections: PDFs,
-	// whose source name in the index is the vault-relative path.
+	// documentsDir is the vault directory of document collections: PDFs and
+	// EPUBs, whose source name in the index is the vault-relative path.
 	documentsDir = "books"
 	// maxDocumentPartChars caps the text indexed for one page.
 	maxDocumentPartChars = 16000
@@ -55,8 +55,9 @@ type documentKind struct {
 // them. A kind is added here and nowhere else; documentRoots says where on
 // the vault files of it are looked for.
 var documentKinds = map[string]documentKind{
-	".pdf": {unit: "page", open: openPDFReader},
-	".md":  {unit: "section", open: openMarkdownReader},
+	".pdf":  {unit: "page", open: openPDFReader},
+	".epub": {unit: "part", open: openEPUBReader},
+	".md":   {unit: "section", open: openMarkdownReader},
 }
 
 // documentRoot is a vault directory whose files are indexed as documents,
@@ -77,7 +78,7 @@ type documentRoot struct {
 // skills, and the quickstarts of JS libraries. Skills and quickstarts are
 // markdown, kept apart from the knowledge sources when the drive searches.
 var documentRoots = []documentRoot{
-	{dir: documentsDir, extensions: []string{".pdf"}},
+	{dir: documentsDir, extensions: []string{".pdf", ".epub"}},
 	{dir: "skills", extensions: []string{".md"}},
 	{dir: "lib/js", extensions: []string{".md"}, folders: libraryDocFolders, within: isLibraryDoc},
 }
