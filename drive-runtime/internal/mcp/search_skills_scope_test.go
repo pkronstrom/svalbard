@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -160,13 +161,17 @@ func TestVaultSourcesHidesSkills(t *testing.T) {
 }
 
 // A document collection may be called "skills". Its short name keeps meaning
-// the collection on a drive that has no skill files.
+// the collection on a drive that has no skill files. Two documents, so that
+// the name cannot resolve to one of them by a partial match instead.
 func TestCollectionNamedSkillsStillResolves(t *testing.T) {
 	f := newDocumentFixture(t)
-	guide := f.document("books/skills/knots.pdf", "Knots", "")
-	f.page(guide, 1, "Knots, p. 1", "Tie a bowline around the coolant hose")
+	knots := f.document("books/skills/knots.pdf", "Knots", "")
+	f.page(knots, 1, "Knots, p. 1", "Tie a bowline around the coolant hose")
+	splices := f.document("books/skills/splices.pdf", "Splices", "")
+	f.page(splices, 1, "Splices, p. 1", "Finish the eye splice with a bowline")
+	collection := []string{"books/skills/knots.pdf page/1", "books/skills/splices.pdf page/1"}
 	items, _ := f.search(map[string]any{"query": "bowline", "source": "skills"})
-	if got := sources(items); len(got) != 1 || got[0] != "books/skills/knots.pdf page/1" {
+	if got := sources(items); !slices.Equal(slices.Sorted(slices.Values(got)), collection) {
 		t.Fatalf("source skills on a drive without skill files = %v", got)
 	}
 	// With skill files on the drive the bare name is the skills; the
@@ -177,7 +182,7 @@ func TestCollectionNamedSkillsStillResolves(t *testing.T) {
 		t.Fatalf("source skills with skill files = %v", got)
 	}
 	items, _ = f.search(map[string]any{"query": "bowline", "source": "books/skills"})
-	if got := sources(items); len(got) != 1 || got[0] != "books/skills/knots.pdf page/1" {
+	if got := sources(items); !slices.Equal(slices.Sorted(slices.Values(got)), collection) {
 		t.Fatalf("source books/skills = %v", got)
 	}
 }
