@@ -37,6 +37,11 @@ type Item struct {
 	Menu           *MenuSpec         `yaml:"menu,omitempty"`
 	Env            map[string]string `yaml:"env,omitempty"`
 
+	// Settings are the choices the recipe lets the user make on the drive,
+	// each with a default (see SettingSpec). Apply writes those of the
+	// installed recipes to .svalbard/settings.schema.json.
+	Settings []SettingSpec `yaml:"settings,omitempty"`
+
 	// Bundle lists pinned downloads assembled into the item's directory
 	// (<type dir>/<id>/), for example npm package tarballs for a web app.
 	Bundle []BundleSource `yaml:"bundle,omitempty"`
@@ -176,6 +181,9 @@ func LoadFromFS(recipesFS fs.FS, presetsFS fs.FS) (*Catalog, error) {
 		return nil, fmt.Errorf("walking recipes: %w", err)
 	}
 	if err := c.validateDraftTargets(); err != nil {
+		return nil, err
+	}
+	if err := c.validateSettings(); err != nil {
 		return nil, err
 	}
 
