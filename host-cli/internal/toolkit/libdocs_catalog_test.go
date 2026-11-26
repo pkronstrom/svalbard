@@ -38,6 +38,7 @@ var recipeBudgets = map[string]struct {
 	allocated int64
 }{
 	"js-core":   {files: 33, allocated: 11 << 20},
+	"js-3d-cad": {files: 7, allocated: 2 << 20},
 }
 
 // frontmatterAllowance covers the frontmatter apply adds to a quickstart.
