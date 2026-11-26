@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch</title>
+<style>
+  body { margin: 0; display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; font-family: system-ui, sans-serif; background: #1d1f24; color: #e8e6e1; }
+  aside { padding: 16px; background: #26282e; }
+  h1 { font-size: 1.1rem; margin: 0 0 12px; }
+  label { display: block; margin: 10px 0 2px; font-size: .85rem; }
+  input[type=range] { width: 100%; }
+  output { float: right; font-variant-numeric: tabular-nums; }
+  button { margin: 10px 6px 0 0; padding: 6px 10px; }
+  #canvas { display: grid; place-items: center; padding: 16px; }
+</style>
+</head>
+<body>
+<aside>
+  <h1 id="title"></h1>
+  <div id="controls"></div>
+  <button id="newseed">New seed</button><button id="save">Save PNG</button>
+</aside>
+<div id="canvas"></div>
+<script type="module">
+import p5 from "p5";
+
+// EDIT: parameters (each becomes a slider; seed makes a picture repeatable)
+const title = "Flow field";
+const params = {
+  seed: { value: 42, min: 1, max: 99999, step: 1 },
+  particles: { value: 900, min: 50, max: 4000, step: 50 },
+  noiseScale: { value: 0.004, min: 0.001, max: 0.02, step: 0.001 },
+  steps: { value: 220, min: 20, max: 600, step: 10 },
+  weight: { value: 0.9, min: 0.2, max: 4, step: 0.1 },
+};
+const palette = ["#f4a261", "#e76f51", "#2a9d8f", "#e9c46a", "#264653"];
+const size = { width: 720, height: 720, background: "#f6f1e7" };
+// /EDIT
+
+const values = Object.fromEntries(Object.entries(params).map(([k, p]) => [k, p.value]));
+let sketch;
+
+// EDIT: drawing (runs once per redraw with the slider values; s is the p5 sketch)
+function art(s, v) {
+  s.background(size.background);
+  s.strokeWeight(v.weight);
+  for (let i = 0; i < v.particles; i++) {
+    let x = s.random(s.width), y = s.random(s.height);
+    const c = s.color(s.random(palette));
+    c.setAlpha(60);
+    s.stroke(c);
+    s.noFill();
+    s.beginShape();
+    for (let k = 0; k < v.steps; k++) {
+      s.vertex(x, y);
+      const angle = s.noise(x * v.noiseScale, y * v.noiseScale) * s.TWO_PI * 2;
+      x += Math.cos(angle) * 2;
+      y += Math.sin(angle) * 2;
+      if (x < 0 || x > s.width || y < 0 || y > s.height) break;
+    }
+    s.endShape();
+  }
+}
+// /EDIT
+
+function redraw() {
+  sketch.randomSeed(values.seed);
+  sketch.noiseSeed(values.seed);
+  art(sketch, values);
+  window.svalbardSketch = { seed: values.seed, drawn: true };
+}
+
+document.getElementById("title").textContent = title;
+const controls = document.getElementById("controls");
+for (const [key, p] of Object.entries(params)) {
+  const label = document.createElement("label");
+  label.textContent = key;
+  const out = document.createElement("output");
+  out.textContent = p.value;
+  const input = Object.assign(document.createElement("input"), { type: "range", id: key, min: p.min, max: p.max, step: p.step, value: p.value });
+  input.addEventListener("input", () => { values[key] = Number(input.value); out.textContent = input.value; redraw(); });
+  label.append(out, input);
+  controls.appendChild(label);
+}
+document.getElementById("newseed").onclick = () => {
+  values.seed = Math.floor(Math.random() * 99999) + 1;
+  document.getElementById("seed").value = values.seed;
+  document.getElementById("seed").previousSibling.textContent = values.seed;
+  redraw();
+};
+document.getElementById("save").onclick = () => sketch.saveCanvas(`${title.replace(/\W+/g, "-").toLowerCase()}-${values.seed}`, "png");
+
+sketch = new p5(s => {
+  s.setup = () => {
+    s.createCanvas(size.width, size.height);
+    s.pixelDensity(1);
+    s.noLoop();
+    redraw();
+  };
+}, document.getElementById("canvas"));
+</script>
+</body>
+</html>
