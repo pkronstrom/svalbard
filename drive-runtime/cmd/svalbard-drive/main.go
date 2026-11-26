@@ -45,12 +45,16 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "mcp" {
 		drive := ""
 		sse := false
+		streamable := false
 		for i, arg := range os.Args {
 			if arg == "--drive" && i+1 < len(os.Args) {
 				drive = os.Args[i+1]
 			}
 			if arg == "--sse" {
 				sse = true
+			}
+			if arg == "--http" {
+				streamable = true
 			}
 		}
 		if drive == "" {
@@ -61,6 +65,9 @@ func run() error {
 		}
 		if sse {
 			return runMCPServe(drive)
+		}
+		if streamable {
+			return runMCPHTTP(drive)
 		}
 		return runMCP(drive)
 	}
@@ -296,6 +303,20 @@ func runMCPServe(driveRoot string) error {
 	fmt.Fprintln(os.Stdout, "Press Ctrl+C to stop.")
 	fmt.Fprintln(os.Stdout)
 	return srv.ServeSSE(addr)
+}
+
+func runMCPHTTP(driveRoot string) error {
+	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	defer srv.Close()
+
+	listener, port, err := netutil.Listen("127.0.0.1", 8090)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	fmt.Fprintf(os.Stdout, "MCP server (Streamable HTTP) listening on http://127.0.0.1:%d%s\n", port, mcp.StreamableHTTPPath)
+	return srv.ServeStreamableHTTP(ctx, listener)
 }
 
 func runMCP(driveRoot string) error {
