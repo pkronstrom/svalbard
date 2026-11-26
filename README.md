@@ -4,41 +4,37 @@
 
 # Svalbard
 
-**Bring a library, a local model, and a place to save what you make.** Svalbard packs reference material and tools into a folder you can carry on a USB drive. Ask an assistant to read across your archives and turn what it finds into something you can open again tomorrow: a diagram, a field guide, or a small browser app.
+**An offline library and a local AI assistant on one USB drive.** Svalbard fills a drive with reference archives, maps, manuals and tools that work without the internet. On a Mac or Linux computer, browse and search them yourself, or ask a local model to find the answer in them and save what it makes, such as a checklist or a small web page.
 
-Prepare the vault while you have internet access. At your destination, open the drive menu on a Mac or Linux computer. You can use the library and maps on their own, or start a local model in **Open WebUI**.
+Build the drive while you’re online. Everything on it then works offline.
 
 > **Alpha (v0.6.0).** Svalbard is under active development. Presets, datasets and curation still change, so expect rough edges.
 
-## What would you make with your vault?
+## Ask the drive
 
-### Turn two sources into one interactive page
+The assistant runs on your own computer and answers from what is on the drive. It searches the archives and your documents, reads the pages it finds and names them. Check those pages before you act on an answer: a small local model can misread one.
 
-> Find information on handmade paper and paper computers. Read *Paper* in Wikiciv and *CARDIAC* in Permacomputing. Make me a single-file HTML visualization that goes from pulp to a programmable page. Let me click through it, name the sources, and save it on the drive.
+> Is there anything in the archives about building a survival shelter?
 
-A local Qwen3.5 4B model searched both ZIM archives, read the articles, and used the workspace file tool to write HTML. We checked its first draft against the articles, then asked for two illustrated cards with a source summary behind each button. The saved page opens directly in a browser.
+> Car won’t start. Old Toyota, petrol engine, the starter just clicks.
 
-![Open WebUI showing Qwen searching the vault, reading archived articles and writing an HTML visualization.](docs/open-webui-make-a-page.webp)
+Ask the way you would ask a person. The assistant searches the survival and repair archives on the drive, reads what it finds and names the pages it used. Ask it to save what it makes, such as a checklist, and it writes a page to the workspace that you can open again later or print.
 
-![The generated visualization opened as a local HTML file.](docs/offline-paper-visualization.webp)
+### What a session looks like
 
-Try the same pattern with your own topics: **“Read X and Y from this drive, show me how they relate, and save it as one HTML file I can use offline.”** Specify what you want to *do* with the result, such as switch views, compare two methods, or record a measurement.
+Here a local Qwen3.5 4B model was asked how paper is made and how CARDIAC, a computer made of cardboard, works. It searched Wikiciv and Permacomputing, read both articles, and saved an interactive page that cites them.
 
-### Build a tool for a night outside
+![Open WebUI showing Qwen searching the vault, reading archived articles and writing an HTML page.](docs/open-webui-make-a-page.webp)
 
-> Make me an offline observing log. Draw a schematic of the Big Dipper, let me select a star and save a dated observation, and remember my notes when I reopen the page. Put everything in one HTML file.
+![The generated page opened as a local HTML file.](docs/offline-paper-visualization.webp)
 
-This example uses the model as a tool builder. The chart is a schematic for choosing a star. The log stores observations in the browser on the computer you use.
-
-![The generated offline Big Dipper observing log.](docs/offline-star-log.webp)
-
-The chat and generated-page screenshots were captured on an Apple Silicon Mac with a folder on its internal SSD. For this workflow, add the **Open WebUI** recipe, new in v0.6.0. Enable its file tools so the assistant can write to the vault’s `workspace/` folder.
+The screenshots were captured on an Apple Silicon Mac with the vault on its internal SSD. To work this way, add the **Open WebUI** recipe, new in v0.6.0, and enable its file tools so the assistant can write to the vault’s `workspace/` folder.
 
 ## Explore the drive yourself
 
 ### Read the original in Kiwix
 
-Choose **Library**, open an installed archive, and search for the article title. Here’s *Paper*, one of the two sources in the visualization. You can follow its links, inspect the diagrams, and check which details the assistant added.
+Choose **Library**, open an installed archive, and search for the article title. Here’s *Paper*, one of the two articles in the session above. Follow its links, look at the diagrams, and check what the assistant added.
 
 ![Kiwix displaying the archived Wikiciv article on paper with its search box and article text.](docs/kiwix-paper.webp)
 
@@ -57,7 +53,7 @@ Download the host binary for your Mac or Linux computer, extract it, and put `sv
 ### Prepare the drive
 
 1. **Choose a destination.** Run `svalbard init` to open the guided setup. Pick a folder or mounted drive and the platforms you’ll use it on.
-2. **Choose the contents.** Start with a capacity preset, review its contents, then add or remove items. For the visualization above, include Wikiciv, Permacomputing, Open WebUI and Qwen3.5 4B. Keep the suggested dependencies and enable keyword indexing.
+2. **Choose the contents.** Start with a capacity preset, review its contents, then add or remove items. To ask questions like the ones above, add Open WebUI and a model that fits your computer’s memory; the screenshots use Qwen3.5 4B, which runs on an 8 GB machine. Keep the suggested dependencies and keyword indexing.
 3. **Apply while online.** Let the downloads and selected indexing finish. The vault keeps both your selections and a record of what was installed. Reopen it later to change its contents.
 
 <img src="docs/demo.gif" alt="Terminal setup wizard for choosing a vault and its contents" width="100%">
@@ -66,11 +62,11 @@ Download the host binary for your Mac or Linux computer, extract it, and put `sv
 
 Open the vault folder in a terminal and run `./run` to launch its keyboard-driven menu. **Library** opens installed archives through Kiwix. **Search** looks across indexed articles. **Maps** opens installed maps. With the SilverBullet recipe, **Wiki** is a notebook on the drive that the assistant can read and, once you allow it in **Settings**, write to. **Workspace** opens the pages the assistant saved. On a phone or tablet, a compatible reader such as Kiwix can open the ZIM files directly.
 
-For browser chat, choose **Open WebUI** under **Local AI** and select your installed model if prompted. The drive starts the model and its vault tools locally and opens the chat in your browser. Ask for article titles and have the model read the matches before it summarizes them.
+For browser chat, choose **Open WebUI** under **Local AI** and select your installed model if prompted. The drive starts the model and its vault tools locally and opens the chat in your browser. Small models answer better when you ask them to search first and read the pages they found before they answer.
 
 ```text
 Browser ── Open WebUI ──┬── local model (Qwen in the examples)
-                        └── Svalbard search and read tools ── ZIM archives
+                        └── Svalbard search and read tools ── archives and documents
 ```
 
 ### Bring your own agent
