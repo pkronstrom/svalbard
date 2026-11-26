@@ -72,3 +72,65 @@ func TestCatalogLoadValidatesLibraries(t *testing.T) {
 		t.Fatalf("err = %v, want the duplicate library refused at load", err)
 	}
 }
+
+func embeddedRecipe(t *testing.T, cat *Catalog, id string) Item {
+	t.Helper()
+	item, ok := cat.RecipeByID(id)
+	if !ok {
+		t.Fatalf("catalog has no %s", id)
+	}
+	return item
+}
+
+// bundleVersion returns the version a recipe's source for pkg pins, from its
+// npm tarball URL (<name>-<version>.tgz).
+func bundleVersion(item Item, pkg string) string {
+	base := pkg[strings.LastIndex(pkg, "/")+1:]
+	for _, source := range item.Bundle {
+		marker := "/" + pkg + "/-/" + base + "-"
+		if at := strings.Index(source.URL, marker); at >= 0 {
+			return strings.TrimSuffix(source.URL[at+len(marker):], ".tgz")
+		}
+	}
+	return ""
+}
+
+func TestMapLibreVersionsMatch(t *testing.T) {
+	cat, err := NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vendor, maps := embeddedRecipe(t, cat, "maplibre-vendor"), embeddedRecipe(t, cat, "js-maps")
+	for _, pkg := range []string{"maplibre-gl", "pmtiles"} {
+		v, m := bundleVersion(vendor, pkg), bundleVersion(maps, pkg)
+		if v == "" || v != m {
+			t.Errorf("%s: maplibre-vendor pins %q, js-maps %q; they must match", pkg, v, m)
+		}
+	}
+	if v := bundleVersion(vendor, "maplibre-gl"); !strings.HasPrefix(v, "5.") {
+		t.Errorf("maplibre-gl %s: the viewer loads it as a classic script, which 6.x (ESM only) breaks", v)
+	}
+}
+
+func TestCatalogHasNoUnpinnedJS(t *testing.T) {
+	cat, err := NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range cat.AllRecipes() {
+		check := func(url, sha string) {
+			if (strings.Contains(url, "unpkg.com") || strings.Contains(url, "jsdelivr") || strings.Contains(url, "registry.npmjs.org")) && sha == "" {
+				t.Errorf("%s fetches %s without a sha256 pin", item.ID, url)
+			}
+		}
+		check(item.URL, item.SHA256)
+		for _, source := range item.Bundle {
+			check(source.URL, source.SHA256)
+		}
+		if item.Build != nil {
+			for _, asset := range item.Build.Assets {
+				check(asset.URL, "")
+			}
+		}
+	}
+}
