@@ -1,0 +1,55 @@
+{
+  "id": "js-maps",
+  "packages": {
+    "maplibre-gl": "5.x",
+    "pmtiles": "4.x",
+    "@turf/turf": "7.x",
+    "proj4": "2.x",
+    "topojson-client": "3.x"
+  },
+  "include": {
+    "maplibre-gl": [
+      "dist/maplibre-gl.css"
+    ]
+  },
+  "umd": {
+    "maplibre-gl": "dist/maplibre-gl.js",
+    "@turf/turf": "turf.min.js",
+    "proj4": "dist/proj4.js",
+    "topojson-client": "dist/topojson-client.min.js"
+  },
+  "docs": {
+    "maplibre-gl": {
+      "repo": "maplibre/maplibre-gl-js",
+      "ref": "v{version}",
+      "include": [
+        "docs/guides/*.md",
+        "docs/index.md"
+      ],
+      "license": "BSD-3-Clause",
+      "types": [
+        "dist/maplibre-gl.d.ts"
+      ]
+    },
+    "pmtiles": {
+      "types": [
+        "dist/esm/index.d.ts"
+      ],
+      "license": "BSD-3-Clause"
+    },
+    "@turf/turf": {
+      "repo": "Turfjs/turf",
+      "ref": "v{version}",
+      "include": [
+        "packages/turf-*/README.md"
+      ],
+      "license": "MIT"
+    },
+    "proj4": {
+      "license": "MIT"
+    },
+    "topojson-client": {
+      "license": "ISC"
+    }
+  }
+}
