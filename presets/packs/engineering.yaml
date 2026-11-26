@@ -14,6 +14,14 @@ sources:
 - stackexchange-robotics
 - stackexchange-electronics
 - stackexchange-engineering
+# ── Electronics ──
+- neets
+- libretexts-engineering
+- kicad-docs
+- raspberry-pi-pico-docs
+- micropython-docs
+- nasa-std-8739-4
+- electronics-from-scrap
 # ── Fabrication ──
 - stackexchange-3dprinting
 - ted-3d-printing
@@ -24,11 +32,9 @@ sources:
 # ── TODO: Documentation scrapes (zimit) ──
 # reprap-wiki           # ~200-400 MB, GNU FDL, 3D printing knowledge base
 # freecad-docs          # ~220 MB, CC BY 3.0, parametric CAD
-# kicad-docs            # ~50-100 MB, GPL-3.0 / CC BY 3.0, PCB design
 # arduino-docs          # ~100-200 MB, CC BY-SA 4.0, language ref + pinouts
-# esp-idf-docs          # ~150-300 MB, Apache 2.0, ESP32 framework
-# raspberry-pi-docs     # ~50-100 MB, CC BY-SA 4.0, hardware specs + Pico SDK
-# micropython-docs      # ~20-40 MB, MIT, per-board quick reference
+# esp-idf-docs          # ~150-300 MB, Apache 2.0, ESP32 framework (no PDF since v6; needs a scrape)
+# raspberry-pi-docs     # ~50-100 MB, CC BY-SA 4.0, Pi computer hardware (Pico: raspberry-pi-pico-docs)
 # freertos-docs         # ~30-50 MB, MIT, RTOS API reference
 # circuitpython-docs    # ~30-50 MB, MIT, Adafruit boards
 # openscad-docs         # ~20-40 MB, CC BY-SA 3.0

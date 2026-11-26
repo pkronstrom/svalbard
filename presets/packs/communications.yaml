@@ -15,6 +15,7 @@ sources:
 # ── RF & supporting theory ──
 - stackexchange-electronics
 - libretexts-engineering
+- electronics-from-scrap
 
 # ── TODO: Mesh networking (zimit scrapes) ──
 # meshtastic-docs       # ~50-100 MB, LoRa mesh networking

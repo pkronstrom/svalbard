@@ -1,0 +1,27 @@
+id: electronics-from-scrap
+type: pdf
+display_group: practical
+tags:
+- electronics
+- radio-comms
+- repair
+depth: standard
+size_gb: 0.12
+description: Building electrical and radio gear from scrap — The Boy Electrician (1914), Electricity for Boys (1914), The Radio Amateur's Hand Book (1922) and FM 24-18 field radio techniques with improvised antennas (1987)
+
+# Electricity for Boys and the Radio Amateur's Hand Book are archive.org's
+# derived PDFs (the items' originals are EPUB, which search can't read).
+bundle:
+  - url: https://archive.org/download/the-boy-electrician/TheBoyElectrician.pdf
+    sha256: 137073420a260f963371ca3f9dc753aec92784555d3cd87c4d483519082fe503
+  - url: https://archive.org/download/electricity-for-boys/Electricity%20for%20Boys%20-%20James%20Slough%20Zerbe.pdf
+    sha256: 94ee72aa5d5beeeb96f7d44688452d95aac0c94dcf7275ea3c0945a31303cf4f
+  - url: https://archive.org/download/TheRadioAmateursHandBook_709/TheRadioAmateursHandBook.pdf
+    sha256: 19e1d7be70afc9319dad75e2f328f824266fa3b588961587eb03c55fb22a924d
+  - url: https://archive.org/download/FM2418TacticalSingleChannelRadioCommunicationsTechniques/FM%2024-18%20Tactical%20Single%20Channel%20Radio%20Communications%20Techniques.pdf
+    sha256: cad9e43f51bb8db12594cf440664233a4307f3dc69e023b12e0fa3b60860d0f6
+
+license:
+  id: public-domain
+  attribution: Alfred P. Morgan (1914); J. S. Zerbe (1914); A. Frederick Collins (1922); Department of the Army (1987)
+  url: https://archive.org/details/the-boy-electrician

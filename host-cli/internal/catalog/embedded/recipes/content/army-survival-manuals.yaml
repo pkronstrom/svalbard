@@ -1,0 +1,25 @@
+id: army-survival-manuals
+type: pdf
+display_group: practical
+tags:
+- fire-shelter
+- food-foraging
+- water
+- navigation
+- cold-weather
+depth: comprehensive
+size_gb: 0.03
+description: US Army survival manuals — ATP 3-50.21 Survival (2018), FM 21-76 (1992, with edible and poisonous plant and dangerous animal appendices) and TC 21-3 cold-weather survival (1986)
+
+bundle:
+  - url: https://archive.org/download/survival-atp-3-50-21/Survival%20%28ATP%203-50-21%29.pdf
+    sha256: 817746b13262e9e26e8ac7d25bf879790df369c2aa0a2600f69158ec4090461c
+  - url: https://archive.org/download/FM2176USARMYSURVIVALMANUAL/FM%2021-76%20%20US%20ARMY%20SURVIVAL%20MANUAL.pdf
+    sha256: 871fdafbb87c8fe2b442dc089010b30aee34694cf8fb0ff74812a7d60faf3f77
+  - url: https://archive.org/download/soldiers-handbook-for-individual-operations-and-survival-in-cold-weather-areas-tc-21-3/Soldier%27s%20Handbook%20for%20Individual%20Operations%20and%20Survival%20in%20Cold-Weather%20Areas%20-%20TC%2021-3.pdf
+    sha256: 458c88420fd3036664461e49e03ebb33241e4b93e6a0724d530dc57ad0bfac11
+
+license:
+  id: US-PD
+  attribution: Department of the Army
+  url: https://archive.org/details/survival-atp-3-50-21

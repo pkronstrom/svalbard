@@ -1,0 +1,65 @@
+id: neets
+type: pdf
+display_group: education
+tags:
+- electronics
+- communications
+depth: comprehensive
+size_gb: 0.06
+description: US Navy Electricity and Electronics Training Series (NEETS) — 24 modules from basic electricity through amplifiers, radio, radar, digital logic and test methods
+
+# One pinned PDF per module; archive.org items are immutable.
+bundle:
+  - url: https://archive.org/download/NEETSModule01/NEETSModule01.pdf
+    sha256: 0ae1fc32606fbf5d45c5b60f6dadded7985cb4c54f755eb4a156a8307145d9cf
+  - url: https://archive.org/download/NEETSModule02/NEETSModule02.pdf
+    sha256: 373df482996d635d00a90f8cf31c034ff83a7ec642ee0ad6da9661b15aa7e4ea
+  - url: https://archive.org/download/NEETSModule03/NEETSModule03.pdf
+    sha256: 59d2251fa98040cdc2db4544d2063964bb807be07e41d5cbf4b80e7726ff2f96
+  - url: https://archive.org/download/NEETSModule04/NEETSModule04.pdf
+    sha256: 761ba6d6e5071307f89e8b4c267217425190402dec8a67867d45b3536d5e417f
+  - url: https://archive.org/download/NEETSModule05/NEETSModule05.pdf
+    sha256: a3c26d40b9eb0d8a2b3da68f3f33fb7807c90143fb7468384ef7d27e15787263
+  - url: https://archive.org/download/NEETSModule06/NEETSModule06.pdf
+    sha256: e265f48910e3023bf714340b0cf694caa2c4da0d8ea5af3d912abe182f9bb35b
+  - url: https://archive.org/download/NEETSModule07/NEETSModule07.pdf
+    sha256: 6df3bee366a4239cead4a0a438c868d4a6f9df7432856b81a3a43e19b0f3f7fa
+  - url: https://archive.org/download/NEETSModule08/NEETSModule08.pdf
+    sha256: 609f3080b4f700268a7e2bd7b2843edaf981180bbc7214ed2ccd4421d291f16d
+  - url: https://archive.org/download/NEETSModule09/NEETSModule09.pdf
+    sha256: 73d8ae569c0a48a8bd82a36a0e4eaf2aa88e38e550f13decb109aaf1e245d1b5
+  - url: https://archive.org/download/NEETSModule10/NEETSModule10.pdf
+    sha256: 72a24291dd167ba661fd8cdbac3376982c5e6b318aa64d1ace21eb12cf7095c9
+  - url: https://archive.org/download/NEETSModule11/NEETSModule11.pdf
+    sha256: f0ca9da2a04975d7005f93e82ca6cba3a2251157741379b06395896501865047
+  - url: https://archive.org/download/NEETSModule12/NEETSModule12.pdf
+    sha256: b8c03818fc53f4367dc4dce19c45dd16510c7b54a659b2ebd360c88d9a1013c1
+  - url: https://archive.org/download/NEETSModule13/NEETSModule13.pdf
+    sha256: 4b2a0540466dd67d1a0e074ae91005ae82060bd2e428022ae172523b3d4008b8
+  - url: https://archive.org/download/NEETSModule14/NEETSModule14.pdf
+    sha256: d4c070059448519e9859ddb4e671feac6ad80a8a6e41b02f9458e03c28e2e3f2
+  - url: https://archive.org/download/NEETSModule15/NEETSModule15.pdf
+    sha256: 145cb88710a180d40b97f0cd1ae069a360cf79f5a4908ec3f01f850187569695
+  - url: https://archive.org/download/NEETSModule16/NEETSModule16.pdf
+    sha256: 3dacc26b532114eacca6fc805d651df1fc9908b4e55d8f997ef8aa65e3f25518
+  - url: https://archive.org/download/NEETSModule17/NEETSModule17.pdf
+    sha256: 495a67a552d130f28cad0f02c62a4e141c579770ee1efb9a8246b3914b12ff28
+  - url: https://archive.org/download/NEETSModule18/NEETSModule18.pdf
+    sha256: d015774e43c308146f3a0afd1c3feb392c088809adc359cd28eaaf23b034d158
+  - url: https://archive.org/download/NEETSModule19/NEETSModule19.pdf
+    sha256: 864be379832fb30d0691280b56e5eef9c579f9e279b72a5364ed872c96feea80
+  - url: https://archive.org/download/NEETSModule20/NEETSModule20.pdf
+    sha256: 6c99161d5ea4d18a99d15c8a4e72713ad14425401613b515ee4bd9e35134dbf3
+  - url: https://archive.org/download/NEETSModule21/NEETSModule21.pdf
+    sha256: db9aa2099518297f91499fe46b0436882525ebf6b1aaf8883828af9d1429583b
+  - url: https://archive.org/download/NEETSModule22/NEETSModule22.pdf
+    sha256: fa6f96a647d87d8803df30df62785115d524c72cf442de48fbd5927328016591
+  - url: https://archive.org/download/NEETSModule23/NEETSModule23.pdf
+    sha256: 63988779feb24c7e33228d94b93c8ff5de3f6aa9eed8c6fc31073bc24b8bd223
+  - url: https://archive.org/download/NEETSModule24/NEETSModule24.pdf
+    sha256: d20640ee705ba98a92de0915b55764cb3626ce0de2a01888e90b4b734eef351f
+
+license:
+  id: US-PD
+  attribution: US Navy, Naval Education and Training Professional Development and Technology Center
+  url: https://archive.org/details/NEETSModule01

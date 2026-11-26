@@ -1,0 +1,17 @@
+id: micropython-docs
+type: pdf
+display_group: reference
+tags:
+- electronics
+- embedded
+- coding
+depth: reference-only
+size_gb: 0.006
+url: https://docs.micropython.org/en/v1.29.0/micropython-docs.pdf
+sha256: dc37287aaed19a7f78d90de3f12bc5324efc1be1fbb95d90a0b071641d2dfcf8
+filename: micropython-docs-v1.29.0.pdf
+description: MicroPython v1.29 documentation — language, libraries and per-board quick references (ESP32, RP2, STM32)
+license:
+  id: MIT
+  attribution: Damien P. George, Paul Sokolovsky, and contributors
+  url: https://github.com/micropython/micropython/blob/master/LICENSE

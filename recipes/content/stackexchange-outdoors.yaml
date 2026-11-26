@@ -1,0 +1,14 @@
+id: stackexchange-outdoors
+type: zim
+display_group: practical
+tags:
+- fire-shelter
+- navigation
+- food-foraging
+depth: comprehensive
+size_gb: 0.14
+url_pattern: https://download.kiwix.org/zim/stack_exchange/outdoors.stackexchange.com_en_all_{date}.zim
+description: The Great Outdoors Stack Exchange — hiking, camping, bushcraft, navigation and wilderness skills
+license:
+  id: CC-BY-SA-4.0
+  attribution: Stack Exchange Inc. and contributors

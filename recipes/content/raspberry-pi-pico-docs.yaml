@@ -1,0 +1,30 @@
+id: raspberry-pi-pico-docs
+type: pdf
+display_group: reference
+tags:
+- electronics
+- embedded
+depth: reference-only
+size_gb: 0.06
+description: Raspberry Pi Pico and RP2040/RP2350 datasheets, C/C++ SDK and MicroPython SDK guides, and Getting Started with Pico
+
+# datasheets.raspberrypi.com replaces these PDFs in place, so the pins point
+# at Wayback Machine captures, which never change.
+bundle:
+  - url: https://web.archive.org/web/20251015104148id_/https://datasheets.raspberrypi.com/pico/getting-started-with-pico.pdf
+    sha256: 391e24422dc063744975b3084fe3b4f5404ca72e419320dbd7e5170b9ea0e5e9
+  - url: https://web.archive.org/web/20251106074925id_/https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf
+    sha256: c3fb01e1cc2ea9d40e85a8abf0eb4c805e46cb70bd28195b846ca135765ad79c
+  - url: https://web.archive.org/web/20251108044033id_/https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf
+    sha256: be56fbb75ba0ae9e26558a73c93ac3e75c2ad4e6878d3b6703de2a76d886ea8c
+  - url: https://web.archive.org/web/20251107121354id_/https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf
+    sha256: 2877d0f270fb6d6a57943bee58aaad536aa027bea1e5b1c4ce2541a3230d4be8
+  - url: https://web.archive.org/web/20251104052349id_/https://datasheets.raspberrypi.com/pico/raspberry-pi-pico-c-sdk.pdf
+    sha256: 10bc387101c90cd592240a5b56acf107bf6d30e0361bf81a30d9d6d990719ea9
+  - url: https://web.archive.org/web/20260212081153id_/https://datasheets.raspberrypi.com/pico/raspberry-pi-pico-python-sdk.pdf
+    sha256: c64d7beab227df7a09ae49ba9f92d49047616e378a1a4b8a7352322ed4afa743
+
+license:
+  id: CC-BY-ND-4.0
+  attribution: Raspberry Pi Ltd
+  url: https://www.raspberrypi.com/documentation/

@@ -28,7 +28,6 @@ sources:
 # psychological-first-aid   # ~2 MB, WHO guide
 # sphere-handbook            # ~10 MB, humanitarian disaster standards
 # tccc-guidelines            # ~5 MB, tactical combat casualty care
-# fm-21-76-survival          # ~15 MB, US Army survival manual
 # nuclear-war-survival-skills # ~10 MB, public domain (Cresson Kearny)
 #
 # ── TODO: Food preservation ──
@@ -41,3 +40,6 @@ sources:
 - gutenberg-en-lcc-r
 # ── Preparedness ──
 - beready-uk
+# ── Wilderness survival ──
+- army-survival-manuals
+- stackexchange-outdoors

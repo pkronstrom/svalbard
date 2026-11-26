@@ -1,0 +1,16 @@
+id: nasa-std-8739-4
+type: pdf
+display_group: practical
+tags:
+- electronics
+- repair
+depth: standard
+size_gb: 0.004
+url: https://standards.nasa.gov/sites/default/files/standards/NASA/A/4/nasa-std-87394a_w_change_4_0.pdf
+sha256: 83d2038895dfb4e1ac18fd314ae444ff5fea56e7cc2723649ee3aa8388ecc27d
+filename: NASA-STD-8739.4A_crimping_cables_harnesses_wiring.pdf
+description: NASA-STD-8739.4A workmanship standard — crimping, interconnecting cables, harnesses and wiring, with illustrated accept/reject criteria
+license:
+  id: US-PD
+  attribution: NASA
+  url: https://standards.nasa.gov/standard/NASA/NASA-STD-87394

@@ -1,0 +1,24 @@
+id: kicad-docs
+type: pdf
+display_group: reference
+tags:
+- electronics
+- fabrication
+depth: reference-only
+size_gb: 0.03
+description: KiCad 10.0 manuals — getting started, schematic editor and PCB editor
+
+# docs.kicad.org rebuilds these PDFs in place, so the pins point at Wayback
+# Machine captures, which never change.
+bundle:
+  - url: https://web.archive.org/web/20260824080512id_/https://docs.kicad.org/10.0/en/getting_started_in_kicad/getting_started_in_kicad.pdf
+    sha256: 4f3aff7cf86a7eba6e3b2b09db9656fd97ff1599f3a551eae40c01d7fb6107d3
+  - url: https://web.archive.org/web/20260824080512id_/https://docs.kicad.org/10.0/en/eeschema/eeschema.pdf
+    sha256: 35fe4e9baec47d25b0f15e751e4aa22d2b0128b5bd5695ca277e71c1a1859bb0
+  - url: https://web.archive.org/web/20260824080512id_/https://docs.kicad.org/10.0/en/pcbnew/pcbnew.pdf
+    sha256: ee8226118413adab112ba65f292868508039c3d351d836e6b128548bc2cf3879
+
+license:
+  id: CC-BY-3.0
+  attribution: The KiCad Documentation Contributors (GPL-3.0-or-later or CC BY 3.0 or later)
+  url: https://docs.kicad.org/

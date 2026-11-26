@@ -1,0 +1,26 @@
+id: metsahallitus-retkeily
+type: pdf
+display_group: regional
+tags:
+- fire-shelter
+- food-foraging
+- cooking
+depth: overview
+size_gb: 0.01
+description: Metsähallitus outdoor guides — Lähdetään luontoon (Finnish nature and everyman's rights), Retkietiketti, Vinkkejä villiyrttiretkelle (wild herbs) and Guide för friluftsmat (outdoor cooking, Swedish)
+
+bundle:
+  - url: https://julkaisut.metsa.fi/assets/pdf/lp/Muut/air-lahdetaanluontoonfin.pdf
+    sha256: 22c03f088f37f6cce9d837fe9d001b774fdc1ce9b080b4a6922b817b98abc41c
+  - url: https://julkaisut.metsa.fi/wp-content/uploads/sites/2/2023/12/retkietiketti.pdf
+    sha256: 630ff2daf1d6b9b7d599a5b19911f4b0a121538a8d74ee2a495c2caeee6dc4c0
+  - url: https://julkaisut.metsa.fi/assets/pdf/lp/Esitteet/Vinkkeja-villiyrttiretkelle.pdf
+    sha256: 9a425e0768b27000f0e67dd4ed704a5ed3cf08c687878c57077f8b0f8451a7a7
+  - url: https://julkaisut.metsa.fi/assets/pdf/lp/Muut/Guideforfriluftsmat.pdf
+    sha256: f6ac48a23749b22c84ae0ecfc9f2cfc2ea4fdf369d321aa2444aabc7e8d213a7
+
+license:
+  id: unknown
+  attribution: Metsähallitus / Forststyrelsen
+  url: https://julkaisut.metsa.fi/
+  note: No licence stated; public guidance fetched by the user for personal use.

@@ -1,0 +1,21 @@
+id: ruokavirasto-sienet
+type: pdf
+display_group: regional
+tags:
+- food-foraging
+- food
+depth: overview
+size_gb: 0.002
+description: Ruokavirasto mushroom guidance — preparing the poisonous false morel (korvasieni) and reducing radioactive caesium in wild mushrooms
+
+bundle:
+  - url: https://www.ruokavirasto.fi/globalassets/tietoa-meista/julkaisut/esitteet/elintarvikkeet/korvasieni_esite.pdf
+    sha256: 0ea52c3a6789c30dad7782df745bb314da69e28e3571d98f01f1a80412c62383
+  - url: https://www.ruokavirasto.fi/globalassets/tietoa-meista/julkaisut/esitteet/elintarvikkeet/sienten_kasittelyohjeet_esite.pdf
+    sha256: b4cc0d90e8a752ccdc38a52609ec5b2d1cb57fd60b3a8bb174515f43af5a54fe
+
+license:
+  id: unknown
+  attribution: Ruokavirasto (Finnish Food Authority)
+  url: https://www.ruokavirasto.fi/ruokasienet
+  note: No licence stated; public guidance fetched by the user for personal use.

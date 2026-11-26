@@ -22,10 +22,14 @@ sources:
 - zimgit-food-preparation
 - based-cooking
 - usda-nutrition
+- ruokavirasto-sienet
+- nordic-mushrooms-food
 
 # ── Practical skills ──
 - ifixit
 - zimgit-knots
+- army-survival-manuals
+- metsahallitus-retkeily
 - zimgit-post-disaster
 - lowtech-magazine
 - cd3wd
@@ -34,6 +38,7 @@ sources:
 # ── Q&A ──
 - stackexchange-survival
 - stackexchange-diy
+- stackexchange-outdoors
 # ── Preparedness ──
 - ready-gov
 - urban-prepper

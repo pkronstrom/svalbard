@@ -1,0 +1,24 @@
+id: sewing-classics
+type: pdf
+display_group: practical
+tags:
+- textiles
+- repair
+depth: standard
+size_gb: 0.04
+description: Public-domain sewing books — New Butterick Dressmaker (1927; stitches, fitting, altering and mending), Livingston Academy pattern drafting and dressmaking (1922) and USDA sewing-machine cleaning and adjusting (1943)
+
+# The pattern-drafting book is archive.org's derived PDF of a Library of
+# Congress scan; the other two are the items' original uploads.
+bundle:
+  - url: https://archive.org/download/new-butterick-dressmaker/New%20Butterick%20Dressmaker.pdf
+    sha256: 963b15cff659829747d83cc94491df4f67700b80b4fc7141465685346b717cf6
+  - url: https://archive.org/download/instructionbookd00livi/instructionbookd00livi.pdf
+    sha256: 7ce669dfb7987d5acdcf72235cd2d1e769b3f7b3b3292dbc08c8f7a3772b72f6
+  - url: https://archive.org/download/CAT87204140/farmbul1944.pdf
+    sha256: a407d34a5d53ff424cdbd378dbc5e54ecbfcd3d449cceb4cb3890e83eb35edfa
+
+license:
+  id: public-domain
+  attribution: Butterick Publishing Co. (1927); Livingston's Academy (1922); US Department of Agriculture (1943)
+  url: https://archive.org/details/new-butterick-dressmaker
