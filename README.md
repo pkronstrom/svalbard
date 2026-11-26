@@ -8,6 +8,8 @@
 
 Prepare the vault while you have internet access. At your destination, open the drive menu on a Mac or Linux computer. You can use the library and maps on their own, or start a local model in **Open WebUI**.
 
+> **Alpha (v0.6.0).** Svalbard is under active development. Presets, datasets and curation still change, so expect rough edges.
+
 ## What would you make with your vault?
 
 ### Turn two sources into one interactive page
@@ -30,7 +32,7 @@ This example uses the model as a tool builder. The chart is a schematic for choo
 
 ![The generated offline Big Dipper observing log.](docs/offline-star-log.webp)
 
-The chat and generated-page screenshots were captured on an Apple Silicon Mac with a folder on its internal SSD. For this workflow, use the **Open WebUI** recipe from [Svalbard’s main branch](https://github.com/pkronstrom/svalbard/tree/main). Enable its file tools so the assistant can write to the vault’s `workspace/` folder.
+The chat and generated-page screenshots were captured on an Apple Silicon Mac with a folder on its internal SSD. For this workflow, add the **Open WebUI** recipe, new in v0.6.0. Enable its file tools so the assistant can write to the vault’s `workspace/` folder.
 
 ## Explore the drive yourself
 
@@ -46,7 +48,7 @@ Open **Maps**, choose a basemap, and switch the overlays on or off. Around Helsi
 
 ![Svalbard Maps showing Helsinki harbour with the topographic basemap, public water posts and protected areas enabled.](docs/offline-map-helsinki.webp)
 
-This capture used three local PMTiles extracts. The basemap came from National Land Survey of Finland sheet L41R. The national topographic tile recipe currently has an unavailable endpoint, so reproducing this particular view requires a separately prepared sheet. Map data © National Land Survey of Finland, Helsinki Region Environmental Services (HSY), and Finnish Environment Institute (SYKE), CC BY 4.0. [Topographic sheet](https://kartat.kapsi.fi/files/maastokarttarasteri_100k_jhs180/kaikki/etrs89/png/L4/L41/) · [Water-post source](recipes/maps/hsy-vesipostit.yaml) · [Protected-areas source](recipes/maps/luonnonsuojelualueet.yaml)
+This capture used three local PMTiles extracts. The basemap came from National Land Survey of Finland sheet L41R. The `mml-maastokartta` recipe renders the same MML map series for Uusimaa at zooms 0–14, from the 1:500k to 1:50k sheets. Map data © National Land Survey of Finland, Helsinki Region Environmental Services (HSY), and Finnish Environment Institute (SYKE), CC BY 4.0. [Topographic sheet](https://kartat.kapsi.fi/files/maastokarttarasteri_100k_jhs180/kaikki/etrs89/png/L4/L41/) · [Water-post source](recipes/maps/hsy-vesipostit.yaml) · [Protected-areas source](recipes/maps/luonnonsuojelualueet.yaml)
 
 ## Install
 
@@ -62,7 +64,7 @@ Download the host binary for your Mac or Linux computer, extract it, and put `sv
 
 ### Use the drive offline
 
-Open the vault folder in a terminal and run `./run` to launch its keyboard-driven menu. **Library** opens installed archives through Kiwix. **Search** looks across indexed articles. **Maps** opens installed maps. On a phone or tablet, a compatible reader such as Kiwix can open the ZIM files directly.
+Open the vault folder in a terminal and run `./run` to launch its keyboard-driven menu. **Library** opens installed archives through Kiwix. **Search** looks across indexed articles. **Maps** opens installed maps. With the SilverBullet recipe, **Wiki** is a notebook on the drive that the assistant can read and, once you allow it in **Settings**, write to. **Workspace** opens the pages the assistant saved. On a phone or tablet, a compatible reader such as Kiwix can open the ZIM files directly.
 
 For browser chat, choose **Open WebUI** under **Local AI** and select your installed model if prompted. The drive starts the model and its vault tools locally and opens the chat in your browser. Ask for article titles and have the model read the matches before it summarizes them.
 
@@ -78,6 +80,10 @@ Give your agent the vault path, storage budget and subjects you need. Ask it to 
 ### Custom presets
 
 To repeat a setup, copy a built-in preset with `svalbard preset copy default-32 my-field-kit`. Edit the YAML under `~/.config/svalbard/presets/`, then select the named preset in the wizard. You can also import your own files into the vault. [Presets and imports](docs/usage.md)
+
+### Your own documents
+
+List your own PDFs in a collection file under `~/.config/svalbard/recipes/`: links, single files or whole folders. Add the collection like any recipe. Svalbard downloads or copies the documents into the vault’s `books/` folder and indexes their pages, so **Search** and the assistant can find, read and cite them. The vault keeps a copy of the collection file, so you can still update it from another computer. [Document collections](docs/usage.md#your-own-documents)
 
 ## License
 
