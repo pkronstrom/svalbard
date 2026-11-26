@@ -870,3 +870,39 @@ func TestIndexRemovedSkillFolderIsPruned(t *testing.T) { // RF4
 		t.Fatalf("indexed after removing one skill = %v, want %v", got, want)
 	}
 }
+
+// A recipe folder under lib/js that cannot be read is not an absent one: its
+// quickstarts must not be pruned.
+func TestScanLibraryRootReportsUnreadableRecipeFolder(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root reads every folder")
+	}
+	root := documentsVault(t)
+	writeVaultFile(t, root, "lib/js/js-core/docs/chartjs.md", "# Chart.js\n")
+	index(t, root)
+	// No search permission on lib/js: its entries are listed but cannot be
+	// stat'ed.
+	libs := filepath.Join(root, "lib", "js")
+	if err := os.Chmod(libs, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(libs, 0o755) })
+	if _, _, err := ScanDocumentRoots(root); err == nil {
+		t.Fatal("an unreadable recipe folder was taken for an absent one")
+	}
+	if err := IndexVault(root, false, io.Discard, nil); err == nil {
+		t.Fatal("the index ran over an unreadable lib/js")
+	}
+	os.Chmod(libs, 0o755)
+	if got := indexedCounts(t, root); got["lib/js/js-core/docs/chartjs.md"] != 1 {
+		t.Fatalf("indexed = %v, want the quickstart kept", got)
+	}
+	// A plain file or a dangling link beside the recipes is still skipped.
+	writeVaultFile(t, root, "lib/js/notes.txt", "x")
+	if err := os.Symlink(filepath.Join(root, "gone"), filepath.Join(libs, "dangling")); err != nil {
+		t.Skipf("symlinks not available: %v", err)
+	}
+	if documents, _, err := ScanDocumentRoots(root); err != nil || len(documents) != 1 {
+		t.Fatalf("ScanDocumentRoots = %v, %v", documents, err)
+	}
+}

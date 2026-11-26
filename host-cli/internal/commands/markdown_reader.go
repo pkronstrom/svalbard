@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -34,6 +36,10 @@ func (markdownReader) Read(ctx context.Context, file string) (documentText, erro
 	raw, err := os.ReadFile(file)
 	if err != nil {
 		return documentText{Note: "unreadable: " + unwrapPathError(err)}, nil
+	}
+	if bytes.IndexByte(raw, 0) >= 0 {
+		// UTF-16, or not text at all: indexing its bytes would only add noise.
+		return documentText{Note: "not UTF-8 text"}, nil
 	}
 	content := strings.ToValidUTF8(string(raw), string(utf8.RuneError))
 	content = strings.ReplaceAll(strings.TrimPrefix(content, byteOrderMark), "\r\n", "\n")
@@ -91,7 +97,9 @@ func (markdownReader) Read(ctx context.Context, file string) (documentText, erro
 }
 
 // splitFrontmatter separates a leading "---" block from the text after it. A
-// block that is never closed is not one.
+// block that is never closed is not one, and neither is one that does not
+// start with a "key:" line: a file may open with a horizontal rule, a
+// paragraph and another rule, and the paragraph is text.
 func splitFrontmatter(content string) (front, body string) {
 	rest, ok := strings.CutPrefix(content, "---\n")
 	if !ok {
@@ -105,12 +113,18 @@ func splitFrontmatter(content string) (front, body string) {
 			line, next = rest[offset:offset+end], offset+end+1
 		}
 		if marker := strings.TrimRight(line, " \t"); marker == "---" || marker == "..." {
+			if !frontmatterKeyRe.MatchString(strings.TrimLeft(rest[:offset], "\n")) {
+				return "", content
+			}
 			return rest[:offset], rest[next:]
 		}
 		offset = next
 	}
 	return "", content
 }
+
+// frontmatterKeyRe matches the "key:" a frontmatter block starts with.
+var frontmatterKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*:(\s|$)`)
 
 // frontmatterNameAndDescription reads the two fields the index uses. Skills
 // in the wild often write a description with a colon in it, unquoted, which
@@ -133,11 +147,14 @@ func frontmatterNameAndDescription(front string) (name, description string) {
 	return name, description
 }
 
-// opensFence returns the marker of the code fence a line opens, or "".
+// opensFence returns the marker of the code fence a line opens, or "". A run
+// of backticks followed by more text with a backtick in it is inline code,
+// not a fence.
 func opensFence(line string) string {
-	trimmed := strings.TrimLeft(line, " ")
+	trimmed := strings.TrimLeft(line, " \t")
 	for _, char := range []string{"`", "~"} {
-		if run := len(trimmed) - len(strings.TrimLeft(trimmed, char)); run >= 3 {
+		run := len(trimmed) - len(strings.TrimLeft(trimmed, char))
+		if run >= 3 && !(char == "`" && strings.Contains(trimmed[run:], "`")) {
 			return trimmed[:run]
 		}
 	}
@@ -170,32 +187,35 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// splitAtLines cuts text into pieces of at most limit characters, at a line
-// break when one falls in the second half of a piece and at a space
-// otherwise, so that no piece is cut again when it is stored. Empty text has
-// no pieces.
+// splitAtLines cuts text into pieces of at most limit characters, so that no
+// piece is cut again when it is stored: at a line break when one falls in the
+// second half of a piece, at a space otherwise. The break itself is dropped
+// and nothing else, so a piece keeps its indentation (the cut may fall inside
+// a code block) and the pieces joined by line breaks are the text again.
+// Empty text has no pieces.
 func splitAtLines(text string, limit int) []string {
 	var pieces []string
+	add := func(piece []rune) {
+		if strings.TrimSpace(string(piece)) != "" {
+			pieces = append(pieces, string(piece))
+		}
+	}
 	runes := []rune(text)
 	for len(runes) > limit {
-		cut := limit
+		cut, dropped := limit, 0
 		for _, separator := range []rune{'\n', ' '} {
 			at := limit
 			for at > limit/2 && runes[at-1] != separator {
 				at--
 			}
 			if at > limit/2 {
-				cut = at
+				cut, dropped = at, 1
 				break
 			}
 		}
-		if piece := strings.TrimSpace(string(runes[:cut])); piece != "" {
-			pieces = append(pieces, piece)
-		}
+		add(runes[:cut-dropped])
 		runes = runes[cut:]
 	}
-	if piece := strings.TrimSpace(string(runes)); piece != "" {
-		pieces = append(pieces, piece)
-	}
+	add(runes)
 	return pieces
 }

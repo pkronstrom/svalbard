@@ -95,8 +95,14 @@ func libraryDocFolders(base string) ([]string, error) {
 		if strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		// Stat, not the entry's type: a recipe folder may be a symlink.
-		if info, err := os.Stat(filepath.Join(base, entry.Name())); err != nil || !info.IsDir() {
+		// Stat, not the entry's type: a recipe folder may be a symlink. One
+		// that cannot be looked at is not an absent one: its quickstarts
+		// would be pruned.
+		info, err := os.Stat(filepath.Join(base, entry.Name()))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		if err != nil || !info.IsDir() {
 			continue
 		}
 		docs := filepath.Join(entry.Name(), "docs")

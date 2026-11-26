@@ -130,3 +130,60 @@ func TestMarkdownReaderSplitsLongSections(t *testing.T) {
 		t.Errorf("the parts hold %d of the 1000 lines", lines)
 	}
 }
+
+// A piece of a split section keeps its own indentation: the split may fall
+// inside a code block.
+func TestMarkdownReaderSplitKeepsIndentation(t *testing.T) {
+	block := strings.Repeat("        return compute(value)  # eight spaces in\n", 600) // about 30,000 characters
+	text := readMarkdown(t, "skills/x/a/SKILL.md", "## Code\n\n```python\ndef f(value):\n"+block+"```\n")
+	if len(text.Parts) < 2 {
+		t.Fatalf("parts = %q, want the section split", partPaths(text))
+	}
+	for _, part := range text.Parts[1:] {
+		if !strings.HasPrefix(part.Text, "        return compute(value)") {
+			t.Errorf("part %s starts %q, want its indentation kept", part.Path, part.Text[:40])
+		}
+		if strings.HasSuffix(part.Text, "\n") {
+			t.Errorf("part %s ends with a line break", part.Path)
+		}
+	}
+	// Put back together with one line break, the parts are the section.
+	var pieces []string
+	for _, part := range text.Parts {
+		pieces = append(pieces, part.Text)
+	}
+	if got, want := strings.Join(pieces, "\n"), "## Code\n\n```python\ndef f(value):\n"+block+"```"; got != want {
+		t.Errorf("the parts joined differ from the section (%d and %d characters)", len(got), len(want))
+	}
+}
+
+func TestMarkdownReaderLeadingRuleIsNotFrontmatter(t *testing.T) {
+	text := readMarkdown(t, "skills/x/a/SKILL.md", "---\nA paragraph between two rules, not metadata.\n---\n\n## Steps\n\nDo it.\n")
+	if len(text.Parts) != 2 || !strings.Contains(text.Parts[0].Text, "A paragraph between two rules") {
+		t.Fatalf("parts = %+v, want the paragraph kept in the overview", text.Parts)
+	}
+	// Real frontmatter is still taken out, also when YAML refuses it.
+	text = readMarkdown(t, "skills/x/b/SKILL.md", "---\nname: b\ndescription: Use when: testing\n---\nBody.\n")
+	if text.Title != "b" || strings.Contains(text.Parts[0].Text, "name: b") {
+		t.Fatalf("frontmatter: %+v", text)
+	}
+}
+
+func TestMarkdownReaderFenceEdges(t *testing.T) {
+	// Inline code written with three backticks opens no fence.
+	text := readMarkdown(t, "skills/x/a/SKILL.md", "## One\n\n```inline``` is code.\n\n## Two\n\nText.\n")
+	if got := partPaths(text); strings.Join(got, "|") != "section/1 One|section/2 Two" {
+		t.Errorf("inline code: parts = %q", got)
+	}
+	// A fence indented with a tab is one.
+	text = readMarkdown(t, "skills/x/b/SKILL.md", "## One\n\n\t```\n## not a heading\n\t```\n\n## Two\n\nText.\n")
+	if got := partPaths(text); strings.Join(got, "|") != "section/1 One|section/2 Two" {
+		t.Errorf("tab-indented fence: parts = %q", got)
+	}
+	// A file that is not UTF-8 text is recorded with a note, not indexed as
+	// bytes.
+	utf16 := "\xff\xfe#\x00 \x00T\x00i\x00t\x00l\x00e\x00\n\x00"
+	if text = readMarkdown(t, "skills/x/c/SKILL.md", utf16); len(text.Parts) != 0 || text.Note != "not UTF-8 text" {
+		t.Errorf("UTF-16 file: %+v", text)
+	}
+}
