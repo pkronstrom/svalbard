@@ -153,10 +153,6 @@ type GenerateOpts struct {
 	// targets are required in the inventory closure.
 	PlatformIOPlatforms []string
 
-	// NoSearchIndex says the vault's index strategy is "none": the AGENTS.md
-	// at its root then sends an agent to the skills' folder, not to a search.
-	NoSearchIndex bool
-
 	// Recipes holds catalog metadata for realized entries, written to
 	// .svalbard/recipes.json for the MCP server; the settings they declare go
 	// to .svalbard/settings.schema.json.
@@ -164,8 +160,7 @@ type GenerateOpts struct {
 }
 
 // Generate creates the .svalbard/actions.json runtime config under root,
-// along with the recipe metadata, PlatformIO inventory, root scripts and the
-// AGENTS.md that orients an agent started on the drive.
+// along with the recipe metadata, PlatformIO inventory and root scripts.
 // entries is the list of realized manifest entries; presetName is recorded in
 // the config for the drive-runtime to identify which preset was applied.
 func Generate(root string, entries []manifest.RealizedEntry, presetName string, opts ...GenerateOpts) error {
@@ -210,9 +205,6 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 		envVars = opts[0].EnvVars
 	}
 	if err := writeRootScripts(root, envVars); err != nil {
-		return err
-	}
-	if err := writeAgentsMD(root, entries, menus, len(opts) > 0 && opts[0].NoSearchIndex); err != nil {
 		return err
 	}
 	if err := writeChecksums(root, entries); err != nil {

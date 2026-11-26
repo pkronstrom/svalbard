@@ -355,22 +355,17 @@ There is no network. The svalbard tools search and read the reference material s
 
 // ompPrompt is the lean prompt for the drive at driveRoot, with a line about
 // the wiki when the drive's server offers the wiki tools, and the lines of
-// the drive context about skills and libraries when the drive has them. omp
-// runs with --no-rules and reads no generated context file, so this prompt
-// is the orientation it gets.
+// the drive context about skills when the drive has them. omp gets no
+// generated context file, so this prompt is the orientation it gets.
 func ompPrompt(driveRoot string) string {
 	prompt := ompLeanPrompt
 	if mcp.WikiInstalled(driveRoot) {
 		prompt += "The svalbard wiki tools read and write the user's own notes on this drive: use them when asked to save or look up a note.\n"
 	}
-	building := ContextOptions{
-		DriveRoot: driveRoot, ToolPrefix: OmpToolPrefix,
-		Skills: mcp.SkillsInstalled(driveRoot), Libraries: mcp.LibrariesInstalled(driveRoot), NoIndex: !searchIndexed(driveRoot),
+	if mcp.SkillsInstalled(driveRoot) {
+		prompt += buildingContext(ContextOptions{DriveRoot: driveRoot, ToolPrefix: OmpToolPrefix, Skills: true, NoIndex: !searchIndexed(driveRoot)}) + "\n"
 	}
-	if building.Skills || building.Libraries {
-		prompt += buildingContext(building) + "\n"
-	}
-	return prompt
+	return prompt + stayInPlace + "\n"
 }
 
 // ompModelsYAML is oh-my-pi's provider file for the drive's llama-server. It

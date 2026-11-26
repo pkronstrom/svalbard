@@ -36,8 +36,8 @@ type ContextOptions struct {
 	// Wiki: the drive's server offers the wiki tools. LivePages: they may
 	// write pages that compute something.
 	Wiki, LivePages bool
-	// Skills: a skills recipe is installed. Libraries: JS libraries are.
-	Skills, Libraries bool
+	// Skills: a skills recipe is installed.
+	Skills bool
 	// NoIndex: the drive has no search index, so the skill tools find
 	// nothing and the skills are read as files.
 	NoIndex bool
@@ -45,9 +45,10 @@ type ContextOptions struct {
 
 // DriveContext is the context file of a shell harness on the drive: what a
 // small model has to be told to use the drive instead of the network. Areas
-// the drive does not have are left out. host-cli writes the same text, from
-// its own copy, to AGENTS.md at the drive's root; the golden files in
-// testdata hold the two together.
+// the drive does not have are left out. It is the one builder of the text:
+// each harness's file is this, with that harness's tool names. Nothing is
+// written to the drive's root, where a harness started there would read it a
+// second time.
 func DriveContext(opts ContextOptions) string {
 	tool := func(name string) string { return "`" + opts.ToolPrefix + name + "`" }
 	where := ""
@@ -69,7 +70,7 @@ func DriveContext(opts ContextOptions) string {
 	// twice cost 40 tokens of every prompt.
 	b.WriteString("2. " + tool("search") + " finds articles by keyword.\n")
 	b.WriteString("3. " + tool("search_read") + " reads one article. Pass the `source` and `path` from a search result.\n")
-	if opts.Skills || opts.Libraries {
+	if opts.Skills {
 		b.WriteString("\n" + buildingContext(opts) + "\n")
 	}
 	if opts.Wiki {
@@ -88,32 +89,32 @@ func DriveContext(opts ContextOptions) string {
 	b.WriteString("- If the drive has no answer, say so. Do not invent one.\n")
 	b.WriteString("- Do not repeat a tool call with the same arguments. If it failed twice, stop and tell the user.\n")
 	b.WriteString("- `./run` on the drive is an interactive menu for the user. Do not run it.\n")
+	b.WriteString("- " + stayInPlace + "\n")
 	return b.String()
 }
 
+// stayInPlace keeps a harness's shell where it belongs. Nothing confines it:
+// a 4B model that could not find a skill's template ran find over the user's
+// home folder.
+const stayInPlace = "Work only in your starting folder and the drive."
+
 // buildingContext sends a model that is asked to make something to the
-// drive's skills first, and keeps it off the network for libraries. Left to
-// itself a small model writes a page that loads its libraries from a CDN.
-// Without a search index the skill tools have nothing to search, and the
-// model is sent to the skills' folder.
+// drive's skills first. Left to itself a small model improvises, and writes
+// a page that loads its libraries from a CDN. Without a search index the
+// skill tools have nothing to search, and the model is sent to the skills'
+// folder. Stage 3 adds the sentence about packing a page with the command
+// that does it.
 func buildingContext(opts ContextOptions) string {
 	const what = "To build something (an app, dashboard, map, document, firmware), "
 	const only = " Use only the libraries and tools it names; they are on this drive."
-	var sentences []string
-	switch {
-	case opts.Skills && opts.NoIndex:
+	if opts.NoIndex {
 		folder := "skills/"
 		if opts.DriveRoot != "" {
 			folder = filepath.ToSlash(filepath.Join(opts.DriveRoot, "skills")) + "/"
 		}
-		sentences = append(sentences, what+"first read a procedure: with no search index, list `"+folder+"` and read the fitting SKILL.md."+only)
-	case opts.Skills:
-		sentences = append(sentences, what+"first find a procedure with `"+opts.ToolPrefix+"skill_search`, read it with `"+opts.ToolPrefix+"skill_read` and follow it."+only)
+		return what + "first read a procedure: with no search index, list `" + folder + "` and read the fitting SKILL.md." + only
 	}
-	if opts.Libraries {
-		sentences = append(sentences, "Pack HTML with `svalbard-drive html pack`; never link a CDN.")
-	}
-	return strings.Join(sentences, " ")
+	return what + "first find a procedure with `" + opts.ToolPrefix + "skill_search`, read it with `" + opts.ToolPrefix + "skill_read` and follow it." + only
 }
 
 // driveContextFor is the context for a harness launched from the drive at
@@ -126,7 +127,6 @@ func driveContextFor(driveRoot, toolPrefix string) string {
 		Wiki:       hasWiki,
 		LivePages:  hasWiki && wiki.LivePages(driveRoot),
 		Skills:     mcp.SkillsInstalled(driveRoot),
-		Libraries:  mcp.LibrariesInstalled(driveRoot),
 		NoIndex:    !searchIndexed(driveRoot),
 	})
 }

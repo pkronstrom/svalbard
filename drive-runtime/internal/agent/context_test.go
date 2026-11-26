@@ -1,7 +1,6 @@
 package agent_test
 
 import (
-	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,8 +9,6 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/agent"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
-
-var updateGolden = flag.Bool("update", false, "rewrite the golden files")
 
 // installRecipes writes the drive's record of installed recipes, which is
 // what opens the gates for the skill and wiki tools.
@@ -52,12 +49,12 @@ var (
 
 func TestDriveContextOmitsAbsentAreas(t *testing.T) {
 	plain := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/STICK", ToolPrefix: "mcp__svalbard__"})
-	for _, absent := range []string{"skill_search", "skill_read", "wiki", "html pack", "CDN"} {
+	for _, absent := range []string{"skill_search", "skill_read", "wiki", "html pack"} {
 		if strings.Contains(plain, absent) {
 			t.Errorf("a drive without skills, libraries or wiki is told about %q:\n%s", absent, plain)
 		}
 	}
-	for _, want := range []string{"`/Volumes/STICK`", "no internet", "`mcp__svalbard__vault_sources`", "`mcp__svalbard__search`", "`mcp__svalbard__search_read`", "Rules:"} {
+	for _, want := range []string{"`/Volumes/STICK`", "no internet", "`mcp__svalbard__vault_sources`", "`mcp__svalbard__search`", "`mcp__svalbard__search_read`", "Rules:", "Work only in your starting folder and the drive."} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("context missing %q:\n%s", want, plain)
 		}
@@ -66,10 +63,6 @@ func TestDriveContextOmitsAbsentAreas(t *testing.T) {
 	skills := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/STICK", ToolPrefix: "mcp__svalbard__", Skills: true})
 	if !strings.Contains(skills, "`mcp__svalbard__skill_search`") || !strings.Contains(skills, "`mcp__svalbard__skill_read`") || strings.Contains(skills, "html pack") {
 		t.Errorf("skills only:\n%s", skills)
-	}
-	libraries := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/STICK", ToolPrefix: "mcp__svalbard__", Libraries: true})
-	if !strings.Contains(libraries, "svalbard-drive html pack") || !strings.Contains(libraries, "CDN") {
-		t.Errorf("libraries only:\n%s", libraries)
 	}
 	// The live-pages pointer belongs to the wiki's paragraph.
 	if text := agent.DriveContext(agent.ContextOptions{LivePages: true}); strings.Contains(text, "wiki") {
@@ -91,7 +84,7 @@ func TestDriveContextOmitsAbsentAreas(t *testing.T) {
 }
 
 func TestDriveContextUsesHarnessPrefix(t *testing.T) {
-	all := agent.ContextOptions{DriveRoot: "/Volumes/STICK", ToolPrefix: "mcp__svalbard_", Wiki: true, LivePages: true, Skills: true, Libraries: true}
+	all := agent.ContextOptions{DriveRoot: "/Volumes/STICK", ToolPrefix: "mcp__svalbard_", Wiki: true, LivePages: true, Skills: true}
 	text := agent.DriveContext(all)
 	for _, tool := range []string{"vault_sources", "search", "search_read", "skill_search", "skill_read", "wiki_create", "wiki_search", "wiki_read"} {
 		if !strings.Contains(text, "`mcp__svalbard_"+tool+"`") {
@@ -108,36 +101,6 @@ func TestDriveContextUsesHarnessPrefix(t *testing.T) {
 	}
 }
 
-// The host writes the same text to the drive's root, from its own copy of
-// it: the modules share no code. These files are what both are held to.
-func TestDriveContextGolden(t *testing.T) {
-	for name, opts := range map[string]agent.ContextOptions{
-		"drive_context.golden":           {Skills: true, Libraries: true},
-		"drive_context_skills.golden":    {Skills: true},
-		"drive_context_libraries.golden": {Libraries: true},
-		"drive_context_plain.golden":     {},
-		// Without a search index the skills are read as files.
-		"drive_context_noindex.golden":        {Skills: true, Libraries: true, NoIndex: true},
-		"drive_context_skills_noindex.golden": {Skills: true, NoIndex: true},
-	} {
-		path := filepath.Join("testdata", name)
-		got := agent.DriveContext(opts)
-		if *updateGolden {
-			if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			continue
-		}
-		want, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("%v (run the test with -update to write it)", err)
-		}
-		if got != string(want) {
-			t.Errorf("%s differs from DriveContext(%+v); if the change is meant, run with -update and update host-cli/internal/toolkit/agentsmd.go to match.\ngot:\n%s", name, opts, got)
-		}
-	}
-}
-
 // The context is in every prompt. At the 8K tier it shares the window with
 // the harness's own prompt, the tool definitions, a skill and the work.
 func TestDriveContextBudget(t *testing.T) {
@@ -148,7 +111,7 @@ func TestDriveContextBudget(t *testing.T) {
 		}
 	}
 	for _, noIndex := range []bool{false, true} {
-		all := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/SVALBARD", ToolPrefix: longest, Wiki: true, LivePages: true, Skills: true, Libraries: true, NoIndex: noIndex})
+		all := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/SVALBARD", ToolPrefix: longest, Wiki: true, LivePages: true, Skills: true, NoIndex: noIndex})
 		if words := len(strings.Fields(all)); words > 260 {
 			t.Errorf("the drive context with every area (no index: %v) is %d words, over the budget of 260:\n%s", noIndex, words, all)
 		}
@@ -159,11 +122,11 @@ func TestDriveContextBudget(t *testing.T) {
 // search them: the context sends the model to their folder, not to a tool
 // that can only answer that there is no index.
 func TestDriveContextSaysWhenThereIsNoIndex(t *testing.T) {
-	text := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/STICK", ToolPrefix: "mcp__svalbard__", Skills: true, Libraries: true, NoIndex: true})
+	text := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/STICK", ToolPrefix: "mcp__svalbard__", Skills: true, NoIndex: true})
 	if strings.Contains(text, "skill_search") || strings.Contains(text, "skill_read") {
 		t.Errorf("a drive without an index is told to search its skills:\n%s", text)
 	}
-	for _, want := range []string{"no search index", "`/Volumes/STICK/skills/`", "SKILL.md", "svalbard-drive html pack"} {
+	for _, want := range []string{"no search index", "`/Volumes/STICK/skills/`", "SKILL.md"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("context missing %q:\n%s", want, text)
 		}
@@ -243,7 +206,7 @@ func TestPrepareGooseWritesHints(t *testing.T) {
 	installRecipes(t, driveRoot, skillsRecipe, libraryRecipe)
 	cfg := prepare(t, driveRoot, "goose")
 	hints := readFile(t, filepath.Join(cfg.Env["XDG_CONFIG_HOME"], "goose", ".goosehints"))
-	for _, want := range []string{driveRoot, "`" + agent.GooseToolPrefix + "skill_search`", "`" + agent.GooseToolPrefix + "skill_read`", "svalbard-drive html pack"} {
+	for _, want := range []string{driveRoot, "`" + agent.GooseToolPrefix + "skill_search`", "`" + agent.GooseToolPrefix + "skill_read`"} {
 		if !strings.Contains(hints, want) {
 			t.Errorf("goose hints missing %q:\n%s", want, hints)
 		}
@@ -291,7 +254,8 @@ func TestOmpPromptMentionsSkills(t *testing.T) {
 			t.Errorf("lean prompt does not name %s:\n%s", tool, prompt)
 		}
 	}
-	if !strings.Contains(prompt, "svalbard-drive html pack") || strings.Contains(prompt, "mcp__svalbard__") {
+	// The packing command arrives with stage 3; until then nothing names it.
+	if strings.Contains(prompt, "html pack") || strings.Contains(prompt, "mcp__svalbard__") || !strings.Contains(prompt, "Work only in your starting folder and the drive.") {
 		t.Errorf("lean prompt:\n%s", prompt)
 	}
 }
