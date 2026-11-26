@@ -181,10 +181,10 @@ func TestSmallContextOffersNoWikiAndShorterReads(t *testing.T) {
 		wiki    bool
 		read    ReadLimits
 	}{
-		{0, true, ReadLimits{readChars, readLinks}},
-		{8192, false, ReadLimits{smallReadChars, smallReadLinks}},
-		{32768, true, ReadLimits{readChars, readLinks}},
-		{131072, true, ReadLimits{readChars, readLinks}},
+		{0, true, ReadLimits{readChars, readLinks, fullDetailChars}},
+		{8192, false, ReadLimits{smallReadChars, smallReadLinks, smallFullDetailChars}},
+		{32768, true, ReadLimits{readChars, readLinks, fullDetailChars}},
+		{131072, true, ReadLimits{readChars, readLinks, fullDetailChars}},
 	} {
 		srv := NewDriveServer(root, DriveOptions{Context: tc.context})
 		var names []string

@@ -106,8 +106,11 @@ const (
 
 	// fullDetailChars is how much of each article a full-detail search
 	// returns. Five of them stay below a third of a 16K context; search_read
-	// has the rest.
-	fullDetailChars = 1500
+	// has the rest. smallFullDetailChars is the opening below the Balanced
+	// tier, where five full openings (8,300 characters on WikEM) made pi
+	// compact after each search: five of them are about one shorter read.
+	fullDetailChars      = 1500
+	smallFullDetailChars = 600
 )
 
 // searchResultItem is the JSON shape returned for search results.
@@ -266,17 +269,17 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			// Try reading from search.db first (fast, no kiwix needed)
 			if hybridUsed {
 				// HybridSnapshot captured this body in its verified read snapshot.
-				item.Body = articleOpening(r.Body)
+				item.Body = articleOpening(r.Body, c.read.Opening)
 			} else if r.Body != "" {
-				item.Body = articleOpening(r.Body)
+				item.Body = articleOpening(r.Body, c.read.Opening)
 			} else if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
-				item.Body = articleOpening(body)
+				item.Body = articleOpening(body, c.read.Opening)
 			} else if engine.IsDocumentSource(r.Filename) {
 				item.Snippet = html.UnescapeString(r.Snippet) // a document has no page outside the index
 			} else {
 				// Fallback to kiwix for full HTML content
 				if page, _, fetchErr := c.fetchPage(ctx, sourceName(r.Filename), strings.TrimLeft(r.Path, "/")); fetchErr == nil {
-					item.Body = articleOpening(page.Body)
+					item.Body = articleOpening(page.Body, c.read.Opening)
 				} else {
 					item.Snippet = html.UnescapeString(r.Snippet) // last resort
 				}
@@ -381,16 +384,16 @@ func semanticRecorded(db *sql.DB) bool {
 	return db.QueryRow("SELECT value FROM meta WHERE key='semantic_state'").Scan(&state) == nil
 }
 
-// articleOpening is an article's body in a full-detail result. A model takes
-// a bare "..." for the end of the article, so a cut body says where the rest
-// is.
-func articleOpening(body string) string {
+// articleOpening is an article's body in a full-detail result, at most size
+// characters. A model takes a bare "..." for the end of the article, so a cut
+// body says where the rest is.
+func articleOpening(body string, size int) string {
 	body = html.UnescapeString(body)
 	runes := []rune(body)
-	if len(runes) <= fullDetailChars {
+	if len(runes) <= size {
 		return body
 	}
-	return strings.TrimSpace(string(runes[:fullDetailChars])) + "... [opening only: search_read has the whole article]"
+	return strings.TrimSpace(string(runes[:size])) + "... [opening only: search_read has the whole article]"
 }
 
 // opening returns the start of an indexed text, cut at a character boundary.

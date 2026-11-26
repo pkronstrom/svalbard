@@ -40,18 +40,19 @@ const (
 )
 
 // ReadLimits is how much one read returns: the characters of text of an
-// article, page or skill, and the links listed with an article's first piece.
+// article, page or skill, the links listed with an article's first piece, and
+// the characters of each article's opening in a full-detail search.
 type ReadLimits struct {
-	Chars, Links int
+	Chars, Links, Opening int
 }
 
 // ReadLimitsFor is the size of a read for a model with a context window of
 // ctxSize tokens. 0, a client the drive did not start, gets the full size.
 func ReadLimitsFor(ctxSize int) ReadLimits {
 	if smallContext(ctxSize) {
-		return ReadLimits{Chars: smallReadChars, Links: smallReadLinks}
+		return ReadLimits{Chars: smallReadChars, Links: smallReadLinks, Opening: smallFullDetailChars}
 	}
-	return ReadLimits{Chars: readChars, Links: readLinks}
+	return ReadLimits{Chars: readChars, Links: readLinks, Opening: fullDetailChars}
 }
 
 // errPageNotFound is kiwix-serve answering 404, as opposed to not answering.

@@ -430,6 +430,17 @@ func TestDefaultResponsesStayWithinASmallContext(t *testing.T) {
 	if n := size("read", map[string]any{"source": "wiki", "path": "/www.example.org/a/rather/long/path/to/Water_treatment_00/"}); n > 9000 {
 		t.Errorf("default read response is %d characters, want at most 9000", n)
 	}
+
+	// Below the Balanced tier a full-detail search is about one read, and a
+	// read about half of one above it.
+	f.cap.read = ReadLimitsFor(8192)
+	if n := size("search", map[string]any{"query": "water treatment", "detail": "full"}); n > 4500 {
+		t.Errorf("small context: full-detail search response is %d characters, want at most 4500", n)
+	}
+	if n := size("read", map[string]any{"source": "wiki", "path": "/www.example.org/a/rather/long/path/to/Water_treatment_00/"}); n > 4800 {
+		t.Errorf("small context: read response is %d characters, want at most 4800", n)
+	}
+	f.cap.read = ReadLimitsFor(0)
 }
 
 func TestPathCandidates(t *testing.T) {
@@ -473,11 +484,11 @@ func TestPageSlice(t *testing.T) {
 
 func TestArticleOpeningMarksOnlyCutBodies(t *testing.T) {
 	short := "It&#x27;s short..."
-	if got := articleOpening(short); got != "It's short..." {
+	if got := articleOpening(short, fullDetailChars); got != "It's short..." {
 		t.Errorf("short body = %q, want it whole and unmarked", got)
 	}
 	long := strings.Repeat("ä", fullDetailChars+1)
-	if got := articleOpening(long); got != strings.Repeat("ä", fullDetailChars)+"... [opening only: search_read has the whole article]" {
+	if got := articleOpening(long, fullDetailChars); got != strings.Repeat("ä", fullDetailChars)+"... [opening only: search_read has the whole article]" {
 		t.Errorf("long body ends %q", got[len(got)-70:])
 	}
 }
