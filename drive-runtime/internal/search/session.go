@@ -263,7 +263,7 @@ func (s *Session) ensureKiwix(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	zims, err := filepath.Glob(filepath.Join(s.driveRoot, "zim", "*.zim"))
+	zims, err := server.ZIMFiles(s.driveRoot)
 	if err != nil {
 		return err
 	}

@@ -16,6 +16,9 @@ import (
 )
 
 func Resolve(name, driveRoot string) (string, error) {
+	if _, err := platform.Detect(); err != nil {
+		return "", err
+	}
 	if path, err := ResolveOnDrive(name, driveRoot); err == nil {
 		return path, nil
 	}
@@ -63,7 +66,10 @@ func resolveFromDir(name, dir string) (string, error) {
 	}
 	extracted := false
 	for _, entry := range entries {
-		if entry.IsDir() {
+		// On an exFAT stick macOS keeps a file's extended attributes in a
+		// "._name" file beside it, which has the archive's suffix and none
+		// of its content.
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), "._") {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())

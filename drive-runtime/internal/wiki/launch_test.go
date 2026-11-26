@@ -367,6 +367,9 @@ func TestRunStartsTheWikiAndLeavesNothingBehind(t *testing.T) {
 	}
 	for key, want := range map[string]string{
 		"SB_UPDATE_CHECK": "0", "SB_FS_WATCH": "auto", "SB_MCP": "0", "SB_SHELL_BACKEND": "off", "HOME": state,
+		// No service worker: the browser keeps no copy of the notes that
+		// goes on answering after the wiki has stopped.
+		"SB_DISABLE_SERVICE_WORKER": "1",
 	} {
 		if got, _ := envValue(record.Env, key); got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
@@ -491,9 +494,6 @@ func TestSettingsDefaultWhenTheDriveDoesNotDeclareThem(t *testing.T) {
 
 func TestStartFailsCleanlyWithoutSilverBullet(t *testing.T) {
 	driveRoot := t.TempDir()
-	if Installed(driveRoot) {
-		t.Fatal("Installed() is true on an empty drive")
-	}
 	err := Run(context.Background(), io.Discard, driveRoot, func(string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "the wiki (SilverBullet) is not installed for ") {
 		t.Fatalf("Run() error = %v, want a not-installed error", err)
@@ -507,16 +507,19 @@ func TestStartFailsCleanlyWithoutSilverBullet(t *testing.T) {
 func TestStartNeverUsesASilverBulletFromTheHost(t *testing.T) {
 	// A host install would be another release, started on this state.
 	hostBin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(hostBin, binaryName), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	started := filepath.Join(hostBin, "started")
+	script := fmt.Sprintf("#!/bin/sh\necho started > '%s'\nexit 0\n", started)
+	if err := os.WriteFile(filepath.Join(hostBin, binaryName), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", hostBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	driveRoot := t.TempDir()
-	if Installed(driveRoot) {
-		t.Error("Installed() found SilverBullet on the host's PATH")
+	_, err := Start(context.Background(), driveRoot, settingsFor(t, driveRoot))
+	if err == nil || !strings.Contains(err.Error(), "is not installed for") {
+		t.Errorf("Start() error = %v, want the not-installed error", err)
 	}
-	if _, err := Start(context.Background(), driveRoot, settingsFor(t, driveRoot)); err == nil {
-		t.Error("Start() used SilverBullet from the host's PATH")
+	if _, err := os.Stat(started); err == nil {
+		t.Error("Start() ran the SilverBullet on the host's PATH")
 	}
 }
 

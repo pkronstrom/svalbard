@@ -50,6 +50,7 @@ After `apply`, a vault typically contains:
 - `manifest.yaml`: desired and realized state
 - `library/`: imported local files and library metadata
 - `zim/`, `maps/`, `models/`, `tools/`: realized content, depending on selected items
+- `wiki/`: your own wiki pages, one Markdown file per page, created the first time the wiki is used
 - `.svalbard/`: runtime metadata, embedded runtime binaries, and generated action config
 - `run` and `activate`: launcher scripts for the on-drive runtime
 - `apps/map/index.html`: offline PMTiles viewer when map content is present
@@ -231,6 +232,21 @@ menu:
 - **The vault keeps a copy of the collection file** in `.svalbard/recipes/`. On a computer that does not have your file, plan and apply use that copy and say so. Your own file wins when it exists.
 - **Documents from your disk are never taken from another computer.** With the vault's copy, `path:` entries are not read, even if the same path exists there; the installed files stay and are listed as `kept ...: local source, not refreshed from the vault's copy`. Their `url:` documents are fetched as usual.
 - **A folder or file that cannot be read keeps its documents.** If a `path:` is missing, on an unplugged disk, or a folder is empty because it has not synced, nothing is deleted; plan lists each document as `kept`. To remove them, take the entry out of the file.
+
+## The wiki
+
+A drive built from a default preset has a wiki: a place for your own notes, next to the reference library. Add it to another vault with `svalbard add silverbullet` and apply.
+
+- **Open it** with **Wiki** in the drive's menu (under Apps), or `./run wiki`. It opens in the browser on `http://localhost:8088`, with a start page and no login. Ctrl+C stops it.
+- **The pages are plain Markdown files** in `wiki/` on the drive: page `Projects/Garden plan` is the file `wiki/Projects/Garden plan.md`. They can be read, edited and copied without the wiki running. A page changed on disk shows in an open browser tab, and in the wiki's search, within a second.
+- **The AI clients can read and write the pages.** pi, Goose, opencode and Open WebUI get eight tools from the drive: `wiki_list`, `wiki_read`, `wiki_search`, `wiki_create`, `wiki_append`, `wiki_edit`, `wiki_move` and `wiki_delete`. Ask one to "summarise what the vault says about burns into a wiki page", and the page appears. The wiki does not have to be open for this; while it is, the answer carries a link to the page. In Open WebUI the wiki tools are part of **Svalbard vault** and switch on and off with it.
+- **A page an AI client deletes is not erased.** It is moved to `.svalbard/state/wiki-trash/` on the drive, under its name and the time. Move the file back into `wiki/` to restore it. Edits, appends and moves are not versioned.
+- **Page names**: no `.md`, `/` for folders. A new name cannot contain `@ # | < > $ " * : ?`, start with a dot, or end like a file type (`Version 1.2`); the tools say what to send instead. A page you named yourself keeps its name.
+- **The AI clients write text, not programs.** SilverBullet runs `${...}` in a page as Lua, and scripts on pages under `Library/`. The tools do not write under `Library/` and do not add a `${` outside a code block. What you write there yourself works as SilverBullet documents it.
+- **Settings**, under Wiki in the Settings screen or with `./run settings`: `silverbullet.open_browser` (on) and `silverbullet.fs_watch` (`auto`; set `poll` if pages changed on the stick do not show up in the open wiki).
+- **Serve Everything starts the wiki too, on this computer only**, whatever address the other services use: the wiki has no login. The files in `wiki/` are still part of the drive that Files shares read-only.
+
+The wiki is [SilverBullet](https://silverbullet.md) 3.0.1. It keeps nothing on the drive but the pages: its index and settings are rebuilt in a temporary folder on the computer at each start and removed when it stops.
 
 ## Builder Scripts
 

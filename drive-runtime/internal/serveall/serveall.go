@@ -14,6 +14,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
+	searchserver "github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
@@ -66,7 +67,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 		if err != nil {
 			return err
 		}
-		zims, _ := filepath.Glob(filepath.Join(driveRoot, "zim", "*.zim"))
+		zims, _ := searchserver.ZIMFiles(driveRoot)
 		args := []string{"--port", fmt.Sprintf("%d", port), "--address", bind}
 		args = append(args, zims...)
 		cmd := exec.CommandContext(ctx, binaries["kiwix-serve"], args...)

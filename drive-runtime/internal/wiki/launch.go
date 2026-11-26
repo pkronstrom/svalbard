@@ -43,12 +43,6 @@ var readyTimeout = 60 * time.Second
 // directory is already half of that.
 var socketParent = "/tmp"
 
-// Installed reports whether the drive has SilverBullet for this computer.
-func Installed(driveRoot string) bool {
-	_, err := binary.ResolveOnDrive(binaryName, driveRoot)
-	return err == nil
-}
-
 // Instance is one running wiki: SilverBullet on a Unix socket and, in front
 // of it, the proxy on localhost that browsers reach.
 type Instance struct {
@@ -115,12 +109,16 @@ func environment(state, socket, watch string) []string {
 		// run's state.
 		"HOME": state,
 		// No TCP listener: browsers reach it through the proxy only.
-		"SB_UNIX_SOCKET":   socket,
-		"SB_UPDATE_CHECK":  "0",
-		"SB_FS_WATCH":      watch,
-		"SB_MCP":           "0",
-		"SB_SHELL_BACKEND": "off",
-		"NO_COLOR":         "1",
+		"SB_UNIX_SOCKET": socket,
+		// Without its service worker the page keeps no copy of the notes
+		// that answers after the wiki has stopped, and nothing in the
+		// browser takes requests the proxy never sees.
+		"SB_DISABLE_SERVICE_WORKER": "1",
+		"SB_UPDATE_CHECK":           "0",
+		"SB_FS_WATCH":               watch,
+		"SB_MCP":                    "0",
+		"SB_SHELL_BACKEND":          "off",
+		"NO_COLOR":                  "1",
 	}
 	list := platform.EnvList(env)
 	for _, key := range []string{"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR"} {

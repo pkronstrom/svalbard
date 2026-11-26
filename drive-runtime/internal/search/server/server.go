@@ -18,6 +18,23 @@ var (
 	healthPollInterval      = 500 * time.Millisecond
 )
 
+// ZIMFiles lists the archives in the drive's zim folder, in name order. On
+// an exFAT stick macOS keeps a "._name.zim" file beside each archive, and
+// kiwix-serve does not start when it is handed one.
+func ZIMFiles(driveRoot string) ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(driveRoot, "zim", "*.zim"))
+	if err != nil {
+		return nil, err
+	}
+	zims := matches[:0]
+	for _, zim := range matches {
+		if !strings.HasPrefix(filepath.Base(zim), "._") {
+			zims = append(zims, zim)
+		}
+	}
+	return zims, nil
+}
+
 // FindEmbeddingModel returns the first packaged embedding model.
 func FindEmbeddingModel(driveRoot string) string {
 	matches, _ := filepath.Glob(filepath.Join(driveRoot, "models", "embed", "*.gguf"))

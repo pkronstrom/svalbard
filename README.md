@@ -26,6 +26,7 @@ The project ships with sanely curated presets built from open recipes, but it's 
 - **Maps** — OpenStreetMap regional extracts, geodata overlays
 - **AI models** — Portable Gemma 4 (QAT), Qwen 3.5 and Qwen 3.8 GGUFs that run locally from the drive; [RAM tiers and optional MTP](docs/plans/2026-09-30-catalog-refresh-results.md)
 - **Search** — Full-text and semantic search across all content — find answers, not just keywords
+- **Wiki** — your own notes as plain Markdown files, edited in the browser; the local AI clients can read and write the pages ([how](docs/usage.md#the-wiki))
 - **Tools** — CyberChef, Kiwix server, everything self-contained
 
 Deploy a 2 GB emergency kit on your phone with a few apps and be offgrid-certified. Or build a complete over-the-top 2 TB doomsday vault if you feel like it.
@@ -34,7 +35,7 @@ Deploy a 2 GB emergency kit on your phone with a few apps and be offgrid-certifi
 
 A svalbard drive is not a bootable image or a compressed archive — it's a plain directory of standard open formats (ZIM, PMTiles, GGUF, HTML). No extraction, no installation. The drive includes its own binaries and tools for viewing and accessing data.
 
-**On a computer** — plug in the drive, open a terminal, run `./run`. The drive launcher opens a keyboard-driven terminal UI with grouped menus for `Search`, `Library`, `Maps`, `Local AI`, `Tools` and `Settings`, plus any pack-defined extras on the drive. You can jump straight into archives and your own documents, view maps, chat with local models, launch bundled AI clients like OpenCode, Goose and pi or the opt-in Open WebUI browser front end, inspect the drive, and share it over the local network. Choices such as the default model and the context size are kept on the drive: change them under `Settings`, or with `./run settings`. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
+**On a computer** — plug in the drive, open a terminal, run `./run`. The drive launcher opens a keyboard-driven terminal UI with grouped menus for `Search`, `Library`, `Maps`, `Local AI`, `Apps`, `Tools` and `Settings`, plus any pack-defined extras on the drive. You can jump straight into archives and your own documents, view maps, chat with local models, launch bundled AI clients like OpenCode, Goose and pi or the opt-in Open WebUI browser front end, keep your own notes in the drive's wiki, inspect the drive, and share it over the local network. Choices such as the default model and the context size are kept on the drive: change them under `Settings`, or with `./run settings`. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
 
 **On a phone or tablet** — carry a USB-C stick, plug it into your phone, and open the files directly with apps like Kiwix (encyclopedias), OsmAnd (maps), or any PDF/EPUB reader. Or just copy the directory (or a zip of it) to your phone's filesystem — the files are standard formats that any compatible app can open. See `provisioning/` for recommended apps on iOS and Android.
 

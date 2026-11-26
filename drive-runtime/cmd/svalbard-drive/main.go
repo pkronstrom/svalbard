@@ -129,7 +129,10 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 		return runMCPServe(driveRoot)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// SIGHUP is the terminal window being closed: the action stops as it
+	// does on Ctrl+C, so its servers end and what they kept for the run
+	// (the wiki's state folder and socket) is removed.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
 	switch invocation.ActionID {

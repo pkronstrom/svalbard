@@ -15,6 +15,7 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
+	searchserver "github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
 )
 
 const (
@@ -261,7 +262,7 @@ func (c *SearchCapability) knownSources(ctx context.Context, onDisk bool) []stri
 		}
 	}
 	if onDisk {
-		zims, _ := filepath.Glob(filepath.Join(c.driveRoot, "zim", "*.zim"))
+		zims, _ := searchserver.ZIMFiles(c.driveRoot)
 		for _, zim := range zims {
 			add(filepath.Base(zim))
 		}
