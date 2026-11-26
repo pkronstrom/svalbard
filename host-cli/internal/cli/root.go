@@ -16,7 +16,6 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
-	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 	"github.com/pkronstrom/svalbard/host-cli/internal/volumes"
 	hosttui "github.com/pkronstrom/svalbard/host-tui"
@@ -130,8 +129,16 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p := planner.Build(m)
-			return commands.WritePlan(cmd.OutOrStdout(), p)
+			cat, err := loadCatalog(cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			p, documents := commands.BuildPlan(m, cat)
+			if err := commands.WritePlan(cmd.OutOrStdout(), p); err != nil {
+				return err
+			}
+			commands.WriteDocumentPlans(cmd.OutOrStdout(), documents)
+			return nil
 		},
 	}
 
@@ -395,11 +402,14 @@ func newPresetCommand() *cobra.Command {
 }
 
 // loadCatalog loads the catalog and prints one warning to w for each user
-// preset it skipped.
+// recipe and user preset it skipped.
 func loadCatalog(w io.Writer) (*catalog.Catalog, error) {
 	cat, err := catalog.LoadCatalog()
 	if err != nil {
 		return nil, fmt.Errorf("loading catalog: %w", err)
+	}
+	for _, skipped := range cat.SkippedUserRecipes() {
+		fmt.Fprintf(w, "warning: %s\n", skipped)
 	}
 	for _, skipped := range cat.SkippedUserPresets() {
 		fmt.Fprintf(w, "warning: %s\n", skipped)
@@ -642,12 +652,11 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return hosttui.PlanSummary{}, err
 		}
-		p := planner.Build(m)
-
 		cat, err := catalog.LoadCatalog()
 		if err != nil {
 			return hosttui.PlanSummary{}, err
 		}
+		p, _ := commands.BuildPlan(m, cat)
 
 		platforms := m.Desired.Options.HostPlatforms
 		var summary hosttui.PlanSummary

@@ -41,6 +41,10 @@ type Item struct {
 	// (<type dir>/<id>/), for example npm package tarballs for a web app.
 	Bundle []BundleSource `yaml:"bundle,omitempty"`
 
+	// Documents lists the files of a user document collection, staged into
+	// <type dir>/<id>/ (see LoadUserRecipes and ExpectedDocuments).
+	Documents []DocumentSource `yaml:"documents,omitempty"`
+
 	// Recipe dependency declarations.
 	Deps []string `yaml:"deps,omitempty"`
 
@@ -142,6 +146,8 @@ type Catalog struct {
 	recipes map[string]Item
 	presets map[string]Preset
 	skipped []SkippedPreset // user presets left out by LoadUserPresets
+
+	skippedRecipes []SkippedRecipe // user recipes left out by LoadUserRecipes
 }
 
 // LoadFromFS walks both FS trees, parsing .yaml files into recipes and presets maps.
