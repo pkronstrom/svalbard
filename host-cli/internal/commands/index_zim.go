@@ -98,18 +98,26 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 	defer archive.Close()
 
 	htmlStale := force || !identityCurrent
-	if !htmlStale {
+	if !htmlStale && archive.HoldsDocuments() {
 		// Indexed by an older reader: its pages need extracting again only
-		// if it kept files the HTML pass now leaves out.
-		heads, err := db.ArticleHeads(zf)
+		// if it kept files the HTML pass now leaves out. That web app is
+		// what an archive of documents wraps them in; an archive without
+		// documents, such as Wikipedia, is not scanned for it, and any it
+		// kept clears when it is next updated.
+		err := db.EachArticleHead(ctx, zf, func(head searchdb.ArticleHead) bool {
+			path := strings.TrimLeft(head.Path, "/")
+			if zimext.HasJunkExtension(path) {
+				if mime, ok := archive.MIMEType(path); !ok || zimext.IsJunkEntry(mime, path) {
+					htmlStale = true
+				}
+			}
+			if zimext.IsTemplateTitle(head.Title) {
+				htmlStale = true
+			}
+			return !htmlStale
+		})
 		if err != nil {
 			return nil, err
-		}
-		for _, head := range heads {
-			if zimext.IsJunkPath(strings.TrimLeft(head.Path, "/")) || zimext.IsTemplateTitle(head.Title) {
-				htmlStale = true
-				break
-			}
 		}
 	}
 	if htmlStale {

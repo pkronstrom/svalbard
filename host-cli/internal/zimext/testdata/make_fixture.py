@@ -10,6 +10,8 @@ documents.zim  "Fixture Library", main page home, laid out like an openZIM nauti
                  home                    text/html   the rendered page
                  home.html               text/html   an unrendered template, <title>{{ title }}</title>
                  about                   text/html   an ordinary article
+                 Node.js                 text/html   an article whose path ends like a script
+                 Escaping_braces         text/html   an article whose title holds "{{"
                  vendors/x.css.map       text/plain  a source map (junk)
                  display_rows.handlebars text/plain  a template (junk)
                  vendors/app.js          application/javascript (junk)
@@ -117,6 +119,8 @@ def main(out):
         Entry("home", "text/html", page("Fixture Library", "<p>A library of guides.</p>"), "Fixture Library"),
         Entry("home.html", "text/html", page("{{ title }}", "<p>{{ description }}</p>"), "home.html"),
         Entry("about", "text/html", page("About", "<p>About the guides and their authors.</p>"), "About"),
+        Entry("Node.js", "text/html", page("Node.js", "<p>Node.js is a JavaScript runtime.</p>"), "Node.js"),
+        Entry("Escaping_braces", "text/html", page("How to escape {{ in Jinja", "<p>Use a raw block to write literal braces.</p>"), "How to escape {{ in Jinja"),
         Entry("vendors/x.css.map", "text/plain", '{"version":3,"sources":["x.scss"]}'),
         Entry("display_rows.handlebars", "text/plain", "{{#each rows}}<li>{{title}}</li>{{/each}}"),
         Entry("vendors/app.js", "application/javascript", "console.log('app');"),

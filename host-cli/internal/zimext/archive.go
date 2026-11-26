@@ -128,6 +128,16 @@ func (a *Archive) Documents(ctx context.Context) ([]Embedded, error) {
 	return documents, nil
 }
 
+// MIMEType returns the MIME type of the content entry at entryPath, and
+// false when there is none.
+func (a *Archive) MIMEType(entryPath string) (string, bool) {
+	entry, err := a.zim.EntryByPath(string(a.ns) + "/" + entryPath)
+	if err != nil {
+		return "", false
+	}
+	return entry.MIMEType(), true
+}
+
 // ReadEntry returns an entry's content. An entry larger than limit bytes is
 // not read: ErrEntryTooLarge.
 func (a *Archive) ReadEntry(entryPath string, limit int64) ([]byte, error) {

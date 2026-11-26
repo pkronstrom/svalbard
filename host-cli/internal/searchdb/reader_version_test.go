@@ -78,7 +78,7 @@ func TestOpenAddsReaderVersionToAnOldDatabase(t *testing.T) {
 	}
 }
 
-func TestArticleHeadsListsPathsAndTitles(t *testing.T) {
+func TestEachArticleHeadStreamsAndStops(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -90,12 +90,21 @@ func TestArticleHeadsListsPathsAndTitles(t *testing.T) {
 	})
 	seedSource(t, db, "b.zim", "B", []Article{{Path: "/other", Title: "Other", Body: "z"}})
 
-	heads, err := db.ArticleHeads("a.zim")
-	if err != nil {
+	var heads []ArticleHead
+	if err := db.EachArticleHead(context.Background(), "a.zim", func(head ArticleHead) bool {
+		heads = append(heads, head)
+		return true
+	}); err != nil {
 		t.Fatal(err)
 	}
-	want := []ArticleHead{{Path: "/home", Title: "Home"}, {Path: "/home.html", Title: "{{ title }}"}}
-	if len(heads) != len(want) || heads[0] != want[0] || heads[1] != want[1] {
-		t.Fatalf("ArticleHeads = %+v, want %+v", heads, want)
+	if len(heads) != 2 {
+		t.Fatalf("heads = %+v, want both of a.zim's", heads)
+	}
+	calls := 0
+	if err := db.EachArticleHead(context.Background(), "a.zim", func(ArticleHead) bool {
+		calls++
+		return false
+	}); err != nil || calls != 1 {
+		t.Fatalf("stopping early: %d calls, %v", calls, err)
 	}
 }

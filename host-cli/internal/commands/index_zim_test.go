@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
@@ -82,7 +83,7 @@ func TestIndexZIMIndexesEmbeddedDocuments(t *testing.T) {
 
 	counts := indexedCounts(t, root)
 	want := map[string]int64{
-		"documents.zim":                    3, // /Novel.123, /about, /home
+		"documents.zim":                    5, // /Escaping_braces, /Node.js, /Novel.123, /about, /home
 		"documents.zim/files/guide.pdf":    3,
 		"documents.zim/files/water.pdf":    3,
 		"documents.zim/files/scan (1).pdf": 0,
@@ -168,14 +169,13 @@ func TestIndexZIMUpgradesAnOldIndex(t *testing.T) {
 	smallIndexedAt = readIndexedAt()
 
 	index(t, root)
-	heads, err := db.ArticleHeads("documents.zim")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, head := range heads {
+	if err := db.EachArticleHead(ctx, "documents.zim", func(head searchdb.ArticleHead) bool {
 		if head.Path == "/home.html" || head.Path == "/vendors/x.css.map" {
 			t.Errorf("junk article %s survived the upgrade", head.Path)
 		}
+		return true
+	}); err != nil {
+		t.Fatal(err)
 	}
 	if len(sourcesWithPrefix(t, root, "documents.zim/")) != 4 {
 		t.Errorf("embedded sources after upgrade: %v", sourcesWithPrefix(t, root, "documents.zim/"))
@@ -216,6 +216,33 @@ func TestIndexZIMResumesAfterInterruption(t *testing.T) {
 	}
 	if v := indexedSource(t, root, "documents.zim").ReaderVersion; v != zimReaderVersion {
 		t.Fatalf("ReaderVersion after resuming = %d", v)
+	}
+}
+
+// An archive indexed by an older reader is extracted again only for junk
+// that is junk by its MIME type, not for an article named like a script
+// ("Node.js") or a title that mentions braces.
+func TestIndexZIMUpgradeKeepsArticlesNamedLikeFiles(t *testing.T) {
+	root := zimVault(t)
+	index(t, root)
+	if err := openIndex(t, root).SetSourceReaderVersion(context.Background(), "documents.zim", 0); err != nil {
+		t.Fatal(err)
+	}
+	readIndexedAt := func() string {
+		var at string
+		if err := rawDB(t, root).QueryRow(`SELECT indexed_at FROM sources WHERE filename = 'documents.zim'`).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	before := readIndexedAt()
+	time.Sleep(1100 * time.Millisecond)
+	index(t, root)
+	if after := readIndexedAt(); after != before {
+		t.Fatalf("documents.zim was extracted again (indexed_at %s, was %s)", after, before)
+	}
+	if v := indexedSource(t, root, "documents.zim").ReaderVersion; v != zimReaderVersion {
+		t.Fatalf("ReaderVersion = %d", v)
 	}
 }
 

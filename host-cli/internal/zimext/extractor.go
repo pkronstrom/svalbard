@@ -79,7 +79,7 @@ func ExtractArticlesContext(ctx context.Context, path string) ([]searchdb.Articl
 		if iterErr != nil {
 			return nil, "", "", fmt.Errorf("iterate content entries: %w", iterErr)
 		}
-		if entry.IsRedirect() || !isIndexableMIME(entry.MIMEType()) || IsJunkPath(entry.Path()) {
+		if entry.IsRedirect() || !isIndexableMIME(entry.MIMEType()) || IsJunkEntry(entry.MIMEType(), entry.Path()) {
 			continue
 		}
 
@@ -130,16 +130,27 @@ var junkExtensions = map[string]bool{
 	".handlebars": true, ".hbs": true, ".mustache": true, ".tmpl": true, ".tpl": true, ".ejs": true,
 }
 
-// IsJunkPath reports whether a ZIM entry is part of the archive's web app
-// rather than content, by its path.
-func IsJunkPath(path string) bool {
+// IsJunkEntry reports whether a ZIM entry is part of the archive's web app
+// rather than content: a file stored as text that is not a page, named like a
+// script, style, source map or template. A page is never junk by its name:
+// Wikipedia keeps its "Node.js" article at the path Node.js.
+func IsJunkEntry(mime, path string) bool {
+	return !strings.HasPrefix(mime, "text/html") && junkExtensions[strings.ToLower(filepath.Ext(path))]
+}
+
+// HasJunkExtension reports whether a path is named like a web-app file, the
+// first test of IsJunkEntry for a caller that does not know the MIME type.
+func HasJunkExtension(path string) bool {
 	return junkExtensions[strings.ToLower(filepath.Ext(path))]
 }
 
-// IsTemplateTitle reports whether a page title is an unrendered template
-// placeholder ("{{ title }}"): the page is a template, not an article.
+var templateTitleRe = regexp.MustCompile(`^\s*\{\{[^{}]*\}\}\s*$`)
+
+// IsTemplateTitle reports whether a page title is nothing but an unrendered
+// template placeholder ("{{ title }}"): the page is a template, not an
+// article. A title that mentions braces ("How to escape {{ in Jinja") is one.
 func IsTemplateTitle(title string) bool {
-	return strings.Contains(title, "{{")
+	return templateTitleRe.MatchString(title)
 }
 
 var titleRe = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)

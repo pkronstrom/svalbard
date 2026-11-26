@@ -22,7 +22,7 @@ func TestExtractArticlesSkipsJunkAndTemplates(t *testing.T) {
 		paths = append(paths, article.Path)
 	}
 	slices.Sort(paths)
-	if want := []string{"/Novel.123", "/about", "/home"}; !slices.Equal(paths, want) {
+	if want := []string{"/Escaping_braces", "/Node.js", "/Novel.123", "/about", "/home"}; !slices.Equal(paths, want) {
 		t.Fatalf("paths = %v, want %v", paths, want)
 	}
 }
@@ -129,17 +129,28 @@ func TestHoldsDocuments(t *testing.T) {
 
 func TestJunkAndTemplateRules(t *testing.T) {
 	for _, path := range []string{"vendors/x.css.map", "display_rows.handlebars", "a/b.js", "style.css", "data.json", "logo.svg", "m.wasm", "t.mustache"} {
-		if !IsJunkPath(path) {
-			t.Errorf("IsJunkPath(%q) = false", path)
+		if !IsJunkEntry("text/plain", path) {
+			t.Errorf("IsJunkEntry(text/plain, %q) = false", path)
 		}
 	}
 	for _, path := range []string{"home", "Novel.123", "files/guide.pdf", "A/Water_purification"} {
-		if IsJunkPath(path) {
-			t.Errorf("IsJunkPath(%q) = true", path)
+		if IsJunkEntry("text/plain", path) {
+			t.Errorf("IsJunkEntry(text/plain, %q) = true", path)
 		}
 	}
-	if !IsTemplateTitle("{{ title }}") || IsTemplateTitle("Fixture Library") {
-		t.Fatal("IsTemplateTitle")
+	// An article is never junk by its name: Wikipedia keeps "Node.js" there.
+	for _, path := range []string{"Node.js", "questions/tagged/node.js", "D3.js", "Chart.json"} {
+		if IsJunkEntry("text/html", path) {
+			t.Errorf("IsJunkEntry(text/html, %q) = true", path)
+		}
+	}
+	if !IsTemplateTitle("{{ title }}") || !IsTemplateTitle("  {{title}} ") {
+		t.Fatal("a placeholder title is not a template")
+	}
+	for _, title := range []string{"Fixture Library", "How to escape {{ in Jinja", "{{ a }} and {{ b }} in Go templates"} {
+		if IsTemplateTitle(title) {
+			t.Errorf("IsTemplateTitle(%q) = true", title)
+		}
 	}
 }
 

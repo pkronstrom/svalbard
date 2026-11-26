@@ -292,23 +292,25 @@ type ArticleHead struct {
 	Title string
 }
 
-// ArticleHeads lists the paths and titles of one source's articles, in path
-// order.
-func (d *DB) ArticleHeads(filename string) ([]ArticleHead, error) {
-	rows, err := d.db.Query(`SELECT a.path, a.title FROM articles a JOIN sources s ON s.id = a.source_id WHERE s.filename = ? ORDER BY a.path`, filename)
+// EachArticleHead calls fn with the path and title of each of one source's
+// articles, in no particular order, until fn returns false. The rows are
+// streamed: an archive may hold millions.
+func (d *DB) EachArticleHead(ctx context.Context, filename string, fn func(ArticleHead) bool) error {
+	rows, err := d.db.QueryContext(ctx, `SELECT a.path, a.title FROM articles a JOIN sources s ON s.id = a.source_id WHERE s.filename = ?`, filename)
 	if err != nil {
-		return nil, fmt.Errorf("searchdb: article heads of %s: %w", filename, err)
+		return fmt.Errorf("searchdb: article heads of %s: %w", filename, err)
 	}
 	defer rows.Close()
-	var heads []ArticleHead
 	for rows.Next() {
 		var head ArticleHead
 		if err := rows.Scan(&head.Path, &head.Title); err != nil {
-			return nil, fmt.Errorf("searchdb: scan article head: %w", err)
+			return fmt.Errorf("searchdb: scan article head: %w", err)
 		}
-		heads = append(heads, head)
+		if !fn(head) {
+			return nil
+		}
 	}
-	return heads, rows.Err()
+	return rows.Err()
 }
 
 // IdentityCurrent reports whether a persisted source has the same complete
