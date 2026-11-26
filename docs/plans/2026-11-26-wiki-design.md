@@ -162,43 +162,38 @@ add its own reduced set.
 - **Agents act on untrusted text.** A model reading injected vault content could edit or delete pages.
   Deletes are recoverable from the trash. Edits, appends and moves are not versioned in this build. This is
   an accepted risk; SilverBullet revisions (git) are a possible follow-up.
-- **A page is a program to SilverBullet** (added after the review of the build, checked on 3.0.1).
-  It evaluates `${...}` in a page as Lua when the page is shown, and loads `space-lua` blocks from pages
-  under `Library/` for the whole wiki when it opens. Lua there has the browser's JavaScript, on the
-  wiki's own address, so the proxy cannot tell it from the user: it could rewrite or erase pages through
-  SilverBullet's file API, past the trash, and send text out. Without a defence, injected vault text
-  could get a model to write such a page and hand the user a link to it. The build closes this in three
-  layers:
-  - The write tools refuse every page under `Library/`, in any letter case, for create, append, edit,
-    delete and both ends of a move.
-  - Text the tools write has every `${` outside a fenced block or code span saved as `\${`, which
-    SilverBullet shows as the same text and does not run. The result tells the model. An edit that
-    would join a `$` and a `{` already on the page is refused.
+- **A page is a program, and agents may write one** (owner's decision after the review; behaviour
+  checked on 3.0.1). SilverBullet evaluates `${...}` in a page as Lua when the page is shown, and loads
+  `space-lua` blocks from pages under `Library/` for the whole wiki when it opens. Lua there has the
+  browser's JavaScript, on the wiki's own address, so the proxy cannot tell it from the user. The owner
+  wants agents to use these features: queries, templates, expressions and commands are what make the
+  wiki more than a folder of text. The recipe setting `live_pages` (default on) decides:
+  - **On:** the write tools write expressions, `space-lua` blocks and pages under `Library/` as given.
+  - **Off:** the tools refuse every page under `Library/` and save each `${` outside a code block as
+    `\${`, which SilverBullet shows as the same text and does not run. The refusal and the note name
+    the setting.
+- **The accepted risk, stated plainly.** With `live_pages` on, text injected into vault content can make
+  a model write a page that is a program. When the user opens that page, or the wiki if the page is
+  under `Library/`, its code runs in their browser as the wiki. It can change or erase any page through
+  SilverBullet's file API, past the trash, and it can navigate the tab away. Nothing in this build
+  undoes that; a snapshot of a page before a tool changes it is the follow-up.
+- **What limits code in a page, whoever wrote it:**
   - The proxy sends a content policy with every answer: requests, images, media, fonts, frames and
-    scripts stay on the wiki's own address. Code that ran anyway could not send the notes to another
-    address by those means.
-- **What remains of that risk:**
-  - The two ways to run code are the ones SilverBullet documents. Another construct that runs on view
-    would pass the tools.
-  - A page the user pastes, or one they wrote with `${...}`, runs as SilverBullet intends. A model told
-    to move or append to such a page leaves its expressions as they are.
-  - Code that runs can still change or erase pages (the address is the wiki's own), and can leave the
-    page by navigating the tab, which no content policy stops.
-  - Another program that writes files into `wiki/` is not checked by anything.
-  - Switching Lua off in the client (`disableSpaceLua`) ends the class: with it a page that set a
-    marker when viewed did not run. It also removes the wiki's search dialog ("Command Space: Search
-    not found") and every command SilverBullet's standard library defines, and expressions show
-    nothing. Viewing, editing, links and the page list still work. Not done in this build.
+    scripts stay on the wiki's own address. Code in a page cannot send the notes to another address
+    by those means, nor load code from one, nor reach the other servers on localhost.
+  - It cannot reach the host: shell commands, the runtime API and SilverBullet's fetch proxy are off.
+  - A page the user pastes or writes runs as SilverBullet intends, with the same limits.
 - **Other web pages in the user's browser cannot write to the wiki or frame it.** The launcher's proxy
   refuses foreign `Host` headers, which covers DNS rebinding, and takes a write only from the wiki's own
   page: `Sec-Fetch-Site` must be `same-origin` or `none`, or, without that header, `Origin` must be the
   proxy's own. A write with neither is refused. Every answer forbids framing by another site and
   loading as another site's resource. SilverBullet listens only on a Unix socket, so nothing can go
   around the proxy. Any local process can still write pages, as it can write any file on the stick.
-- **What the browser keeps.** SilverBullet runs without its service worker, so no copy of the notes
-  answers after the wiki has stopped. The browser profile still keeps SilverBullet's page index in
-  IndexedDB. SilverBullet's own "shared computer" switch (`ephemeralStorage`) keeps nothing; it is not
-  set in this build (see the implementation record for what it costs).
+- **The browser keeps nothing between visits** (owner's decision). The proxy sets SilverBullet's
+  "shared computer" switch (`ephemeralStorage`) in its answer to `/.config`, and SilverBullet runs
+  without its service worker. After a visit the browser profile holds no IndexedDB data, cache or
+  service worker for the wiki's address, only four small settings entries with no note text. The
+  price is that the page index is rebuilt in the browser at each load.
 - **Finding a running wiki.** The tools ask ports 8088 to 8107 on 127.0.0.1 for `/.ping` and take the
   answer that names this drive's page folder. Limits: a local process that answers so gets its address
   returned as the page link; a port that accepts and never answers costs a write 300 ms; a wiki pushed

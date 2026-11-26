@@ -251,17 +251,74 @@ pages. SilverBullet adds a second one: **a page is a program**. What is closed a
   host's files: shell, the runtime API and the fetch proxy are off.
 - Not closed: a page the user pastes or writes with `${...}` runs, as SilverBullet intends.
 - Not closed: the browser profile keeps SilverBullet's page index in IndexedDB after the stick is gone.
-- The two choices for the owner, both measured above:
-  - **Lua on, agents cannot write code** (this build), or **Lua off**, which costs the search dialog
-    and every standard-library command.
-  - **`ephemeralStorage` on**, so a borrowed computer keeps nothing, at no cost seen on a small wiki.
-    This one looks worth taking.
+- The owner decided both choices (see "Live pages and a browser that keeps nothing"): Lua stays on
+  and agents may write live pages, with a setting to switch that off; and the browser keeps nothing.
 - Versioning the page folder would make any change undoable; it is a follow-up.
 - Accepted from the review without change: a local process that answers `/.ping` on ports 8088 to 8107
   with this drive's folder gets its address returned as the page link; a port that accepts and never
   answers costs a write 300 ms; a wiki pushed to a port outside that range is not found, and writes
   then return the file path; the printed address says `localhost` while the proxy listens on
   127.0.0.1, so a server on `[::1]` at the same port would get the browser.
+
+## Live pages and a browser that keeps nothing
+
+Added 2026-11-26 on branch `wiki-live`, after the owner answered the open risk below: agents may use
+SilverBullet's features, and the browser keeps nothing between visits.
+
+What was built:
+
+- **Setting `silverbullet.live_pages`** (bool, default on, label "Agents may write live pages"). On: the
+  tools write `${...}`, `space-lua` blocks and pages under `Library/` as given. Off: the refusals of the
+  review, now naming the setting. It is read at each write, so a change needs no restart.
+- **Help page `Help/Live pages`**, seeded with the start page and restored by the launcher when
+  missing; `wiki_read` answers for it from the built-in text when the wiki has no file for it. Its
+  query examples are live on the page, not in code blocks.
+- **Pointers, not a syntax guide.** `wiki_create`'s description gains one clause (99 characters) and
+  pi's `AGENTS.md` one sentence, both only while the setting is on.
+- **The proxy sets `ephemeralStorage`** in the answer to `/.config`, asks SilverBullet for that answer
+  uncompressed, and answers 502 if it cannot read it as the settings.
+
+Real SilverBullet 3.0.1, isolated browser profiles:
+
+- **Every example on the help page works**, from the exFAT image, under the content policy and with
+  the browser keeping nothing: the pages of a folder, the five changed last, a count (8), today's
+  date, the open tasks, and a command defined on a `Library/` page, which was listed and ran.
+- **Nothing loosened** in the content policy for this: a live query raised no violation.
+- **After a visit** the profile held no IndexedDB database, no cache, no service worker, no cookie and
+  zero bytes of storage. It held four localStorage entries, 1,070 characters in all: font metrics, the
+  settings answer (with the page folder's path), theme and fonts. None had note text.
+- **Load and re-index with 310 small pages** (internal disk): page text 0.30 s after navigation; a
+  query over all pages showed 0 first and the full 310 at 1.39 s. So each load re-indexes for about a
+  second, during which a live query shows a short result. Search answers from the server at once.
+
+Real model, Qwen3.5 4B through pi, from the exFAT image, the same request three times ("Make a wiki
+page called Projects overview that shows a live list of all pages under the Projects folder, using a
+query so the list updates by itself."):
+
+| Run | What pointed to the help page | Calls | Result |
+|---|---|---|---|
+| 1 | The clause in `wiki_create`; examples in code blocks | list, create, read, read help, edit, read | Wrote `{{#query ...}}` first, read the help page afterwards, then copied a query with its code block around it and broke `template.new`'s brackets. Shown, not run |
+| 2 | The same clause, reworded; examples live | list, create | Never read the help page. Wrote `!list(Projects/*)` in a code block |
+| 3 | The clause and one sentence in pi's `AGENTS.md` | read help, create | A valid query, copied exactly. In the wiki it listed Compost, Garden plan, Overview and Shed, and a page added afterwards joined the list by itself |
+
+- Three runs are three samples. The description clause alone did not make the 4B model read the page;
+  the sentence in the context file did, once. Open WebUI, Goose and opencode have no such context
+  file, so there the clause is all a model gets. Transcripts of the three runs are in the scratch
+  folder (`pi-live-query*.session.jsonl`).
+- In run 3 the model named the page `Projects/Overview`, not `Projects overview` as asked.
+- **Prompt cost.** pi's first request: 4,268 tokens before, 4,298 with the clause, 4,352 with the
+  clause and the sentence: **+84 tokens**. The help page is 1,924 bytes and is read only when needed.
+
+Not verified for this part: Open WebUI, Goose, opencode and oh-my-pi writing a live page; a larger
+model; a wiki of thousands of pages (the re-index time grows with it); `template.new`, which was taken
+off the help page after the 4B model broke its brackets.
+
+Undo, sized against the existing follow-up for versions: a copy of a page into a third confined
+folder (`.svalbard/state/wiki-history/`) before a tool changes or moves it is an S, with the trash as
+its pattern. It becomes an M with a tool or menu entry to restore from it and a rule for how much to
+keep. It does not need git, so it is smaller than the "versions for edits" follow-up (M, L with git on
+exFAT) and covers the case the accepted risk leaves open only for changes made through the tools:
+code that runs in the browser writes through SilverBullet, past any snapshot the tools take.
 
 ## Not verified
 
@@ -290,7 +347,8 @@ Sizes: S one module, M several modules or a small design choice, L needs a desig
 
 | Item | Size | Risk that could change the size |
 |---|---|---|
-| Decide the open risk above: Space Lua off, a stricter content policy, no browser copy, or versions | M | L if Space Lua must stay for the user and go for agent-written pages only |
+| A snapshot of a page before a tool changes it, as the undo for agent writes | S | M with a way to restore and a rule for how much to keep |
+| Make the other clients find the help page before writing a live page (they have no context file) | S | M if each client needs its own wording or a system prompt |
 | Run on Linux and Intel Mac, and from a physical stick | S | M if the watcher misses changes there and `poll` must be chosen per platform |
 | Make small models pass the page link on as a link | S | M if it needs per-client wording, as Open WebUI and pi render links differently |
 | Generated Tools menu entries for `type: binary` recipes have no action (one dead entry per platform) | S | M if tools should get a real action or a shell entry instead of being hidden |
