@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
@@ -35,7 +36,9 @@ var pythonTargets = map[string]pythonTarget{
 // platform, so nothing is executed for a foreign platform:
 //  1. Installs a relocatable python-build-standalone interpreter per platform
 //  2. Installs each package with `uv pip install --target` into its own dir,
-//     resolving wheels for that platform's tags
+//     resolving wheels for that platform's tags; a recipe with
+//     requirements_from installs the package without dependencies, then the
+//     requirements file the package ships
 //  3. Generates wrapper scripts in bin/<platform>/ that run the entry point
 //     with the drive's interpreter and the package dir on PYTHONPATH
 //
@@ -136,6 +139,12 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			// writes into a directory the container created.
 			toolDir := filepath.Join(platformDir, "tools", pkg.ID)
 			stamp := strings.Join(pkg.Packages, "\n") + "\n"
+			if pkg.RequirementsFrom != "" {
+				if !filepath.IsLocal(pkg.RequirementsFrom) {
+					return nil, fmt.Errorf("%s: requirements_from %q must be a path inside the package tree", pkg.ID, pkg.RequirementsFrom)
+				}
+				stamp += "requirements_from: " + pkg.RequirementsFrom + "\n"
+			}
 			stampPath := toolDir + ".packages"
 			rebuild := false
 			if existing, err := os.ReadFile(stampPath); err != nil || string(existing) != stamp {
@@ -153,22 +162,32 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				if target.macosMin != "" {
 					env = append(env, "MACOSX_DEPLOYMENT_TARGET="+target.macosMin)
 				}
-				args := []string{
-					"pip", "install",
-					"--target", staging,
-					"--python-platform", target.uvPlatform,
-					"--python-version", version,
-					"--cache-dir", uvCache,
+				install := func(flags ...string) error {
+					args := append([]string{"pip", "install"}, flags...)
+					args = append(args,
+						"--target", staging,
+						"--python-platform", target.uvPlatform,
+						"--python-version", version,
+						"--cache-dir", uvCache,
+					)
+					if pkg.RequirementsFrom == "" {
+						return uv(env, append(args, pkg.Packages...)...)
+					}
+					// The requirements file only exists once the package that
+					// ships it is in the tree.
+					if err := uv(env, append(append(slices.Clone(args), "--no-deps"), pkg.Packages...)...); err != nil {
+						return err
+					}
+					return uv(env, append(args, "-r", filepath.Join(staging, pkg.RequirementsFrom))...)
 				}
-				args = append(args, pkg.Packages...)
 				// Wheels only first: with builds allowed uv picks the newest
 				// version even when only its sdist exists, and a native sdist
 				// cannot be built for a foreign platform. Retry with builds for
 				// pure-python sdists (uv rejects built wheels that don't match).
-				err := uv(env, append([]string{"pip", "install", "--no-build"}, args[2:]...)...)
+				err := install("--no-build")
 				if err != nil {
 					_ = os.RemoveAll(staging)
-					err = uv(env, args...)
+					err = install()
 				}
 				if err != nil {
 					_ = os.RemoveAll(staging)

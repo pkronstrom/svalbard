@@ -55,6 +55,12 @@ type Item struct {
 	Venv        string   `yaml:"venv,omitempty"`
 	Packages    []string `yaml:"packages,omitempty"`
 	EntryPoints []string `yaml:"entry_points,omitempty"`
+	// RequirementsFrom is a pip requirements file inside the installed
+	// packages, relative to the install root. When set, the packages are
+	// installed without their declared dependencies and this file is installed
+	// in their place, for a package that ships a smaller dependency set than
+	// its metadata declares.
+	RequirementsFrom string `yaml:"requirements_from,omitempty"`
 }
 
 // BundleSource is one pinned download of an item bundle. An archive (.zip, .tgz

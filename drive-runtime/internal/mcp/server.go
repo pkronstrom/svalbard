@@ -3,7 +3,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"time"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -162,6 +166,36 @@ func (s *Server) ServeStdio() error {
 func (s *Server) ServeSSE(addr string) error {
 	sse := mcpserver.NewSSEServer(s.inner, mcpserver.WithBaseURL("http://"+addr))
 	return sse.Start(addr)
+}
+
+// StreamableHTTPPath is where ServeStreamableHTTP mounts the server.
+const StreamableHTTPPath = "/mcp"
+
+// ServeStreamableHTTP serves the server over Streamable HTTP on listener until
+// ctx is done. Clients that speak neither stdio nor SSE (Open WebUI) connect
+// here. The listener is closed on return.
+func (s *Server) ServeStreamableHTTP(ctx context.Context, listener net.Listener) error {
+	mux := http.NewServeMux()
+	httpServer := &http.Server{Handler: mux}
+	streamable := mcpserver.NewStreamableHTTPServer(s.inner, mcpserver.WithStreamableHTTPServer(httpServer))
+	mux.Handle(StreamableHTTPPath, streamable)
+
+	done := make(chan error, 1)
+	go func() { done <- httpServer.Serve(listener) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := streamable.Shutdown(shutdownCtx); err != nil {
+			_ = httpServer.Close()
+		}
+		if err := <-done; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
 }
 
 // Close shuts down all capabilities.

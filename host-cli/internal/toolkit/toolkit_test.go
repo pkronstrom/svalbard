@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -552,6 +553,66 @@ func TestDraftModelsAreInstalledSeparatelyWithoutChatActions(t *testing.T) {
 				t.Fatalf("drafter must not appear as a selectable chat model: %s", item.ID)
 			}
 		}
+	}
+}
+
+func TestGenerateOffersOpenWebUIOnlyWhenInstalled(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	find := func(entries []manifest.RealizedEntry) (testMenuItem, string, bool) {
+		t.Helper()
+		root := t.TempDir()
+		if err := Generate(root, entries, "test"); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(filepath.Join(root, ".svalbard", "actions.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg testRuntimeConfig
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		for _, group := range cfg.Groups {
+			for _, item := range group.Items {
+				if item.ID == "open-webui" {
+					return item, group.ID, true
+				}
+			}
+		}
+		return testMenuItem{}, "", false
+	}
+
+	model := manifest.RealizedEntry{ID: "qwen-4b", Type: "gguf", Filename: "qwen.gguf"}
+	if _, _, ok := find([]manifest.RealizedEntry{model, {ID: "sqlmap", Type: "python-package"}}); ok {
+		t.Fatal("Open WebUI offered without its recipe installed")
+	}
+
+	// One realized entry per platform must still give one menu entry.
+	item, group, ok := find([]manifest.RealizedEntry{
+		model,
+		{ID: "open-webui", Type: "python-package", RelativePath: "runtime/python/macos-arm64/tools/open-webui"},
+		{ID: "open-webui", Type: "python-package", RelativePath: "runtime/python/linux-x86_64/tools/open-webui"},
+	})
+	if !ok {
+		t.Fatal("Open WebUI missing from the menu")
+	}
+	if group != "local-ai" {
+		t.Errorf("group = %q, want local-ai", group)
+	}
+	// The licence's branding clause forbids any other name.
+	if item.Label != "Open WebUI" {
+		t.Errorf("label = %q, want Open WebUI", item.Label)
+	}
+	if !slices.Contains(item.Aliases, "open-webui") {
+		t.Errorf("aliases = %v, want open-webui", item.Aliases)
+	}
+	var action testBuiltinConfig
+	if err := json.Unmarshal(item.Action.Config, &action); err != nil {
+		t.Fatal(err)
+	}
+	if item.Action.Type != "builtin" || action.Name != "open-webui" || len(action.Args) != 0 {
+		t.Errorf("action = %s %+v, want builtin open-webui without args", item.Action.Type, action)
 	}
 }
 

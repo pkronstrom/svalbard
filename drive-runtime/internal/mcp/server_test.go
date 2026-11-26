@@ -3,7 +3,12 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"net"
 	"testing"
+	"time"
+
+	mcpclient "github.com/mark3labs/mcp-go/client"
+	gomcp "github.com/mark3labs/mcp-go/mcp"
 )
 
 // stubCap is a minimal Capability for testing.
@@ -122,5 +127,61 @@ func TestAllCapabilitiesRegisterExpectedTools(t *testing.T) {
 	}
 	if _, ok := searchTool.InputSchema.Properties["source"]; !ok {
 		t.Fatalf("search tool missing optional source filter in schema: %#v", searchTool.InputSchema.Properties)
+	}
+}
+
+func TestServeStreamableHTTPListsAndCallsTools(t *testing.T) {
+	srv := NewServer(&stubCap{})
+	defer srv.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	served := make(chan error, 1)
+	go func() { served <- srv.ServeStreamableHTTP(ctx, listener) }()
+
+	client, err := mcpclient.NewStreamableHttpClient("http://" + listener.Addr().String() + StreamableHTTPPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Initialize(ctx, gomcp.InitializeRequest{}); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	tools, err := client.ListTools(ctx, gomcp.ListToolsRequest{})
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	if len(tools.Tools) != 2 {
+		t.Fatalf("tools = %d, want 2", len(tools.Tools))
+	}
+	call := gomcp.CallToolRequest{}
+	call.Params.Name = "test_tool_echo"
+	call.Params.Arguments = map[string]any{"text": "hello"}
+	result, err := client.CallTool(ctx, call)
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	if text, ok := result.Content[0].(gomcp.TextContent); !ok || text.Text != "hello" {
+		t.Fatalf("echo result = %#v, want hello", result.Content)
+	}
+
+	cancel()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatalf("ServeStreamableHTTP() error = %v, want nil after cancellation", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ServeStreamableHTTP() did not return after cancellation")
+	}
+	if _, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second); err == nil {
+		t.Fatal("listener still accepts connections after cancellation")
 	}
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/menu"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/openwebui"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/serveall"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/share"
@@ -45,12 +46,16 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "mcp" {
 		drive := ""
 		sse := false
+		streamable := false
 		for i, arg := range os.Args {
 			if arg == "--drive" && i+1 < len(os.Args) {
 				drive = os.Args[i+1]
 			}
 			if arg == "--sse" {
 				sse = true
+			}
+			if arg == "--http" {
+				streamable = true
 			}
 		}
 		if drive == "" {
@@ -61,6 +66,9 @@ func run() error {
 		}
 		if sse {
 			return runMCPServe(drive)
+		}
+		if streamable {
+			return runMCPHTTP(drive)
 		}
 		return runMCP(drive)
 	}
@@ -127,6 +135,8 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 		return maps.Run(ctx, os.Stdout, driveRoot, nil)
 	case "chat":
 		return chat.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
+	case "open-webui":
+		return openwebui.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
 	case "agent":
 		return agent.Run(ctx, os.Stdout, driveRoot, invocation.Args["client"], invocation.Args["model"])
 	case "serve-all":
@@ -296,6 +306,20 @@ func runMCPServe(driveRoot string) error {
 	fmt.Fprintln(os.Stdout, "Press Ctrl+C to stop.")
 	fmt.Fprintln(os.Stdout)
 	return srv.ServeSSE(addr)
+}
+
+func runMCPHTTP(driveRoot string) error {
+	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	defer srv.Close()
+
+	listener, port, err := netutil.Listen("127.0.0.1", 8090)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	fmt.Fprintf(os.Stdout, "MCP server (Streamable HTTP) listening on http://127.0.0.1:%d%s\n", port, mcp.StreamableHTTPPath)
+	return srv.ServeStreamableHTTP(ctx, listener)
 }
 
 func runMCP(driveRoot string) error {

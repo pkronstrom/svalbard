@@ -22,6 +22,8 @@ func TestNativeInvocationRoundTrip(t *testing.T) {
 		{name: "maps", in: invocation("maps", nil)},
 		{name: "chat", in: invocation("chat", map[string]string{"model": "gemma.gguf"})},
 		{name: "chat without model", in: invocation("chat", nil)},
+		{name: "open webui", in: invocation("open-webui", map[string]string{"model": "gemma.gguf"})},
+		{name: "open webui without model", in: invocation("open-webui", nil)},
 		{name: "agent with model", in: invocation("agent", map[string]string{"client": "opencode", "model": "gemma.gguf"})},
 		{name: "agent without model", in: invocation("agent", map[string]string{"client": "opencode"})},
 		{name: "serve all default bind", in: invocation("serve-all", nil), want: invocation("serve-all", map[string]string{"bind": "127.0.0.1"})},
