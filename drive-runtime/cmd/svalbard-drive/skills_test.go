@@ -181,3 +181,45 @@ func TestSkillsUnknownSubcommandShowsUsage(t *testing.T) {
 		t.Fatalf("through run(): %q, %v", out, err)
 	}
 }
+
+// An agent on a laptop runs the binary by its path on the mounted stick, from
+// its own project folder and without DRIVE_ROOT: the drive is where the
+// binary is, not where the agent stands.
+func TestDriveRootIsFoundFromTheExecutable(t *testing.T) {
+	drive := t.TempDir()
+	exe := filepath.Join(drive, ".svalbard", "runtime", "macos-arm64", "svalbard-drive")
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	if got := driveRootFor("", project, exe); got != drive {
+		t.Errorf("from a project folder: %q, want the executable's drive %q", got, drive)
+	}
+	// DRIVE_ROOT and a working folder that is a drive keep their say.
+	other := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(other, ".svalbard"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := driveRootFor("/set/by/run", project, exe); got != "/set/by/run" {
+		t.Errorf("with DRIVE_ROOT: %q", got)
+	}
+	if got := driveRootFor("", other, exe); got != other {
+		t.Errorf("in a drive's folder: %q, want %q", got, other)
+	}
+	// A binary that is not on a drive (a development build) leaves the
+	// working folder, as before.
+	if got := driveRootFor("", project, filepath.Join(t.TempDir(), "bin", "svalbard-drive")); got != project {
+		t.Errorf("binary outside a drive: %q, want %q", got, project)
+	}
+}
+
+func TestSkillsContinuationNamesTheProgramAsItWasRun(t *testing.T) {
+	root := newSkillsDrive(t)
+	old := skillsProgram
+	skillsProgram = "/Volumes/My Stick/.svalbard/runtime/macos-arm64/svalbard-drive"
+	t.Cleanup(func() { skillsProgram = old })
+	out, _, err := skills(t, root, "read", "skills/skills-core/long")
+	if err != nil || !strings.Contains(out, "\ncontinues: '/Volumes/My Stick/.svalbard/runtime/macos-arm64/svalbard-drive' skills read skills/skills-core/long --offset ") {
+		t.Fatalf("continuation = %q, %v", out[max(0, len(out)-160):], err)
+	}
+}

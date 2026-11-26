@@ -20,6 +20,11 @@ words, one per line: id, name and description. read prints one of them by its
 id; a long one comes in parts, and the last line then names the next command.
 `
 
+// skillsProgram is how the next command is spelled in a continuation line:
+// the bare name when it was found on PATH, as in a harness's shell, and the
+// binary's own path when it was run by path, as from a mounted stick.
+var skillsProgram = "svalbard-drive"
+
 // runSkills is the skills subcommand: the skill_search and skill_read tools
 // for an agent that has a shell and no MCP client. It prints what the tools
 // return and runs nothing a skill holds.
@@ -69,6 +74,9 @@ func runSkills(stdout, stderr io.Writer, driveRoot string, args []string) error 
 
 	meta, _ := mcp.LoadMetadata(driveRoot)
 	tools := mcp.NewSkillCapability(driveRoot, meta)
+	// Keyword search only: one command is not worth loading the embedding
+	// model for.
+	tools.KeywordOnly = true
 	defer tools.Close()
 	action := map[string]string{"find": "search", "read": "read"}[args[0]]
 	result, err := tools.Handle(context.Background(), action, params)
@@ -93,7 +101,7 @@ func runSkills(stdout, stderr io.Writer, driveRoot string, args []string) error 
 			fmt.Fprintln(stdout, data.Note)
 		}
 		if data.NextOffset > 0 {
-			command := "svalbard-drive skills read " + shellWord(data.ID)
+			command := shellWord(skillsProgram) + " skills read " + shellWord(data.ID)
 			for _, name := range []string{"file", "section"} {
 				if value := flags[name]; value != "" {
 					command += " --" + name + " " + shellWord(value)
