@@ -148,8 +148,10 @@ func TestPrepareClientLaunchConfigForPi(t *testing.T) {
 		t.Fatal("mcp.json missing svalbard server")
 	}
 	args, ok := svalbard["args"].([]any)
-	if !ok || len(args) != 3 || args[0] != "mcp" || args[1] != "--drive" || args[2] != driveRoot {
-		t.Errorf("svalbard args = %v, want [mcp --drive %s]", svalbard["args"], driveRoot)
+	// The server is told the model's window: below the Balanced tier it
+	// offers less.
+	if want := []any{"mcp", "--drive", driveRoot, "--context", "32768"}; !ok || !reflect.DeepEqual(args, want) {
+		t.Errorf("svalbard args = %v, want %v", svalbard["args"], want)
 	}
 }
 

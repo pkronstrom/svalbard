@@ -3,6 +3,8 @@ package agent_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -214,6 +216,43 @@ func TestPrepareGooseWritesHints(t *testing.T) {
 	// The extension config beside it is still written.
 	if config := readFile(t, filepath.Join(cfg.Env["XDG_CONFIG_HOME"], "goose", "config.yaml")); !strings.Contains(config, "  svalbard:") {
 		t.Errorf("goose config.yaml lost the extension:\n%s", config)
+	}
+}
+
+// On the Fast tier the drive's server offers no wiki tools, so no harness is
+// told about them, and each starts the server with its model's window.
+func TestFastTierHarnessesAreNotToldAboutTheWiki(t *testing.T) {
+	driveRoot := t.TempDir()
+	installRecipes(t, driveRoot, skillsRecipe, wikiRecipe)
+	contextFiles := map[string][2]string{
+		"pi":       {"PI_CODING_AGENT_DIR", "AGENTS.md"},
+		"opencode": {"XDG_CONFIG_HOME", "opencode/AGENTS.md"},
+		"goose":    {"XDG_CONFIG_HOME", "goose/.goosehints"},
+	}
+	serverConfigs := map[string][2]string{
+		"pi":       {"PI_CODING_AGENT_DIR", "mcp.json"},
+		"opencode": {"XDG_CONFIG_HOME", "opencode.json"},
+		"goose":    {"XDG_CONFIG_HOME", "goose/config.yaml"},
+	}
+	for client, file := range contextFiles {
+		for _, ctxSize := range []int{8192, 32768} {
+			cfg, err := agent.PrepareClientLaunchConfig(driveRoot, client, "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen", ctxSize)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := readFile(t, filepath.Join(cfg.Env[file[0]], filepath.FromSlash(file[1])))
+			if hasWiki := strings.Contains(text, "wiki_create"); hasWiki != (ctxSize >= 32768) {
+				t.Errorf("%s at %d: wiki in the context %t:\n%s", client, ctxSize, hasWiki, text)
+			}
+			if !strings.Contains(text, "skill_search") {
+				t.Errorf("%s at %d: the skill tools are gone:\n%s", client, ctxSize, text)
+			}
+			server := serverConfigs[client]
+			config := readFile(t, filepath.Join(cfg.Env[server[0]], filepath.FromSlash(server[1])))
+			if !regexp.MustCompile(`"--context",?\s*(- )?"` + strconv.Itoa(ctxSize) + `"`).MatchString(config) {
+				t.Errorf("%s at %d: the server is not told the window:\n%s", client, ctxSize, config)
+			}
+		}
 	}
 }
 

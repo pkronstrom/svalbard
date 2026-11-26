@@ -525,52 +525,58 @@ func TestRunTellsOpenWebUIAboutTheWikiOfADriveThatHasOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	stdout := &syncBuffer{}
-	opened := make(chan string, 1)
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, stdout, driveRoot, "", func(url string) error { opened <- url; return nil })
-	}()
-	select {
-	case <-opened:
-	case err := <-done:
-		t.Fatalf("Run() returned before opening the browser: %v\n%s", err, stdout.String())
-	case <-time.After(30 * time.Second):
-		t.Fatalf("browser was not opened\n%s", stdout.String())
-	}
-
-	described := false
-	for _, entry := range readRecord(t, recordDir, "open-webui").Env {
-		if value, ok := strings.CutPrefix(entry, "TOOL_SERVER_CONNECTIONS="); ok {
-			var servers []struct {
-				Info struct {
-					Description string `json:"description"`
-				} `json:"info"`
-			}
-			if err := json.Unmarshal([]byte(value), &servers); err != nil || len(servers) != 2 {
-				t.Fatalf("TOOL_SERVER_CONNECTIONS = %s (%v), want the vault and the file tools", value, err)
-			}
-			described = strings.Contains(servers[0].Info.Description, "read and write the pages of its wiki")
+	// The wiki's tools are offered from the Balanced tier up; on the Fast
+	// tier they would leave a small model no room to answer.
+	for ctxSize, want := range map[int]bool{8192: false, 32768: true} {
+		pickContext = func(int) int { return ctxSize } // newFakeDrive restores it
+		ctx, cancel := context.WithCancel(context.Background())
+		stdout := &syncBuffer{}
+		opened := make(chan string, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, stdout, driveRoot, "", func(url string) error { opened <- url; return nil })
+		}()
+		select {
+		case <-opened:
+		case err := <-done:
+			cancel()
+			t.Fatalf("Run() returned before opening the browser: %v\n%s", err, stdout.String())
+		case <-time.After(30 * time.Second):
+			cancel()
+			t.Fatalf("browser was not opened\n%s", stdout.String())
 		}
-	}
-	if !described {
-		t.Error("the Svalbard vault description does not mention the wiki")
-	}
-	// Starting Open WebUI is not using the wiki: no page folder appears.
-	if _, err := os.Stat(filepath.Join(driveRoot, "wiki")); err == nil {
-		t.Error("starting Open WebUI created the wiki folder")
-	}
 
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run() error = %v after cancellation, want nil", err)
+		described := false
+		for _, entry := range readRecord(t, recordDir, "open-webui").Env {
+			if value, ok := strings.CutPrefix(entry, "TOOL_SERVER_CONNECTIONS="); ok {
+				var servers []struct {
+					Info struct {
+						Description string `json:"description"`
+					} `json:"info"`
+				}
+				if err := json.Unmarshal([]byte(value), &servers); err != nil || len(servers) != 2 {
+					t.Fatalf("TOOL_SERVER_CONNECTIONS = %s (%v), want the vault and the file tools", value, err)
+				}
+				described = strings.Contains(servers[0].Info.Description, "read and write the pages of its wiki")
+			}
 		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("Run() did not return after cancellation")
+		if described != want {
+			t.Errorf("context %d: the Svalbard vault description mentions the wiki: %t, want %t", ctxSize, described, want)
+		}
+		// Starting Open WebUI is not using the wiki: no page folder appears.
+		if _, err := os.Stat(filepath.Join(driveRoot, "wiki")); err == nil {
+			t.Error("starting Open WebUI created the wiki folder")
+		}
+
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Run() error = %v after cancellation, want nil", err)
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatal("Run() did not return after cancellation")
+		}
 	}
 }
 

@@ -316,3 +316,11 @@ func TestSettingsSubcommandNeedsNoActionsFile(t *testing.T) {
 		t.Fatal("a command other than settings ran without actions.json")
 	}
 }
+
+// The launchers pass the model's window to the MCP server; a value that is not
+// a number stops it before it serves anything.
+func TestMCPSubcommandRefusesAContextThatIsNotANumber(t *testing.T) {
+	if _, err := runSubcommand(t, "mcp", "--drive", t.TempDir(), "--context", "fast"); err == nil || !strings.Contains(err.Error(), "--context needs a number") {
+		t.Fatalf("err = %v, want the bad --context named", err)
+	}
+}

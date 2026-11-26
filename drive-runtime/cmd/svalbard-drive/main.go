@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -51,9 +52,20 @@ func run() error {
 		drive := ""
 		sse := false
 		streamable := false
+		// --context is the client model's window in tokens, which the
+		// drive's launchers pass; below the Balanced tier the server offers
+		// less.
+		var opts mcp.DriveOptions
 		for i, arg := range os.Args {
 			if arg == "--drive" && i+1 < len(os.Args) {
 				drive = os.Args[i+1]
+			}
+			if arg == "--context" && i+1 < len(os.Args) {
+				size, err := strconv.Atoi(os.Args[i+1])
+				if err != nil || size < 0 {
+					return fmt.Errorf("--context needs a number of tokens, not %q", os.Args[i+1])
+				}
+				opts.Context = size
 			}
 			if arg == "--sse" {
 				sse = true
@@ -69,12 +81,12 @@ func run() error {
 			return fmt.Errorf("--drive path required")
 		}
 		if sse {
-			return runMCPServe(drive)
+			return runMCPServe(drive, opts)
 		}
 		if streamable {
-			return runMCPHTTP(drive)
+			return runMCPHTTP(drive, opts)
 		}
-		return runMCP(drive)
+		return runMCP(drive, opts)
 	}
 
 	driveRoot, err := resolveDriveRoot()
@@ -135,7 +147,7 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 	case "verify":
 		return verify.Run(os.Stdout, driveRoot)
 	case "mcp-serve":
-		return runMCPServe(driveRoot)
+		return runMCPServe(driveRoot, mcp.DriveOptions{})
 	}
 
 	// SIGHUP is the terminal window being closed: the action stops as it
@@ -314,8 +326,8 @@ func reclaimTerminal(fd int) {
 	_ = unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, syscall.Getpgrp())
 }
 
-func runMCPServe(driveRoot string) error {
-	srv := mcp.NewDriveServer(driveRoot)
+func runMCPServe(driveRoot string, opts mcp.DriveOptions) error {
+	srv := mcp.NewDriveServer(driveRoot, opts)
 	defer srv.Close()
 
 	port, err := netutil.FindAvailablePort("127.0.0.1", 8090)
@@ -334,8 +346,8 @@ func runMCPServe(driveRoot string) error {
 	return srv.ServeSSE(addr)
 }
 
-func runMCPHTTP(driveRoot string) error {
-	srv := mcp.NewDriveServer(driveRoot)
+func runMCPHTTP(driveRoot string, opts mcp.DriveOptions) error {
+	srv := mcp.NewDriveServer(driveRoot, opts)
 	defer srv.Close()
 
 	listener, port, err := netutil.Listen("127.0.0.1", 8090)
@@ -348,8 +360,8 @@ func runMCPHTTP(driveRoot string) error {
 	return srv.ServeStreamableHTTP(ctx, listener)
 }
 
-func runMCP(driveRoot string) error {
-	srv := mcp.NewDriveServer(driveRoot)
+func runMCP(driveRoot string, opts mcp.DriveOptions) error {
+	srv := mcp.NewDriveServer(driveRoot, opts)
 	defer srv.Close()
 	return srv.ServeStdio()
 }

@@ -83,6 +83,9 @@ type SkillCapability struct {
 	embedBackend *search.SemanticBackend
 	ownsBackend  bool
 
+	// read is the size of one skill_read part.
+	read ReadLimits
+
 	// KeywordOnly keeps skill_search to keyword search on an index that has
 	// vectors too. The command line sets it: embedding one query means
 	// hashing the model and starting a server, for every command.
@@ -91,13 +94,14 @@ type SkillCapability struct {
 
 // NewSkillCapability creates the skill tools for the given drive.
 func NewSkillCapability(driveRoot string, meta DriveMetadata) *SkillCapability {
-	return &SkillCapability{driveRoot: driveRoot, meta: meta, embedBackend: search.NewSemanticBackend(driveRoot), ownsBackend: true}
+	return &SkillCapability{driveRoot: driveRoot, meta: meta, embedBackend: search.NewSemanticBackend(driveRoot), ownsBackend: true, read: ReadLimitsFor(0)}
 }
 
 // newSharedSkillCapability is NewSkillCapability with the embedding backend
-// of another capability, which stays responsible for closing it.
-func newSharedSkillCapability(driveRoot string, meta DriveMetadata, backend *search.SemanticBackend) *SkillCapability {
-	return &SkillCapability{driveRoot: driveRoot, meta: meta, embedBackend: backend}
+// of another capability, which stays responsible for closing it, and its
+// size of a read.
+func newSharedSkillCapability(driveRoot string, meta DriveMetadata, searchTools *SearchCapability) *SkillCapability {
+	return &SkillCapability{driveRoot: driveRoot, meta: meta, embedBackend: searchTools.embedBackend, read: searchTools.read}
 }
 
 func (c *SkillCapability) Tool() string { return "skill" }
@@ -361,7 +365,7 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 	if err != nil {
 		return ActionResult{}, err
 	}
-	body, next, total := pageSlice(text.body, offset, readChars)
+	body, next, total := pageSlice(text.body, offset, c.read.Chars)
 	if offset > 0 && offset >= total {
 		return ActionResult{}, fmt.Errorf("offset %d is past the end (%d characters)", offset, total)
 	}
@@ -728,7 +732,7 @@ func (c *SearchCapability) readSkillSource(ctx context.Context, source, rawPath 
 	if err != nil {
 		return ActionResult{}, err
 	}
-	body, next, total := pageSlice(text.body, offset, readChars)
+	body, next, total := pageSlice(text.body, offset, c.read.Chars)
 	if offset > 0 && offset >= total {
 		return ActionResult{}, fmt.Errorf("offset %d is past the end (%d characters)", offset, total)
 	}

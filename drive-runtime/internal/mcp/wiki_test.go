@@ -138,7 +138,7 @@ func TestWikiToolsAreRegisteredOnlyWhenTheWikiIsInstalled(t *testing.T) {
 	vault := []string{"query_describe", "query_sql", "search", "search_read", "vault_databases", "vault_maps", "vault_sources", "vault_stats"}
 	wikiTools := []string{"wiki_append", "wiki_create", "wiki_delete", "wiki_edit", "wiki_list", "wiki_move", "wiki_read", "wiki_search"}
 	registered := func(root string) []string {
-		srv := NewServer(DriveCapabilities(root)...)
+		srv := NewServer(DriveCapabilities(root, DriveOptions{})...)
 		defer srv.Close()
 		var names []string
 		for name := range srv.inner.ListTools() {
@@ -152,8 +152,8 @@ func TestWikiToolsAreRegisteredOnlyWhenTheWikiIsInstalled(t *testing.T) {
 	if got := registered(without); !slices.Equal(got, vault) {
 		t.Errorf("tools without the wiki = %v, want the eight vault tools", got)
 	}
-	if WikiInstalled(without) {
-		t.Error("WikiInstalled() is true on a drive without the recipe")
+	if WikiOffered(without, 0) {
+		t.Error("WikiOffered() is true on a drive without the recipe")
 	}
 	// Another installed recipe is not the wiki.
 	other := t.TempDir()
@@ -172,13 +172,13 @@ func TestWikiToolsAreRegisteredOnlyWhenTheWikiIsInstalled(t *testing.T) {
 		t.Errorf("tools with the wiki = %v\nwant %v", got, want)
 	}
 	// Launchers that enable tools by name read this list.
-	listed := DriveToolNames(with)
+	listed := DriveToolNames(with, 0)
 	slices.Sort(listed)
 	if !slices.Equal(listed, want) {
 		t.Errorf("DriveToolNames() = %v\nwant %v", listed, want)
 	}
-	if !WikiInstalled(with) {
-		t.Error("WikiInstalled() is false on a drive with the recipe")
+	if !WikiOffered(with, 0) {
+		t.Error("WikiOffered() is false on a drive with the recipe")
 	}
 	// Listing tools is not using the wiki: no folder appears.
 	for _, dir := range []string{wiki.Dir(with), wiki.TrashDir(with)} {
@@ -187,7 +187,7 @@ func TestWikiToolsAreRegisteredOnlyWhenTheWikiIsInstalled(t *testing.T) {
 		}
 	}
 
-	srv := NewServer(DriveCapabilities(with)...)
+	srv := NewServer(DriveCapabilities(with, DriveOptions{})...)
 	defer srv.Close()
 	tools := srv.inner.ListTools()
 	for _, name := range wikiTools {

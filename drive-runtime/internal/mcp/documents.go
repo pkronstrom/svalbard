@@ -47,7 +47,7 @@ func (c *SearchCapability) readDocument(ctx context.Context, source, rawPath str
 		return ActionResult{}, err
 	}
 
-	body, next, total := pageSlice(page.Text, offset, readChars)
+	body, next, total := pageSlice(page.Text, offset, c.read.Chars)
 	if offset > 0 && offset >= total {
 		return ActionResult{}, fmt.Errorf("offset %d is past the end of the page (%d characters)", offset, total)
 	}

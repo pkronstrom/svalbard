@@ -31,6 +31,9 @@ type SearchCapability struct {
 
 	embedBackend *search.SemanticBackend
 
+	// read is the size of one search_read.
+	read ReadLimits
+
 	kiwixOnce sync.Once
 	kiwixCmd  *exec.Cmd
 	kiwixPort int
@@ -39,7 +42,7 @@ type SearchCapability struct {
 
 // NewSearchCapability creates a search capability for the given drive.
 func NewSearchCapability(driveRoot string, meta DriveMetadata) *SearchCapability {
-	return &SearchCapability{driveRoot: driveRoot, meta: meta, embedBackend: search.NewSemanticBackend(driveRoot)}
+	return &SearchCapability{driveRoot: driveRoot, meta: meta, embedBackend: search.NewSemanticBackend(driveRoot), read: ReadLimitsFor(0)}
 }
 
 func (c *SearchCapability) Tool() string { return "search" }

@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
@@ -106,34 +108,54 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 	}
 }
 
+// DriveOptions is what the drive's MCP server is told about its client.
+type DriveOptions struct {
+	// Context is the context window of the client's model in tokens, 0 when
+	// it is not known (a client the drive did not start). Below the Balanced
+	// tier the server offers no wiki tools and reads shorter pieces, so that
+	// a lookup leaves the model room to answer.
+	Context int
+}
+
 // NewDriveServer creates the drive's MCP server: its capabilities and, on a
 // drive with skills, a line of instructions that points a client to them.
-func NewDriveServer(driveRoot string) *Server {
+func NewDriveServer(driveRoot string, opts DriveOptions) *Server {
 	var options []mcpserver.ServerOption
 	if meta, _ := LoadMetadata(driveRoot); skillToolsOffered(meta) {
 		options = append(options, mcpserver.WithInstructions(skillServerInstructions))
 	}
-	return newServer(DriveCapabilities(driveRoot), options...)
+	return newServer(DriveCapabilities(driveRoot, opts), options...)
 }
 
 // DriveCapabilities returns the capabilities the drive's MCP server exposes.
 // The skill tools are among them on a drive that has skills or JS libraries
-// installed, and the wiki tools on one that has the wiki.
-func DriveCapabilities(driveRoot string) []Capability {
+// installed, and the wiki tools on one that has the wiki, from the Balanced
+// tier up.
+func DriveCapabilities(driveRoot string, opts DriveOptions) []Capability {
 	meta, _ := LoadMetadata(driveRoot)
 	searchTools := NewSearchCapability(driveRoot, meta)
+	searchTools.read = ReadLimitsFor(opts.Context)
 	caps := []Capability{searchTools}
 	if skillToolsOffered(meta) {
-		caps = append(caps, newSharedSkillCapability(driveRoot, meta, searchTools.embedBackend))
+		caps = append(caps, newSharedSkillCapability(driveRoot, meta, searchTools))
 	}
 	caps = append(caps,
 		NewVaultCapability(driveRoot, meta),
 		NewQueryCapability(driveRoot, meta),
 	)
-	if wikiInstalled(meta) {
+	if wikiInstalled(meta) && !smallContext(opts.Context) {
 		caps = append(caps, NewWikiCapability(driveRoot))
 	}
 	return caps
+}
+
+// smallContext is true for a context window below the Balanced tier. There
+// the eight wiki tools (1,224 tokens of every request) and a full read left
+// pi on the Fast tier (8K) a few hundred tokens to answer after one lookup,
+// and writing a wiki page needs room for the page. The wiki stays the user's
+// in the browser.
+func smallContext(ctxSize int) bool {
+	return ctxSize > 0 && ctxSize < llamaserve.CtxBalanced
 }
 
 // Recipe types whose content the skill tools search.
@@ -173,11 +195,12 @@ func recipeTypeInstalled(meta DriveMetadata, recipeType string) bool {
 	return false
 }
 
-// WikiInstalled reports whether the drive's MCP server offers the wiki tools,
-// for the prompts and descriptions that tell a model what it can do.
-func WikiInstalled(driveRoot string) bool {
+// WikiOffered reports whether the drive's MCP server offers the wiki tools to
+// a model with a context window of ctxSize tokens, for the prompts and
+// descriptions that tell a model what it can do.
+func WikiOffered(driveRoot string, ctxSize int) bool {
 	meta, _ := LoadMetadata(driveRoot)
-	return wikiInstalled(meta)
+	return wikiInstalled(meta) && !smallContext(ctxSize)
 }
 
 // wikiInstalled is true when apply has installed the wiki's recipe. The
@@ -188,17 +211,29 @@ func wikiInstalled(meta DriveMetadata) bool {
 	return ok
 }
 
-// DriveToolNames lists the tool names the drive's MCP server registers, for
-// clients that only enable tools named up front.
-func DriveToolNames(driveRoot string) []string {
+// DriveToolNames lists the tool names the drive's MCP server registers for a
+// model with a context window of ctxSize tokens, for clients that only enable
+// tools named up front.
+func DriveToolNames(driveRoot string, ctxSize int) []string {
 	var names []string
-	for _, cap := range DriveCapabilities(driveRoot) {
+	for _, cap := range DriveCapabilities(driveRoot, DriveOptions{Context: ctxSize}) {
 		for _, action := range cap.Actions() {
 			names = append(names, toolName(cap.Tool(), action.Name))
 		}
 		_ = cap.Close()
 	}
 	return names
+}
+
+// Tools returns the tools the server registers, by name, as a client
+// receives them.
+func (s *Server) Tools() []gomcp.Tool {
+	var tools []gomcp.Tool
+	for _, tool := range s.inner.ListTools() {
+		tools = append(tools, tool.Tool)
+	}
+	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
+	return tools
 }
 
 func toolName(prefix, action string) string {

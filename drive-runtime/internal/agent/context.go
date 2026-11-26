@@ -118,9 +118,10 @@ func buildingContext(opts ContextOptions) string {
 }
 
 // driveContextFor is the context for a harness launched from the drive at
-// driveRoot, with the areas that drive has installed now.
-func driveContextFor(driveRoot, toolPrefix string) string {
-	hasWiki := mcp.WikiInstalled(driveRoot)
+// driveRoot with a model of ctxSize tokens, with the areas that drive has
+// installed now and its MCP server offers at that size.
+func driveContextFor(driveRoot, toolPrefix string, ctxSize int) string {
+	hasWiki := mcp.WikiOffered(driveRoot, ctxSize)
 	return DriveContext(ContextOptions{
 		DriveRoot:  driveRoot,
 		ToolPrefix: toolPrefix,

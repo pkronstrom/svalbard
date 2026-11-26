@@ -141,7 +141,7 @@ func TestAllCapabilitiesRegisterExpectedTools(t *testing.T) {
 // tools, so the workspace tools must not appear in it.
 func TestDriveServerHasTheVaultToolsAndNoFileTools(t *testing.T) {
 	root := t.TempDir()
-	srv := NewServer(DriveCapabilities(root)...)
+	srv := NewServer(DriveCapabilities(root, DriveOptions{})...)
 	defer srv.Close()
 
 	var names []string
@@ -153,13 +153,69 @@ func TestDriveServerHasTheVaultToolsAndNoFileTools(t *testing.T) {
 	if !slices.Equal(names, want) {
 		t.Errorf("drive tools = %v, want %v", names, want)
 	}
-	listed := DriveToolNames(root)
+	listed := DriveToolNames(root, 0)
 	slices.Sort(listed)
 	if !slices.Equal(listed, want) {
 		t.Errorf("DriveToolNames() = %v, want %v", listed, want)
 	}
 	if _, err := os.Stat(filepath.Join(root, workspace.DirName)); err == nil {
 		t.Error("the drive server created a workspace folder")
+	}
+}
+
+// Below the Balanced tier the wiki tools and a full read leave a small model
+// no room to answer after a lookup (pi on the Fast tier): the server offers
+// the wiki from the Balanced tier up and reads shorter pieces below it. A
+// client that does not say its context gets everything.
+func TestSmallContextOffersNoWikiAndShorterReads(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".svalbard"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recipes := `{"silverbullet": {"id": "silverbullet", "type": "binary"}, "skills-core": {"id": "skills-core", "type": "skills"}}`
+	if err := os.WriteFile(filepath.Join(root, ".svalbard", "recipes.json"), []byte(recipes), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		context int
+		wiki    bool
+		read    ReadLimits
+	}{
+		{0, true, ReadLimits{readChars, readLinks}},
+		{8192, false, ReadLimits{smallReadChars, smallReadLinks}},
+		{32768, true, ReadLimits{readChars, readLinks}},
+		{131072, true, ReadLimits{readChars, readLinks}},
+	} {
+		srv := NewDriveServer(root, DriveOptions{Context: tc.context})
+		var names []string
+		for _, tool := range srv.Tools() {
+			names = append(names, tool.Name)
+		}
+		if got := slices.Contains(names, "wiki_create"); got != tc.wiki || WikiOffered(root, tc.context) != tc.wiki {
+			t.Errorf("context %d: wiki tools %t, WikiOffered %t, want %t", tc.context, got, WikiOffered(root, tc.context), tc.wiki)
+		}
+		if !slices.Contains(names, "skill_search") || !slices.Contains(names, "search_read") {
+			t.Errorf("context %d: tools = %v, want the search and skill tools", tc.context, names)
+		}
+		// Launchers that enable tools by name get the same list.
+		listed := DriveToolNames(root, tc.context)
+		slices.Sort(listed)
+		if !slices.Equal(listed, names) {
+			t.Errorf("context %d: DriveToolNames() = %v, want %v", tc.context, listed, names)
+		}
+		for _, cap := range srv.caps {
+			switch cap := cap.(type) {
+			case *SearchCapability:
+				if cap.read != tc.read {
+					t.Errorf("context %d: search_read size %+v, want %+v", tc.context, cap.read, tc.read)
+				}
+			case *SkillCapability:
+				if cap.read != tc.read {
+					t.Errorf("context %d: skill_read size %+v, want %+v", tc.context, cap.read, tc.read)
+				}
+			}
+		}
+		_ = srv.Close()
 	}
 }
 
