@@ -358,20 +358,33 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 // builder laid out (symlinks exFAT cannot hold, a uv cache on the vault), so a
 // vault is repaired by its next apply; the build reinstalls only those trees.
 func pythonRepairJobs(root string, m *manifest.Manifest, cat *catalog.Catalog, desired, queued map[string]bool) []downloadJob {
+	var jobs []downloadJob
+	for _, id := range PythonRepairs(root, *m, cat) {
+		if !desired[id] || queued[id] {
+			continue
+		}
+		recipe, _ := cat.RecipeByID(id)
+		jobs = append(jobs, downloadJob{id: id, recipe: recipe})
+		queued[id] = true
+	}
+	return jobs
+}
+
+// PythonRepairs returns the installed venvs the next apply builds again
+// because their trees are in an older layout, for the plan to show.
+func PythonRepairs(root string, m manifest.Manifest, cat *catalog.Catalog) []string {
 	platforms := m.Desired.Options.HostPlatforms
 	if len(platforms) == 0 {
 		platforms = []string{hostPlatform()}
 	}
-	var jobs []downloadJob
+	var ids []string
 	for _, e := range m.Realized.Entries {
 		recipe, ok := cat.RecipeByID(e.ID)
-		if !ok || recipe.Type != "python-venv" || !desired[e.ID] || queued[e.ID] || !builder.PythonTreesNeedRepair(root, platforms) {
-			continue
+		if ok && recipe.Type == "python-venv" && !slices.Contains(ids, e.ID) && builder.PythonTreesNeedRepair(root, platforms) {
+			ids = append(ids, e.ID)
 		}
-		jobs = append(jobs, downloadJob{id: e.ID, recipe: recipe})
-		queued[e.ID] = true
 	}
-	return jobs
+	return ids
 }
 
 // removePythonCommands deletes the wrappers a Python package's build wrote to

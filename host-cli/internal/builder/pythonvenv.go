@@ -94,6 +94,10 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 
 	var entries []manifest.RealizedEntry
 	installed := map[string]bool{}
+	// A tree of an older layout that cannot be installed again (offline) is
+	// kept and the build goes on; after one such failure the others are not
+	// tried, since they would fail the same way.
+	repairDeferred := false
 
 	for _, platform := range targets {
 		target, ok := pythonTargets[platform]
@@ -116,18 +120,24 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 		// Phase 1: Install the interpreter for this platform, also over one an
 		// older layout left (symlinks, terminfo).
 		pythonBin := findInstalledPython(interpreterDir, version)
-		if pythonBin == "" || !pythonLayoutCurrent(interpreterDir+".layout") {
+		repair := pythonBin != "" && !pythonLayoutCurrent(interpreterDir+".layout")
+		if pythonBin == "" || (repair && !repairDeferred) {
 			slog.Info("installing python", "version", version, "platform", platform)
 			emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventProgress, Message: "installing python " + version + " for " + platform})
 			request := "cpython-" + version + "-" + target.python
-			if err := installInterpreter(ctx, root, workdir, request, interpreterDir); err != nil {
+			switch err := installInterpreter(ctx, root, workdir, request, interpreterDir); {
+			case err != nil && repair:
+				slog.Warn("kept python interpreter of an older layout", "platform", platform, "err", truncate(err.Error(), 300))
+				repairDeferred = true
+			case err != nil:
 				return nil, fmt.Errorf("installing python for %s: %w", platform, err)
-			}
-			if pythonBin = findInstalledPython(interpreterDir, version); pythonBin == "" {
-				return nil, fmt.Errorf("could not find installed python in %s", interpreterDir)
-			}
-			if err := os.WriteFile(interpreterDir+".layout", []byte(pythonTreeLayoutStamp), 0o644); err != nil {
-				return nil, err
+			default:
+				if pythonBin = findInstalledPython(interpreterDir, version); pythonBin == "" {
+					return nil, fmt.Errorf("could not find installed python in %s", interpreterDir)
+				}
+				if err := os.WriteFile(interpreterDir+".layout", []byte(pythonTreeLayoutStamp), 0o644); err != nil {
+					return nil, err
+				}
 			}
 		}
 		pythonRel, err := filepath.Rel(platformDir, pythonBin)
@@ -149,12 +159,18 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			}
 			stamp += pythonTreeLayoutStamp
 			stampPath := toolDir + ".packages"
-			rebuild := false
-			if existing, err := os.ReadFile(stampPath); err != nil || string(existing) != stamp {
-				rebuild = true
+			existing, stampErr := os.ReadFile(stampPath)
+			rebuild := stampErr != nil || string(existing) != stamp
+			// The same pins installed in an older layout.
+			repair := rebuild && stampErr == nil && stampWithoutLayout(string(existing)) == stampWithoutLayout(stamp)
+			if isPlatformIOPythonPackage(pkg) && !platformIOPythonTreeComplete(toolDir, pkg.EntryPoints) {
+				rebuild, repair = true, false
 			}
-			if !rebuild && isPlatformIOPythonPackage(pkg) && !platformIOPythonTreeComplete(toolDir, pkg.EntryPoints) {
-				rebuild = true
+			if info, err := os.Stat(toolDir); err != nil || !info.IsDir() {
+				repair = false
+			}
+			if repair && repairDeferred {
+				rebuild = false
 			}
 			if rebuild {
 				slog.Info("installing python package", "package", pkg.ID, "platform", platform)
@@ -191,7 +207,11 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				if err != nil {
 					err = install()
 				}
-				if err != nil {
+				switch {
+				case err != nil && repair:
+					slog.Warn("kept python package tree of an older layout", "package", pkg.ID, "platform", platform, "err", truncate(err.Error(), 300))
+					repairDeferred = true
+				case err != nil:
 					if isPlatformIOPythonPackage(pkg) {
 						return nil, fmt.Errorf("PlatformIO Python package %s could not be installed for required target %s: %w", pkg.ID, platform, err)
 					}
@@ -206,9 +226,10 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 						_ = os.Remove(filepath.Join(binDir, ep))
 					}
 					continue
-				}
-				if err := os.WriteFile(stampPath, []byte(stamp), 0o644); err != nil {
-					return nil, err
+				default:
+					if err := os.WriteFile(stampPath, []byte(stamp), 0o644); err != nil {
+						return nil, err
+					}
 				}
 			}
 
@@ -258,6 +279,12 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 		}
 	}
 
+	if repairDeferred {
+		message := "Python trees use an older layout; the next apply with network will rebuild them"
+		slog.Warn(message)
+		emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventLog, Message: message})
+	}
+
 	// Builds before the cache moved to the computer left it on the vault.
 	for _, legacy := range []string{filepath.Join(root, ".staging", "uv-cache"), filepath.Join(root, ".staging", "build", recipe.ID)} {
 		if err := os.RemoveAll(legacy); err != nil {
@@ -276,6 +303,16 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 // python.layout and each package's .packages stamp carry it, so trees an older
 // layout left are installed again; change it when the layout changes.
 const pythonTreeLayoutStamp = "layout: 2 (no symlinks, no terminfo)\n"
+
+// stampWithoutLayout drops a package stamp's last line when it names a layout.
+func stampWithoutLayout(stamp string) string {
+	body := strings.TrimSuffix(stamp, "\n")
+	at := strings.LastIndex(body, "\n") + 1
+	if strings.HasPrefix(body[at:], "layout: ") {
+		return stamp[:at]
+	}
+	return stamp
+}
 
 func pythonLayoutCurrent(stampPath string) bool {
 	data, err := os.ReadFile(stampPath)

@@ -37,7 +37,8 @@ func newPythonTestCatalog(t *testing.T) (*catalog.Catalog, catalog.Item) {
 // package/platform pair is listed in unavailable. angr needs an sdist build,
 // so its wheels-only attempt fails. A --no-deps install ships
 // requirements-slim.txt in the tree, and a -r install needs its file to
-// exist. The unpack step extracts the rewritten archive. The build dir moves
+// exist. unavailable["python"] fails interpreter installs, as offline. The
+// unpack step extracts the rewritten archive. The build dir moves
 // to a temporary dir.
 func fakeUV(t *testing.T, unavailable map[string]bool) *[][]string {
 	needsBuild := map[string]bool{"angr": true}
@@ -75,6 +76,9 @@ func fakeUV(t *testing.T, unavailable map[string]bool) *[][]string {
 			flag := func(name string) string { return uvArgs[slices.Index(uvArgs, name)+1] }
 			switch strings.Join(uvArgs[:2], " ") {
 			case "python install":
+				if unavailable["python"] {
+					return "", errors.New("failed to download")
+				}
 				request := uvArgs[len(uvArgs)-1]
 				build := strings.Replace(request, "3.12", "3.12.14", 1)
 				return "", writeTestTar(archive, []testTarEntry{
@@ -493,5 +497,95 @@ func TestPythonTreesNeedRepair(t *testing.T) {
 	}
 	if PythonTreesNeedRepair(root, platforms) {
 		t.Error("a removed package's stamp needs repair")
+	}
+}
+
+func TestBuildPythonVenvKeepsOlderTreesWhenTheirRepairFails(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newPythonTestCatalog(t)
+	// Offline: nothing installs.
+	calls := fakeUV(t, map[string]bool{"python": true, "sqlmap/aarch64-manylinux_2_28": true})
+	writeOldLayoutTrees(t, root)
+	var events []BuildEvent
+	opts := Options{Platforms: []string{"linux-arm64"}, DesiredIDs: map[string]bool{"sqlmap": true}, OnEvent: func(e BuildEvent) { events = append(events, e) }}
+
+	entries, err := buildPythonVenv(root, recipe, cat, opts)
+	if err != nil {
+		t.Fatalf("a failed repair failed the build: %v", err)
+	}
+	var ids []string
+	for _, e := range entries {
+		ids = append(ids, e.ID)
+	}
+	if !slices.Equal(ids, []string{"sqlmap", "svalbard-python"}) {
+		t.Errorf("entries = %v, want the kept trees", ids)
+	}
+	// One attempt: after the interpreter's repair failed, the package's is
+	// not tried.
+	if len(*calls) != 1 || !slices.Contains((*calls)[0], "python") {
+		t.Errorf("uv ran %v, want one interpreter attempt", *calls)
+	}
+	platformDir := filepath.Join(root, "runtime", "python", "linux-arm64")
+	if info, err := os.Lstat(filepath.Join(platformDir, "python", "cpython-3.12.14-linux-aarch64-gnu", "bin", "python3")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("old interpreter not kept: %v %v", info, err)
+	}
+	if _, err := os.Stat(filepath.Join(platformDir, "python.layout")); !os.IsNotExist(err) {
+		t.Errorf("layout stamp written for a kept tree: %v", err)
+	}
+	if !PythonTreesNeedRepair(root, opts.Platforms) {
+		t.Error("kept trees no longer marked for repair")
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", "linux-arm64", "sqlmap")); err != nil {
+		t.Errorf("kept package lost its wrapper: %v", err)
+	}
+	var notices []string
+	for _, e := range events {
+		if e.State == EventLog {
+			notices = append(notices, e.Message)
+		}
+	}
+	if !slices.Equal(notices, []string{"Python trees use an older layout; the next apply with network will rebuild them"}) {
+		t.Errorf("notices = %q, want one line", notices)
+	}
+}
+
+func TestBuildPythonVenvRepairOfAPackageAloneFailsSoftly(t *testing.T) {
+	root := t.TempDir()
+	cat, recipe := newPythonTestCatalog(t)
+	fakeUV(t, map[string]bool{"sqlmap/aarch64-manylinux_2_28": true})
+	writeOldLayoutTrees(t, root)
+	opts := Options{Platforms: []string{"linux-arm64"}, DesiredIDs: map[string]bool{"sqlmap": true}}
+	if _, err := buildPythonVenv(root, recipe, cat, opts); err != nil {
+		t.Fatalf("a failed package repair failed the build: %v", err)
+	}
+	stamp, _ := os.ReadFile(filepath.Join(root, "runtime", "python", "linux-arm64", "tools", "sqlmap.packages"))
+	if string(stamp) != "sqlmap==1.10.9\n" {
+		t.Errorf("stamp = %q, want the old one kept", stamp)
+	}
+}
+
+func TestBuildPythonVenvStillFailsForMissingTrees(t *testing.T) {
+	cat, recipe := newPythonTestCatalog(t)
+	fakeUV(t, map[string]bool{"python": true})
+	_, err := buildPythonVenv(t.TempDir(), recipe, cat, Options{Platforms: []string{"linux-arm64"}, DesiredIDs: map[string]bool{"sqlmap": true}})
+	if err == nil || !strings.Contains(err.Error(), "installing python for linux-arm64") {
+		t.Errorf("err = %v, want a missing interpreter to fail", err)
+	}
+
+	// A package whose pins changed is a new install, not a repair.
+	root := t.TempDir()
+	launcherCat, launcherRecipe := newLauncherTestCatalog(t)
+	fakeUV(t, map[string]bool{"docpkg/aarch64-manylinux_2_28": true})
+	writeOldLayoutTrees(t, root)
+	toolDir := filepath.Join(root, "runtime", "python", "linux-arm64", "tools", "py-docs")
+	if err := os.MkdirAll(toolDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(toolDir+".packages", []byte("docpkg==0.9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = buildPythonVenv(root, launcherRecipe, launcherCat, Options{Platforms: []string{"linux-arm64"}})
+	if err == nil || !strings.Contains(err.Error(), "py-docs") {
+		t.Errorf("err = %v, want changed pins that cannot install to fail", err)
 	}
 }

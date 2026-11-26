@@ -38,6 +38,9 @@ type PlanDetail struct {
 	BuildDownloadGB float64    `json:"build_download_gb"`
 	BuildWorkGB     float64    `json:"build_work_gb"`
 	ToolsRequired   bool       `json:"tools_required"`
+	// Rebuild names what apply builds again although nothing is downloaded
+	// or removed, such as Python trees of an older layout.
+	Rebuild []string `json:"rebuild,omitempty"`
 }
 
 // DescribePlan builds the plan for m and fills in each item's catalog
@@ -78,6 +81,18 @@ func DescribePlan(cat *catalog.Catalog, m manifest.Manifest) PlanDetail {
 	return d
 }
 
+// DescribeVaultPlan is DescribePlan plus what apply rebuilds from what it
+// finds on the vault at root.
+func DescribeVaultPlan(root string, cat *catalog.Catalog, m manifest.Manifest) PlanDetail {
+	d := DescribePlan(cat, m)
+	for _, id := range apply.PythonRepairs(root, m, cat) {
+		if slices.Contains(m.Desired.Items, id) && !slices.Contains(d.Rebuild, "Python trees (older layout)") {
+			d.Rebuild = append(d.Rebuild, "Python trees (older layout)")
+		}
+	}
+	return d
+}
+
 // sized appends an estimated size to label in the given format, when there
 // is one: a document collection has none.
 func sized(label, format string, gb float64) string {
@@ -87,9 +102,14 @@ func sized(label, format string, gb float64) string {
 	return label + fmt.Sprintf(format, tui.FormatSize(gb))
 }
 
-// WritePlanDetail prints what apply would download and remove. Follow it
+// WritePlanDetail prints what apply would download, remove and rebuild. Follow it
 // with WritePlanNext, after anything else the plan reports.
 func WritePlanDetail(w io.Writer, d PlanDetail) error {
+	defer func() {
+		for _, what := range d.Rebuild {
+			fmt.Fprintln(w, "rebuild: "+what)
+		}
+	}()
 	if len(d.Download) == 0 && len(d.Remove) == 0 {
 		_, err := fmt.Fprintln(w, "Nothing to download or remove.")
 		return err
@@ -119,7 +139,7 @@ func WritePlanDetail(w io.Writer, d PlanDetail) error {
 // WritePlanNext prints what to run next: apply for pending changes, and
 // update for installed items whose recipe changed.
 func WritePlanNext(w io.Writer, d PlanDetail) {
-	if len(d.Download) > 0 || len(d.Remove) > 0 {
+	if len(d.Download) > 0 || len(d.Remove) > 0 || len(d.Rebuild) > 0 {
 		fmt.Fprintln(w, "\nRun \"svalbard apply\" to make these changes.")
 	}
 	if len(d.Updates) > 0 {
