@@ -628,9 +628,15 @@ func TestSkillSearchReturnsTheNearestSkillForLooseWords(t *testing.T) {
 // of results: the skills behind it must still be reached.
 func TestSkillSearchManyLongFilesDoNotCrowdOutOthers(t *testing.T) {
 	f := newSkillFixture(t)
-	for _, file := range []string{"SKILL.md", "references/a.md", "references/b.md", "references/c.md", "references/d.md"} {
+	// 81 files of five sections: more files than any bound per file would
+	// hold back.
+	files := []string{"SKILL.md"}
+	for i := 0; i < 80; i++ {
+		files = append(files, fmt.Sprintf("references/part-%02d.md", i))
+	}
+	for _, file := range files {
 		var sections [][2]string
-		for i := 1; i <= 60; i++ {
+		for i := 1; i <= 5; i++ {
 			sections = append(sections, [2]string{fmt.Sprintf("Part %d", i), "Firmware firmware firmware flashing."})
 		}
 		indexSkillFile(t, f.db, "skills/skills-core/firmware/"+file, "firmware", sections...)

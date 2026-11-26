@@ -529,23 +529,28 @@ func loadSkillCatalog(ctx context.Context, eng *engine.Engine) (*skillCatalog, e
 	return catalog, nil
 }
 
-// entryOf returns the skill or library an indexed file belongs to: for a
-// file inside a skill's folder, the nearest folder above it with a SKILL.md.
-// file is its path within that folder when it is not the entry file itself.
+// entryOf returns the skill or library an indexed file belongs to, by the
+// rule the engine bounds its results with: for a file inside a skill's
+// folder, the nearest folder above it with a SKILL.md. file is its path
+// within that folder when it is not the entry file itself.
 func (c *skillCatalog) entryOf(filename string) (entry skillEntry, file string) {
 	if strings.HasPrefix(filename, engine.LibraryDocsDir+"/") {
 		return skillEntry{ID: filename, Kind: libraryKind, File: filename, Title: c.titles[filename]}, ""
 	}
-	for folder := path.Dir(filename); folder != engine.SkillsDir && folder != "." && folder != "/"; folder = path.Dir(folder) {
-		if at, ok := c.folders[folder]; ok {
-			entry = c.entries[at]
-			if filename != entry.File {
-				file = strings.TrimPrefix(filename, folder+"/")
-			}
-			return entry, file
-		}
+	folders := make(map[string]bool, len(c.folders))
+	for folder := range c.folders {
+		folders[folder] = true
 	}
-	return skillEntry{ID: filename, Kind: skillKind, File: filename, Title: c.titles[filename]}, ""
+	folder := engine.SkillGroup(filename, folders)
+	at, isSkill := c.folders[folder]
+	if !isSkill {
+		return skillEntry{ID: filename, Kind: skillKind, File: filename, Title: c.titles[filename]}, ""
+	}
+	entry = c.entries[at]
+	if filename != entry.File {
+		file = strings.TrimPrefix(filename, folder+"/")
+	}
+	return entry, file
 }
 
 // resolve finds the entry an id names. The id skill_search gave always

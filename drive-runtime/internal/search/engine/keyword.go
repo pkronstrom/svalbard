@@ -25,36 +25,14 @@ const (
 	// articles of other sources.
 	pagesPerDocument = 3
 
-	// sectionsPerSkillFile is the same bound for a skill file or library
-	// quickstart, whose every section carries the file's title too. Skill
-	// search groups sections into one result per skill; without the bound a
-	// long skill fills the sections it is given and the skills behind it are
-	// never reached.
-	sectionsPerSkillFile = 3
+	// sectionsPerSkill is the same bound for the sections of one skill, over
+	// all its files; see skillBound.
+	sectionsPerSkill = 3
 
 	// rankedScan bounds the rows read past the limit while pages over
 	// pagesPerDocument are skipped.
 	rankedScan = 2000
 )
-
-// perSourceLimit is how many articles of one source a search returns when it
-// is not limited to that source: a document's pages and a skill file's
-// sections are bounded, an archive's articles are not (0).
-func perSourceLimit(filename string) int {
-	switch {
-	case IsDocumentSource(filename):
-		return pagesPerDocument
-	case IsSkillSource(filename):
-		return sectionsPerSkillFile
-	}
-	return 0
-}
-
-// coversManySources reports whether a scope is more than one source: every
-// knowledge source, the skills, or a folder.
-func coversManySources(scope string) bool {
-	return scope == "" || scope == SkillScope || strings.HasSuffix(scope, "/")
-}
 
 // stopWords are dropped from a query so a question typed as a sentence still
 // finds its subject. They are English only: in the any-word ranking a common
@@ -237,9 +215,9 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 }
 
 // ranked runs one FTS5 query ordered by the title-weighted rank. Unless the
-// scope is a single source, it keeps at most pagesPerDocument pages of any
-// one document, and as few sections of any one skill file, and returns the
-// sources that had more.
+// scope is a single document or skill, it keeps at most pagesPerDocument
+// pages of any one document and sectionsPerSkill sections of any one skill,
+// and returns those that had more, as scopes that show the rest.
 func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int) ([]Result, []string, error) {
 	statement := `SELECT a.id, src.filename, a.path, a.title,
                 snippet(articles_fts, 1, '»', '«', '...', 12)
@@ -252,7 +230,8 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
 	args := append([]any{ftsQuery}, scopeArgs...)
 	// FTS5 hands the rows out in rank order, so reading stops as soon as the
 	// limit is filled; the generous LIMIT only bounds the skipping.
-	capped := coversManySources(source)
+	capped := !IsDocumentSource(source) || strings.HasSuffix(source, "/")
+	skills := e.newSkillBound(ctx, source)
 	scan := limit
 	if capped {
 		scan = limit + rankedScan
@@ -272,14 +251,20 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
 		if err := rows.Scan(&r.ArticleID, &r.Filename, &r.Path, &r.Title, &snippet); err != nil {
 			return nil, nil, err
 		}
-		if bound := perSourceLimit(r.Filename); capped && bound > 0 {
+		if capped && IsDocumentSource(r.Filename) {
 			pages[r.Filename]++
-			if pages[r.Filename] > bound {
-				if pages[r.Filename] == bound+1 {
+			if pages[r.Filename] > pagesPerDocument {
+				if pages[r.Filename] == pagesPerDocument+1 {
 					more = append(more, r.Filename)
 				}
 				continue
 			}
+		}
+		if skip, rest := skills.over(r.Filename); skip {
+			if rest != "" {
+				more = append(more, rest)
+			}
+			continue
 		}
 		r.Snippet = snippet.String
 		results = append(results, r)

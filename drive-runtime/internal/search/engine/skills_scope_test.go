@@ -221,44 +221,70 @@ func TestSearchAnyWordKeepsTheNearestWhenNothingHasMostWords(t *testing.T) {
 	}
 }
 
-// A long skill file matches with every section: each names the skill in its
-// title. Like a document's pages, only a few of one file's sections are
-// returned, so the files behind it are reached, in keyword search and in both
-// halves of hybrid search.
-func TestSkillSearchReturnsFewSectionsPerFile(t *testing.T) {
+// A long skill matches with every section of every file it has: each names
+// the skill in its title. Like a document's pages, only a few sections of one
+// skill are returned, so the skills behind it are reached, in keyword search
+// and in both halves of hybrid search.
+func TestSkillSearchReturnsFewSectionsPerSkill(t *testing.T) {
 	db := documentDB(t)
-	long := insertDocument(t, db, "skills/skills-core/firmware/SKILL.md", "firmware", "")
-	for number := 1; number <= 300; number++ {
-		id := insertArticle(t, db, long, SectionPath(number), "firmware, Part", "Firmware firmware firmware flashing.")
-		insertEmbedding(t, db, id, "firmware", []float32{1, 0})
+	for _, file := range []string{"SKILL.md", "references/a.md", "references/b.md", "references/deep/c.md"} {
+		source := insertDocument(t, db, "skills/skills-core/firmware/"+file, "firmware", "")
+		for number := 1; number <= 100; number++ {
+			id := insertArticle(t, db, source, SectionPath(number), "firmware, Part", "Firmware firmware firmware flashing.")
+			insertEmbedding(t, db, id, "firmware", []float32{1, 0})
+		}
 	}
 	for _, name := range []string{"esp32", "arduino", "pico"} {
 		id := insertArticle(t, db, insertDocument(t, db, "skills/skills-core/"+name+"/SKILL.md", name, ""), SectionPath(1), name+", Overview", "Flash firmware to the board.")
 		insertEmbedding(t, db, id, name, []float32{0.6, 0.8})
 	}
+	// Markdown that no SKILL.md is above, and a quickstart, stand for
+	// themselves.
+	for _, filename := range []string{"skills/skills-core/README.md", "lib/js/js-core/docs/flasher.md"} {
+		source := insertDocument(t, db, filename, "notes", "")
+		for number := 1; number <= 10; number++ {
+			id := insertArticle(t, db, source, SectionPath(number), "notes, Part", "Firmware notes.")
+			insertEmbedding(t, db, id, "notes", []float32{0.8, 0.6})
+		}
+	}
 	eng := New(db)
-	perFile := func(results []Result) map[string]int {
+	folders, err := eng.SkillFolders(context.Background())
+	if err != nil || !reflect.DeepEqual(folders, map[string]bool{
+		"skills/skills-core/firmware": true, "skills/skills-core/esp32": true, "skills/skills-core/arduino": true, "skills/skills-core/pico": true,
+	}) {
+		t.Fatalf("SkillFolders = %v, %v", folders, err)
+	}
+	perSkill := func(results []Result) map[string]int {
 		counts := map[string]int{}
 		for _, result := range results {
-			counts[result.Filename]++
+			counts[SkillGroup(result.Filename, folders)]++
 		}
 		return counts
 	}
 	want := map[string]int{
-		"skills/skills-core/firmware/SKILL.md": sectionsPerSkillFile,
-		"skills/skills-core/esp32/SKILL.md":    1, "skills/skills-core/arduino/SKILL.md": 1, "skills/skills-core/pico/SKILL.md": 1,
+		"skills/skills-core/firmware": sectionsPerSkill,
+		"skills/skills-core/esp32":    1, "skills/skills-core/arduino": 1, "skills/skills-core/pico": 1,
+		"skills/skills-core/README.md": sectionsPerSkill, "lib/js/js-core/docs/flasher.md": sectionsPerSkill,
 	}
 
 	matches := search(t, db, "firmware", KeywordOptions{Source: SkillScope, Limit: 200})
-	if got := perFile(matches.Results); !reflect.DeepEqual(got, want) {
+	if got := perSkill(matches.Results); !reflect.DeepEqual(got, want) {
 		t.Errorf("keyword search: %v, want %v", got, want)
 	}
-	if !reflect.DeepEqual(matches.MorePages, []string{"skills/skills-core/firmware/SKILL.md"}) {
+	sort.Strings(matches.MorePages)
+	if !reflect.DeepEqual(matches.MorePages, []string{"lib/js/js-core/docs/flasher.md", "skills/skills-core/README.md", "skills/skills-core/firmware/"}) {
 		t.Errorf("more sections in %v", matches.MorePages)
 	}
-	// Limited to the file itself, every section is available.
-	if one := search(t, db, "firmware", KeywordOptions{Source: "skills/skills-core/firmware/SKILL.md", Limit: 50}); len(one.Results) != 50 {
-		t.Errorf("file scope returned %d results, want 50", len(one.Results))
+	// Limited to the skill, or to one of its files, every section is
+	// available: that is how the rest are reached.
+	for _, scope := range []string{"skills/skills-core/firmware/", "skills/skills-core/firmware/references/", "skills/skills-core/firmware/SKILL.md"} {
+		if one := search(t, db, "firmware", KeywordOptions{Source: scope, Limit: 50}); len(one.Results) != 50 || len(one.MorePages) != 0 {
+			t.Errorf("scope %q returned %d results (more in %v), want 50", scope, len(one.Results), one.MorePages)
+		}
+	}
+	// A folder of several skills is bounded per skill.
+	if got := perSkill(search(t, db, "firmware", KeywordOptions{Source: "skills/skills-core/", Limit: 200}).Results); got["skills/skills-core/firmware"] != sectionsPerSkill || got["skills/skills-core/esp32"] != 1 {
+		t.Errorf("folder of skills: %v", got)
 	}
 
 	for name, query := range map[string]string{"with keyword candidates": "firmware", "vector scan alone": "zzzunmatched"} {
@@ -266,11 +292,11 @@ func TestSkillSearchReturnsFewSectionsPerFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := perFile(results); !reflect.DeepEqual(got, want) {
+		if got := perSkill(results); !reflect.DeepEqual(got, want) {
 			t.Errorf("hybrid search, %s: %v, want %v", name, got, want)
 		}
 	}
-	// Knowledge sources are not capped here: a document's pages have their
+	// Knowledge sources are not bounded here: a document's pages have their
 	// own rule and an archive's articles none.
 	wiki := insertSource(t, db, "wiki.zim")
 	for number := 1; number <= 10; number++ {

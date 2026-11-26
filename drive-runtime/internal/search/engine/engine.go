@@ -50,16 +50,16 @@ func (e *Engine) Keyword(query string, limit int) ([]Result, error) {
 }
 
 // KeywordContext runs FTS5 search with caller cancellation propagated to
-// SQLite. scope is a search scope as InScope reads it. Of one skill file it
-// returns at most sectionsPerSkillFile sections unless the scope is that
-// file, so that hybrid search, whose candidates these are, reaches the skills
+// SQLite. scope is a search scope as InScope reads it. Of one skill it
+// returns at most sectionsPerSkill sections unless the scope is that skill,
+// so that hybrid search, whose candidates these are, reaches the skills
 // behind a long one.
 func (e *Engine) KeywordContext(ctx context.Context, query string, limit int, scope string) ([]Result, error) {
 	ftsQuery := BuildFTSQuery(query)
 	clause, scopeArgs := scopeClause(scope)
-	capSkills := capsSkillFiles(scope)
+	skills := e.newSkillBound(ctx, scope)
 	scan := limit
-	if capSkills {
+	if skills != nil {
 		scan = limit + rankedScan
 	}
 	args := append(append([]any{ftsQuery}, scopeArgs...), scan)
@@ -80,17 +80,14 @@ func (e *Engine) KeywordContext(ctx context.Context, query string, limit int, sc
 	defer rows.Close()
 
 	var results []Result
-	sections := map[string]int{}
 	for len(results) < limit && rows.Next() {
 		var r Result
 		var snippet sql.NullString
 		if err := rows.Scan(&r.ArticleID, &r.Filename, &r.Path, &r.Title, &snippet); err != nil {
 			continue
 		}
-		if capSkills && IsSkillSource(r.Filename) {
-			if sections[r.Filename]++; sections[r.Filename] > sectionsPerSkillFile {
-				continue
-			}
+		if skip, _ := skills.over(r.Filename); skip {
+			continue
 		}
 		if snippet.Valid {
 			r.Snippet = snippet.String
@@ -101,13 +98,6 @@ func (e *Engine) KeywordContext(ctx context.Context, query string, limit int, sc
 		return nil, err
 	}
 	return results, ctx.Err()
-}
-
-// capsSkillFiles reports whether a search in scope bounds the sections of
-// each skill file: one that covers several sources, some of which may be
-// skill files.
-func capsSkillFiles(scope string) bool {
-	return scope == SkillScope || strings.HasSuffix(scope, "/") && IsSkillSource(scope)
 }
 
 // Hybrid runs FTS5 keyword search, then vector search pre-filtered to FTS
@@ -138,7 +128,7 @@ func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []flo
 		vecChunks, vecErr = e.vectorSearchFiltered(queryVec, candidateIDs, 100)
 	} else {
 		// No FTS hits — fall back to full scan (small corpus or unusual query)
-		vecChunks, vecErr = e.vectorSearch(queryVec, 100, scope)
+		vecChunks, vecErr = e.vectorSearch(ctx, queryVec, 100, scope)
 	}
 	if vecErr != nil {
 		return nil, vecErr
@@ -201,13 +191,14 @@ func (e *Engine) vectorSearchFiltered(queryVec []float32, articleIDs []int, limi
 	}
 	defer rows.Close()
 
-	return e.scanAndScoreVectors(rows, queryVec, limit, false)
+	return e.scanAndScoreVectors(rows, queryVec, limit, nil)
 }
 
 // vectorSearch fetches every embedding in the scope and computes dot product
 // with queryVec. Used as fallback when FTS5 returns no candidates.
-func (e *Engine) vectorSearch(queryVec []float32, limit int, scope string) ([]scoredChunk, error) {
+func (e *Engine) vectorSearch(ctx context.Context, queryVec []float32, limit int, scope string) ([]scoredChunk, error) {
 	clause, scopeArgs := scopeClause(scope)
+	skills := e.newSkillBound(ctx, scope)
 	rows, err := e.db.Query(
 		`SELECT e.article_id, e.chunk_header, e.vector, src.filename
          FROM embeddings e
@@ -219,13 +210,13 @@ func (e *Engine) vectorSearch(queryVec []float32, limit int, scope string) ([]sc
 	}
 	defer rows.Close()
 
-	return e.scanAndScoreVectors(rows, queryVec, limit, capsSkillFiles(scope))
+	return e.scanAndScoreVectors(rows, queryVec, limit, skills)
 }
 
 // scanAndScoreVectors scores the rows (article, chunk header, vector, source
-// filename) against queryVec and returns the nearest. With capSkills at most
-// sectionsPerSkillFile chunks of any one skill file are among them.
-func (e *Engine) scanAndScoreVectors(rows *sql.Rows, queryVec []float32, limit int, capSkills bool) ([]scoredChunk, error) {
+// filename) against queryVec and returns the nearest, within the skill bound
+// when there is one.
+func (e *Engine) scanAndScoreVectors(rows *sql.Rows, queryVec []float32, limit int, skills *skillBound) ([]scoredChunk, error) {
 	if err := validVector(queryVec); err != nil {
 		return nil, fmt.Errorf("engine: query vector: %w", err)
 	}
@@ -257,23 +248,22 @@ func (e *Engine) scanAndScoreVectors(rows *sql.Rows, queryVec []float32, limit i
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].score > results[j].score
 	})
-	if capSkills {
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if skills != nil {
 		kept := results[:0]
-		chunks := map[string]int{}
 		for _, chunk := range results {
-			if IsSkillSource(chunk.filename) {
-				if chunks[chunk.filename]++; chunks[chunk.filename] > sectionsPerSkillFile {
-					continue
-				}
+			if skip, _ := skills.over(chunk.filename); !skip {
+				kept = append(kept, chunk)
 			}
-			kept = append(kept, chunk)
 		}
 		results = kept
 	}
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	return results, rows.Err()
+	return results, nil
 }
 
 func validVector(v []float32) error {

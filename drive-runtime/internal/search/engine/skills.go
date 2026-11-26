@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -81,4 +82,78 @@ func (e *Engine) Sections(ctx context.Context, filename string) ([]Section, erro
 		sections = append(sections, section)
 	}
 	return sections, rows.Err()
+}
+
+// SkillFolders returns the folders that hold a SKILL.md: the skills.
+func (e *Engine) SkillFolders(ctx context.Context) (map[string]bool, error) {
+	sources, err := e.SkillSources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	folders := map[string]bool{}
+	for _, source := range sources {
+		if strings.HasPrefix(source.Filename, SkillsDir+"/") && strings.EqualFold(path.Base(source.Filename), "SKILL.md") {
+			folders[path.Dir(source.Filename)] = true
+		}
+	}
+	return folders, nil
+}
+
+// SkillGroup names what an indexed skill file belongs to: the nearest folder
+// above it that holds a SKILL.md, which is the skill. A library quickstart,
+// and markdown under skills/ that no SKILL.md is above, stand for themselves.
+func SkillGroup(filename string, folders map[string]bool) string {
+	if strings.HasPrefix(filename, SkillsDir+"/") {
+		for folder := path.Dir(filename); folder != SkillsDir && folder != "." && folder != "/"; folder = path.Dir(folder) {
+			if folders[folder] {
+				return folder
+			}
+		}
+	}
+	return filename
+}
+
+// skillBound keeps a search that covers several skills to sectionsPerSkill
+// sections of each, as a search over documents keeps to a few pages of each.
+// Every section of a skill's files carries the skill's name in its title, so
+// a long skill matches with all of them, and skill search groups what it is
+// given into one result per skill: without the bound the skills behind a long
+// one are never reached. A nil bound bounds nothing.
+type skillBound struct {
+	scope   string
+	folders map[string]bool
+	seen    map[string]int
+}
+
+// newSkillBound returns the bound for a search in scope, nil when the scope
+// cannot hold more than one skill's files.
+func (e *Engine) newSkillBound(ctx context.Context, scope string) *skillBound {
+	if scope != SkillScope && !(strings.HasSuffix(scope, "/") && IsSkillSource(scope)) {
+		return nil
+	}
+	// Loaded before the search's own rows are open: both may have to share
+	// one connection.
+	folders, _ := e.SkillFolders(ctx)
+	return &skillBound{scope: scope, folders: folders, seen: map[string]int{}}
+}
+
+// over counts a result row and reports whether it is beyond the bound. more
+// is set for the first such row of a skill: the scope that returns the rest.
+func (b *skillBound) over(filename string) (skip bool, more string) {
+	if b == nil || !IsSkillSource(filename) {
+		return false, ""
+	}
+	group := SkillGroup(filename, b.folders)
+	if strings.HasPrefix(b.scope, group+"/") {
+		return false, "" // the search is limited to this one skill
+	}
+	if b.seen[group]++; b.seen[group] <= sectionsPerSkill {
+		return false, ""
+	}
+	if b.seen[group] == sectionsPerSkill+1 {
+		if more = group; b.folders[group] {
+			more += "/"
+		}
+	}
+	return true, more
 }
