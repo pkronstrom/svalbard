@@ -16,6 +16,7 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
+	"github.com/pkronstrom/svalbard/host-cli/internal/toolkit"
 )
 
 // documentServer serves bodies by path and counts the GET requests per path.
@@ -359,7 +360,7 @@ func TestAssembleDocumentsStopsOnCancellation(t *testing.T) {
 func TestRunRecordsArrivedDocumentsOfAFailedCollection(t *testing.T) {
 	server := newDocumentServer(t, map[string]string{"/good.pdf": fakePDF("good")})
 	root := t.TempDir()
-	cat := collectionCatalog(t, "manuals", "  - url: "+server.URL+"/good.pdf\n  - url: "+server.URL+"/gone.pdf\n")
+	cat := collectionCatalog(t, "manuals", "  - title: Good Manual\n    url: "+server.URL+"/good.pdf\n  - url: "+server.URL+"/gone.pdf\n")
 	m := manifest.New("test")
 	m.Desired.Items = []string{"manuals"}
 
@@ -385,5 +386,10 @@ func TestRunRecordsArrivedDocumentsOfAFailedCollection(t *testing.T) {
 	}
 	if last := statuses[len(statuses)-1]; last != "failed" {
 		t.Errorf("last status = %q, want the item reported as failed", last)
+	}
+	// Indexing by hand after the failed apply still knows the title.
+	meta, err := toolkit.ReadDocumentsMetadata(root)
+	if err != nil || meta["books/manuals/good.pdf"].Title != "Good Manual" {
+		t.Errorf("documents.json after the failed apply = %+v, %v", meta, err)
 	}
 }

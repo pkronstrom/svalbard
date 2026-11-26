@@ -222,6 +222,8 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 						snapshot.Realized.Entries = replaceEntriesForID(snapshot.Realized.Entries, res.id, res.entries)
 						if err := checkpointManifest(snapshot); err != nil {
 							applyErrors = append(applyErrors, fmt.Errorf("%s: checkpointing: %w", res.id, err))
+						} else {
+							recordDocumentTitles(root, m.Realized.Entries, cat, res.id)
 						}
 					}
 					return

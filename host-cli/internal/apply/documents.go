@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -375,6 +376,21 @@ func replaceEntriesForID(existing []manifest.RealizedEntry, id string, additions
 		}
 	}
 	return append(entries, additions...)
+}
+
+// recordDocumentTitles writes the document metadata of one collection as soon
+// as its entries are saved. The complete file is written when an apply
+// succeeds; this covers the apply that fails on one document, after which
+// `svalbard index` is run by hand and should still know the titles. It is
+// best effort: the index falls back to the file's own title.
+func recordDocumentTitles(root string, entries []manifest.RealizedEntry, cat *catalog.Catalog, id string) {
+	recipe, ok := cat.RecipeByID(id)
+	if !ok || !recipe.IsCollection() {
+		return
+	}
+	if err := toolkit.WriteDocumentsMetadata(root, entries, map[string]catalog.Item{id: recipe}); err != nil {
+		slog.Warn("writing document metadata", "id", id, "error", err)
+	}
 }
 
 // removeCollectionDirs deletes the directory of every removed item whose
