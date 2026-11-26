@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/binarytree"
 	"github.com/pkronstrom/svalbard/host-cli/internal/builder"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
@@ -131,6 +132,10 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	for _, e := range m.Realized.Entries {
 		if _, ok := removeSet[e.ID]; ok {
 			path := filepath.Join(root, e.RelativePath)
+			// A binary archive's tree, unpacked here or on first use.
+			if err := binarytree.RemoveTrees(path); err != nil {
+				slog.Warn("removing an unpacked tree", "id", e.ID, "error", err)
+			}
 			os.RemoveAll(path)
 			// The downloader's record of where the file came from.
 			os.Remove(path + ".download.json")
@@ -494,6 +499,11 @@ func (s updateSwap) run(root, id string, job func() downloadResult) downloadResu
 	old := s.previous[id]
 	for _, e := range old {
 		path := filepath.Join(root, e.RelativePath)
+		// The old release's unpacked tree would be found before the new
+		// archive is unpacked; it is made again from whichever archive stays.
+		if err := binarytree.RemoveTrees(path); err != nil {
+			slog.Warn("removing the previous unpacked tree", "id", id, "error", err)
+		}
 		var err error
 		if s.replace {
 			err = os.RemoveAll(path)
@@ -827,6 +837,17 @@ func fetchAndRecordAt(ctx context.Context, root, id string, recipe catalog.Item,
 	if bareBinary {
 		if err := os.Chmod(destPath, 0o755); err != nil {
 			return manifest.RealizedEntry{}, fmt.Errorf("mark %s executable: %w", destPath, err)
+		}
+	} else if platformBinary {
+		// No stick can create the links in an archive, so one that has them
+		// is unpacked now, with each link resolved; first use then writes
+		// nothing. If that fails, the drive runtime still unpacks it there.
+		report, err := binarytree.Prepare(destPath)
+		if err != nil {
+			slog.Warn("binary archive left to unpack on first use", "id", id, "error", err)
+		}
+		for _, line := range report {
+			slog.Info("binary archive link", "id", id, "link", line)
 		}
 	}
 
