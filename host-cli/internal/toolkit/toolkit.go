@@ -27,6 +27,11 @@ var supportedPlatforms = []string{
 	"linux-x86_64",
 }
 
+// SupportedPlatforms lists the platforms a vault can target, in menu order.
+func SupportedPlatforms() []string {
+	return append([]string(nil), supportedPlatforms...)
+}
+
 var runtimeBuildTargets = map[string]struct {
 	goos   string
 	goarch string

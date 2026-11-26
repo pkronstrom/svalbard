@@ -10,14 +10,20 @@ type DashboardDeps struct {
 	LoadStatus       func() (VaultStatus, error)
 	LoadDesiredItems func() ([]string, error)
 	LoadPlan         func() (PlanSummary, error)
-	LoadIndexStatus  func() (IndexStatus, error)
+	// LoadUpdates lists installed items whose recipe changed, as ToDownload
+	// items with Action "update".
+	LoadUpdates     func() (PlanSummary, error)
+	LoadIndexStatus func() (IndexStatus, error)
 
 	// State mutation
 	SaveDesiredItems func(ids []string) error
 	InitVault        func(path string, items []string, presetName, region string, platforms []string) error
 
 	// Long-running operations (run in goroutines, report progress via callback)
-	RunApply           func(ctx context.Context, onProgress func(ApplyEvent)) error
+	RunApply func(ctx context.Context, onProgress func(ApplyEvent)) error
+	// RunUpdate reacquires the given installed items, keeping each installed
+	// copy until its new one is in place.
+	RunUpdate          func(ctx context.Context, ids []string, onProgress func(ApplyEvent)) error
 	RunImport          func(ctx context.Context, source string) (ImportResult, error)
 	RunIndex           func(ctx context.Context, indexType string, onProgress func(IndexEvent)) error
 	RunConfiguredIndex func(ctx context.Context, vaultPath string, onProgress func(IndexEvent)) error
@@ -36,15 +42,17 @@ type DashboardDeps struct {
 
 // VaultStatus summarizes the current vault state for the Status right-pane preview.
 type VaultStatus struct {
-	VaultPath     string
-	VaultName     string
-	PresetName    string
-	DesiredCount  int
-	RealizedCount int
-	PendingCount  int
-	DiskUsedGB    float64
-	DiskFreeGB    float64
-	LastApplied   string // RFC3339 timestamp or empty
+	VaultPath      string
+	VaultName      string
+	PresetName     string
+	DesiredCount   int
+	RealizedCount  int
+	PendingCount   int
+	UpdateCount    int // installed items whose recipe changed
+	WithdrawnCount int // installed items the catalog no longer has
+	DiskUsedGB     float64
+	DiskFreeGB     float64
+	LastApplied    string // RFC3339 timestamp or empty
 }
 
 // PlanSummary describes pending reconciliation changes for the Plan screen.

@@ -28,6 +28,12 @@ func contextForDestination(id string, m Model) tui.DetailPane {
 				tui.DetailField{Label: "Realized", Value: fmt.Sprintf("%d items", s.RealizedCount)},
 				tui.DetailField{Label: "Pending", Value: fmt.Sprintf("%d items", s.PendingCount)},
 			)
+			if s.UpdateCount > 0 {
+				base.Fields = append(base.Fields, tui.DetailField{Label: "Updates", Value: fmt.Sprintf("%d available", s.UpdateCount)})
+			}
+			if s.WithdrawnCount > 0 {
+				base.Fields = append(base.Fields, tui.DetailField{Label: "Withdrawn", Value: fmt.Sprintf("%d kept", s.WithdrawnCount)})
+			}
 			if s.DiskUsedGB > 0 {
 				base.Fields = append(base.Fields,
 					tui.DetailField{Label: "Vault size", Value: fmt.Sprintf("%.1f GB", s.DiskUsedGB)},
@@ -54,6 +60,13 @@ func contextForDestination(id string, m Model) tui.DetailPane {
 	case destPlan:
 		base.Title = "Plan"
 		base.Body = "Review what changes will be made to reconcile desired\nand realized state. Apply changes from here."
+
+	case destUpdates:
+		base.Title = "Updates"
+		base.Body = "Installed items whose recipe changed since they were installed.\nEach installed copy is kept until its update is in place.\nItems no longer in the catalog stay on the vault."
+		if m.status != nil && m.status.UpdateCount > 0 {
+			base.Fields = []tui.DetailField{{Label: "Available", Value: fmt.Sprintf("%d items", m.status.UpdateCount)}}
+		}
 
 	case destImport:
 		base.Title = "Import"

@@ -50,7 +50,7 @@ func TestFullCLIContractEndToEnd(t *testing.T) {
 
 	// 2. ADD -- add an item to desired state
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"add", "extra-item", "--vault", root})
+	cmd.SetArgs([]string{"add", "zimgit-knots", "--vault", root})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("add failed: %v", err)
 	}
@@ -61,17 +61,17 @@ func TestFullCLIContractEndToEnd(t *testing.T) {
 	}
 	found := false
 	for _, item := range m.Desired.Items {
-		if item == "extra-item" {
+		if item == "zimgit-knots" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("add did not add extra-item to desired state")
+		t.Fatal("add did not add zimgit-knots to desired state")
 	}
 
 	// 3. REMOVE -- remove the item we just added
 	cmd = NewRootCommand()
-	cmd.SetArgs([]string{"remove", "extra-item", "--vault", root})
+	cmd.SetArgs([]string{"remove", "zimgit-knots", "--vault", root})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("remove failed: %v", err)
 	}
@@ -80,8 +80,8 @@ func TestFullCLIContractEndToEnd(t *testing.T) {
 		t.Fatalf("loading manifest after remove: %v", err)
 	}
 	for _, item := range m.Desired.Items {
-		if item == "extra-item" {
-			t.Fatal("remove did not remove extra-item")
+		if item == "zimgit-knots" {
+			t.Fatal("remove did not remove zimgit-knots")
 		}
 	}
 

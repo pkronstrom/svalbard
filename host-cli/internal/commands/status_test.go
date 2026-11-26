@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
@@ -17,7 +18,7 @@ func TestWriteStatusShowsAllItems(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := WriteStatus(&buf, m); err != nil {
+	if err := WriteStatus(&buf, catalog.NewTestCatalog(t), m); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -42,7 +43,7 @@ func TestWriteStatusShowsAllItems(t *testing.T) {
 func TestWriteStatusEmptyVault(t *testing.T) {
 	m := manifest.New("empty")
 	var buf bytes.Buffer
-	if err := WriteStatus(&buf, m); err != nil {
+	if err := WriteStatus(&buf, catalog.NewTestCatalog(t), m); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()

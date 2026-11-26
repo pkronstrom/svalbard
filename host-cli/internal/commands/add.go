@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
@@ -62,4 +63,35 @@ func DrafterWarnings(cat *catalog.Catalog, ids []string) []string {
 		warnings = append(warnings, fmt.Sprintf("warning: %s only speeds up %s, and none is selected; it will download unused", id, strings.Join(item.DraftFor, ", ")))
 	}
 	return warnings
+}
+
+// UnknownItems returns the ids that are neither catalog recipes nor local
+// imports ("local:" ids), in the order given.
+func UnknownItems(cat *catalog.Catalog, ids []string) []string {
+	var unknown []string
+	for _, id := range ids {
+		if _, ok := cat.RecipeByID(id); !ok && !strings.HasPrefix(id, "local:") {
+			unknown = append(unknown, id)
+		}
+	}
+	return unknown
+}
+
+// RequiredDependencies returns the sorted dependencies of ids that ids does
+// not already list, and the dependency ids the catalog does not have. Ids the
+// catalog does not know (local imports, withdrawn recipes) have no
+// dependencies.
+func RequiredDependencies(cat *catalog.Catalog, defaults catalog.DepDefaults, ids []string) (deps, missing []string) {
+	selected := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if _, ok := cat.RecipeByID(id); ok {
+			selected[id] = true
+		}
+	}
+	auto, missing := cat.ResolveDepsChecked(selected, defaults)
+	for id := range auto {
+		deps = append(deps, id)
+	}
+	sort.Strings(deps)
+	return deps, missing
 }

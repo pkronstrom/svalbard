@@ -11,6 +11,7 @@ const (
 	destStatus   = "status"
 	destBrowse   = "browse"
 	destPlan     = "plan"
+	destUpdates  = "updates"
 	destImport   = "import"
 	destIndex    = "index"
 	destNewVault = "new-vault"
@@ -22,6 +23,7 @@ var hostDestinations = []destination{
 	{destStatus, "Status", "health & sync"},
 	{destBrowse, "Browse", "select content"},
 	{destPlan, "Plan", "pending changes"},
+	{destUpdates, "Updates", "changed recipes"},
 	{destImport, "Import", "files & URLs"},
 	{destIndex, "Index", "search indexes"},
 	{destNewVault, "New Vault", "init wizard"},
@@ -37,13 +39,15 @@ type SelectMsg struct {
 
 // StatusData holds live vault status for the right-pane preview.
 type StatusData struct {
-	PresetName    string
-	DesiredCount  int
-	RealizedCount int
-	PendingCount  int
-	DiskUsedGB    float64
-	DiskFreeGB    float64
-	LastApplied   string
+	PresetName     string
+	DesiredCount   int
+	RealizedCount  int
+	PendingCount   int
+	UpdateCount    int
+	WithdrawnCount int
+	DiskUsedGB     float64
+	DiskFreeGB     float64
+	LastApplied    string
 }
 
 // Model is the host-side vault dashboard — the main screen shown when

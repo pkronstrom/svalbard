@@ -155,6 +155,10 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = screenPlan
 			m.planScr = m.newPlan()
 			return m, m.sendSize()
+		case "updates":
+			m.screen = screenPlan
+			m.planScr = m.newUpdates()
+			return m, m.sendSize()
 		case "import":
 			m.screen = screenImport
 			m.importScr = m.newImport()
@@ -394,13 +398,15 @@ func (m *appModel) newDashboard(vaultPath string) dashboard.Model {
 				return dashboard.StatusData{}, err
 			}
 			return dashboard.StatusData{
-				PresetName:    vs.PresetName,
-				DesiredCount:  vs.DesiredCount,
-				RealizedCount: vs.RealizedCount,
-				PendingCount:  vs.PendingCount,
-				DiskUsedGB:    vs.DiskUsedGB,
-				DiskFreeGB:    vs.DiskFreeGB,
-				LastApplied:   vs.LastApplied,
+				PresetName:     vs.PresetName,
+				DesiredCount:   vs.DesiredCount,
+				RealizedCount:  vs.RealizedCount,
+				PendingCount:   vs.PendingCount,
+				UpdateCount:    vs.UpdateCount,
+				WithdrawnCount: vs.WithdrawnCount,
+				DiskUsedGB:     vs.DiskUsedGB,
+				DiskFreeGB:     vs.DiskFreeGB,
+				LastApplied:    vs.LastApplied,
 			}, nil
 		}
 	}
@@ -474,6 +480,43 @@ func (m *appModel) newPlan() plan.Model {
 					})
 				})
 			}
+		}
+	}
+	return plan.New(cfg)
+}
+
+// newUpdates creates the plan screen listing available updates; applying it
+// updates every listed item.
+func (m *appModel) newUpdates() plan.Model {
+	cfg := plan.Config{
+		Title:     "Updates available",
+		EmptyText: "Every installed item matches its recipe",
+	}
+	if m.deps == nil || m.deps.LoadUpdates == nil {
+		return plan.New(cfg)
+	}
+	summary, err := m.deps.LoadUpdates()
+	if err != nil {
+		return plan.New(cfg)
+	}
+	cfg.DownloadGB = summary.DownloadGB
+	var ids []string
+	for _, item := range summary.ToDownload {
+		ids = append(ids, item.ID)
+		cfg.Items = append(cfg.Items, plan.PlanItem{
+			ID: item.ID, Type: item.Type, SizeGB: item.SizeGB,
+			Description: item.Description, Action: item.Action,
+		})
+	}
+	if len(ids) > 0 && m.deps.RunUpdate != nil {
+		cfg.RunApply = func(ctx context.Context, onProgress func(plan.ApplyEvent)) error {
+			return m.deps.RunUpdate(ctx, ids, func(ev ApplyEvent) {
+				onProgress(plan.ApplyEvent{
+					ID: ev.ID, Procedure: ev.Procedure, State: ev.State,
+					Status: ev.Status, Step: ev.Step, Message: ev.Message,
+					Downloaded: ev.Downloaded, Total: ev.Total, Error: ev.Error,
+				})
+			})
 		}
 	}
 	return plan.New(cfg)

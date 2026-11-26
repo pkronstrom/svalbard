@@ -25,13 +25,18 @@ svalbard index --vault /Volumes/MyDrive
 cd /Volumes/MyDrive && ./run
 ```
 
-For an existing vault you can iterate with the non-interactive subcommands:
+Everything the wizard and the TUI screens do has a command, so scripts and agents never need the TUI:
 
 ```bash
-svalbard plan --vault /Volumes/MyDrive
+svalbard init /Volumes/MyDrive --preset default-64 --apply   # create and download in one step
+svalbard catalog wikipedia                                   # find item ids
+svalbard add wikipedia-en-100 --vault /Volumes/MyDrive       # select more, with dependencies
+svalbard plan --vault /Volumes/MyDrive                       # what apply would do, with sizes
 svalbard apply --vault /Volumes/MyDrive
 svalbard status --vault /Volumes/MyDrive
 ```
+
+`plan`, `status`, `catalog`, `preset list` and `preset show` take `--json`. Commands run inside a vault directory find it without `--vault`.
 
 ## Catalog And Presets
 
@@ -58,32 +63,43 @@ After `apply`, a vault typically contains:
 
 ### `svalbard init [path]`
 
-Open the guided setup wizard. The wizard handles preset selection, vault directory creation, manifest seeding, and the initial download/apply in one flow. The optional `path` argument pre-fills the destination so you don't have to type it in the wizard.
+Without flags, open the guided setup wizard. The wizard handles preset selection, vault directory creation, manifest seeding, and the initial download/apply in one flow. The optional `path` argument pre-fills the destination so you don't have to type it in the wizard.
 
-Non-interactive vault creation (a `--preset` flag) is not currently supported — `init` always launches the wizard.
+With `--preset` or `--add`, create the vault without the wizard and with the same result:
+
+- `--preset <name>`: the preset to start from
+- `--add <ids>` / `--remove <ids>`: recipe ids, packs or presets to add or leave out; required dependencies are included
+- `--platform <names>`: platforms the vault runs on, or `all` (default: this computer's)
+- `--apply`: download the content and build the search index right away
 
 Example:
 
 ```bash
 svalbard init /Volumes/MyDrive
+svalbard init /Volumes/MyDrive --preset default-64 --add ai/harnesses --platform all --apply
 ```
+
+### `svalbard catalog [words...] [--json]`
+
+List the items a vault can hold: id, type, size, the packs that include it and a description. Every word given must appear in one of those fields.
 
 ### `svalbard add <item...> --vault <path>`
 
-Append one or more item ids to the vault's desired state.
+Add items to the vault's desired state, together with the dependencies they need (a ZIM brings `kiwix-serve`). An id the catalog does not have is an error and changes nothing.
 
-These ids can come from:
+Each argument is one of:
 
-- built-in catalog entries bundled with the binary
-- local imported items such as `local:manual`
+- a recipe id from `svalbard catalog`
+- a preset or pack name, which adds every item in it
+- a local imported item such as `local:manual`
 
 ### `svalbard remove <item...> --vault <path>`
 
-Remove one or more item ids from desired state.
+Remove items (or every item of a preset or pack) from desired state. It warns when a remaining item still needs one you removed, and fails if none of the named items was selected.
 
-### `svalbard plan --vault <path>`
+### `svalbard plan --vault <path> [--json]`
 
-Show what `apply` would download, keep, or remove.
+Show what `apply` would download or remove, with sizes and build requirements.
 
 Use this before `apply` when you want to inspect the reconciliation result.
 
@@ -95,9 +111,31 @@ Execute the reconciliation plan:
 - download artifacts
 - update realized entries in `manifest.yaml`
 - regenerate runtime metadata and launch scripts
+- print one line per item as it starts, finishes or fails
+- build the vault's configured search index
 - generate or remove the offline map viewer based on realized PMTiles
 
-### `svalbard status --vault <path>`
+### `svalbard update [item...] [--all] [--replace] [--json]`
+
+Update installed items whose recipe changed since they were installed. `apply` never does this: it only downloads what is missing and deletes what was deselected.
+
+- no arguments: list the items with an update available
+- `--all`: update every one of them
+- item ids: acquire those items again whatever their state, which also picks up a newer upstream file for a recipe that follows the latest release
+
+Each installed copy is kept until its new one is in place, and put back if the download or build fails. That needs room for both copies; `--replace` deletes the installed copy first, and a failed `--replace` leaves the item pending.
+
+`status` shows a version for every installed item:
+
+- `current`: installed from the recipe as it is now
+- `update available`: the recipe changed
+- `unknown`: installed before versions were recorded; `svalbard update <id>` refreshes it
+- `withdrawn, kept`: no longer in the catalog. It cannot be updated, stays on the vault through `apply` and `update`, and goes only if you `remove` it
+- `local`: a file you imported
+
+Python tools cannot be updated this way yet; remove them, apply, and add them back.
+
+### `svalbard status --vault <path> [--json]`
 
 Print the vault name, preset, desired count, realized count, pending count, and a per-item table.
 
@@ -117,9 +155,13 @@ svalbard apply --vault /Volumes/MyDrive
 
 The current implementation imports local files only — remote web/media ingestion is not part of the host CLI.
 
-### `svalbard preset list`
+### `svalbard preset list [--json]`
 
-List embedded preset names.
+List preset and pack names. `--json` adds kind, region, size, item count and description.
+
+### `svalbard preset show <name> [--json]`
+
+List the items a preset or pack contains.
 
 ### `svalbard preset copy <source> <target>`
 
@@ -131,9 +173,9 @@ Example:
 svalbard preset copy default-128 ../tmp/default-128.yaml
 ```
 
-### `svalbard index --vault <path>`
+### `svalbard index --vault <path> [--type keyword|semantic|full]`
 
-Build the SQLite full-text and semantic search index from realized ZIM files under the vault.
+Build the SQLite search index from realized ZIM files under the vault: the keyword index by default, `semantic` for embeddings (needs an embedding model on the vault), `full` for both.
 
 The generated database is written under `data/search.db`.
 

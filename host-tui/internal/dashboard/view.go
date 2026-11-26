@@ -10,7 +10,7 @@ import (
 var dashboardHelp = []tui.HelpSection{
 	{Title: "Navigation", Bindings: []tui.HelpBinding{
 		{Key: "j/k", Desc: "Move up/down"},
-		{Key: "1-6", Desc: "Jump to item"},
+		{Key: "1-7", Desc: "Jump to item"},
 		{Key: "Enter", Desc: "Open selected screen"},
 	}},
 	{Title: "Actions", Bindings: []tui.HelpBinding{

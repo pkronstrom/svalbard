@@ -3,42 +3,108 @@ package commands
 import (
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
+// StatusItem is one desired item and whether the vault holds it yet.
+type StatusItem struct {
+	ID        string `json:"id"`
+	Type      string `json:"type,omitempty"`
+	SizeBytes int64  `json:"size_bytes"`
+	// Status is "realized", "pending", or "unavailable" for a pending item
+	// the catalog no longer has.
+	Status string `json:"status"`
+	// Version is one of the Version* states; empty unless realized.
+	Version string `json:"version,omitempty"`
+}
+
+// StatusReport is the vault state the status command prints.
+type StatusReport struct {
+	Vault       string       `json:"vault"`
+	Preset      string       `json:"preset,omitempty"`
+	Platforms   []string     `json:"platforms"`
+	Desired     int          `json:"desired"`
+	Realized    int          `json:"realized"`
+	Pending     int          `json:"pending"`
+	LastApplied string       `json:"last_applied,omitempty"`
+	Updates     []string     `json:"updates_available"`
+	Withdrawn   []string     `json:"withdrawn"`
+	Unavailable []string     `json:"unavailable"`
+	Items       []StatusItem `json:"items"`
+}
+
+// BuildStatus summarizes m: each desired item, whether it is realized, and
+// how its installed version compares with the catalog's recipe.
+func BuildStatus(cat *catalog.Catalog, m manifest.Manifest) StatusReport {
+	r := StatusReport{
+		Vault:       m.Vault.Name,
+		Platforms:   append([]string{}, m.Desired.Options.HostPlatforms...),
+		Desired:     len(m.Desired.Items),
+		LastApplied: m.Realized.AppliedAt,
+		Updates:     []string{},
+		Withdrawn:   []string{},
+		Unavailable: []string{},
+		Items:       []StatusItem{},
+	}
+	if len(m.Desired.Presets) > 0 {
+		r.Preset = m.Desired.Presets[0]
+	}
+
+	installed := realizedByID(m)
+	for _, id := range m.Desired.Items {
+		item := StatusItem{ID: id, Status: "pending"}
+		// A multi-platform recipe has one realized entry per platform.
+		if entries := installed[id]; len(entries) > 0 {
+			item.Type, item.Status = entries[0].Type, "realized"
+			for _, e := range entries {
+				item.SizeBytes += e.SizeBytes
+			}
+			item.Version = ItemVersion(cat, entries)
+			switch item.Version {
+			case VersionUpdate:
+				r.Updates = append(r.Updates, id)
+			case VersionWithdrawn:
+				r.Withdrawn = append(r.Withdrawn, id)
+			}
+			r.Realized++
+		} else if len(UnknownItems(cat, []string{id})) > 0 {
+			item.Status = "unavailable"
+			r.Unavailable = append(r.Unavailable, id)
+		}
+		r.Items = append(r.Items, item)
+	}
+	r.Pending = r.Desired - r.Realized
+	return r
+}
+
+// versionLabels words each version state for the status table.
+var versionLabels = map[string]string{
+	VersionCurrent:   "current",
+	VersionUpdate:    "update available",
+	VersionUnknown:   "unknown",
+	VersionWithdrawn: "withdrawn, kept",
+	VersionLocal:     "local",
+}
+
 // WriteStatus prints a human-readable summary of vault state including
 // desired items, realized items, and what is pending.
-func WriteStatus(w io.Writer, m manifest.Manifest) error {
-	// Vault name and preset
-	fmt.Fprintf(w, "Vault: %s\n", m.Vault.Name)
-	if len(m.Desired.Presets) > 0 {
-		fmt.Fprintf(w, "Preset: %s\n", m.Desired.Presets[0])
+func WriteStatus(w io.Writer, cat *catalog.Catalog, m manifest.Manifest) error {
+	r := BuildStatus(cat, m)
+	fmt.Fprintf(w, "Vault: %s\n", r.Vault)
+	if r.Preset != "" {
+		fmt.Fprintf(w, "Preset: %s\n", r.Preset)
 	}
 	fmt.Fprintln(w)
 
-	// Build realized lookup by ID
-	realizedByID := make(map[string]manifest.RealizedEntry, len(m.Realized.Entries))
-	for _, e := range m.Realized.Entries {
-		realizedByID[e.ID] = e
-	}
+	fmt.Fprintf(w, "Desired: %d items\n", r.Desired)
+	fmt.Fprintf(w, "Realized: %d items\n", r.Realized)
+	fmt.Fprintf(w, "Pending: %d items\n", r.Pending)
 
-	// Count
-	desired := len(m.Desired.Items)
-	realized := 0
-	for _, id := range m.Desired.Items {
-		if _, ok := realizedByID[id]; ok {
-			realized++
-		}
-	}
-	pending := desired - realized
-
-	fmt.Fprintf(w, "Desired: %d items\n", desired)
-	fmt.Fprintf(w, "Realized: %d items\n", realized)
-	fmt.Fprintf(w, "Pending: %d items\n", pending)
-
-	if desired == 0 {
+	if r.Desired == 0 {
 		return nil
 	}
 
@@ -46,16 +112,25 @@ func WriteStatus(w io.Writer, m manifest.Manifest) error {
 
 	// Tab-aligned table
 	tw := tabwriter.NewWriter(w, 2, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  ID\tType\tSize\tStatus\n")
-	for _, id := range m.Desired.Items {
-		if e, ok := realizedByID[id]; ok {
-			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", id, e.Type, humanSize(e.SizeBytes), "realized")
-		} else {
-			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", id, "", "—", "pending")
-		}
+	fmt.Fprintf(tw, "  ID\tType\tSize\tStatus\tVersion\n")
+	for _, item := range r.Items {
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", item.ID, item.Type, humanSize(item.SizeBytes), item.Status, versionLabels[item.Version])
 	}
 	tw.Flush()
 
+	fmt.Fprintln(w)
+	if pending := r.Pending - len(r.Unavailable); pending > 0 {
+		fmt.Fprintf(w, "Run \"svalbard apply\" to download the %d pending.\n", pending)
+	}
+	if len(r.Updates) > 0 {
+		fmt.Fprintf(w, "%d update(s) available; run \"svalbard update\" to review them.\n", len(r.Updates))
+	}
+	if len(r.Withdrawn) > 0 {
+		fmt.Fprintf(w, "No longer in the catalog, kept on this vault: %s.\n", strings.Join(r.Withdrawn, ", "))
+	}
+	if len(r.Unavailable) > 0 {
+		fmt.Fprintf(w, "Not installed and no longer in the catalog: %s. Run \"svalbard remove\" on them.\n", strings.Join(r.Unavailable, ", "))
+	}
 	return nil
 }
 

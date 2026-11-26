@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"path/filepath"
 
@@ -26,12 +25,5 @@ func ApplyVault(ctx context.Context, root string, cat *catalog.Catalog, onProgre
 	plan := planner.Build(m)
 	slog.Debug("manifest loaded", "desired", len(m.Desired.Items), "realized", len(m.Realized.Entries))
 
-	applyErr := apply.RunWithCheckpoint(ctx, root, &m, plan, cat, func(snapshot manifest.Manifest) error {
-		return manifest.Save(mPath, snapshot)
-	}, onProgress...)
-	saveErr := manifest.Save(mPath, m)
-	if applyErr != nil || saveErr != nil {
-		return errors.Join(applyErr, saveErr)
-	}
-	return nil
+	return runPlan(ctx, root, &m, plan, cat, onProgress...)
 }

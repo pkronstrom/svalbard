@@ -51,6 +51,10 @@ type Config struct {
 	ToolsRequired   bool
 	FreeAfterGB     float64
 	RunApply        func(ctx context.Context, onProgress func(ApplyEvent)) error
+	// Title and EmptyText replace the plan screen's wording when it lists
+	// something other than pending changes, such as available updates.
+	Title     string
+	EmptyText string
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +108,8 @@ type Model struct {
 	toolsRequired   bool
 	freeAfterGB     float64
 	runApply        func(ctx context.Context, onProgress func(ApplyEvent)) error
+	title           string
+	emptyText       string
 	cursor          int
 	scrollOffset    int
 
@@ -125,7 +131,15 @@ type Model struct {
 
 // New creates a Model from the given Config.
 func New(cfg Config) Model {
+	if cfg.Title == "" {
+		cfg.Title = "Pending changes"
+	}
+	if cfg.EmptyText == "" {
+		cfg.EmptyText = "No recipe downloads or removals pending"
+	}
 	return Model{
+		title:           cfg.Title,
+		emptyText:       cfg.EmptyText,
 		items:           cfg.Items,
 		downloadGB:      cfg.DownloadGB,
 		removeGB:        cfg.RemoveGB,
@@ -374,7 +388,7 @@ func (m Model) View() string {
 }
 
 func (m Model) viewEmpty() string {
-	body := m.theme.Muted.Render("No recipe downloads or removals pending")
+	body := m.theme.Muted.Render(m.emptyText)
 
 	enter := tui.KeyBinding{Key: "enter", Label: "Enter: browse"}
 	if m.runApply != nil {
@@ -401,7 +415,7 @@ func (m Model) viewEmpty() string {
 func (m Model) viewPlan() string {
 	var b strings.Builder
 
-	b.WriteString(m.theme.Section.Render("Pending changes"))
+	b.WriteString(m.theme.Section.Render(m.title))
 	b.WriteString("\n\n")
 
 	// Visible height: reserve for header(2) + detail(4) + summary(2) + footer(2) + shell(4)
@@ -436,8 +450,11 @@ func (m Model) viewPlan() string {
 		}
 
 		sym := "+"
-		if it.Action == "remove" {
+		switch it.Action {
+		case "remove":
 			sym = "-"
+		case "update":
+			sym = "↻"
 		}
 		line := fmt.Sprintf("%s %s %s  %s", prefix, sym, it.ID, tui.FormatSize(it.SizeGB))
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,8 +17,8 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/commands"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
-	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
+	"github.com/pkronstrom/svalbard/host-cli/internal/toolkit"
 	"github.com/pkronstrom/svalbard/host-cli/internal/volumes"
 	hosttui "github.com/pkronstrom/svalbard/host-tui"
 	"github.com/pkronstrom/svalbard/tui"
@@ -30,6 +31,9 @@ func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "svalbard",
 		Short: "Provision and reconcile offline knowledge vaults",
+		// main prints the error once; a failed command is not a usage mistake.
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// No subcommand → launch interactive TUI dashboard
 			vaultFlag, _ := cmd.Flags().GetString("vault")
@@ -68,13 +72,44 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// An item this vault already holds can be selected again even after
+			// the catalog dropped it; that is how a removal is taken back.
+			unknown := slices.DeleteFunc(commands.UnknownItems(cat, ids), func(id string) bool {
+				return slices.ContainsFunc(m.Realized.Entries, func(e manifest.RealizedEntry) bool { return e.ID == id })
+			})
+			if len(unknown) > 0 {
+				return fmt.Errorf("not in the catalog: %s; run \"svalbard catalog\" to list ids", strings.Join(unknown, ", "))
+			}
+			defaults, err := catalog.LoadDepDefaultsAuto()
+			if err != nil {
+				return fmt.Errorf("loading dep defaults: %w", err)
+			}
+			deps, missing := commands.RequiredDependencies(cat, defaults, ids)
+			if len(missing) > 0 {
+				return fmt.Errorf("missing catalog recipes: %s", strings.Join(missing, ", "))
+			}
+			before := len(m.Desired.Items)
 			if err := commands.AddItems(&m, ids); err != nil {
 				return err
+			}
+			requested := len(m.Desired.Items)
+			if err := commands.AddItems(&m, deps); err != nil {
+				return err
+			}
+			added := m.Desired.Items[before:]
+			if len(added) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "Already selected; nothing added")
+				return nil
 			}
 			if err := manifest.Save(mPath, m); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Added %d item(s) to desired state\n", len(ids))
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "Added %d item(s) to desired state (%s)\n", len(added), sizeOf(cat, added, m.Desired.Options.HostPlatforms))
+			if required := m.Desired.Items[requested:]; len(required) > 0 {
+				fmt.Fprintf(out, "Includes required: %s\n", strings.Join(required, ", "))
+			}
+			fmt.Fprintln(out, "Run \"svalbard apply\" to download")
 			for _, warning := range commands.DrafterWarnings(cat, m.Desired.Items) {
 				fmt.Fprintln(cmd.ErrOrStderr(), warning)
 			}
@@ -105,13 +140,31 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			withdrawn := commands.BuildStatus(cat, m).Withdrawn
+			before := len(m.Desired.Items)
 			if err := commands.RemoveItems(&m, ids); err != nil {
 				return err
+			}
+			removed := before - len(m.Desired.Items)
+			if removed == 0 {
+				return fmt.Errorf("none of %s is selected in this vault; run \"svalbard status\"", strings.Join(args, ", "))
 			}
 			if err := manifest.Save(mPath, m); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Removed %d item(s) from desired state\n", len(ids))
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "Removed %d item(s) from desired state\n", removed)
+			if defaults, err := catalog.LoadDepDefaultsAuto(); err == nil {
+				if required := commands.StillRequired(cat, defaults, m.Desired.Items, ids); len(required) > 0 {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: selected items still need %s\n", strings.Join(required, ", "))
+				}
+			}
+			for _, id := range ids {
+				if slices.Contains(withdrawn, id) {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s is no longer in the catalog; once apply deletes it, it cannot be downloaded again (\"svalbard add %s\" before applying keeps it)\n", id, id)
+				}
+			}
+			fmt.Fprintln(out, "Run \"svalbard apply\" to update the vault")
 			return nil
 		},
 	}
@@ -130,10 +183,18 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p := planner.Build(m)
-			return commands.WritePlan(cmd.OutOrStdout(), p)
+			cat, err := loadCatalog(cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			detail := commands.DescribePlan(cat, m)
+			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+				return writeJSON(cmd.OutOrStdout(), detail)
+			}
+			return commands.WritePlanDetail(cmd.OutOrStdout(), detail)
 		},
 	}
+	planCmd.Flags().Bool("json", false, "print the plan as JSON")
 
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -149,9 +210,17 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return commands.WriteStatus(cmd.OutOrStdout(), m)
+			cat, err := loadCatalog(cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+				return writeJSON(cmd.OutOrStdout(), commands.BuildStatus(cat, m))
+			}
+			return commands.WriteStatus(cmd.OutOrStdout(), cat, m)
 		},
 	}
+	statusCmd.Flags().Bool("json", false, "print the status as JSON")
 
 	applyCmd := &cobra.Command{
 		Use:   "apply",
@@ -168,24 +237,13 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := commands.ApplyVault(ctx, vaultRoot, cat); err != nil {
-				return err
-			}
-			m, err := manifest.Load(filepath.Join(vaultRoot, "manifest.yaml"))
-			if err != nil {
-				return fmt.Errorf("loading applied manifest: %w", err)
-			}
-			if err := commands.RunConfiguredIndex(ctx, vaultRoot, m.Desired.Options.IndexStrategy, cmd.OutOrStdout(), nil, nil); err != nil {
-				return fmt.Errorf("apply completed but indexing failed: %w", err)
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Apply complete")
-			return nil
+			return applyAndIndex(ctx, vaultRoot, cat, cmd.OutOrStdout())
 		},
 	}
 
 	indexCmd := &cobra.Command{
 		Use:   "index",
-		Short: "Build full-text search index from ZIM files in the vault",
+		Short: "Build the search index from ZIM files in the vault",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -194,9 +252,20 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return commands.IndexVaultContext(ctx, vaultRoot, false, cmd.OutOrStdout(), nil)
+			out := cmd.OutOrStdout()
+			switch kind, _ := cmd.Flags().GetString("type"); kind {
+			case "keyword":
+				return commands.IndexVaultContext(ctx, vaultRoot, false, out, nil)
+			case "semantic":
+				return commands.IndexSemantic(ctx, vaultRoot, false, out, nil)
+			case "full":
+				return commands.RunConfiguredIndex(ctx, vaultRoot, "full", out, nil, nil)
+			default:
+				return fmt.Errorf("unknown index type %q; use keyword, semantic or full", kind)
+			}
 		},
 	}
+	indexCmd.Flags().String("type", "keyword", "what to build: keyword, semantic (needs an embedding model on the vault) or full (both)")
 
 	root.AddCommand(
 		newInitCommand(),
@@ -208,6 +277,8 @@ func NewRootCommand() *cobra.Command {
 		newImportCommand(),
 		newZimCommand(),
 		newPresetCommand(),
+		newCatalogCommand(),
+		newUpdateCommand(),
 		indexCmd,
 	)
 
@@ -243,9 +314,25 @@ func mapSemanticIndexEvent(p commands.SemanticProgress, fullIndex bool) hosttui.
 func newInitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init [path]",
-		Short: "Open the guided vault setup wizard",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Create a vault: the guided wizard, or directly with --preset",
+		Long: "Without flags, opens the guided setup wizard.\n\n" +
+			"With --preset or --add, creates the vault at <path> without the wizard: the\n" +
+			"preset's items, plus --add, minus --remove, plus the dependencies they need.",
+		Example: "  svalbard init /Volumes/STICK --preset default-64 --apply\n" +
+			"  svalbard init ./vault --preset default-32 --add ai/harnesses --remove ifixit --platform all",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			presetFlag, _ := cmd.Flags().GetString("preset")
+			addFlag, _ := cmd.Flags().GetStringSlice("add")
+			if presetFlag != "" || len(addFlag) > 0 {
+				return initWithoutWizard(cmd, args, presetFlag, addFlag)
+			}
+			for _, name := range []string{"remove", "platform", "apply"} {
+				if cmd.Flags().Changed(name) {
+					return fmt.Errorf("--%s needs --preset or --add", name)
+				}
+			}
+
 			prefill := ""
 			if len(args) > 0 {
 				abs, err := filepath.Abs(args[0])
@@ -274,6 +361,172 @@ func newInitCommand() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().String("preset", "", "preset to start from (see \"svalbard preset list\")")
+	cmd.Flags().StringSlice("add", nil, "recipe ids, packs or presets to add")
+	cmd.Flags().StringSlice("remove", nil, "recipe ids, packs or presets to leave out")
+	cmd.Flags().StringSlice("platform", nil, "platforms the vault runs on, or \"all\" (default: this computer's)")
+	cmd.Flags().Bool("apply", false, "download the content and build the search index right away")
+
+	return cmd
+}
+
+// initWithoutWizard creates a vault from flags, with the same result the
+// wizard produces for the same choices.
+func initWithoutWizard(cmd *cobra.Command, args []string, presetName string, add []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("init --preset needs the vault path: svalbard init <path> --preset <name>")
+	}
+	path, err := filepath.Abs(args[0])
+	if err != nil {
+		return fmt.Errorf("resolving path: %w", err)
+	}
+	if info, err := os.Stat(filepath.Dir(path)); err != nil || !info.IsDir() {
+		return fmt.Errorf("parent directory does not exist: %s", filepath.Dir(path))
+	}
+
+	platforms, _ := cmd.Flags().GetStringSlice("platform")
+	supported := toolkit.SupportedPlatforms()
+	switch {
+	case len(platforms) == 0:
+		platforms = []string{apply.HostPlatform()}
+	case len(platforms) == 1 && platforms[0] == "all":
+		platforms = supported
+	default:
+		for _, p := range platforms {
+			if !slices.Contains(supported, p) {
+				return fmt.Errorf("unknown platform %q; use %s or all", p, strings.Join(supported, ", "))
+			}
+		}
+	}
+
+	cat, err := loadCatalog(cmd.ErrOrStderr())
+	if err != nil {
+		return err
+	}
+	defaults, err := catalog.LoadDepDefaultsAuto()
+	if err != nil {
+		return fmt.Errorf("loading dep defaults: %w", err)
+	}
+	remove, _ := cmd.Flags().GetStringSlice("remove")
+	ids, region, err := commands.ResolveInitSelection(cat, defaults, presetName, add, remove)
+	if err != nil {
+		return err
+	}
+	if err := commands.InitVaultWithOptions(path, ids, presetName, region, platforms); err != nil {
+		return err
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "Created vault at %s: %d items, %s, for %s\n", path, len(ids),
+		sizeOf(cat, ids, platforms), strings.Join(platforms, ", "))
+	if runApply, _ := cmd.Flags().GetBool("apply"); !runApply {
+		fmt.Fprintf(out, "Run \"svalbard apply --vault %s\" to download\n", path)
+		return nil
+	}
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return applyAndIndex(ctx, path, cat, out)
+}
+
+// newUpdateCommand reacquires installed items from their current recipes.
+func newUpdateCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "update [item...]",
+		Short: "Update installed items whose recipe changed since they were installed",
+		Long: "Without arguments, lists the installed items that have an update available.\n" +
+			"With item ids, or --all for every item with an update, acquires them again.\n\n" +
+			"Each installed copy is kept until its new one is in place and restored if the\n" +
+			"download or build fails. Items the catalog no longer has cannot be updated and\n" +
+			"stay on the vault. \"svalbard apply\" never updates installed items.",
+		Example: "  svalbard update\n  svalbard update --all\n  svalbard update wikipedia-en-100 ifixit\n  svalbard update wikipedia-en-maxi --replace",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			vaultFlag, _ := cmd.Flags().GetString("vault")
+			vaultRoot, err := ResolveVaultRoot(vaultFlag)
+			if err != nil {
+				return err
+			}
+			m, err := manifest.Load(filepath.Join(vaultRoot, "manifest.yaml"))
+			if err != nil {
+				return err
+			}
+			cat, err := loadCatalog(cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			all, _ := cmd.Flags().GetBool("all")
+			replace, _ := cmd.Flags().GetBool("replace")
+			available := commands.AvailableUpdates(cat, m)
+
+			if len(args) == 0 && !all {
+				if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+					return writeJSON(out, available)
+				}
+				for _, item := range available {
+					fmt.Fprintf(out, "  %s  %s  %s\n", item.ID, tui.FormatSize(item.SizeGB), item.Description)
+				}
+				if len(available) > 0 {
+					fmt.Fprintf(out, "\n%d update(s) available. Run \"svalbard update --all\", or name the items to update.\n", len(available))
+				} else {
+					fmt.Fprintln(out, "No updates available")
+				}
+				if withdrawn := commands.BuildStatus(cat, m).Withdrawn; len(withdrawn) > 0 {
+					fmt.Fprintf(out, "No longer in the catalog, kept on this vault: %s\n", strings.Join(withdrawn, ", "))
+				}
+				return nil
+			}
+			ids := args
+			if all {
+				if len(args) > 0 {
+					return fmt.Errorf("give item ids or --all, not both")
+				}
+				for _, item := range available {
+					ids = append(ids, item.ID)
+				}
+				if len(ids) == 0 {
+					fmt.Fprintln(out, "No updates available")
+					return nil
+				}
+			}
+			if err := commands.UpdateVault(ctx, vaultRoot, cat, ids, replace, applyLines(out)); err != nil {
+				return err
+			}
+			return indexAfter(ctx, vaultRoot, "Update", out)
+		},
+	}
+	cmd.Flags().Bool("all", false, "update every item that has an update available")
+	cmd.Flags().Bool("replace", false, "delete each installed copy before downloading its update (for vaults without room for both)")
+	cmd.Flags().Bool("json", false, "print the available updates as JSON")
+	return cmd
+}
+
+// newCatalogCommand lists the recipes a vault can hold, the CLI counterpart
+// of the TUI browse screen.
+func newCatalogCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "catalog [words...]",
+		Short: "List the items a vault can hold, optionally filtered by words",
+		Long: "Lists recipe ids with type, size, the packs that include them and a description.\n" +
+			"Every word given must appear in one of those fields.",
+		Example: "  svalbard catalog\n  svalbard catalog wikipedia en\n  svalbard catalog --json map",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cat, err := loadCatalog(cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			entries := commands.CatalogEntries(cat, vaultPlatforms(cmd), strings.Join(args, " "))
+			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+				return writeJSON(cmd.OutOrStdout(), entries)
+			}
+			if len(entries) == 0 {
+				return fmt.Errorf("no catalog item matches %q", strings.Join(args, " "))
+			}
+			return commands.WriteCatalog(cmd.OutOrStdout(), entries)
+		},
+	}
+	cmd.Flags().Bool("json", false, "print the items as JSON")
 	return cmd
 }
 
@@ -353,17 +606,44 @@ func newPresetCommand() *cobra.Command {
 		Short: "Manage presets",
 	}
 
-	cmd.AddCommand(&cobra.Command{
+	listCmd := &cobra.Command{
 		Use:   "list",
-		Short: "List available presets",
+		Short: "List available presets and packs",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cat, err := loadCatalog(cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
+			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+				return writeJSON(cmd.OutOrStdout(), commands.PresetSummaries(cat, vaultPlatforms(cmd)))
+			}
 			return commands.WritePresetList(cmd.OutOrStdout(), cat)
 		},
-	})
+	}
+	listCmd.Flags().Bool("json", false, "print presets with kind, region, size and description as JSON")
+	cmd.AddCommand(listCmd)
+
+	showCmd := &cobra.Command{
+		Use:   "show <name>",
+		Short: "List the items a preset or pack contains",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cat, err := loadCatalog(cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			entries, err := commands.PresetEntries(cat, vaultPlatforms(cmd), args[0])
+			if err != nil {
+				return err
+			}
+			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+				return writeJSON(cmd.OutOrStdout(), entries)
+			}
+			return commands.WriteCatalog(cmd.OutOrStdout(), entries)
+		},
+	}
+	showCmd.Flags().Bool("json", false, "print the items as JSON")
+	cmd.AddCommand(showCmd)
 
 	copyCmd := &cobra.Command{
 		Use:   "copy <source> <target>",
@@ -608,7 +888,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			presetName = m.Desired.Presets[0]
 		}
 
-		return hosttui.VaultStatus{
+		status := hosttui.VaultStatus{
 			VaultPath:     root,
 			VaultName:     m.Vault.Name,
 			PresetName:    presetName,
@@ -616,7 +896,54 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			RealizedCount: realized,
 			PendingCount:  len(m.Desired.Items) - realized,
 			LastApplied:   m.Realized.AppliedAt,
-		}, nil
+		}
+		if cat, err := catalog.LoadCatalog(); err == nil {
+			report := commands.BuildStatus(cat, m)
+			status.UpdateCount = len(report.Updates)
+			status.WithdrawnCount = len(report.Withdrawn)
+		}
+		return status, nil
+	}
+
+	deps.LoadUpdates = func() (hosttui.PlanSummary, error) {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return hosttui.PlanSummary{}, err
+		}
+		m, err := manifest.Load(filepath.Join(root, "manifest.yaml"))
+		if err != nil {
+			return hosttui.PlanSummary{}, err
+		}
+		cat, err := catalog.LoadCatalog()
+		if err != nil {
+			return hosttui.PlanSummary{}, err
+		}
+		var summary hosttui.PlanSummary
+		for _, it := range commands.AvailableUpdates(cat, m) {
+			summary.ToDownload = append(summary.ToDownload, hosttui.PlanItem{
+				ID: it.ID, Action: it.Action, Type: it.Type, SizeGB: it.SizeGB, Description: it.Description,
+			})
+			summary.DownloadGB += it.SizeGB
+		}
+		return summary, nil
+	}
+
+	deps.RunUpdate = func(ctx context.Context, ids []string, onProgress func(hosttui.ApplyEvent)) error {
+		root, err := ResolveVaultRoot(vaultFlag)
+		if err != nil {
+			return err
+		}
+		cat, err := catalog.LoadCatalog()
+		if err != nil {
+			return err
+		}
+		return commands.UpdateVault(ctx, root, cat, ids, false, func(ev apply.ProgressEvent) {
+			onProgress(hosttui.ApplyEvent{
+				ID: ev.ID, Procedure: ev.Procedure, State: ev.State,
+				Status: ev.Status, Step: ev.Step, Message: ev.Message,
+				Downloaded: ev.Downloaded, Total: ev.Total, Error: ev.Error,
+			})
+		})
 	}
 
 	deps.LoadDesiredItems = func() ([]string, error) {
@@ -642,43 +969,29 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 		if err != nil {
 			return hosttui.PlanSummary{}, err
 		}
-		p := planner.Build(m)
-
 		cat, err := catalog.LoadCatalog()
 		if err != nil {
 			return hosttui.PlanSummary{}, err
 		}
 
-		platforms := m.Desired.Options.HostPlatforms
-		var summary hosttui.PlanSummary
-		for _, id := range p.ToDownload {
-			item := hosttui.PlanItem{ID: id, Action: "download"}
-			if recipe, ok := cat.RecipeByID(id); ok {
-				item.Type = recipe.Type
-				item.SizeGB = recipe.SizeGBFor(platforms)
-				item.Description = recipe.Description
-				if recipe.Build != nil {
-					item.Network = recipe.Build.Network
-					item.BuildDownloadGB = recipe.Build.EstimatedDownloadGB
-					item.BuildWorkGB = recipe.Build.EstimatedWorkGB
-					item.Requires = append([]string(nil), recipe.Build.Requires...)
-					summary.BuildDownloadGB += item.BuildDownloadGB
-					summary.BuildWorkGB += item.BuildWorkGB
-					summary.ToolsRequired = summary.ToolsRequired || len(item.Requires) > 0
-				}
+		detail := commands.DescribePlan(cat, m)
+		planItems := func(items []commands.PlanItem) []hosttui.PlanItem {
+			var mapped []hosttui.PlanItem
+			for _, it := range items {
+				mapped = append(mapped, hosttui.PlanItem{
+					ID: it.ID, Action: it.Action, Type: it.Type, SizeGB: it.SizeGB,
+					Description: it.Description, Network: it.Network,
+					BuildDownloadGB: it.BuildDownloadGB, BuildWorkGB: it.BuildWorkGB,
+					Requires: it.Requires,
+				})
 			}
-			summary.ToDownload = append(summary.ToDownload, item)
-			summary.DownloadGB += item.SizeGB
+			return mapped
 		}
-		for _, id := range p.ToRemove {
-			item := hosttui.PlanItem{ID: id, Action: "remove"}
-			if recipe, ok := cat.RecipeByID(id); ok {
-				item.Type = recipe.Type
-				item.SizeGB = recipe.SizeGBFor(platforms)
-				item.Description = recipe.Description
-			}
-			summary.ToRemove = append(summary.ToRemove, item)
-			summary.RemoveGB += item.SizeGB
+		summary := hosttui.PlanSummary{
+			ToDownload: planItems(detail.Download), ToRemove: planItems(detail.Remove),
+			DownloadGB: detail.DownloadGB, RemoveGB: detail.RemoveGB,
+			BuildDownloadGB: detail.BuildDownloadGB, BuildWorkGB: detail.BuildWorkGB,
+			ToolsRequired: detail.ToolsRequired,
 		}
 		return summary, nil
 	}

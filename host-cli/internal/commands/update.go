@@ -1,0 +1,135 @@
+package commands
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+	"strings"
+
+	"github.com/pkronstrom/svalbard/host-cli/internal/apply"
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
+	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
+	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
+	"github.com/pkronstrom/svalbard/host-cli/internal/volumes"
+	"github.com/pkronstrom/svalbard/tui"
+)
+
+// Version states of an installed item, comparing the acquisition hash
+// recorded at install with its recipe's hash today.
+const (
+	VersionCurrent   = "current"   // installed from the recipe as it is now
+	VersionUpdate    = "update"    // the recipe changed since install
+	VersionUnknown   = "unknown"   // installed before hashes were recorded
+	VersionWithdrawn = "withdrawn" // no longer in the catalog; the copy is kept
+	VersionLocal     = "local"     // imported by the user
+)
+
+// ItemVersion returns the version state of the installed item whose realized
+// entries are given. A multi-platform item has one entry per platform.
+func ItemVersion(cat *catalog.Catalog, entries []manifest.RealizedEntry) string {
+	if entries[0].SourceStrategy == "local" || strings.HasPrefix(entries[0].ID, "local:") {
+		return VersionLocal
+	}
+	recipe, ok := cat.RecipeByID(entries[0].ID)
+	if !ok {
+		return VersionWithdrawn
+	}
+	hash := recipe.AcquisitionHash()
+	version := VersionCurrent
+	for _, e := range entries {
+		switch {
+		case e.AcquisitionHash == "":
+			return VersionUnknown
+		case e.AcquisitionHash != hash:
+			version = VersionUpdate
+		}
+	}
+	return version
+}
+
+// realizedByID groups m's realized entries by item id.
+func realizedByID(m manifest.Manifest) map[string][]manifest.RealizedEntry {
+	byID := make(map[string][]manifest.RealizedEntry, len(m.Realized.Entries))
+	for _, e := range m.Realized.Entries {
+		byID[e.ID] = append(byID[e.ID], e)
+	}
+	return byID
+}
+
+// AvailableUpdates lists the desired, installed items whose recipe changed
+// since they were installed, in desired order, with their catalog details.
+func AvailableUpdates(cat *catalog.Catalog, m manifest.Manifest) []PlanItem {
+	installed := realizedByID(m)
+	updates := []PlanItem{}
+	for _, id := range m.Desired.Items {
+		entries := installed[id]
+		if len(entries) == 0 || ItemVersion(cat, entries) != VersionUpdate {
+			continue
+		}
+		recipe, _ := cat.RecipeByID(id)
+		updates = append(updates, PlanItem{
+			ID: id, Action: "update", Type: recipe.Type, Description: recipe.Description,
+			SizeGB: recipe.SizeGBFor(m.Desired.Options.HostPlatforms),
+		})
+	}
+	return updates
+}
+
+// UpdateVault acquires the installed items ids again from their current
+// recipes and regenerates the vault's runtime files. Each item's installed
+// copy is kept until its new one is in place and restored if that fails;
+// with replace it is deleted first, for vaults without room for both.
+func UpdateVault(ctx context.Context, root string, cat *catalog.Catalog, ids []string, replace bool, onProgress ...apply.ProgressFunc) error {
+	slog.Info("update vault", "root", root, "ids", ids, "replace", replace)
+	mPath := filepath.Join(root, "manifest.yaml")
+	m, err := manifest.Load(mPath)
+	if err != nil {
+		return err
+	}
+
+	installed := realizedByID(m)
+	var needGB float64
+	for _, id := range ids {
+		entries := installed[id]
+		if len(entries) == 0 {
+			return fmt.Errorf("%s is not installed; \"svalbard apply\" downloads pending items", id)
+		}
+		switch ItemVersion(cat, entries) {
+		case VersionWithdrawn:
+			return fmt.Errorf("%s is no longer in the catalog, so it cannot be updated; its installed copy is kept", id)
+		case VersionLocal:
+			return fmt.Errorf("%s is a local import; import the new file to replace it", id)
+		}
+		recipe, _ := cat.RecipeByID(id)
+		if recipe.Type == "python-package" || recipe.Type == "python-venv" {
+			return fmt.Errorf("%s is a Python tool; update it with \"svalbard remove %s\", apply, then add it back", id, id)
+		}
+		needGB += recipe.SizeGBFor(m.Desired.Options.HostPlatforms)
+	}
+	if freeGB := volumes.FreeSpaceGB(root); !replace && freeGB > 0 && needGB > freeGB {
+		return fmt.Errorf("updating keeps each installed copy until its new one arrives, which needs about %s; %s is free. Update fewer items at once, or pass --replace to delete the installed copies first",
+			tui.FormatSize(needGB), tui.FormatSize(freeGB))
+	}
+
+	err = runPlan(ctx, root, &m, planner.Plan{ToUpdate: ids, Replace: replace}, cat, onProgress...)
+	if err != nil && !replace {
+		return fmt.Errorf("%w\nthe installed copy of each item that failed was kept", err)
+	}
+	return err
+}
+
+// runPlan executes plan against the vault at root, saving the manifest after
+// each completed item and once more at the end.
+func runPlan(ctx context.Context, root string, m *manifest.Manifest, plan planner.Plan, cat *catalog.Catalog, onProgress ...apply.ProgressFunc) error {
+	mPath := filepath.Join(root, "manifest.yaml")
+	applyErr := apply.RunWithCheckpoint(ctx, root, m, plan, cat, func(snapshot manifest.Manifest) error {
+		return manifest.Save(mPath, snapshot)
+	}, onProgress...)
+	saveErr := manifest.Save(mPath, *m)
+	if applyErr != nil || saveErr != nil {
+		return errors.Join(applyErr, saveErr)
+	}
+	return nil
+}
