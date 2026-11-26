@@ -170,6 +170,12 @@ func TestPrepareClientLaunchConfigForPiQwen38UsesNativeDefaults(t *testing.T) {
 	if got := model["maxTokens"]; got != float64(4096) {
 		t.Errorf("maxTokens = %v, want 4096 for an 8K context", got)
 	}
+	// pi keeps 4,096 tokens of whatever window it is told free of every
+	// request. Told the real 8,192, it has 4,096 minus its prompt left for
+	// the answer, which with the wiki's tools is nothing.
+	if got := model["contextWindow"]; got != float64(8192+4096-512) {
+		t.Errorf("contextWindow = %v, want the 8K window plus pi's margin less a sixteenth", got)
+	}
 	if got := model["reasoning"]; got != true {
 		t.Errorf("reasoning = %v, want true", got)
 	}
@@ -202,8 +208,10 @@ func TestPrepareClientLaunchConfigForPiQwen38UsesNativeDefaults(t *testing.T) {
 		t.Errorf("Qwen thinking level = %v, want medium", got)
 	}
 	compaction := settings["compaction"].(map[string]any)
-	if got := compaction["reserveTokens"]; got != float64(4096) {
-		t.Errorf("compaction reserveTokens = %v, want 4096", got)
+	// Compaction starts when an eighth of the real window is left: counted
+	// from the window pi was told, that is 3,584 + 1,024.
+	if got := compaction["reserveTokens"]; got != float64(4608) {
+		t.Errorf("compaction reserveTokens = %v, want 4608", got)
 	}
 	if got := compaction["keepRecentTokens"]; got != float64(2048) {
 		t.Errorf("compaction keepRecentTokens = %v, want 2048", got)
@@ -253,7 +261,7 @@ func TestPrepareClientLaunchConfigForPiRefreshesGeneratedCompaction(t *testing.T
 		wantReserve, wantKeep int
 	}{
 		{"max", 8192, 20000},
-		{"fast", 4096, 2048},
+		{"fast", 4608, 2048},
 		{"max again", 8192, 20000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -322,8 +330,8 @@ func TestPrepareClientLaunchConfigForPiFillsMissingCustomCompactionReserve(t *te
 		t.Fatal(err)
 	}
 	compaction := readJSON(t, settingsPath)["compaction"].(map[string]any)
-	if got := compaction["reserveTokens"]; got != 4096.0 {
-		t.Errorf("generated reserveTokens = %v, want 4096", got)
+	if got := compaction["reserveTokens"]; got != 4608.0 {
+		t.Errorf("generated reserveTokens = %v, want 4608", got)
 	}
 	if got := compaction["keepRecentTokens"]; got != 111.0 {
 		t.Errorf("custom keepRecentTokens = %v, want 111", got)

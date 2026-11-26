@@ -267,7 +267,7 @@ const piProvider = "svalbard"
 
 func writePiModels(path, baseURL, modelName string, ctxSize int, isGemma bool) error {
 	model := map[string]any{
-		"id": modelName, "contextWindow": ctxSize, "maxTokens": piMaxTokens(ctxSize),
+		"id": modelName, "contextWindow": piContextWindow(ctxSize), "maxTokens": piMaxTokens(ctxSize),
 		"cost": map[string]float64{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
 	}
 	if sampling := llamaserve.SamplingParams(modelName); len(sampling) > 0 {
@@ -434,6 +434,38 @@ compaction:
 `, piProvider+"/"+modelName, piMaxTokens(ctxSize), min(ctxSize/4, 20000))
 }
 
+// piSafetyTokens is what pi 1.6.1 keeps free of every request, whatever the
+// window and whatever its settings say: it sends max_completion_tokens =
+// min(maxTokens, contextWindow - estimated prompt - 4096)
+// (clampMaxTokensToContext in its ai package). On the 8K tier that is 4,096
+// minus the prompt, and pi's own prompt with the drive's tools is 3,000 to
+// 4,800 tokens: with the wiki installed it asked the model for one token.
+const piSafetyTokens = 4096
+
+// piContextWindow is the window pi is told. From the Balanced tier up it is
+// llama-server's. Below, it is larger by pi's fixed margin less a sixteenth of
+// the real window, so that what pi takes to be free is what really is free,
+// with the sixteenth left for the error in its estimate of the prompt (it
+// counts characters). pi's footer then shows this number, not the tier's.
+func piContextWindow(ctxSize int) int {
+	if ctxSize >= llamaserve.CtxBalanced {
+		return ctxSize
+	}
+	return ctxSize + piSafetyTokens - ctxSize/16
+}
+
+// piReserveTokens is how much of the window pi keeps free before it compacts
+// the conversation (it compacts above contextWindow - reserveTokens). Below
+// the Balanced tier that is an eighth of the real window, counted from the
+// window pi was told: half of an 8K window, as the larger tiers' rule gives,
+// is less than the prompt alone and would compact at every turn.
+func piReserveTokens(ctxSize int) int {
+	if ctxSize >= llamaserve.CtxBalanced {
+		return piMaxTokens(ctxSize)
+	}
+	return piContextWindow(ctxSize) - ctxSize + ctxSize/8
+}
+
 func piMaxTokens(ctxSize int) int {
 	if ctxSize/2 < 8192 {
 		return ctxSize / 2
@@ -453,7 +485,7 @@ func ensurePiSettings(path, modelName string, ctxSize int) error {
 	}
 	settingsMissing := os.IsNotExist(err)
 
-	defaults := map[string]int{"reserveTokens": piMaxTokens(ctxSize), "keepRecentTokens": min(ctxSize/4, 20000)}
+	defaults := map[string]int{"reserveTokens": piReserveTokens(ctxSize), "keepRecentTokens": min(ctxSize/4, 20000)}
 	sidecarPath := filepath.Join(filepath.Dir(path), ".svalbard-compaction.json")
 	owned, hasOwned, err := readPiCompactionOwnership(sidecarPath)
 	if err != nil {
