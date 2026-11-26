@@ -232,3 +232,21 @@ func TestSkillsContinuationNamesTheProgramAsItWasRun(t *testing.T) {
 		t.Errorf("usage = %q", out)
 	}
 }
+
+// Run by its path, as from a mounted stick, the command names the drive's run
+// script; found on PATH, as in a harness's shell, its own name.
+func TestSkillsProgramFollowsHowTheBinaryWasRun(t *testing.T) {
+	root := newSkillsDrive(t)
+	t.Setenv("DRIVE_ROOT", root)
+	old := skillsProgram
+	t.Cleanup(func() { skillsProgram = old })
+	for argv0, want := range map[string]string{
+		"svalbard-drive": "\n  svalbard-drive skills find <words...>",
+		filepath.Join(root, ".svalbard", "runtime", "macos-arm64", "svalbard-drive"): "\n  " + shellWord(filepath.Join(root, "run")) + " skills find <words...>",
+	} {
+		skillsProgram = old
+		if out, err := runAs(t, argv0, "skills"); err != nil || !strings.Contains(out, want) {
+			t.Errorf("run as %s: %q, %v; want %q", argv0, out, err, want)
+		}
+	}
+}

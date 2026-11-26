@@ -261,12 +261,18 @@ func shellQuote(value string) string {
 // to stdout, which is a pipe here as it is under a script.
 func runSubcommand(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	return runAs(t, "svalbard-drive", args...)
+}
+
+// runAs is runSubcommand with the program run as argv0.
+func runAs(t *testing.T, argv0 string, args ...string) (string, error) {
+	t.Helper()
 	stdout, writeStdout, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	oldArgs, oldStdout := os.Args, os.Stdout
-	os.Args = append([]string{"svalbard-drive"}, args...)
+	os.Args = append([]string{argv0}, args...)
 	os.Stdout = writeStdout
 	runErr := run()
 	os.Args, os.Stdout = oldArgs, oldStdout
