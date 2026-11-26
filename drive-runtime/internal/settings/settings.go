@@ -428,10 +428,9 @@ func (s *Store) write() error {
 		_ = tmp.Close()
 		return err
 	}
-	if err := tmp.Chmod(0o644); err != nil {
-		_ = tmp.Close()
-		return err
-	}
+	// Best effort: exFAT and FAT drives take their modes from the mount, and
+	// Linux refuses a chmod there.
+	_ = tmp.Chmod(0o644)
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		return err
