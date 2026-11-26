@@ -43,8 +43,8 @@ func assembleBundle(ctx context.Context, root, id string, recipe catalog.Item, o
 		}
 		filename := filenameFromURL(source.URL)
 		downloaded := filepath.Join(staging, "downloads", filename)
-		if !isArchive(filename) && (source.Strip != "" || len(source.Files) > 0) {
-			return manifest.RealizedEntry{}, fmt.Errorf("%s: strip and files apply only to archives, not %s", id, filename)
+		if !isArchive(filename) && (source.Strip != "" || len(source.Files) > 0 || len(source.Include) > 0) {
+			return manifest.RealizedEntry{}, fmt.Errorf("%s: strip, files and include apply only to archives, not %s", id, filename)
 		}
 		if _, err := fetchFile(ctx, id, source.URL, downloaded, filename, source.SHA256, onProgress); err != nil {
 			return manifest.RealizedEntry{}, err
@@ -58,7 +58,7 @@ func assembleBundle(ctx context.Context, root, id string, recipe catalog.Item, o
 			}
 			continue
 		}
-		if err := extractArchive(downloaded, filepath.Join(tree, dest), source.Strip, source.Files); err != nil {
+		if err := extractArchive(downloaded, filepath.Join(tree, dest), source.Strip, source.Files, source.Include); err != nil {
 			return manifest.RealizedEntry{}, fmt.Errorf("%s: unpacking %s: %w", id, filename, err)
 		}
 	}
@@ -90,11 +90,16 @@ func assembleBundle(ctx context.Context, root, id string, recipe catalog.Item, o
 	}, nil
 }
 
-// extractArchive writes the regular files below strip (optionally only those
-// listed in files) into destDir. Symlinks and other special entries are
-// skipped, and every listed file must be present.
-func extractArchive(archivePath, destDir, strip string, files []string) error {
+// extractArchive writes the regular files below strip into destDir:
+// optionally only those listed in files, or only those matching an include
+// pattern. Symlinks and other special entries are skipped, every listed file
+// must be present and every pattern must match a file.
+func extractArchive(archivePath, destDir, strip string, files, include []string) error {
+	if len(files) > 0 && len(include) > 0 {
+		return fmt.Errorf("files and include cannot be used together: list the exact names as include patterns")
+	}
 	strip = strings.Trim(path.Clean("/"+strip), "/")
+	matched := make([]bool, len(include))
 	wanted := make(map[string]bool, len(files))
 	for _, name := range files {
 		clean, err := localPath(name)
@@ -121,6 +126,17 @@ func extractArchive(archivePath, destDir, strip string, files []string) error {
 				return nil
 			}
 			wanted[rel] = true
+		}
+		if len(include) > 0 {
+			keep := false
+			for i, pattern := range include {
+				if matchInclude(pattern, rel) {
+					matched[i], keep = true, true
+				}
+			}
+			if !keep {
+				return nil
+			}
 		}
 		target := filepath.Join(destDir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -156,10 +172,38 @@ func extractArchive(archivePath, destDir, strip string, files []string) error {
 			return fmt.Errorf("archive has no %s", path.Join(strip, name))
 		}
 	}
+	for i, pattern := range include {
+		if !matched[i] {
+			return fmt.Errorf("include pattern %q matches no file below %q", pattern, strip)
+		}
+	}
 	if written == 0 {
 		return fmt.Errorf("no files below %q", strip)
 	}
 	return nil
+}
+
+// matchInclude reports whether rel, a slash path below the strip directory,
+// matches an include pattern: path.Match segment by segment, where a final
+// "**" segment matches everything below the segments before it.
+func matchInclude(pattern, rel string) bool {
+	patternSegs := strings.Split(strings.Trim(pattern, "/"), "/")
+	relSegs := strings.Split(rel, "/")
+	if last := len(patternSegs) - 1; patternSegs[last] == "**" {
+		if len(relSegs) <= last {
+			return false
+		}
+		patternSegs, relSegs = patternSegs[:last], relSegs[:last]
+	}
+	if len(patternSegs) != len(relSegs) {
+		return false
+	}
+	for i, seg := range patternSegs {
+		if ok, err := path.Match(seg, relSegs[i]); err != nil || !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func isArchive(filename string) bool {

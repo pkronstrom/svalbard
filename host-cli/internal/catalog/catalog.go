@@ -96,6 +96,10 @@ type BundleSource struct {
 	// Files limits extraction to these archive paths below Strip; each must
 	// exist. Empty extracts every regular file.
 	Files []string `yaml:"files,omitempty"`
+	// Include limits extraction to the paths below Strip that match one of
+	// these patterns: path.Match segment by segment, and a final "/**" for
+	// everything below. Every pattern must match a file. Not with Files.
+	Include []string `yaml:"include,omitempty" json:"Include,omitempty"`
 }
 
 // EmbeddingSpec describes how an embedding model should be used at index and

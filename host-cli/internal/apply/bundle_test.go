@@ -201,7 +201,7 @@ func TestExtractArchiveKeepsEntriesInsideDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(dir, "out", "app")
-	if err := extractArchive(archive, dest, "", nil); err != nil {
+	if err := extractArchive(archive, dest, "", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, rel := range []string{"escape.txt", "abs.txt"} {
@@ -214,5 +214,75 @@ func TestExtractArchiveKeepsEntriesInsideDestination(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "escape.txt")); !os.IsNotExist(err) {
 		t.Fatalf("entry escaped the destination: %v", err)
+	}
+}
+
+// npmPackage is a package tarball with more than a trimmed install keeps.
+func npmPackage(t *testing.T, dir string) string {
+	t.Helper()
+	archive := filepath.Join(dir, "pkg.tgz")
+	body := tarGz(t,
+		archiveEntry{name: "package/package.json", body: "{}"},
+		archiveEntry{name: "package/README.md", body: "readme"},
+		archiveEntry{name: "package/LICENSE.txt", body: "MIT"},
+		archiveEntry{name: "package/index.d.ts", body: "types"},
+		archiveEntry{name: "package/src/index.ts", body: "src"},
+		archiveEntry{name: "package/dist/lib.min.js", body: "min"},
+		archiveEntry{name: "package/dist/lib.min.js.map", body: "map"},
+		archiveEntry{name: "package/dist/lib.js", body: "full"},
+		archiveEntry{name: "package/build/a.js", body: "a"},
+		archiveEntry{name: "package/build/deep/b.js", body: "b"},
+	)
+	if err := os.WriteFile(archive, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return archive
+}
+
+func extracted(t *testing.T, dir string) []string {
+	t.Helper()
+	var files []string
+	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(dir, p)
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return err
+	})
+	return files
+}
+
+func TestExtractIncludeGlobs(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "out")
+	include := []string{"package.json", "dist/*.min.js", "*.d.ts", "LICENSE*", "README.md"}
+	if err := extractArchive(npmPackage(t, dir), dest, "package", nil, include); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(extracted(t, dest), ","), "LICENSE.txt,README.md,dist/lib.min.js,index.d.ts,package.json"; got != want {
+		t.Errorf("extracted %s, want %s", got, want)
+	}
+}
+
+func TestExtractIncludeDoubleStar(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "out")
+	if err := extractArchive(npmPackage(t, dir), dest, "package", nil, []string{"build/**"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(extracted(t, dest), ","), "build/a.js,build/deep/b.js"; got != want {
+		t.Errorf("extracted %s, want %s", got, want)
+	}
+}
+
+func TestExtractIncludeNoMatchFails(t *testing.T) {
+	dir := t.TempDir()
+	err := extractArchive(npmPackage(t, dir), filepath.Join(dir, "out"), "package", nil, []string{"package.json", "dist/*.cjs"})
+	if err == nil || !strings.Contains(err.Error(), "dist/*.cjs") {
+		t.Fatalf("err = %v, want one naming the pattern that matched nothing", err)
+	}
+	err = extractArchive(npmPackage(t, dir), filepath.Join(dir, "out2"), "package", []string{"package.json"}, []string{"*.d.ts"})
+	if err == nil || !strings.Contains(err.Error(), "files and include") {
+		t.Fatalf("err = %v, want files and include refused together", err)
 	}
 }
