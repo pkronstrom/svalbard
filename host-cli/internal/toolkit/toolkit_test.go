@@ -784,3 +784,47 @@ func TestGenerateWithoutRecipeMetadataRemovesStaleFile(t *testing.T) {
 		t.Fatalf("stale recipes.json still present: %v", err)
 	}
 }
+
+func TestInstallRuntimeBinariesRemovesItsScratchDirectory(t *testing.T) {
+	scratch, err := newRuntimeScratch("toolkit-scratch-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(scratch) })
+	kept := t.TempDir() // a directory this package did not create, as a stub's is
+
+	sources := make(map[string]string, len(supportedPlatforms))
+	for i, platform := range supportedPlatforms {
+		base := scratch
+		if i == 0 {
+			base = kept
+		}
+		source := filepath.Join(base, platform, runtimeBinaryName)
+		if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(source, []byte("binary "+platform), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		sources[platform] = source
+	}
+	original := runtimeBinarySources
+	runtimeBinarySources = func() (map[string]string, error) { return sources, nil }
+	t.Cleanup(func() { runtimeBinarySources = original })
+
+	root := t.TempDir()
+	if err := installRuntimeBinaries(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, platform := range supportedPlatforms {
+		if _, err := os.Stat(filepath.Join(root, svalbardDir, "runtime", platform, runtimeBinaryName)); err != nil {
+			t.Errorf("runtime binary for %s not installed: %v", platform, err)
+		}
+	}
+	if _, err := os.Stat(scratch); !os.IsNotExist(err) {
+		t.Errorf("scratch directory %s was left behind (err %v)", scratch, err)
+	}
+	if _, err := os.Stat(filepath.Join(kept, supportedPlatforms[0], runtimeBinaryName)); err != nil {
+		t.Errorf("a source directory the package did not create was removed: %v", err)
+	}
+}

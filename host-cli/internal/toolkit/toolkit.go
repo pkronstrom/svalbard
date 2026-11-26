@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
@@ -551,11 +552,38 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 	return os.WriteFile(filepath.Join(root, svalbardDir, actionsFile), data, 0o644)
 }
 
+// runtimeScratch holds the temporary directories the runtime binaries were
+// extracted or built into. Each is tens of megabytes, so it is removed as soon
+// as its binaries are on the drive instead of being left for the system.
+var runtimeScratch sync.Map
+
+func newRuntimeScratch(pattern string) (string, error) {
+	dir, err := os.MkdirTemp("", pattern)
+	if err != nil {
+		return "", err
+	}
+	runtimeScratch.Store(dir, struct{}{})
+	return dir, nil
+}
+
+func discardRuntimeScratch(dir string) {
+	if _, ours := runtimeScratch.LoadAndDelete(dir); ours {
+		_ = os.RemoveAll(dir)
+	}
+}
+
 func installRuntimeBinaries(root string) error {
 	sources, err := runtimeBinarySources()
 	if err != nil {
 		return err
 	}
+	// Sources lie at <scratch>/<platform>/<binary>; a directory this package
+	// did not create (a test's stub) is left alone.
+	defer func() {
+		for _, source := range sources {
+			discardRuntimeScratch(filepath.Dir(filepath.Dir(source)))
+		}
+	}()
 	for _, platform := range supportedPlatforms {
 		source, ok := sources[platform]
 		if !ok {
@@ -711,10 +739,16 @@ func buildDriveRuntimeBinaries() (map[string]string, error) {
 		return nil, err
 	}
 
-	outputRoot, err := os.MkdirTemp("", "svalbard-drive-runtime-")
+	outputRoot, err := newRuntimeScratch("svalbard-drive-runtime-")
 	if err != nil {
 		return nil, err
 	}
+	built := false
+	defer func() {
+		if !built {
+			discardRuntimeScratch(outputRoot)
+		}
+	}()
 
 	binaries := make(map[string]string, len(supportedPlatforms))
 	for _, platform := range supportedPlatforms {
@@ -737,6 +771,7 @@ func buildDriveRuntimeBinaries() (map[string]string, error) {
 		binaries[platform] = outputPath
 	}
 
+	built = true
 	return binaries, nil
 }
 

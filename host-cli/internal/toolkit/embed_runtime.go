@@ -15,8 +15,17 @@ var embeddedRuntime embed.FS
 // embedded filesystem. Returns a map of platform -> temp file path.
 // If no embedded binaries are found (dev mode), returns an error so the caller
 // can fall back to building from source.
-func extractEmbeddedBinaries() (map[string]string, error) {
-	binaries := make(map[string]string, len(supportedPlatforms))
+func extractEmbeddedBinaries() (binaries map[string]string, err error) {
+	binaries = make(map[string]string, len(supportedPlatforms))
+
+	// One directory for all platforms; installRuntimeBinaries removes it once
+	// the binaries are on the drive.
+	tmpDir := ""
+	defer func() {
+		if err != nil && tmpDir != "" {
+			discardRuntimeScratch(tmpDir)
+		}
+	}()
 
 	for _, platform := range supportedPlatforms {
 		embPath := filepath.Join("embedded", platform, runtimeBinaryName)
@@ -29,9 +38,11 @@ func extractEmbeddedBinaries() (map[string]string, error) {
 			return nil, fmt.Errorf("embedded binary for %s too small (%d bytes), likely placeholder", platform, len(data))
 		}
 
-		tmpDir, err := os.MkdirTemp("", "svalbard-embedded-runtime-")
-		if err != nil {
-			return nil, err
+		if tmpDir == "" {
+			tmpDir, err = newRuntimeScratch("svalbard-embedded-runtime-")
+			if err != nil {
+				return nil, err
+			}
 		}
 		outPath := filepath.Join(tmpDir, platform, runtimeBinaryName)
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
