@@ -93,3 +93,32 @@ func TestAcquisitionHashFollowsWhatGetsInstalled(t *testing.T) {
 		seen[got] = name
 	}
 }
+
+func TestRasterBandsParseAndChangeTheAcquisitionHash(t *testing.T) {
+	const recipe = `
+id: topo
+type: pmtiles
+strategy: build
+build:
+  family: raster-sheets
+  bbox: "23.8,59.8,26.8,61.7"
+  bands:
+    - {min_zoom: 0, max_zoom: 8, source: "https://example.test/500k/"}
+    - {min_zoom: 13, max_zoom: 14, source: "https://example.test/50k/"}
+`
+	item := parseItem(t, recipe)
+	want := []RasterBand{{0, 8, "https://example.test/500k/"}, {13, 14, "https://example.test/50k/"}}
+	if len(item.Build.Bands) != 2 || item.Build.Bands[0] != want[0] || item.Build.Bands[1] != want[1] {
+		t.Fatalf("Bands = %+v, want %+v", item.Build.Bands, want)
+	}
+	if _, ok := item.Build.Config["bands"]; ok {
+		t.Error("bands leaked into Config")
+	}
+	if item.Build.Config["bbox"] != "23.8,59.8,26.8,61.7" {
+		t.Errorf("bbox = %q", item.Build.Config["bbox"])
+	}
+	changed := parseItem(t, strings.Replace(recipe, "max_zoom: 14", "max_zoom: 15", 1))
+	if item.AcquisitionHash() == changed.AcquisitionHash() {
+		t.Error("changing a band's zoom range kept the acquisition hash")
+	}
+}

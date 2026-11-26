@@ -3,17 +3,24 @@ type: pmtiles
 display_group: maps
 tags: [basemap, topo, raster]
 depth: comprehensive
-size_gb: 1.0
-description: MML maastokartta raster topo tiles (kartat.kapsi.fi) — Uusimaa default
+size_gb: 0.65
+description: MML topographic map (maastokartta) as raster tiles, rendered from the 1:500k to 1:50k map sheets — Uusimaa
 strategy: build
 
 build:
-  family: raster-tms
-  tms_url: "https://tiles.kartat.kapsi.fi/maastokartta"
+  family: raster-sheets
+  # MML's map series as PNG sheets with world files, mirrored daily by kapsi.
+  source_srs: "EPSG:3067"
+  # Measured for the Uusimaa bbox: 67 sheets, 33,742 tiles in about 12 minutes.
+  estimated_download_gb: 0.85
+  estimated_work_gb: 2.2
   bbox: "23.8,59.8,26.8,61.7"
-  min_zoom: 0
-  max_zoom: 13
-  tile_format: jpg
+  quality: 80
+  bands:
+    - {min_zoom: 0, max_zoom: 8, source: "https://kartat.kapsi.fi/files/maastokarttarasteri_500k_jhs180/kaikki/etrs89/png/"}
+    - {min_zoom: 9, max_zoom: 11, source: "https://kartat.kapsi.fi/files/maastokarttarasteri_250k_jhs180/kaikki/etrs89/png/"}
+    - {min_zoom: 12, max_zoom: 12, source: "https://kartat.kapsi.fi/files/maastokarttarasteri_100k_jhs180/kaikki/etrs89/png/"}
+    - {min_zoom: 13, max_zoom: 14, source: "https://kartat.kapsi.fi/files/maastokarttarasteri_50k_jhs180/painovari/4m/etrs89/png/"}
 
 viewer:
   name: MML Maastokartta (raster)
@@ -23,5 +30,5 @@ viewer:
 
 license:
   id: CC-BY-4.0
-  attribution: "National Land Survey of Finland (Maanmittauslaitos), maastokartta"
-  url: https://www.maanmittauslaitos.fi
+  attribution: "Contains data from the National Land Survey of Finland Topographic Database (Maanmittauslaitos), maastokartta"
+  url: https://www.maanmittauslaitos.fi/en/opendata-licence-cc40

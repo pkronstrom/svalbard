@@ -19,7 +19,16 @@ type BuildSpec struct {
 	EstimatedWorkGB     float64           `yaml:"estimated_work_gb,omitempty"`
 	Steps               []BuildStep       `yaml:"steps,omitempty"`
 	ArchiveRules        []ArchiveRule     `yaml:"archive_rules,omitempty"`
+	Bands               []RasterBand      `yaml:"bands,omitempty"`
 	Config              map[string]string `yaml:"-"`
+}
+
+// RasterBand is one zoom range of a raster-sheets build and the directory of
+// georeferenced map sheets (PNG plus .pgw world file) it is rendered from.
+type RasterBand struct {
+	MinZoom int    `yaml:"min_zoom" json:"min_zoom"`
+	MaxZoom int    `yaml:"max_zoom" json:"max_zoom"`
+	Source  string `yaml:"source" json:"source"`
 }
 
 // BuildAsset is one URL copied into an app or data bundle.
@@ -66,7 +75,7 @@ func (b *BuildSpec) UnmarshalYAML(value *yaml.Node) error {
 		"family": true, "source_url": true, "output": true, "builder": true,
 		"assets": true, "tables": true, "layers": true, "requires": true,
 		"network": true, "estimated_download_gb": true, "estimated_work_gb": true,
-		"steps": true, "archive_rules": true,
+		"steps": true, "archive_rules": true, "bands": true,
 	}
 	for key, node := range raw {
 		if known[key] {

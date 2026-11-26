@@ -50,10 +50,15 @@ RUN go build -o /usr/local/bin/zim-dither ./cmd/zim-dither/ \
 
 FROM python:3.12-alpine3.24 AS tools-base
 
+# Alpine ships GDAL's PNG, WebP and JPEG drivers as plugins; raster builds
+# read PNG map sheets and write WebP or JPEG tiles.
 RUN apk add --no-cache \
     ca-certificates \
     ffmpeg \
     gdal-tools \
+    gdal-driver-png \
+    gdal-driver-webp \
+    gdal-driver-jpeg \
     wget \
     file
 

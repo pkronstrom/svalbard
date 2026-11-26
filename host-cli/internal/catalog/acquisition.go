@@ -45,6 +45,7 @@ type acquisitionBuild struct {
 	Network      bool              `json:"network,omitempty"`
 	Steps        []BuildStep       `json:"steps,omitempty"`
 	ArchiveRules []ArchiveRule     `json:"archive_rules,omitempty"`
+	Bands        []RasterBand      `json:"bands,omitempty"`
 	Config       map[string]string `json:"config,omitempty"`
 }
 
@@ -74,7 +75,8 @@ func (it Item) AcquisitionHash() string {
 		fields.Build = &acquisitionBuild{
 			Family: b.Family, SourceURL: b.SourceURL, Output: b.Output, Builder: b.Builder,
 			Assets: b.Assets, Tables: b.Tables, Layers: b.Layers, Requires: b.Requires,
-			Network: b.Network, Steps: b.Steps, ArchiveRules: b.ArchiveRules, Config: b.Config,
+			Network: b.Network, Steps: b.Steps, ArchiveRules: b.ArchiveRules, Bands: b.Bands,
+			Config: b.Config,
 		}
 	}
 	// encoding/json writes struct fields in declaration order and map keys
