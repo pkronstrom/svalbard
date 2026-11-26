@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,6 +16,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	mcpclient "github.com/mark3labs/mcp-go/client"
+	gomcp "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 )
@@ -138,6 +142,7 @@ func TestEnvironmentConfiguresALocalSignedOutSlimInstance(t *testing.T) {
 		ModelName:   "Qwen3.5-4B-Q4_K_M",
 		LlamaURL:    "http://127.0.0.1:8082/v1",
 		MCPURL:      "http://127.0.0.1:8090/mcp",
+		FilesURL:    "http://127.0.0.1:8090/files/mcp",
 		Port:        8084,
 	})
 
@@ -193,14 +198,22 @@ func TestEnvironmentConfiguresALocalSignedOutSlimInstance(t *testing.T) {
 			Enable bool `json:"enable"`
 		} `json:"config"`
 		Info struct {
-			ID string `json:"id"`
+			ID   string `json:"id"`
+			Name string `json:"name"`
 		} `json:"info"`
 	}
 	if err := json.Unmarshal([]byte(env["TOOL_SERVER_CONNECTIONS"]), &servers); err != nil {
 		t.Fatalf("TOOL_SERVER_CONNECTIONS: %v", err)
 	}
-	if len(servers) != 1 || servers[0].Type != "mcp" || servers[0].URL != "http://127.0.0.1:8090/mcp" || !servers[0].Config.Enable {
-		t.Fatalf("tool servers = %+v, want the drive's MCP server enabled", servers)
+	if len(servers) != 2 || servers[0].Type != "mcp" || servers[0].URL != "http://127.0.0.1:8090/mcp" || !servers[0].Config.Enable {
+		t.Fatalf("tool servers = %+v, want the drive's MCP server enabled first", servers)
+	}
+	// The file tools are a server of their own, so a chat can switch them off.
+	if servers[1].Type != "mcp" || servers[1].URL != "http://127.0.0.1:8090/files/mcp" || !servers[1].Config.Enable || servers[1].Info.Name != "Svalbard files" {
+		t.Fatalf("tool servers = %+v, want the file tools enabled second", servers)
+	}
+	if servers[0].Info.ID == servers[1].Info.ID {
+		t.Fatalf("both tool servers have the id %q", servers[0].Info.ID)
 	}
 
 	var metadata struct {
@@ -211,8 +224,9 @@ func TestEnvironmentConfiguresALocalSignedOutSlimInstance(t *testing.T) {
 	if err := json.Unmarshal([]byte(env["DEFAULT_MODEL_METADATA"]), &metadata); err != nil {
 		t.Fatalf("DEFAULT_MODEL_METADATA: %v", err)
 	}
-	// Open WebUI addresses an MCP connection as server:mcp:<info.id>.
-	if want := []string{"server:mcp:" + servers[0].Info.ID}; !slices.Equal(metadata.ToolIDs, want) {
+	// Open WebUI addresses an MCP connection as server:mcp:<info.id>, and the
+	// ids listed here are on in a new chat.
+	if want := []string{"server:mcp:" + servers[0].Info.ID, "server:mcp:" + servers[1].Info.ID}; !slices.Equal(metadata.ToolIDs, want) {
 		t.Errorf("toolIds = %v, want %v", metadata.ToolIDs, want)
 	}
 	for _, category := range []string{"knowledge", "memory", "web_search", "code_interpreter", "image_generation"} {
@@ -222,6 +236,29 @@ func TestEnvironmentConfiguresALocalSignedOutSlimInstance(t *testing.T) {
 	}
 	if metadata.Capabilities["vision"] || metadata.Capabilities["image_generation"] {
 		t.Errorf("capabilities = %v, want vision and image generation off", metadata.Capabilities)
+	}
+}
+
+func TestEnvironmentWithoutFileToolsOffersOnlyTheVault(t *testing.T) {
+	env := Environment(Launch{MCPURL: "http://127.0.0.1:8090/mcp", Port: 8084})
+
+	var servers []struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal([]byte(env["TOOL_SERVER_CONNECTIONS"]), &servers); err != nil {
+		t.Fatalf("TOOL_SERVER_CONNECTIONS: %v", err)
+	}
+	if len(servers) != 1 || servers[0].URL != "http://127.0.0.1:8090/mcp" {
+		t.Errorf("tool servers = %+v, want only the drive's MCP server", servers)
+	}
+	var metadata struct {
+		ToolIDs []string `json:"toolIds"`
+	}
+	if err := json.Unmarshal([]byte(env["DEFAULT_MODEL_METADATA"]), &metadata); err != nil {
+		t.Fatalf("DEFAULT_MODEL_METADATA: %v", err)
+	}
+	if want := []string{"server:mcp:" + mcpServerID}; !slices.Equal(metadata.ToolIDs, want) {
+		t.Errorf("toolIds = %v, want %v", metadata.ToolIDs, want)
 	}
 }
 
@@ -271,7 +308,7 @@ func TestRunStartsEverythingAndStopsItOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stdout := &syncBuffer{}
-	opened := make(chan string, 1)
+	opened := make(chan string, 2)
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, stdout, driveRoot, "", func(url string) error { opened <- url; return nil })
@@ -341,24 +378,85 @@ func TestRunStartsEverythingAndStopsItOnCancel(t *testing.T) {
 	var servers []struct {
 		URL string `json:"url"`
 	}
-	if err := json.Unmarshal([]byte(env["TOOL_SERVER_CONNECTIONS"]), &servers); err != nil || len(servers) != 1 {
+	if err := json.Unmarshal([]byte(env["TOOL_SERVER_CONNECTIONS"]), &servers); err != nil || len(servers) != 2 {
 		t.Fatalf("TOOL_SERVER_CONNECTIONS = %q (%v)", env["TOOL_SERVER_CONNECTIONS"], err)
 	}
-	request, _ := http.NewRequest(http.MethodPost, servers[0].URL, strings.NewReader(
-		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json, text/event-stream")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatalf("MCP initialize: %v", err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("MCP initialize status = %d", response.StatusCode)
+	for _, server := range servers {
+		request, _ := http.NewRequest(http.MethodPost, server.URL, strings.NewReader(
+			`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json, text/event-stream")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatalf("MCP initialize at %s: %v", server.URL, err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("MCP initialize at %s: status = %d", server.URL, response.StatusCode)
+		}
 	}
 
 	if out := stdout.String(); !strings.Contains(out, "Open WebUI: "+url) {
 		t.Errorf("output does not name the URL:\n%s", out)
+	}
+
+	// The file tools write into the drive's workspace folder, and the link
+	// they return is served on an origin of its own, printed but not opened.
+	files, err := mcpclient.NewStreamableHttpClient(servers[1].URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer files.Close()
+	if err := files.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := files.Initialize(ctx, gomcp.InitializeRequest{}); err != nil {
+		t.Fatalf("file tools Initialize() error = %v", err)
+	}
+	call := gomcp.CallToolRequest{}
+	call.Params.Name = "file_write"
+	call.Params.Arguments = map[string]any{"path": "notes/page.html", "content": "<h1>Hi</h1>"}
+	result, err := files.CallTool(ctx, call)
+	if err != nil || result.IsError {
+		t.Fatalf("file_write: result = %#v, error = %v", result, err)
+	}
+	var written struct {
+		Link string `json:"link"`
+		URL  string
+	}
+	if text, ok := result.Content[0].(gomcp.TextContent); !ok || json.Unmarshal([]byte(text.Text), &written) != nil {
+		t.Fatalf("file_write result = %#v, want JSON", result.Content)
+	}
+	var found bool
+	if written.URL, found = strings.CutPrefix(strings.TrimSuffix(written.Link, ")"), "[notes/page.html]("); !found {
+		t.Fatalf("file_write link = %q, want a Markdown link", written.Link)
+	}
+	if data, err := os.ReadFile(filepath.Join(driveRoot, "workspace", "notes", "page.html")); err != nil || string(data) != "<h1>Hi</h1>" {
+		t.Fatalf("workspace file = %q, %v", data, err)
+	}
+	workspaceRoot := strings.TrimSuffix(written.URL, "/notes/page.html")
+	if !strings.HasPrefix(workspaceRoot, "http://localhost:") || workspaceRoot == url {
+		t.Errorf("workspace is served at %q, want a localhost origin other than Open WebUI's %s", workspaceRoot, url)
+	}
+	page, err := http.Get(written.URL)
+	if err != nil {
+		t.Fatalf("GET %s: %v", written.URL, err)
+	}
+	body, _ := io.ReadAll(page.Body)
+	page.Body.Close()
+	if page.StatusCode != http.StatusOK || string(body) != "<h1>Hi</h1>" {
+		t.Errorf("GET %s = %d %q", written.URL, page.StatusCode, body)
+	}
+	if policy := page.Header.Get("Content-Security-Policy"); !strings.Contains(policy, "default-src 'none'") {
+		t.Errorf("Content-Security-Policy = %q", policy)
+	}
+	if out := stdout.String(); !strings.Contains(out, "Workspace:  "+workspaceRoot+"/") {
+		t.Errorf("output does not name the workspace URL %s:\n%s", workspaceRoot, out)
+	}
+	select {
+	case extra := <-opened:
+		t.Errorf("a second page was opened: %s", extra)
+	default:
 	}
 
 	cancel()
@@ -375,11 +473,61 @@ func TestRunStartsEverythingAndStopsItOnCancel(t *testing.T) {
 			t.Errorf("%s was not asked to stop: %v", role, err)
 		}
 	}
-	for _, endpoint := range []string{"http://127.0.0.1:" + llamaPort + "/health", strings.Replace(url, "localhost", "127.0.0.1", 1) + "/health", servers[0].URL} {
+	for _, endpoint := range []string{"http://127.0.0.1:" + llamaPort + "/health", strings.Replace(url, "localhost", "127.0.0.1", 1) + "/health", servers[0].URL, servers[1].URL, written.URL} {
 		if response, err := http.Get(endpoint); err == nil {
 			response.Body.Close()
 			t.Errorf("%s still answers after Run() returned", endpoint)
 		}
+	}
+}
+
+// A stick whose workspace cannot be created (read-only, or the name is taken)
+// still gets chat and vault search.
+func TestRunContinuesWithoutFileToolsWhenTheWorkspaceCannotBeOpened(t *testing.T) {
+	driveRoot, recordDir := newFakeDrive(t, "open-webui")
+	if err := os.WriteFile(filepath.Join(driveRoot, "workspace"), []byte("not a folder"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stdout := &syncBuffer{}
+	opened := make(chan string, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, stdout, driveRoot, "", func(url string) error { opened <- url; return nil })
+	}()
+	select {
+	case <-opened:
+	case err := <-done:
+		t.Fatalf("Run() returned before opening the browser: %v\n%s", err, stdout.String())
+	case <-time.After(30 * time.Second):
+		t.Fatalf("browser was not opened\n%s", stdout.String())
+	}
+
+	for _, entry := range readRecord(t, recordDir, "open-webui").Env {
+		if value, ok := strings.CutPrefix(entry, "TOOL_SERVER_CONNECTIONS="); ok {
+			var servers []struct {
+				URL string `json:"url"`
+			}
+			if err := json.Unmarshal([]byte(value), &servers); err != nil || len(servers) != 1 || strings.Contains(servers[0].URL, "files") {
+				t.Errorf("TOOL_SERVER_CONNECTIONS = %s (%v), want only the drive's MCP server", value, err)
+			}
+		}
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "File tools are off: ") || strings.Contains(out, "Workspace:") {
+		t.Errorf("output does not say file tools are off:\n%s", out)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() error = %v after cancellation, want nil", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("Run() did not return after cancellation")
 	}
 }
 

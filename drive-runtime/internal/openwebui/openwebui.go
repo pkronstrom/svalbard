@@ -1,6 +1,8 @@
 // Package openwebui starts Open WebUI from the drive: one llama-server model,
 // the drive's MCP server over Streamable HTTP, and Open WebUI itself, all on
-// localhost with every setting supplied by environment.
+// localhost with every setting supplied by environment. Unless file tools are
+// off it also offers the drive's workspace folder: tools to read and write it,
+// and a read-only server so a reply can link to what was written.
 package openwebui
 
 import (
@@ -11,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +30,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/workspace"
 )
 
 const (
@@ -35,7 +39,19 @@ const (
 	// mcpServerID names the drive's tool server inside Open WebUI, which
 	// prefixes every tool with it ("svalbard_search").
 	mcpServerID = "svalbard"
+
+	// filesServerID names the file tools the same way ("workspace_file_write").
+	// They are a tool server of their own so a chat can switch them off and
+	// keep vault search.
+	filesServerID = "workspace"
 )
+
+// fileToolsEnabled decides whether this launch offers the workspace file
+// tools. It is the one place that decision is made: it will read the stick's
+// settings once the settings store exists, and until then they are on.
+func fileToolsEnabled(driveRoot string) bool {
+	return true
+}
 
 // pickContext is a package var so tests can skip the terminal picker.
 var pickContext = contextpicker.Pick
@@ -48,6 +64,7 @@ type Launch struct {
 	ModelName   string // id llama-server reports for the model
 	LlamaURL    string // OpenAI-compatible base URL, ending in /v1
 	MCPURL      string // Streamable HTTP endpoint of the drive's MCP server
+	FilesURL    string // Streamable HTTP endpoint of the file tools; empty when they are off
 	Port        int
 }
 
@@ -61,6 +78,12 @@ type Launch struct {
 // and still persist.
 func Environment(l Launch) map[string]string {
 	origin := fmt.Sprintf("http://localhost:%d;http://127.0.0.1:%d", l.Port, l.Port)
+	toolServers := []any{toolServer(mcpServerID, "Svalbard vault", "Search and read the content on this drive", l.MCPURL)}
+	toolIDs := []string{"server:mcp:" + mcpServerID}
+	if l.FilesURL != "" {
+		toolServers = append(toolServers, toolServer(filesServerID, "Svalbard files", "Read and save files in the drive's workspace folder", l.FilesURL))
+		toolIDs = append(toolIDs, "server:mcp:"+filesServerID)
+	}
 	env := map[string]string{
 		// State. STATIC_DIR is rewritten on every start and would otherwise be
 		// inside the installed package; the temporary directory holds uploads
@@ -96,21 +119,15 @@ func Environment(l Launch) map[string]string {
 		// A model still loading from a slow drive answers the list late.
 		"AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST": "30",
 
-		"TOOL_SERVER_CONNECTIONS": mustJSON([]any{map[string]any{
-			"type": "mcp", "url": l.MCPURL, "path": "", "auth_type": "none", "key": "",
-			"config": map[string]any{"enable": true},
-			"info": map[string]any{
-				"id": mcpServerID, "name": "Svalbard vault",
-				"description": "Search and read the content on this drive",
-			},
-		}}),
+		"TOOL_SERVER_CONNECTIONS": mustJSON(toolServers),
 		"DEFAULT_MODEL_METADATA": mustJSON(map[string]any{
 			// Vision stays off until the runtime loads a projector with the model.
 			"capabilities": map[string]any{
 				"file_upload": true, "vision": false,
 				"web_search": false, "code_interpreter": false, "image_generation": false, "memory": false,
 			},
-			"toolIds":      []string{"server:mcp:" + mcpServerID},
+			// Tool servers listed here are switched on in a new chat.
+			"toolIds":      toolIDs,
 			"builtinTools": builtinTools(),
 		}),
 
@@ -134,6 +151,15 @@ func Environment(l Launch) map[string]string {
 		env["ENABLE_"+feature] = "False"
 	}
 	return env
+}
+
+// toolServer is one MCP connection in the shape Open WebUI stores.
+func toolServer(id, name, description, url string) map[string]any {
+	return map[string]any{
+		"type": "mcp", "url": url, "path": "", "auth_type": "none", "key": "",
+		"config": map[string]any{"enable": true},
+		"info":   map[string]any{"id": id, "name": name, "description": description},
+	}
 }
 
 // builtinTools keeps the two built-in tool categories that work offline with
@@ -201,9 +227,17 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if err != nil {
 		return err
 	}
+	defer mcpListener.Close()
+	files, err := openFileTools(driveRoot)
+	if err != nil {
+		// The workspace is an extra; chat and vault search work without it.
+		fmt.Fprintf(stdout, "File tools are off: %v\n", err)
+	}
+	if files != nil {
+		defer files.Close()
+	}
 	llamaPort, err := netutil.FindAvailablePort("127.0.0.1", 8082)
 	if err != nil {
-		mcpListener.Close()
 		return err
 	}
 	port, err := netutil.FindAvailablePort("127.0.0.1", 8084)
@@ -211,7 +245,6 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		port, err = netutil.FindAvailablePort("127.0.0.1", llamaPort+1)
 	}
 	if err != nil {
-		mcpListener.Close()
 		return err
 	}
 	modelName := strings.TrimSuffix(filepath.Base(model), filepath.Ext(model))
@@ -224,14 +257,27 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		cancel()
 		wg.Wait()
 	}()
-	exited := make(chan error, 3)
+	exited := make(chan error, 4)
 
 	mcpServer := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	mcpServers := map[string]*mcp.Server{mcp.StreamableHTTPPath: mcpServer}
+	filesURL := ""
+	if files != nil {
+		mcpServers[mcp.FilesStreamableHTTPPath] = mcp.NewServer(mcp.NewFilesCapability(files.workspace, files.url))
+		filesURL = fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.FilesStreamableHTTPPath)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := files.workspace.Serve(ctx, files.listener); err != nil {
+				exited <- fmt.Errorf("workspace server stopped: %w", err)
+			}
+		}()
+	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer mcpServer.Close()
-		if err := mcpServer.ServeStreamableHTTP(ctx, mcpListener); err != nil {
+		if err := mcp.ServeStreamableHTTP(ctx, mcpListener, mcpServers); err != nil {
 			exited <- fmt.Errorf("MCP server stopped: %w", err)
 		}
 	}()
@@ -255,6 +301,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		ModelName:   modelName,
 		LlamaURL:    llamaRoot + "/v1",
 		MCPURL:      fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
+		FilesURL:    filesURL,
 		Port:        port,
 	}))...)
 	if err := start(webuiCmd, runtimeRoot, recipeID, stdout, &wg, exited); err != nil {
@@ -275,6 +322,10 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		fmt.Fprintf(stdout, "  Open: %s\n", url)
 	}
 	fmt.Fprintf(stdout, "Open WebUI: %s\n", url)
+	if files != nil {
+		// Not opened: the links in a reply lead here.
+		fmt.Fprintf(stdout, "Workspace:  %s/ (files the assistant saves, in %s)\n", files.url, files.workspace.Dir())
+	}
 	fmt.Fprintln(stdout, "Press Ctrl+C to stop.")
 
 	select {
@@ -283,6 +334,39 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	case <-ctx.Done():
 		return nil
 	}
+}
+
+// fileTools is the workspace folder and the listener its files are served on.
+// The listener is a different origin from Open WebUI, so a page the model
+// wrote cannot read the chats.
+type fileTools struct {
+	workspace *workspace.Workspace
+	listener  net.Listener
+	url       string // root of the served workspace, no trailing slash
+}
+
+// openFileTools returns nil when file tools are off for this launch.
+func openFileTools(driveRoot string) (*fileTools, error) {
+	if !fileToolsEnabled(driveRoot) {
+		return nil, nil
+	}
+	ws, err := workspace.Open(driveRoot)
+	if err != nil {
+		return nil, err
+	}
+	listener, port, err := netutil.Listen("127.0.0.1", 8086)
+	if err != nil {
+		ws.Close()
+		return nil, err
+	}
+	// The link is spelled with "localhost": a 4B model copying
+	// "127.0.0.1:8086" into its reply dropped digits often enough to matter.
+	return &fileTools{workspace: ws, listener: listener, url: fmt.Sprintf("http://localhost:%d", port)}, nil
+}
+
+func (f *fileTools) Close() {
+	f.listener.Close()
+	f.workspace.Close()
 }
 
 // stopped turns a server's exit into the action's result. Ctrl+C reaches the
