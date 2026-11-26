@@ -181,3 +181,22 @@ func TestWizardConcurrentProgressSnapshots(t *testing.T) {
 		t.Fatal("completed wizard did not permit indexing")
 	}
 }
+
+func TestWizardApplyShowsNoticesThatAreNotSteps(t *testing.T) {
+	notice := "restored svalbard skill pdf-file (local edits replaced)"
+	m := newWizardApply("vault", []string{"skills-core"}, func(ctx context.Context, _ string, progress func(ApplyEvent)) error {
+		progress(ApplyEvent{ID: "skills-core", Status: tui.StatusDone})
+		progress(ApplyEvent{ID: "svalbard", Status: tui.StatusDone, Message: notice})
+		progress(ApplyEvent{ID: "svalbard", Status: tui.StatusDone, Message: notice})
+		return nil
+	})
+	m.height = 30
+	m, _ = drainWizardApply(t, m, m.Init())
+	view := stripAnsi(m.View())
+	if strings.Count(view, notice) != 1 {
+		t.Fatalf("notice shown %d times in:\n%s", strings.Count(view, notice), view)
+	}
+	if !strings.Contains(view, "1 items applied") {
+		t.Fatalf("the notice changed the result:\n%s", view)
+	}
+}

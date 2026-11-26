@@ -3,6 +3,7 @@ package plan
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -124,6 +125,9 @@ type Model struct {
 	applyResult <-chan applyResultMsg
 	applyDone   bool
 	applyErr    string
+	// notices are messages from apply about the vault as a whole, whose
+	// event id is no plan row: shown under the rows, each once.
+	notices     []string
 	applyCancel context.CancelFunc
 	stopping    bool
 	exitIntent  string
@@ -249,6 +253,7 @@ func (m Model) updatePlan(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.applying = true
 		m.applyDone = false
 		m.applyErr = ""
+		m.notices = nil
 		m.stopping = false
 		m.exitIntent = ""
 		m.applyItems = make([]applyStep, len(m.items))
@@ -320,6 +325,9 @@ func (m *Model) updateApplyStep(ev ApplyEvent) {
 			}
 			return
 		}
+	}
+	if ev.Message != "" && !slices.Contains(m.notices, ev.Message) {
+		m.notices = append(m.notices, ev.Message)
 	}
 }
 
@@ -572,6 +580,10 @@ func (m Model) viewApply() string {
 		b.WriteString("\n")
 	} else {
 		b.WriteString(pv.RenderSummary())
+	}
+	for _, notice := range m.notices {
+		b.WriteString(m.theme.Help.Render("Note: " + notice))
+		b.WriteString("\n")
 	}
 	if m.applyDone {
 		done, failed := 0, 0

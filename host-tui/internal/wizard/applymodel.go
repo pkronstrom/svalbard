@@ -3,6 +3,7 @@ package wizard
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -37,15 +38,18 @@ type applyResultMsg struct {
 
 // wizardApplyModel runs the apply process within the wizard.
 type wizardApplyModel struct {
-	vaultPath  string
-	runApply   ApplyFunc
-	steps      []applyStep
-	ch         <-chan ApplyEvent
-	result     <-chan applyResultMsg
-	started    bool
-	finished   bool
-	err        string
-	globalErr  string
+	vaultPath string
+	runApply  ApplyFunc
+	steps     []applyStep
+	ch        <-chan ApplyEvent
+	result    <-chan applyResultMsg
+	started   bool
+	finished  bool
+	err       string
+	globalErr string
+	// notices are apply's messages about the vault as a whole, whose event
+	// id is no step: shown under the steps, each once.
+	notices    []string
 	stopping   bool
 	exitIntent string
 	ctx        context.Context
@@ -98,6 +102,7 @@ func (m wizardApplyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.globalErr = msg.event.Error
 			return m, waitForEvent(m.ch)
 		}
+		matched := false
 		for i := range m.steps {
 			if m.steps[i].id == msg.event.ID {
 				m.steps[i].status = msg.event.Status
@@ -106,8 +111,12 @@ func (m wizardApplyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if msg.event.Error != "" {
 					m.steps[i].err = msg.event.Error
 				}
+				matched = true
 				break
 			}
+		}
+		if !matched && msg.event.Message != "" && !slices.Contains(m.notices, msg.event.Message) {
+			m.notices = append(m.notices, msg.event.Message)
 		}
 		return m, waitForEvent(m.ch)
 
@@ -222,6 +231,10 @@ func (m wizardApplyModel) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(pv.Render())
 	b.WriteString("\n")
+	for _, notice := range m.notices {
+		b.WriteString(m.theme.Help.Render("  Note: " + notice))
+		b.WriteString("\n")
+	}
 
 	if m.finished {
 		done, failed := 0, 0

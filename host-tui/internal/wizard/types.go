@@ -41,6 +41,7 @@ type ApplyEvent struct {
 	ID         string
 	Status     string // tui.Status* constants
 	Step       string // current build step
+	Message    string // a message about the vault as a whole when ID is no item
 	Downloaded int64
 	Total      int64
 	Error      string

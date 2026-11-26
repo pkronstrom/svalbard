@@ -444,3 +444,27 @@ func TestPlanShowsFreeSpaceBeforeAndAfter(t *testing.T) {
 		t.Fatalf("plan does not warn when the download does not fit:\n%s", out)
 	}
 }
+
+// A message about the vault as a whole (apply's "svalbard" events, such as
+// a Svalbard skill whose local edits were replaced) is shown under the
+// rows, once, though no plan row has its id.
+func TestApplyShowsNoticesThatAreNotPlanRows(t *testing.T) {
+	notice := "restored svalbard skill pdf-file (local edits replaced)"
+	m := New(Config{Items: sampleItems(), RunApply: func(ctx context.Context, progress func(ApplyEvent)) error {
+		for _, item := range sampleItems() {
+			progress(ApplyEvent{ID: item.ID, Status: tui.StatusDone})
+		}
+		progress(ApplyEvent{ID: "svalbard", Status: tui.StatusDone, Step: notice, Message: notice})
+		return nil
+	}})
+	m.width, m.height = 120, 30
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = drainPlanApply(t, next.(Model), cmd)
+	out := stripAnsi(m.View())
+	if strings.Count(out, notice) != 1 {
+		t.Fatalf("notice shown %d times in:\n%s", strings.Count(out, notice), out)
+	}
+	if strings.Contains(out, "Pending:") {
+		t.Fatalf("the notice counted as a plan row:\n%s", out)
+	}
+}
