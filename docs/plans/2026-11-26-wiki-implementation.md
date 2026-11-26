@@ -21,7 +21,7 @@ was built and how it was checked.
 
 ```text
  browser ──► 127.0.0.1:8088  proxy in svalbard-drive __native-wiki
-                  │  refuses: foreign Host · cross-site and same-site writes ·
+                  │  refuses: foreign Host · every write not from its own page ·
                   │           Upgrade · any /.proxy segment · unclean paths
                   ▼
              /tmp/sbw-XXXX/s  Unix socket ──► silverbullet <state>
@@ -56,18 +56,32 @@ Where the specification left a choice, or the release behaved differently from w
 
 - **A third state file.** `server.json` with `runtimeApi: false` and `mcp: false`. Without it, one
   `POST /.runtime/lua` made SilverBullet start the host's Google Chrome headless. The child's
-  environment also sets `SB_MCP=0`, `SB_SHELL_BACKEND=off`, `NO_COLOR=1` and `HOME` to the state folder,
-  and carries nothing of the host's but PATH, locale, time zone and TMPDIR.
+  environment also sets `SB_MCP=0`, `SB_SHELL_BACKEND=off`, `SB_DISABLE_SERVICE_WORKER=1`, `NO_COLOR=1`
+  and `HOME` to the state folder, and carries nothing of the host's but PATH, locale, time zone and
+  TMPDIR. Without its service worker the tab does not go on answering after the wiki has stopped.
 - **Proxy.** Beyond the three refusals of the specification:
   - a request with an `Upgrade` header is refused (3.0.1 has no WebSocket endpoint, and a handshake is a
     GET that browsers send across origins);
   - a path that is not in its plain form is refused, and `.proxy` is refused as a path segment at any
     depth after decoding, so no spelling reaches the fetch proxy;
   - the one event stream (`GET /.events`) passes unbuffered;
-  - a write with neither `Sec-Fetch-Site` nor `Origin` passes: every browser sends `Origin` with a
-    cross-origin write, so such a request is a local program, which could write the files directly;
+  - a write passes only when `Sec-Fetch-Site` is `same-origin` or `none`, or, without that header, when
+    `Origin` is the proxy's own. A write with neither header is refused: a browser from before 2020 can
+    send one from a form, and nothing of the drive's writes through the proxy;
   - forwarding headers from the client are not passed on, because SilverBullet derives its origin from
-    them.
+    them;
+  - every answer carries `X-Frame-Options: SAMEORIGIN`,
+    `Content-Security-Policy: frame-ancestors 'self'; form-action 'self'` and
+    `Cross-Origin-Resource-Policy: same-origin`, which SilverBullet sends for its dashboard only.
+- **Pages are code to SilverBullet, and the tools write none.** It evaluates `${...}` as Lua when a page
+  is shown, with the browser's JavaScript in reach (`${1+41}` showed 42 and `${js.window.document.title}`
+  the title, on the real binary), and it loads `space-lua` blocks from pages under `Library/` for the
+  whole wiki. So the write tools refuse any page under `Library/` (in any letter case), and refuse a
+  write that adds a `${` outside a fenced code block or a code span, where it is shown as text. An
+  expression the user wrote stays, and a tool can edit around it. See "Open risk" below.
+- **One write at a time** inside one MCP server: several appends sent in one turn all arrive.
+- **Existing pages keep their names.** The naming rules apply to pages the tools create. A page the user
+  named `Recipe: bread` is read, edited, moved and deleted under that name.
 - **Finding a running wiki.** The launcher and the MCP server are separate processes. No file joins
   them: the tools ask ports 8088 to 8107 for `/.ping` and take the one whose `X-Svalbard-Wiki` header,
   set by the proxy, names this drive's page folder. Two drives' wikis at once each get their own links.
@@ -106,10 +120,14 @@ Unit tests (`make verify`: 60 tested packages, up from 59 with the new `wiki` pa
   environment, with host `SB_*` variables kept out; readiness, a server that exits (its last output in
   the error), one that never answers, and Ctrl+C while waiting, each leaving no child, state or socket;
   a second start after the drive moved to another path; two wikis at once; both settings.
-- Proxy: foreign `Host` (eight forms) refused; eight kinds of cross-site and same-site write refused for
-  five methods with the page folder compared afterwards; fourteen spellings of `/.proxy` refused for
-  three methods; unclean paths, upgrades and forwarding headers; the wiki's own reads and writes passing;
-  an event arriving while its stream is open.
+- Proxy: foreign `Host` (eight forms) refused; ten kinds of write that are not the page's own refused
+  for five methods with the page folder compared afterwards; fourteen spellings of `/.proxy` refused for
+  three methods; unclean paths, upgrades and forwarding headers; the frame, form and resource headers;
+  the wiki's own reads and writes passing; an event arriving while its stream is open.
+- After the review: writes under `Library/` in eleven forms; `${` added by create, append and edit,
+  whole or assembled from pieces, refused, and allowed inside fences and code spans; a user's own
+  expression kept through an edit; 20 appends and 20 creates sent at once (also under the race
+  detector); freely named pages read, edited, moved and deleted; a move that changes only letter case.
 - Menu, settings schema, catalog: one entry for a four-platform install; the group label; the recipe's
   pins and settings; every default preset has the wiki once.
 
@@ -161,6 +179,52 @@ Real model, Qwen3.5 4B at 32K, one run each unless said:
   now returns the link alone while the wiki is open. In the one chat after the change the model passed
   the address on, but as an image (`![...](...)`).
 
+## Review
+
+An independent review of the first two chunks read the diff against the SilverBullet source. Its eleven
+findings and what was done:
+
+| Finding | Done |
+|---|---|
+| Pages the tools write can be code in the user's browser | `Library/` and new `${` refused by the write tools; the rest is the open risk below |
+| The browser keeps a service worker and a copy of the notes | Service worker off. The page index in IndexedDB stays: open risk |
+| Any site can frame the wiki | Frame, form and resource headers added by the proxy |
+| Parallel tool calls lose writes (20 appends kept 2) | One write at a time; 20 of 20 arrive |
+| A write with neither origin header passes | Refused; unknown `Sec-Fetch-Site` values too |
+| Pages with names the rules refuse cannot be opened | The rules apply to new pages only |
+| `wiki_move` cannot change only the letter case | It can |
+| A closed terminal skips cleanup | Fixed before the review arrived |
+| The port probe follows redirects | It does not; the other points are accepted and listed below |
+| A test passed without the code it named | It now checks that the host's binary never ran |
+| `binary.Resolve` fell through to PATH on an unsupported platform | Restored |
+
+After these changes the real binary was run again from a vault on the internal disk: the page loads
+without a service worker, a tool append reaches the open tab, typed text is saved, a write without
+origin headers gets 403, and both refused kinds of write are refused over stdio.
+
+## Open risk, for the owner
+
+The specification's accepted risk is that a model acting on injected vault text can edit or delete
+pages. SilverBullet adds a second one: **a page is a program**. What is closed and what is not:
+
+- Closed for the tools: scripts under `Library/`, and `${...}` expressions, the two ways the 3.0.1
+  documentation and source give for a page to run code.
+- Not closed: this is a list of known ways, not a proof. Another construct that runs when a page is
+  shown would pass. Code that runs has the wiki's address: it can rewrite or erase pages through
+  SilverBullet's own file API, past the trash, and send text out when the computer is online. It does
+  not reach the host's files: shell, the runtime API and the fetch proxy are off.
+- Not closed: the browser profile keeps SilverBullet's page index in IndexedDB after the stick is gone.
+  SilverBullet's "shared computer" switch (`ephemeralStorage`) would keep nothing, at the cost of
+  indexing again at each load; setting it means the proxy rewriting `/.config`.
+- Stronger choices, each a product decision: switch Space Lua off in the client (SilverBullet's
+  queries, templates and commands go with it), add a `connect-src 'self'` policy against sending text
+  out, or version the page folder so that any change can be undone.
+- Accepted from the review without change: a local process that answers `/.ping` on ports 8088 to 8107
+  with this drive's folder gets its address returned as the page link; a port that accepts and never
+  answers costs a write 300 ms; a wiki pushed to a port outside that range is not found, and writes
+  then return the file path; the printed address says `localhost` while the proxy listens on
+  127.0.0.1, so a server on `[::1]` at the same port would get the browser.
+
 ## Not verified
 
 - Linux and Intel Mac: the code cross-compiles, never run. SilverBullet's watcher there is untested.
@@ -188,6 +252,7 @@ Sizes: S one module, M several modules or a small design choice, L needs a desig
 
 | Item | Size | Risk that could change the size |
 |---|---|---|
+| Decide the open risk above: Space Lua off, a stricter content policy, no browser copy, or versions | M | L if Space Lua must stay for the user and go for agent-written pages only |
 | Run on Linux and Intel Mac, and from a physical stick | S | M if the watcher misses changes there and `poll` must be chosen per platform |
 | Make small models pass the page link on as a link | S | M if it needs per-client wording, as Open WebUI and pi render links differently |
 | Generated Tools menu entries for `type: binary` recipes have no action (one dead entry per platform) | S | M if tools should get a real action or a shell entry instead of being hidden |
