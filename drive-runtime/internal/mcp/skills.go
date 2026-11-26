@@ -35,11 +35,11 @@ const (
 
 	// skillCandidates is how many matching sections are grouped into
 	// results. A long skill matches with many sections; this many leaves room
-	// for the others behind it.
+	// for the others behind it. Hybrid search is asked for as many as it
+	// ranks at most, so its diversity pass, which picks among sections
+	// without knowing which skill they belong to, drops none before the
+	// grouping.
 	skillCandidates = 200
-	// hybridSkillCandidates bounds the same for hybrid search, whose
-	// diversity pass compares every candidate with every result kept.
-	hybridSkillCandidates = 50
 
 	// skillDescriptionChars caps a description in search results.
 	skillDescriptionChars = 300
@@ -240,7 +240,7 @@ func (c *SkillCapability) handleSearch(ctx context.Context, params map[string]an
 func (c *SkillCapability) matchingSections(ctx context.Context, db *sql.DB, eng *engine.Engine, query, scope string) ([]engine.Result, error) {
 	if contract, complete := search.LoadCompleteContract(db); complete {
 		if vector, err := c.embedBackend.Embed(ctx, contract, query); err == nil {
-			results, usable, err := search.HybridSnapshot(ctx, db, contract, query, vector, hybridSkillCandidates, scope)
+			results, usable, err := search.HybridSnapshot(ctx, db, contract, query, vector, skillCandidates, scope)
 			if err == nil && usable && len(results) > 0 {
 				return results, ctx.Err()
 			}

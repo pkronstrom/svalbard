@@ -552,6 +552,32 @@ func TestSkillSearchUsesHybridSearchWithinTheSkills(t *testing.T) {
 	if embedded, err := os.ReadFile(queryLog); err != nil || string(embedded) != "search_query: visualise my spreadsheet numbers" {
 		t.Fatalf("embedded query = %q, %v", embedded, err)
 	}
+
+	// A long skill whose every section is as near the query as the others
+	// must not take all the places before the sections are grouped.
+	var sections [][2]string
+	for i := 1; i <= 80; i++ {
+		sections = append(sections, [2]string{fmt.Sprintf("Part %d", i), fmt.Sprintf("Firmware flashing, part %d.", i)})
+	}
+	long := indexSkillFile(t, db, "skills/skills-core/firmware/SKILL.md", "firmware", sections...)
+	others := []int64{}
+	for _, name := range []string{"esp32", "arduino"} {
+		others = append(others, indexSkillFile(t, db, "skills/skills-core/"+name+"/SKILL.md", name, [2]string{"Overview", "Flash firmware to the board."})...)
+	}
+	for _, id := range append(long, others...) {
+		if _, err := db.Exec("INSERT INTO embeddings VALUES (?, '', ?)", id, mcpFloat32Blob(256, 1.0/16)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err = cap.Handle(context.Background(), "search", map[string]any{"query": "firmware"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := skillIDs(result.Data.([]SkillResult))
+	slices.Sort(found)
+	if want := []string{"skills/skills-core/arduino", "skills/skills-core/esp32", "skills/skills-core/firmware"}; !slices.Equal(found, want) {
+		t.Fatalf("hybrid results with a long skill = %v, want %v", found, want)
+	}
 }
 
 func TestReadFrontmatter(t *testing.T) {
