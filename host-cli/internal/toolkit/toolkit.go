@@ -71,6 +71,7 @@ var TypeDirs = map[string]string{
 	"python-venv":    "runtime/python",
 	"python-package": "runtime/python",
 	"skills":         "skills",
+	"js-lib":         "lib/js",
 }
 
 // runtimeConfig mirrors drive-runtime/internal/config.RuntimeConfig.

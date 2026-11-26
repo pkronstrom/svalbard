@@ -46,6 +46,13 @@ type Item struct {
 	// (<type dir>/<id>/), for example npm package tarballs for a web app.
 	Bundle []BundleSource `yaml:"bundle,omitempty"`
 
+	// Libraries describes the browser libraries of a js-lib recipe, one per
+	// package a page imports (see Library and ValidateLibraries).
+	Libraries []Library `yaml:"libraries,omitempty"`
+	// Archive is what a js-lib recipe's archive holds, recorded by the pin
+	// generator (build-tools/cmd/js-lock) for the size budgets.
+	Archive *ArchiveSize `yaml:"archive,omitempty"`
+
 	// Documents lists the files of a user document collection, staged into
 	// <type dir>/<id>/ (see LoadUserRecipes and ExpectedDocuments).
 	Documents []DocumentSource `yaml:"documents,omitempty"`
@@ -100,6 +107,15 @@ type BundleSource struct {
 	// these patterns: path.Match segment by segment, and a final "/**" for
 	// everything below. Every pattern must match a file. Not with Files.
 	Include []string `yaml:"include,omitempty" json:"Include,omitempty"`
+	// Main, in a js-lib recipe, is the file below Strip that a bare import of
+	// the package resolves to in place of its package.json entry: the
+	// self-contained build when only that one is installed (d3's
+	// dist/d3.min.js).
+	Main string `yaml:"main,omitempty" json:"Main,omitempty"`
+	// Extracted is what the source installs once trimmed, recorded by the
+	// pin generator for the size budgets. It does not decide what is
+	// installed, so it is left out of the acquisition hash.
+	Extracted *ExtractedSize `yaml:"extracted,omitempty" json:"-"`
 }
 
 // EmbeddingSpec describes how an embedding model should be used at index and
@@ -205,6 +221,9 @@ func LoadFromFS(recipesFS fs.FS, presetsFS fs.FS) (*Catalog, error) {
 		return nil, err
 	}
 	if err := c.validateSettings(); err != nil {
+		return nil, err
+	}
+	if err := ValidateLibraries(c.AllRecipes()); err != nil {
 		return nil, err
 	}
 

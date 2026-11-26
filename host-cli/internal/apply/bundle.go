@@ -3,15 +3,22 @@ package apply
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
@@ -63,6 +70,10 @@ func assembleBundle(ctx context.Context, root, id string, recipe catalog.Item, o
 		}
 	}
 
+	if recipe.Type == catalog.LibraryType {
+		return writeLibraryArchive(root, typeDir, id, recipe, tree, staging)
+	}
+
 	final := filepath.Join(root, typeDir, id)
 	if err := os.RemoveAll(final); err != nil {
 		return manifest.RealizedEntry{}, err
@@ -88,6 +99,118 @@ func assembleBundle(ctx context.Context, root, id string, recipe catalog.Item, o
 		SizeBytes:      size,
 		SourceStrategy: recipe.Strategy,
 	}, nil
+}
+
+// libraryIndexFile is the file at the top of a js-lib archive that names, by
+// package directory, the file a bare import resolves to when a bundle source
+// sets main. `svalbard-drive html pack` reads it.
+const libraryIndexFile = "svalbard-js.json"
+
+// archiveTime is the modification time of every file in a js-lib archive, so
+// the same sources always make the same bytes (and the same checksum).
+var archiveTime = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// writeLibraryArchive packs a js-lib recipe's assembled tree into
+// <type dir>/<id>.zip, the one file it puts on the drive, and deletes the
+// tree and the downloads.
+func writeLibraryArchive(root, typeDir, id string, recipe catalog.Item, tree, staging string) (manifest.RealizedEntry, error) {
+	mains := map[string]string{}
+	for _, source := range recipe.Bundle {
+		if source.Main != "" {
+			mains[path.Clean(source.Dest)] = path.Clean(source.Main)
+		}
+	}
+	var files []string
+	if err := filepath.WalkDir(tree, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(tree, p)
+		files = append(files, filepath.ToSlash(rel))
+		return err
+	}); err != nil {
+		return manifest.RealizedEntry{}, err
+	}
+	sort.Strings(files)
+	for dir, main := range mains {
+		if !slices.Contains(files, dir+"/"+main) {
+			return manifest.RealizedEntry{}, fmt.Errorf("%s: main %s of %s is not among the extracted files", id, main, dir)
+		}
+	}
+
+	final := filepath.Join(root, typeDir, id+".zip")
+	if err := os.MkdirAll(filepath.Dir(final), 0o755); err != nil {
+		return manifest.RealizedEntry{}, err
+	}
+	partial := final + ".part"
+	out, err := os.Create(partial)
+	if err != nil {
+		return manifest.RealizedEntry{}, err
+	}
+	hash := sha256.New()
+	counter := &countingWriter{w: io.MultiWriter(out, hash)}
+	zw := zip.NewWriter(counter)
+	add := func(name string, r io.Reader) error {
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: archiveTime})
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(w, r)
+		return err
+	}
+	index, err := json.Marshal(struct {
+		Recipe string            `json:"recipe"`
+		Main   map[string]string `json:"main"`
+	}{id, mains})
+	if err == nil {
+		err = add(libraryIndexFile, bytes.NewReader(index))
+	}
+	for _, name := range files {
+		if err != nil {
+			break
+		}
+		var f *os.File
+		if f, err = os.Open(filepath.Join(tree, filepath.FromSlash(name))); err == nil {
+			err = add(name, f)
+			f.Close()
+		}
+	}
+	if err == nil {
+		err = zw.Close()
+	}
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(partial, final)
+	}
+	if err != nil {
+		os.Remove(partial)
+		return manifest.RealizedEntry{}, fmt.Errorf("%s: writing %s: %w", id, filepath.Base(final), err)
+	}
+	if err := os.RemoveAll(staging); err != nil {
+		return manifest.RealizedEntry{}, err
+	}
+	return manifest.RealizedEntry{
+		ID:             id,
+		Type:           recipe.Type,
+		Filename:       id + ".zip",
+		RelativePath:   filepath.Join(typeDir, id+".zip"),
+		SizeBytes:      counter.n,
+		ChecksumSHA256: hex.EncodeToString(hash.Sum(nil)),
+		SourceStrategy: recipe.Strategy,
+	}, nil
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // extractArchive writes the regular files below strip into destDir:

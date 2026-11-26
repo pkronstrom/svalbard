@@ -336,3 +336,55 @@ func TestExpectedDocumentsRejectsUnusableDefinitions(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadUserRecipesAddsJSLibraries(t *testing.T) {
+	cat := NewTestCatalog(t)
+	recipes := t.TempDir()
+	pin := strings.Repeat("ab", 32)
+	writeUserRecipe(t, recipes, "js-mine.yaml", `
+type: js-lib
+description: My charts
+libraries:
+  - package: uplot
+    version: 1.6.32
+    entry: uplot
+    quickstart: uplot.md
+bundle:
+  - url: https://registry.npmjs.org/uplot/-/uplot-1.6.32.tgz
+    sha256: `+pin+`
+    strip: package
+    dest: node_modules/uplot
+    include: [package.json, LICENSE, README.md, dist/uPlot.esm.js]
+`)
+	writeUserRecipe(t, recipes, "js-same.yaml", `
+type: js-lib
+libraries:
+  - package: uplot
+    quickstart: uplot.md
+bundle:
+  - url: https://registry.npmjs.org/uplot/-/uplot-1.6.31.tgz
+    sha256: `+pin+`
+    dest: node_modules/uplot
+`)
+	writeUserRecipe(t, recipes, "js-unpinned.yaml", `
+type: js-lib
+bundle:
+  - url: https://registry.npmjs.org/a/-/a-1.0.0.tgz
+    dest: node_modules/a
+`)
+	skipped := cat.LoadUserRecipes(recipes)
+	item, ok := cat.RecipeByID("js-mine")
+	if !ok || item.Type != LibraryType || item.Strategy != "download" || len(item.Libraries) != 1 {
+		t.Fatalf("js-mine = %+v (loaded %v), want a js-lib recipe", item, ok)
+	}
+	reasons := map[string]string{}
+	for _, s := range skipped {
+		reasons[s.ID] = s.Reason
+	}
+	if !strings.Contains(reasons["js-same"], "uplot") || !strings.Contains(reasons["js-same"], "js-mine") {
+		t.Errorf("js-same skipped for %q, want the library it shares with js-mine", reasons["js-same"])
+	}
+	if !strings.Contains(reasons["js-unpinned"], "sha256") {
+		t.Errorf("js-unpinned skipped for %q, want the missing pin", reasons["js-unpinned"])
+	}
+}

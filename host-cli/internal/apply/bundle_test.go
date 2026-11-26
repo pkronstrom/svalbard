@@ -286,3 +286,85 @@ func TestExtractIncludeNoMatchFails(t *testing.T) {
 		t.Fatalf("err = %v, want files and include refused together", err)
 	}
 }
+
+func zipNames(t *testing.T, path string) map[string]string {
+	t.Helper()
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	files := map[string]string{}
+	for _, f := range reader.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		buf.ReadFrom(rc)
+		rc.Close()
+		files[f.Name] = buf.String()
+	}
+	return files
+}
+
+func TestApplyJSLibWritesOneArchive(t *testing.T) {
+	d3 := tarGz(t,
+		archiveEntry{name: "package/package.json", body: `{"name":"d3"}`},
+		archiveEntry{name: "package/LICENSE", body: "ISC"},
+		archiveEntry{name: "package/dist/d3.min.js", body: "umd"},
+		archiveEntry{name: "package/dist/d3.js", body: "full"},
+		archiveEntry{name: "package/src/index.js", body: "src"},
+	)
+	color := tarGz(t,
+		archiveEntry{name: "package/package.json", body: `{"name":"color"}`},
+		archiveEntry{name: "package/dist/color.esm.js", body: "esm"},
+	)
+	useMockHTTPResponses(t, map[string]string{"/d3.tgz": d3, "/color.tgz": color})
+	recipe := catalog.Item{ID: "js-test", Type: "js-lib", Bundle: []catalog.BundleSource{
+		{URL: "http://example.test/d3.tgz", SHA256: sha(d3), Strip: "package", Dest: "node_modules/d3", Include: []string{"package.json", "LICENSE", "dist/d3.min.js"}, Main: "dist/d3.min.js"},
+		{URL: "http://example.test/color.tgz", SHA256: sha(color), Strip: "package", Dest: "node_modules/d3/node_modules/color", Include: []string{"package.json", "dist/*.js"}},
+	}}
+	root := t.TempDir()
+	m, err := runBundle(t, root, recipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(root, "lib", "js", "js-test.zip")
+	got := zipNames(t, archive)
+	want := map[string]string{
+		"node_modules/d3/package.json":                         `{"name":"d3"}`,
+		"node_modules/d3/LICENSE":                              "ISC",
+		"node_modules/d3/dist/d3.min.js":                       "umd",
+		"node_modules/d3/node_modules/color/package.json":      `{"name":"color"}`,
+		"node_modules/d3/node_modules/color/dist/color.esm.js": "esm",
+	}
+	for name, body := range want {
+		if got[name] != body {
+			t.Errorf("%s = %q, want %q", name, got[name], body)
+		}
+	}
+	if index := got["svalbard-js.json"]; !strings.Contains(index, `"node_modules/d3":"dist/d3.min.js"`) {
+		t.Errorf("svalbard-js.json = %q, want d3's main", index)
+	}
+	if len(got) != len(want)+1 {
+		t.Errorf("archive holds %d files, want %d: %v", len(got), len(want)+1, got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "lib", "js", "js-test")); !os.IsNotExist(err) {
+		t.Errorf("a tree was left beside the archive: %v", err)
+	}
+	entry := m.Realized.Entries[0]
+	data, _ := os.ReadFile(archive)
+	if entry.RelativePath != filepath.Join("lib", "js", "js-test.zip") || entry.Filename != "js-test.zip" || entry.ChecksumSHA256 != sha(string(data)) || entry.SizeBytes != int64(len(data)) {
+		t.Errorf("entry = %+v, want the archive with its checksum and size", entry)
+	}
+
+	// The same sources make the same archive, byte for byte.
+	again := t.TempDir()
+	if _, err := runBundle(t, again, recipe); err != nil {
+		t.Fatal(err)
+	}
+	if other, _ := os.ReadFile(filepath.Join(again, "lib", "js", "js-test.zip")); !bytes.Equal(other, data) {
+		t.Error("a second install wrote a different archive")
+	}
+}
