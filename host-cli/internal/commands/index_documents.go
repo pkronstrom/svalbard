@@ -515,7 +515,7 @@ func documentTitle(given, own, rel string) string {
 		return given
 	}
 	own = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(own), "Microsoft Word - "))
-	if own != "" && !strings.EqualFold(own, "untitled") && !titleFileSuffixRe.MatchString(own) {
+	if own != "" && !strings.EqualFold(own, "untitled") && !strings.EqualFold(own, "PowerPoint Presentation") && !titleFileSuffixRe.MatchString(own) {
 		return own
 	}
 	base := path.Base(rel)

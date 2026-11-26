@@ -43,3 +43,9 @@ func TestMarkdownReaderTitleFallsBackToSourceName(t *testing.T) {
 		t.Fatalf("title = %q, want getting-started", text.Title)
 	}
 }
+
+func TestDocumentTitleRejectsOfficeDefaults(t *testing.T) {
+	if got := documentTitle("", "PowerPoint Presentation", "books/x/antibiogram.pdf"); got != "antibiogram" {
+		t.Fatalf("documentTitle = %q, want the file name", got)
+	}
+}

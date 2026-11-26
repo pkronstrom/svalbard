@@ -4,6 +4,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // nautilusCatalogue is the entry where an openZIM nautilus ZIM lists its
@@ -38,7 +39,7 @@ func parseNautilusTitles(js, archiveTitle string) map[string]string {
 		if titleMatch == nil || filesMatch == nil {
 			continue
 		}
-		title := strings.TrimSpace(unescapeQuoted(titleMatch[1]))
+		title := readableTitle(unescapeQuoted(titleMatch[1]))
 		if title == "" {
 			continue
 		}
@@ -55,6 +56,20 @@ func parseNautilusTitles(js, archiveTitle string) map[string]string {
 		}
 	}
 	return titles
+}
+
+// readableTitle turns a catalogue title that is a file-name slug
+// ("Wilderness-Survival-FM-2176") into words, and drops one without a letter
+// in it ("_173165"), which names nothing.
+func readableTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if !strings.ContainsFunc(title, unicode.IsLetter) {
+		return ""
+	}
+	if !strings.Contains(title, " ") {
+		title = strings.Join(strings.FieldsFunc(title, func(r rune) bool { return r == '-' || r == '_' }), " ")
+	}
+	return title
 }
 
 func unescapeQuoted(s string) string {

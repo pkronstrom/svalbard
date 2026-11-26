@@ -160,3 +160,20 @@ func TestNautilusSectionTitlesNameTheirArchive(t *testing.T) {
 		}
 	}
 }
+
+func TestNautilusTitlesThatAreSlugsOrNumbers(t *testing.T) {
+	js := "var DATABASE = [\n" +
+		"{'_id': '0', 'ti': 'Wilderness-Survival-FM-2176', 'dsc': '', 'fp': ['a.pdf']},\n" +
+		"{'_id': '1', 'ti': '_173165', 'dsc': 'Nuclear Threats', 'fp': ['b.pdf']},\n" +
+		"{'_id': '2', 'ti': 'fema_emergency- preparedness-guidelines', 'dsc': '', 'fp': ['c.pdf']},\n];"
+	titles := parseNautilusTitles(js, "Post Disaster")
+	if got := titles["a.pdf"]; got != "Wilderness Survival FM 2176" {
+		t.Errorf("slug title = %q", got)
+	}
+	if got, ok := titles["b.pdf"]; ok {
+		t.Errorf("a title without letters was kept: %q", got)
+	}
+	if got := titles["c.pdf"]; got != "fema_emergency- preparedness-guidelines" {
+		t.Errorf("a title with spaces was changed: %q", got)
+	}
+}
