@@ -142,3 +142,21 @@ func TestJunkAndTemplateRules(t *testing.T) {
 		t.Fatal("IsTemplateTitle")
 	}
 }
+
+func TestNautilusSectionTitlesNameTheirArchive(t *testing.T) {
+	js := "var DATABASE = [\n" +
+		"{'_id': '00000', 'ti': 'Introduction', 'dsc': '', 'fp': ['INTRO.pdf']},\n" +
+		"{'_id': '00001', 'ti': 'Appendix B', 'dsc': 'Altitude tables', 'fp': ['APPB.pdf']},\n" +
+		"{'_id': '00002', 'ti': 'Introduction to knots', 'dsc': 'Basics', 'fp': ['knots.pdf']},\n];"
+	titles := parseNautilusTitles(js, "USDA Guide to Home Canning")
+	want := map[string]string{
+		"INTRO.pdf": "USDA Guide to Home Canning, Introduction",
+		"APPB.pdf":  "USDA Guide to Home Canning, Appendix B: Altitude tables",
+		"knots.pdf": "Introduction to knots",
+	}
+	for file, title := range want {
+		if titles[file] != title {
+			t.Errorf("%s: %q, want %q", file, titles[file], title)
+		}
+	}
+}

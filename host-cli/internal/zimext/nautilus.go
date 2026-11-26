@@ -18,8 +18,9 @@ var (
 	nautilusDescRe   = regexp.MustCompile(`'dsc':\s*'((?:[^'\\]|\\.)*)'`)
 	nautilusFilesRe  = regexp.MustCompile(`'fp':\s*\[([^\]]*)\]`)
 	nautilusFileRe   = regexp.MustCompile(`'((?:[^'\\]|\\.)*)'`)
-	// A title that only numbers a part says nothing on its own.
-	genericTitleRe = regexp.MustCompile(`(?i)^(part|chapter|vol(ume)?|section|book)\s*[\dIVX.]+$`)
+	// A title that only numbers a part, or names a section any book has,
+	// says nothing on its own.
+	genericTitleRe = regexp.MustCompile(`(?i)^((part|chapter|vol(ume)?|section|book)\s*[\dIVX.]+|appendix(\s+[A-Z\d]+)?|introduction|preface|foreword|contents|index|glossary)$`)
 )
 
 // parseNautilusTitles reads a nautilus catalogue into titles by file name. A
