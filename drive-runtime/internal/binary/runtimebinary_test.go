@@ -350,3 +350,32 @@ func buildTar(t *testing.T, files map[string]string) []byte {
 	}
 	return buf.Bytes()
 }
+
+// On an exFAT stick macOS writes a "._name" companion for every file that
+// has extended attributes, and a downloaded archive has them.
+func TestResolveIgnoresAppleDoubleCompanionsOfArchives(t *testing.T) {
+	driveRoot := t.TempDir()
+	binDir := filepath.Join(driveRoot, "bin", currentPlatform(t))
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "kiwix-tools.tar.gz"), buildTarGz(t, map[string]string{
+		"kiwix-tools/kiwix-serve": "#!/bin/sh\nexit 0\n",
+	}), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	companion := []byte("\x00\x05\x16\x07\x00\x02\x00\x00Mac OS X        ")
+	for _, name := range []string{"._kiwix-tools.tar.gz", "._other-tool.zip", "._third.tar.bz2", "._fourth.gz"} {
+		if err := os.WriteFile(filepath.Join(binDir, name), companion, 0o644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+	}
+
+	got, err := binary.Resolve("kiwix-serve", driveRoot)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if want := filepath.Join(binDir, "kiwix-tools", "kiwix-serve"); got != want {
+		t.Fatalf("Resolve() = %q, want %q", got, want)
+	}
+}
