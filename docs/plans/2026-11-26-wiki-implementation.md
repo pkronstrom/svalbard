@@ -265,6 +265,11 @@ pages. SilverBullet adds a second one: **a page is a program**. What is closed a
 Added 2026-11-26 on branch `wiki-live`, after the owner answered the open risk below: agents may use
 SilverBullet's features, and the browser keeps nothing between visits.
 
+Why Lua stays on: with it off (`disableSpaceLua`, tried on the real binary, see "Review") the wiki's
+Search button answers "Command Space: Search not found" and every command of SilverBullet's standard
+library is gone, because that library is Lua. The content policy is what stays as protection, in both
+modes of the setting below.
+
 What was built:
 
 - **Setting `silverbullet.live_pages`** (bool, default on, label "Agents may write live pages"). On: the
