@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -137,9 +138,35 @@ func stepExtract(archivePath, destDir string) error {
 		return extractZipToDir(archivePath, destDir)
 	case strings.HasSuffix(archivePath, ".tar.gz") || strings.HasSuffix(archivePath, ".tgz"):
 		return extractTarGzToDir(archivePath, destDir)
+	}
+	// Downloads such as app-bundle's {workdir}/archive have no extension, and
+	// sources such as draw.war use one that names no format, so sniff it.
+	magic, err := readMagic(archivePath)
+	if err != nil {
+		return err
+	}
+	switch {
+	case bytes.HasPrefix(magic, []byte("PK\x03\x04")):
+		return extractZipToDir(archivePath, destDir)
+	case bytes.HasPrefix(magic, []byte{0x1f, 0x8b}):
+		return extractTarGzToDir(archivePath, destDir)
 	default:
 		return fmt.Errorf("unsupported archive format: %s", filepath.Base(archivePath))
 	}
+}
+
+func readMagic(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	magic := make([]byte, 4)
+	n, err := io.ReadFull(file, magic)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return nil, err
+	}
+	return magic[:n], nil
 }
 
 // stepExec finds a tool and runs it with args.

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<!--
+  @jscad/web ships its editor as demo.html and no index.html, and it resolves
+  its bundled examples against the page's directory, so the editor has to be
+  the directory index. This is demo.html from @jscad/web 2.6.13 without its
+  leave-page prompt.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>JSCAD - JavaScript CAD</title>
+    <link rel="stylesheet" type="text/css" href="./css/demo.css">
+    <link rel="shortcut icon" href="imgs/favicon.png" type="image/x-png">
+    <style>
+      body {
+        height: 100%;
+        min-height: 100%;
+        min-width: 100%;
+        margin: 0px;
+        font-family: 'Open Sans', sans-serif;
+      }
+      noscript {
+        text-align: center;
+      }
+      #jscad {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>
+      <h1>Please enable JavaScript to use this website</h1>
+    </noscript>
+    <div id="jscad"></div>
+    <script src="./dist/jscad-web.min.js"></script>
+    <script>
+      jscadWeb(document.getElementById('jscad'), {name: 'jscad1'})
+    </script>
+  </body>
+</html>
