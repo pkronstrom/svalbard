@@ -16,6 +16,18 @@ const (
 	// keywordRank weighs a word in the title four times one in the body, so
 	// the article about a subject outranks those that mention it.
 	keywordRank = "bm25(4.0, 1.0)"
+
+	// pagesPerDocument is how many pages of one document a search returns
+	// unless it is limited to that document. Every page's title carries the
+	// document's title, so a query that names a document (or a subject a
+	// document is named after) matches all of its pages in the weighted
+	// column; unchecked, a 400-page manual fills every result and buries the
+	// articles of other sources.
+	pagesPerDocument = 3
+
+	// rankedScan bounds the rows read past the limit while pages over
+	// pagesPerDocument are skipped.
+	rankedScan = 2000
 )
 
 // stopWords are dropped from a query so a question typed as a sentence still
@@ -32,9 +44,21 @@ var stopWords = map[string]bool{
 
 // KeywordOptions narrows a keyword search.
 type KeywordOptions struct {
-	// Source is a filename from the sources table; empty searches every source.
+	// Source is a search scope as InScope reads it: a filename from the
+	// sources table, a folder of documents ending in "/", or empty for every
+	// source.
 	Source string
 	Limit  int
+}
+
+// scopeClause is the SQL condition for a search scope on the sources table
+// joined as src, with its argument.
+func scopeClause(scope string) (string, any) {
+	if strings.HasSuffix(scope, "/") {
+		// substr, not LIKE: a folder name may hold "%" or "_".
+		return ` AND substr(src.filename, 1, length(?)) = ?`, scope
+	}
+	return ` AND src.filename = ?`, scope
 }
 
 // KeywordMatches is the outcome of Search.
@@ -49,6 +73,9 @@ type KeywordMatches struct {
 	// is worked out only when the search did not fill its limit with complete
 	// matches, which is when a caller needs to know why.
 	Missing []string
+	// MorePages names the documents that have further matching pages than
+	// the pagesPerDocument returned; a search limited to one shows them.
+	MorePages []string
 }
 
 // QueryWords returns the words a query is searched by: split on spaces and
@@ -112,10 +139,11 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 		return matches, ctx.Err()
 	}
 
-	exact, err := e.ranked(ctx, ftsTerms(matches.Words, " AND "), opts.Source, opts.Limit)
+	exact, more, err := e.ranked(ctx, ftsTerms(matches.Words, " AND "), opts.Source, opts.Limit)
 	if err != nil {
 		return matches, err
 	}
+	matches.MorePages = more
 	matches.Results, matches.Exact = exact, len(exact)
 	if len(exact) >= opts.Limit {
 		return matches, ctx.Err()
@@ -131,7 +159,7 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 
 	// More candidates than are returned, so that an article with many of the
 	// words can overtake one that repeats a single rare word.
-	candidates, err := e.ranked(ctx, ftsTerms(matches.Words, " OR "), opts.Source, max(3*opts.Limit, 30))
+	candidates, _, err := e.ranked(ctx, ftsTerms(matches.Words, " OR "), opts.Source, max(3*opts.Limit, 30))
 	if err != nil {
 		return matches, err
 	}
@@ -164,8 +192,10 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	return matches, ctx.Err()
 }
 
-// ranked runs one FTS5 query ordered by the title-weighted rank.
-func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int) ([]Result, error) {
+// ranked runs one FTS5 query ordered by the title-weighted rank. Unless the
+// scope is a single document, it keeps at most pagesPerDocument pages of any
+// one document and returns the documents that had more.
+func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int) ([]Result, []string, error) {
 	statement := `SELECT a.id, src.filename, a.path, a.title,
                 snippet(articles_fts, 1, '»', '«', '...', 12)
          FROM articles_fts
@@ -174,44 +204,68 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
          WHERE articles_fts MATCH ? AND rank MATCH '` + keywordRank + `'`
 	args := []any{ftsQuery}
 	if source != "" {
-		statement += ` AND src.filename = ?`
-		args = append(args, source)
+		clause, arg := scopeClause(source)
+		statement += clause
+		args = append(args, arg)
+		if strings.Count(clause, "?") == 2 {
+			args = append(args, arg)
+		}
 	}
-	rows, err := e.db.QueryContext(ctx, statement+` ORDER BY rank LIMIT ?`, append(args, limit)...)
+	// FTS5 hands the rows out in rank order, so reading stops as soon as the
+	// limit is filled; the generous LIMIT only bounds the skipping.
+	capped := !IsDocumentSource(source) || strings.HasSuffix(source, "/")
+	scan := limit
+	if capped {
+		scan = limit + rankedScan
+	}
+	rows, err := e.db.QueryContext(ctx, statement+` ORDER BY rank LIMIT ?`, append(args, scan)...)
 	if err != nil {
-		return nil, fmt.Errorf("engine: keyword search: %w", err)
+		return nil, nil, fmt.Errorf("engine: keyword search: %w", err)
 	}
 	defer rows.Close()
 
 	var results []Result
-	for rows.Next() {
+	var more []string
+	pages := map[string]int{}
+	for len(results) < limit && rows.Next() {
 		var r Result
 		var snippet sql.NullString
 		if err := rows.Scan(&r.ArticleID, &r.Filename, &r.Path, &r.Title, &snippet); err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		if capped && IsDocumentSource(r.Filename) {
+			pages[r.Filename]++
+			if pages[r.Filename] > pagesPerDocument {
+				if pages[r.Filename] == pagesPerDocument+1 {
+					more = append(more, r.Filename)
+				}
+				continue
+			}
 		}
 		r.Snippet = snippet.String
 		results = append(results, r)
 	}
-	return results, rows.Err()
+	return results, more, rows.Err()
 }
 
 // missingWords returns the words that no article of the searched sources
 // contains, so a caller can tell "not on this drive" from "not together".
 func (e *Engine) missingWords(ctx context.Context, words []string, source string) ([]string, error) {
 	statement := `SELECT 1 FROM articles_fts WHERE articles_fts MATCH ? LIMIT 1`
+	var scopeArgs []any
 	if source != "" {
+		clause, arg := scopeClause(source)
 		statement = `SELECT 1 FROM articles_fts
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id
-         WHERE articles_fts MATCH ? AND src.filename = ? LIMIT 1`
+         WHERE articles_fts MATCH ?` + clause + ` LIMIT 1`
+		for range strings.Count(clause, "?") {
+			scopeArgs = append(scopeArgs, arg)
+		}
 	}
 	var missing []string
 	for _, word := range words {
-		args := []any{ftsTerm(word)}
-		if source != "" {
-			args = append(args, source)
-		}
+		args := append([]any{ftsTerm(word)}, scopeArgs...)
 		rows, err := e.db.QueryContext(ctx, statement, args...)
 		if err != nil {
 			return nil, fmt.Errorf("engine: missing words: %w", err)

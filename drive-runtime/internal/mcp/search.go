@@ -19,7 +19,8 @@ import (
 
 // SearchCapability exposes search and read functionality via the MCP "search" tool.
 // Uses ncruces/go-sqlite3 directly for FTS5 queries (no sqlite3 binary needed).
-// Uses kiwix-serve only for browse/read with full HTML content.
+// Uses kiwix-serve only for browse/read with full HTML content of archives;
+// documents (PDFs under books/) are read from the index alone.
 type SearchCapability struct {
 	driveRoot string
 	meta      DriveMetadata
@@ -48,20 +49,20 @@ func (c *SearchCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "search",
-			Desc: "Search the drive's archives by keyword. Use two to four specific words (\"paracetamol dose\", not a sentence). Articles with every word come first; if there are few, articles with most of the words follow, marked with the words they matched. Pass a result's source and path to search_read. vault_sources lists the archives. Not for SQLite data: use query_sql.",
+			Desc: "Search the drive's archives and documents by keyword. Use two to four specific words (\"paracetamol dose\", not a sentence). Articles with every word come first; if there are few, articles with most of the words follow, marked with the words they matched. A hit in a document (a PDF) is one page: its title names the document and the page to cite. Pass a result's source and path to search_read. vault_sources lists the archives and documents. Not for SQLite data: use query_sql.",
 			Params: []ParamDef{
 				{Name: "query", Type: "string", Required: true, Desc: "Keywords, for example: nmap port scan"},
-				{Name: "source", Type: "string", Desc: "Restrict to one archive, by its name from vault_sources"},
+				{Name: "source", Type: "string", Desc: "Restrict to one archive or document, by its name from vault_sources, or to a folder of documents such as books/car-manuals"},
 				{Name: "detail", Type: "string", Desc: "link: titles only. snippet: a matching line. full: the opening of up to 5 articles", Default: "snippet", Enum: []string{"link", "snippet", "full"}},
 				{Name: "limit", Type: "integer", Desc: "Maximum results, 1 to 50", Default: defaultSearchLimit},
 			},
 		},
 		{
 			Name: "read",
-			Desc: "Read an article from an archive. Long articles come in parts: when the result has \"continues\", call again with the offset it names. Omit path for the archive's main page. Paths come from search results and from the links of a page already read.",
+			Desc: "Read an article from an archive, or a page of a document. Long articles come in parts: when the result has \"continues\", call again with the offset it names. Omit path for the archive's main page or a document's list of pages. Paths come from search results and from the links of a page already read; a document's pages are page/1, page/2 and so on.",
 			Params: []ParamDef{
-				{Name: "source", Type: "string", Required: true, Desc: "Archive name, as in search results"},
-				{Name: "path", Type: "string", Desc: "Article path, as in search results. Omit for the main page."},
+				{Name: "source", Type: "string", Required: true, Desc: "Archive or document name, as in search results"},
+				{Name: "path", Type: "string", Desc: "Article path, as in search results; page/N for a document. Omit for the main page."},
 				{Name: "offset", Type: "integer", Desc: "Character to start from, for the next part of a long article", Default: 0},
 			},
 		},
@@ -116,6 +117,10 @@ type searchResultItem struct {
 	Body    string `json:"body,omitempty"`
 	// Matched lists the query words a partial match contains.
 	Matched []string `json:"matched,omitempty"`
+	// Page and File are set for a hit in a document: the page number, and
+	// where the page is on the drive ("books/manuals/volvo.pdf#page=12").
+	Page int    `json:"page,omitempty"`
+	File string `json:"file,omitempty"`
 }
 
 func (c *SearchCapability) getDB() (*sql.DB, *engine.Engine, error) {
@@ -154,13 +159,14 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	if err != nil {
 		return ActionResult{}, err
 	}
-	// source is the indexed filename; sourceFilter is the name tools use.
+	// source is the scope searched: an indexed filename, or a folder of
+	// documents ending in "/". sourceFilter is the name tools know it by.
 	source, sourceFilter := "", ""
 	if requested := getString(params, "source"); requested != "" {
-		if source, err = c.resolveSource(ctx, requested, false); err != nil {
+		if source, err = c.resolveScope(ctx, requested, false); err != nil {
 			return ActionResult{}, err
 		}
-		sourceFilter = sourceName(source)
+		sourceFilter = strings.TrimSuffix(sourceName(source), "/")
 	}
 
 	// Fetch more results when filtering by source, then trim.
@@ -185,7 +191,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		if embedErr == nil {
 			var usable bool
 			if detail == "full" {
-				results, usable, embedErr = search.HybridSnapshotFull(ctx, db, contract, query, queryVec, limit, sourceFilter)
+				results, usable, embedErr = search.HybridSnapshotFull(ctx, db, contract, query, queryVec, limit, source)
 			} else {
 				results, usable, embedErr = search.HybridSnapshot(ctx, db, contract, query, queryVec, fetchLimit)
 			}
@@ -207,7 +213,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		if sourceFilter != "" {
 			filtered := make([]engine.Result, 0, len(results))
 			for _, r := range results {
-				if sourceName(r.Filename) == sourceFilter {
+				if engine.InScope(r.Filename, source) {
 					filtered = append(filtered, r)
 				}
 			}
@@ -233,6 +239,9 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		if note := keywordAdvisory(matches, scope); note != "" {
 			advisory = append(advisory, note)
 		}
+		if len(matches.MorePages) > 0 {
+			advisory = append(advisory, "Only the best pages of each document are listed. More pages match in: "+strings.Join(matches.MorePages, ", ")+". Search with one of them as source to see them.")
+		}
 		if len(results) == 0 {
 			advisory = append(advisory, c.holdings(ctx))
 		}
@@ -245,6 +254,9 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			Path:    r.Path,
 			Title:   r.Title,
 			Matched: r.Matched,
+		}
+		if page, ok := engine.PageNumber(r.Path); ok && engine.IsDocumentSource(r.Filename) {
+			item.Page, item.File = page, search.DocumentFile(r.Filename, page)
 		}
 
 		// Prepend chunk header for section context (e.g., "Water Purification > Solar disinfection")
@@ -270,6 +282,8 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 				item.Body = articleOpening(r.Body)
 			} else if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
 				item.Body = articleOpening(body)
+			} else if engine.IsDocumentSource(r.Filename) {
+				item.Snippet = html.UnescapeString(r.Snippet) // a document has no page outside the index
 			} else {
 				// Fallback to kiwix for full HTML content
 				if page, _, fetchErr := c.fetchPage(ctx, sourceName(r.Filename), strings.TrimLeft(r.Path, "/")); fetchErr == nil {
@@ -301,17 +315,48 @@ func (c *SearchCapability) holdings(ctx context.Context) string {
 	if err != nil || len(filenames) == 0 {
 		return ""
 	}
+	// A folder of documents is one holding, described by its collection:
+	// fifty manuals must not crowd the archives out of the list.
+	type holding struct {
+		name      string
+		recipe    RecipeMeta
+		documents int
+	}
+	var holdings []*holding
+	folders := map[string]*holding{}
+	for _, filename := range filenames {
+		recipe, _ := c.meta.RecipeForFile(filename)
+		if rest, isDocument := strings.CutPrefix(filename, engine.DocumentsDir+"/"); isDocument {
+			if cut := strings.Index(rest, "/"); cut > 0 {
+				folder := engine.DocumentsDir + "/" + rest[:cut]
+				if folders[folder] == nil {
+					folders[folder] = &holding{name: folder, recipe: recipe}
+					holdings = append(holdings, folders[folder])
+				}
+				folders[folder].documents++
+				continue
+			}
+		}
+		holdings = append(holdings, &holding{name: sourceName(filename), recipe: recipe})
+	}
 	listed := make([]string, 0, holdingsListed)
-	for _, filename := range filenames[:min(len(filenames), holdingsListed)] {
-		entry := sourceName(filename)
-		if recipe, ok := c.meta.RecipeForFile(filename); ok && recipe.Description != "" {
-			topic, _, _ := strings.Cut(recipe.Description, " (")
-			entry += " (" + opening(topic, 90) + ")"
+	for _, held := range holdings[:min(len(holdings), holdingsListed)] {
+		entry := held.name
+		var details []string
+		if held.recipe.Description != "" {
+			topic, _, _ := strings.Cut(held.recipe.Description, " (")
+			details = append(details, opening(topic, 90))
+		}
+		if held.documents > 0 {
+			details = append(details, countDocuments(held.documents))
+		}
+		if len(details) > 0 {
+			entry += " (" + strings.Join(details, "; ") + ")"
 		}
 		listed = append(listed, entry)
 	}
 	more := ""
-	if extra := len(filenames) - len(listed); extra > 0 {
+	if extra := len(holdings) - len(listed); extra > 0 {
 		more = fmt.Sprintf("; and %d more, listed by vault_sources", extra)
 	}
 	return "The drive holds: " + strings.Join(listed, "; ") + more + ". A subject outside these is not on the drive."

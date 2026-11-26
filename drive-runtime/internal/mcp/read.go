@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
@@ -41,6 +42,10 @@ type readResult struct {
 	Continues string            `json:"continues,omitempty"`
 	Note      string            `json:"note,omitempty"`
 	Links     []search.PageLink `json:"links,omitempty"`
+	// Page and File are set for a document: the page number, and where the
+	// page is on the drive ("books/manuals/volvo.pdf#page=12").
+	Page int    `json:"page,omitempty"`
+	File string `json:"file,omitempty"`
 }
 
 func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any) (ActionResult, error) {
@@ -60,6 +65,9 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 		offset = 0
 	}
 	rawPath := getString(params, "path")
+	if engine.IsDocumentSource(source) {
+		return c.readDocument(ctx, source, rawPath, offset)
+	}
 	candidates := pathCandidates(rawPath)
 
 	page, pagePath, err := c.readFullPage(ctx, source, candidates)
@@ -169,8 +177,75 @@ func (c *SearchCapability) fetchPage(ctx context.Context, book, path string) (se
 
 // resolveSource turns the name a caller gave into a source filename. The name
 // may carry the file extension or not, differ in case, or be an unambiguous
-// part of the filename. onDisk also accepts archives that are not indexed.
+// part of the filename; a document may be named with or without "books/".
+// onDisk also accepts archives that are not indexed.
 func (c *SearchCapability) resolveSource(ctx context.Context, name string, onDisk bool) (string, error) {
+	scope, err := c.resolveScope(ctx, name, onDisk)
+	if err != nil {
+		return "", err
+	}
+	if folder, isFolder := strings.CutSuffix(scope, "/"); isFolder {
+		var documents []string
+		for _, filename := range c.knownSources(ctx, false) {
+			if engine.InScope(filename, scope) {
+				documents = append(documents, filename)
+			}
+		}
+		if len(documents) == 1 {
+			return documents[0], nil
+		}
+		listed := documents[:min(len(documents), holdingsListed)]
+		more := ""
+		if extra := len(documents) - len(listed); extra > 0 {
+			more = fmt.Sprintf(", and %d more", extra)
+		}
+		return "", fmt.Errorf("%s is a folder of %s; pass one of them as source: %s%s. To find a page, search with source %s.",
+			folder, countDocuments(len(documents)), strings.Join(listed, ", "), more, folder)
+	}
+	return scope, nil
+}
+
+// resolveScope is resolveSource for a search, which may also be limited to a
+// folder of documents: the scope returned for one ends in "/".
+func (c *SearchCapability) resolveScope(ctx context.Context, name string, onDisk bool) (string, error) {
+	known := c.knownSources(ctx, onDisk)
+	given := strings.ToLower(strings.TrimSpace(name))
+	want := strings.ToLower(sourceName(strings.TrimSpace(name)))
+	var partial []string
+	for _, filename := range known {
+		if engine.IsDocumentSource(filename) {
+			forms := documentNames(filename)
+			if slices.Contains(forms, given) {
+				return filename, nil
+			}
+			if strings.Contains(forms[0], given) {
+				partial = append(partial, filename)
+			}
+			continue
+		}
+		have := strings.ToLower(sourceName(filename))
+		if have == want {
+			return filename, nil
+		}
+		if strings.Contains(have, want) {
+			partial = append(partial, filename)
+		}
+	}
+	if folder, count := documentFolder(name, known); count > 0 {
+		return folder, nil
+	}
+	if len(partial) == 1 {
+		return partial[0], nil
+	}
+	if len(known) == 0 {
+		return "", fmt.Errorf("unknown source %q: the drive has no archives or documents", name)
+	}
+	return "", fmt.Errorf("unknown source %q. Sources on this drive: %s", name, strings.Join(sourceNames(known), ", "))
+}
+
+// knownSources lists the indexed sources and, with onDisk, the archives in
+// zim/ that are not indexed.
+func (c *SearchCapability) knownSources(ctx context.Context, onDisk bool) []string {
 	var known []string
 	listed := map[string]bool{}
 	add := func(filename string) {
@@ -191,29 +266,15 @@ func (c *SearchCapability) resolveSource(ctx context.Context, name string, onDis
 			add(filepath.Base(zim))
 		}
 	}
-	want := strings.ToLower(sourceName(strings.TrimSpace(name)))
-	var partial, names []string
-	for _, filename := range known {
-		have := strings.ToLower(sourceName(filename))
-		if have == want {
-			return filename, nil
-		}
-		if strings.Contains(have, want) {
-			partial = append(partial, filename)
-		}
-		names = append(names, sourceName(filename))
-	}
-	if len(partial) == 1 {
-		return partial[0], nil
-	}
-	if len(names) == 0 {
-		return "", fmt.Errorf("unknown source %q: the drive has no archives", name)
-	}
-	return "", fmt.Errorf("unknown source %q. Sources on this drive: %s", name, strings.Join(names, ", "))
+	return known
 }
 
-// sourceName is a source as tools name it: the filename without extension.
+// sourceName is a source as tools name it: an archive's filename without
+// extension, a document's path on the drive as it is.
 func sourceName(filename string) string {
+	if engine.IsDocumentSource(filename) {
+		return filename
+	}
 	return strings.TrimSuffix(filename, filepath.Ext(filename))
 }
 

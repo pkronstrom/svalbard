@@ -440,17 +440,25 @@ func blobToFloat32(blob []byte) []float32 {
 
 // ReadArticle reads article body by source filename and path.
 func (e *Engine) ReadArticle(source, path string) (string, error) {
-	filename := source
-	if !strings.HasSuffix(filename, ".zim") {
-		filename += ".zim"
+	// The name as given first: a document is indexed under its path, which
+	// ends in its own extension. An archive may be named without ".zim".
+	filenames := []string{source}
+	if !strings.HasSuffix(source, ".zim") {
+		filenames = append(filenames, source+".zim")
 	}
 	var body sql.NullString
-	err := e.db.QueryRow(
-		`SELECT a.body FROM articles a
-         JOIN sources src ON src.id = a.source_id
-         WHERE src.filename = ? AND a.path = ?`,
-		filename, path,
-	).Scan(&body)
+	err := sql.ErrNoRows
+	for _, filename := range filenames {
+		err = e.db.QueryRow(
+			`SELECT a.body FROM articles a
+             JOIN sources src ON src.id = a.source_id
+             WHERE src.filename = ? AND a.path = ?`,
+			filename, path,
+		).Scan(&body)
+		if err != sql.ErrNoRows {
+			break
+		}
+	}
 	if err == sql.ErrNoRows {
 		return "", fmt.Errorf("article not found: %s/%s", source, path)
 	}

@@ -129,7 +129,7 @@ func TestSearchRanksPartialMatchesByWordsMatched(t *testing.T) {
 	insertArticle(t, db, src, "/two-words", "Ticks", "tick bite")
 
 	query := "doxycycline tick bite rabies vaccine"
-	byRank, err := New(db).ranked(context.Background(), ftsTerms(QueryWords(query), " OR "), "", 10)
+	byRank, _, err := New(db).ranked(context.Background(), ftsTerms(QueryWords(query), " OR "), "", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
