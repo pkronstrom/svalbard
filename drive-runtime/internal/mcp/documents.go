@@ -99,6 +99,49 @@ func (c *SearchCapability) documentOverview(ctx context.Context, eng *engine.Eng
 	return ActionResult{Data: result}, nil
 }
 
+// archiveListed caps the documents the note on an archive's main page names.
+const archiveListed = 20
+
+// archiveDocumentsNote names the documents indexed from inside an archive,
+// for the reader of its main page: the main page of an archive that is a
+// set of PDFs is often an empty web app. "" for an archive that holds none.
+func (c *SearchCapability) archiveDocumentsNote(ctx context.Context, archive string) string {
+	_, eng, err := c.getDB()
+	if err != nil {
+		return ""
+	}
+	documents, err := eng.Documents(ctx)
+	if err != nil {
+		return ""
+	}
+	var held []engine.Document
+	for _, doc := range documents {
+		if inside, _, ok := engine.EmbeddedArchive(doc.Filename); ok && inside == archive {
+			held = append(held, doc)
+		}
+	}
+	if len(held) == 0 {
+		return ""
+	}
+	listed := make([]string, 0, min(len(held), archiveListed))
+	for _, doc := range held[:min(len(held), archiveListed)] {
+		detail := countPages(doc.Pages)
+		if doc.Pages == 0 {
+			reason := doc.Note
+			if reason == "" {
+				reason = "no text"
+			}
+			detail = "not searchable: " + reason
+		}
+		listed = append(listed, fmt.Sprintf("%s (%s, %s)", doc.Filename, doc.Title, detail))
+	}
+	note := fmt.Sprintf("This archive also holds %s, read from the index with search_read: %s.", countDocuments(len(held)), strings.Join(listed, "; "))
+	if extra := len(held) - len(listed); extra > 0 {
+		note += fmt.Sprintf(" And %d more; search with this source to find a page.", extra)
+	}
+	return note
+}
+
 func noPageError(doc engine.Document, page engine.DocumentPage) error {
 	if doc.Pages == 0 {
 		reason := "it has no text"
@@ -125,11 +168,33 @@ func countPages(n int) string {
 
 // documentNames are the forms a document may be named by, lowercased: its
 // path on the drive, with or without the extension and the books/ prefix.
+// A document inside an archive may also be named under the archive's name
+// without ".zim", or without the language and date kiwix appends to it:
+// "usda-2015/files/guide.pdf" for "usda-2015_en_2025-04.zim/files/guide.pdf".
 func documentNames(filename string) []string {
 	full := strings.ToLower(filename)
 	bare := strings.TrimSuffix(full, strings.ToLower(extension(filename)))
+	if archive, entry, ok := engine.EmbeddedArchive(full); ok {
+		names := []string{full, bare}
+		entryBare := strings.TrimSuffix(entry, extension(entry))
+		for _, name := range []string{strings.TrimSuffix(archive, ".zim"), archiveShortName(archive)} {
+			names = append(names, name+"/"+entry, name+"/"+entryBare)
+		}
+		return names
+	}
 	short := strings.TrimPrefix(full, engine.DocumentsDir+"/")
 	return []string{full, bare, short, strings.TrimPrefix(bare, engine.DocumentsDir+"/")}
+}
+
+// archiveShortName is an archive's name before the first "_", where kiwix
+// names put the language, selection and date: "usda-2015" for
+// "usda-2015_en_2025-04.zim".
+func archiveShortName(archive string) string {
+	name := strings.TrimSuffix(archive, ".zim")
+	if cut := strings.Index(name, "_"); cut > 0 {
+		return name[:cut]
+	}
+	return name
 }
 
 // extension is the last ".ext" of a path's final segment.
@@ -184,6 +249,10 @@ func sourceNames(filenames []string) []string {
 	var names []string
 	folders := map[string]int{}
 	for _, filename := range filenames {
+		if engine.IsEmbeddedSource(filename) {
+			// Named under its archive, which is listed on its own.
+			continue
+		}
 		if !engine.IsDocumentSource(filename) {
 			names = append(names, sourceName(filename))
 			continue

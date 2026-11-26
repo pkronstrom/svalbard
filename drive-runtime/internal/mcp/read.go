@@ -110,6 +110,11 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 	if next < total {
 		result.Continues = fmt.Sprintf("Characters %d to %d of %d. Call search_read with the same source and path and offset %d for the next part.", offset, next, total, next)
 	}
+	if strings.TrimSpace(rawPath) == "" && offset == 0 {
+		if held := c.archiveDocumentsNote(ctx, source); held != "" {
+			result.Note = strings.TrimSpace(result.Note + " " + held)
+		}
+	}
 	if offset == 0 {
 		result.Links = page.Links
 		if extra := len(page.Links) - readLinks; extra > 0 {
@@ -230,7 +235,10 @@ func (c *SearchCapability) resolveScope(ctx context.Context, name string, onDisk
 			if slices.Contains(forms, given) {
 				return filename, nil
 			}
-			if strings.Contains(forms[0], given) {
+			// A document inside an archive is a near miss only for a name
+			// with a path in it: the archive's own name must find the
+			// archive, not one of the documents it holds.
+			if strings.Contains(forms[0], given) && (!engine.IsEmbeddedSource(filename) || strings.Contains(given, "/")) {
 				partial = append(partial, filename)
 			}
 			continue
