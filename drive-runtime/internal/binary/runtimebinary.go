@@ -16,6 +16,9 @@ import (
 )
 
 func Resolve(name, driveRoot string) (string, error) {
+	if _, err := platform.Detect(); err != nil {
+		return "", err
+	}
 	if path, err := ResolveOnDrive(name, driveRoot); err == nil {
 		return path, nil
 	}

@@ -111,12 +111,12 @@ func TestProxyPassesTheWikisOwnRequests(t *testing.T) {
 			t.Errorf("GET with Host %s = %d %q, want 200 %q", host, status, body, want)
 		}
 	}
-	// The page's writes: a current browser, an old one, and a local program.
+	// The page's writes: a current browser, and one too old to say where a
+	// request comes from other than by Origin.
 	for name, headers := range map[string]map[string]string{
 		"same-origin fetch":        {"Sec-Fetch-Site": "same-origin", "Origin": own},
 		"browser without metadata": {"Origin": own},
 		"the other loopback name":  {"Host": fmt.Sprintf("127.0.0.1:%d", p.port), "Origin": fmt.Sprintf("http://127.0.0.1:%d", p.port)},
-		"a local program":          {},
 		"a typed address":          {"Sec-Fetch-Site": "none"},
 	} {
 		file := strings.ReplaceAll(name, " ", "-") + ".md"
@@ -127,7 +127,7 @@ func TestProxyPassesTheWikisOwnRequests(t *testing.T) {
 			t.Errorf("%s: the page was not written (%q)", name, data)
 		}
 	}
-	if status, _ := p.send(t, "DELETE", "/.fs/a-local-program.md", map[string]string{"Sec-Fetch-Site": "same-origin"}, ""); status != 200 {
+	if status, _ := p.send(t, "DELETE", "/.fs/a-typed-address.md", map[string]string{"Sec-Fetch-Site": "same-origin"}, ""); status != 200 {
 		t.Errorf("same-origin DELETE = %d, want 200", status)
 	}
 	// A cross-site read is the browser's to keep from the other page; the
@@ -168,6 +168,10 @@ func TestProxyRefusesCrossSiteWrites(t *testing.T) {
 		"other port, old browser":     {"Origin": "http://localhost:8086"},
 		"https spelling of our name":  {"Origin": fmt.Sprintf("https://localhost:%d", p.port)},
 		"sandboxed page":              {"Origin": "null"},
+		// Neither header: a browser from before 2020 posting a form. Nothing
+		// of the drive's writes through the proxy, so nothing is lost.
+		"no word on where it is from": {},
+		"a value not known today":     {"Sec-Fetch-Site": "same-party"},
 	} {
 		for _, method := range []string{"POST", "PUT", "DELETE", "PATCH", "OPTIONS"} {
 			target := "/.fs/owned.md"
@@ -285,6 +289,29 @@ func TestProxyStreamsEventsAsTheyHappen(t *testing.T) {
 			t.Fatalf("the event did not arrive while the stream was open: %v (got %q)", err, received)
 		}
 		received += line
+	}
+}
+
+func TestProxyKeepsTheWikiOutOfOtherSitesFrames(t *testing.T) {
+	p := newProxied(t)
+	// SilverBullet sends these on its dashboard only. A wiki framed by
+	// another site writes as the user clicks, and its writes are same-origin.
+	for _, target := range []string{"/", "/index", "/.fs/index.md", pingPath} {
+		response, err := http.Get("http://" + p.addr + target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if got := response.Header.Get("X-Frame-Options"); got != "SAMEORIGIN" {
+			t.Errorf("GET %s X-Frame-Options = %q, want SAMEORIGIN", target, got)
+		}
+		if got := response.Header.Get("Content-Security-Policy"); !strings.Contains(got, "frame-ancestors 'self'") || !strings.Contains(got, "form-action 'self'") {
+			t.Errorf("GET %s Content-Security-Policy = %q, want frame-ancestors and form-action limited to the wiki", target, got)
+		}
+		// A page's text must not load as another site's script or image.
+		if got := response.Header.Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+			t.Errorf("GET %s Cross-Origin-Resource-Policy = %q, want same-origin", target, got)
+		}
 	}
 }
 

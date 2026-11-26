@@ -128,6 +128,21 @@ func TestRunningURLFindsThisDrivesWikiAmongItsPorts(t *testing.T) {
 		t.Errorf("runningURL() = %q for another drive's wiki", got)
 	}
 
+	// A server that sends the question on to a wiki is not that wiki.
+	redirector, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wikiPort := servePing(t, folder)
+	redirecting := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, fmt.Sprintf("http://127.0.0.1:%d%s", wikiPort, pingPath), http.StatusFound)
+	})}
+	go redirecting.Serve(redirector)
+	t.Cleanup(func() { redirecting.Close() })
+	if got := runningURL(root, redirector.Addr().(*net.TCPAddr).Port, 1); got != "" {
+		t.Errorf("runningURL() = %q for a server that redirects to the wiki", got)
+	}
+
 	port := servePing(t, folder)
 	// Spelled with "localhost", which small models copy more reliably.
 	if got, want := runningURL(root, port, 1), fmt.Sprintf("http://localhost:%d", port); got != want {

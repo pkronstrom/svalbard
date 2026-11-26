@@ -102,7 +102,12 @@ func runningURL(driveRoot string, first, span int) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	// No keep-alive: these are one-off questions to ports that mostly refuse.
-	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
+	// No redirects: whatever else listens on one of these ports must not
+	// send the question somewhere else.
+	client := &http.Client{
+		Transport:     &http.Transport{DisableKeepAlives: true},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 
 	found := make(chan int, span)
 	for port := first; port < first+span; port++ {

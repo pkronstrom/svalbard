@@ -38,6 +38,13 @@ func newProxy(socket string, port int, folder string) http.Handler {
 			if response.Request.URL.Path == pingPath {
 				response.Header.Set(folderHeader, folder)
 			}
+			// SilverBullet protects only its dashboard from being framed.
+			// The wiki in a frame on another site writes as the user clicks,
+			// and its writes are same-origin. It frames its own widgets.
+			response.Header.Set("X-Frame-Options", "SAMEORIGIN")
+			response.Header.Add("Content-Security-Policy", "frame-ancestors 'self'; form-action 'self'")
+			// No other site may load a page's text as a script or an image.
+			response.Header.Set("Cross-Origin-Resource-Policy", "same-origin")
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
@@ -68,7 +75,7 @@ func guard(port int, next http.Handler) http.Handler {
 			// content type, which would then run as part of the wiki and
 			// pass every check here. An offline wiki never needs it.
 			refuse(w, "The wiki's fetch proxy is switched off.")
-		case r.Method != http.MethodGet && r.Method != http.MethodHead && crossSite(r):
+		case r.Method != http.MethodGet && r.Method != http.MethodHead && !fromOwnPage(r):
 			refuse(w, "The wiki accepts changes only from its own page.")
 		default:
 			next.ServeHTTP(w, r)
@@ -101,20 +108,19 @@ func fetchProxyPath(p string) bool {
 	return false
 }
 
-// crossSite reports whether a browser says the request comes from another
-// page than the wiki's own. Browsers set Sec-Fetch-Site themselves, and one
-// too old for it still sends Origin with a write. A request with neither is
-// not from a page: it is a local program, which could write the files
-// directly.
-func crossSite(r *http.Request) bool {
+// fromOwnPage reports whether a browser says the request comes from the
+// wiki's own page. Browsers set Sec-Fetch-Site themselves; "same-site" is
+// another port on localhost, such as a page a model wrote into the workspace,
+// and is refused like any other site. A browser too old for the header still
+// sends Origin with a write. A write with neither is refused as well: only a
+// very old browser sends one from a page, and nothing of the drive's writes
+// through the proxy, since the tools write the files.
+func fromOwnPage(r *http.Request) bool {
 	switch strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))) {
-	case "cross-site", "same-site":
-		// Same-site is another port on localhost: a page a model wrote into
-		// the workspace, or Open WebUI.
+	case "same-origin", "none":
 		return true
 	case "":
-		origin := r.Header.Get("Origin")
-		return origin != "" && !strings.EqualFold(origin, "http://"+r.Host)
+		return strings.EqualFold(r.Header.Get("Origin"), "http://"+r.Host)
 	}
 	return false
 }
