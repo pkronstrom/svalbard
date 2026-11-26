@@ -124,11 +124,43 @@ func isLibraryDoc(rel string) bool {
 
 // documentReader extracts the text of one kind of document.
 type documentReader interface {
-	// Read returns what the file holds. A file that cannot be read, or has
-	// no text, is not an error: it comes back with a Note and few or no
-	// parts. Only cancellation is returned as an error.
-	Read(ctx context.Context, path string) (documentText, error)
+	// Read returns what the document holds. A document that cannot be read,
+	// or has no text, is not an error: it comes back with a Note and few or
+	// no parts. Only cancellation is returned as an error.
+	Read(ctx context.Context, src documentSource) (documentText, error)
 	Close() error
+}
+
+// readSeekerAt is what a reader may need of a document's bytes: a PDF is
+// read with seeks, an EPUB as a zip.
+type readSeekerAt interface {
+	io.ReadSeeker
+	io.ReaderAt
+}
+
+// documentSource is one document to read: a file on the vault, or an entry
+// read out of a ZIM into memory.
+type documentSource struct {
+	// Name is the document's source name, the vault path or
+	// "<zim>/<entry>"; a title falls back to it.
+	Name string
+	Data readSeekerAt
+	Size int64
+}
+
+// fileSource opens a vault file as a documentSource named rel. The returned
+// function closes it.
+func fileSource(file, rel string) (documentSource, func() error, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return documentSource{}, nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return documentSource{}, nil, err
+	}
+	return documentSource{Name: rel, Data: f, Size: info.Size()}, f.Close, nil
 }
 
 // documentText is what a reader found in one file.
@@ -375,7 +407,13 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 			skip("cannot read file: " + unwrapPathError(err))
 			continue
 		}
-		text, err := reader.Read(ctx, file)
+		src, closeFile, err := fileSource(file, doc.rel)
+		if err != nil {
+			skip("cannot read file: " + unwrapPathError(err))
+			continue
+		}
+		text, err := reader.Read(ctx, src)
+		closeFile()
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -578,10 +616,10 @@ func (r pdfReader) Close() error { return r.extractor.Close() }
 
 var pdfiumCodeRe = regexp.MustCompile(`^\d+: `)
 
-func (r pdfReader) Read(ctx context.Context, file string) (documentText, error) {
+func (r pdfReader) Read(ctx context.Context, src documentSource) (documentText, error) {
 	limited, cancel := context.WithTimeout(ctx, documentTimeout)
 	defer cancel()
-	doc, err := r.extractor.Document(limited, file)
+	doc, err := r.extractor.DocumentFrom(limited, src.Data, src.Size)
 	switch {
 	case ctx.Err() != nil:
 		return documentText{}, ctx.Err()

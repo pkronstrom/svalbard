@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -29,11 +29,11 @@ func openMarkdownReader() (documentReader, error) { return markdownReader{}, nil
 
 func (markdownReader) Close() error { return nil }
 
-func (markdownReader) Read(ctx context.Context, file string) (documentText, error) {
+func (markdownReader) Read(ctx context.Context, src documentSource) (documentText, error) {
 	if err := ctx.Err(); err != nil {
 		return documentText{}, err
 	}
-	raw, err := os.ReadFile(file)
+	raw, err := io.ReadAll(io.NewSectionReader(src.Data, 0, src.Size))
 	if err != nil {
 		return documentText{Note: "unreadable: " + unwrapPathError(err)}, nil
 	}
@@ -75,7 +75,7 @@ func (markdownReader) Read(ctx context.Context, file string) (documentText, erro
 		last.lines = append(last.lines, line)
 	}
 
-	text := documentText{Title: firstNonEmpty(name, heading, fileTitle(file))}
+	text := documentText{Title: firstNonEmpty(name, heading, fileTitle(src.Name))}
 	for i, section := range sections {
 		body := strings.TrimSpace(strings.Join(section.lines, "\n"))
 		if i == 0 && description != "" {

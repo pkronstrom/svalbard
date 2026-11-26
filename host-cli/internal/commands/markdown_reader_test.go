@@ -13,7 +13,12 @@ func readMarkdown(t *testing.T, rel, body string) documentText {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	text, err := reader.Read(context.Background(), writeVaultFile(t, t.TempDir(), rel, body))
+	src, closeFile, err := fileSource(writeVaultFile(t, t.TempDir(), rel, body), rel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeFile()
+	text, err := reader.Read(context.Background(), src)
 	if err != nil {
 		t.Fatal(err)
 	}
