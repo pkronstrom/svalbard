@@ -126,7 +126,7 @@ func TestCollectionPlanOnAnotherComputer(t *testing.T) {
 	}
 	want := "download: 1\n  + car-manuals\nremove: 0\nunmanaged: 0\n" +
 		"update car-manuals: +1 document\n" +
-		"car-manuals: kept trailer.pdf: cannot read ~/Documents/manuals/trailer.pdf (defined on another computer)\n"
+		"car-manuals: kept trailer.pdf: local source, not refreshed from the vault's copy\n"
 	if out.String() != want {
 		t.Errorf("plan = %q, want %q", out.String(), want)
 	}

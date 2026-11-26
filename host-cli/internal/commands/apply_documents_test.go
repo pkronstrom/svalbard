@@ -345,7 +345,8 @@ func TestBuildPlanUsesTheVaultCopyOnAnotherComputer(t *testing.T) {
 		t.Fatal(err)
 	}
 	definition := "documents:\n  - url: https://example.test/a.pdf\n  - url: https://example.test/new.pdf\n" +
-		"  - title: Trailer\n    path: ~/Documents/manuals/trailer.pdf\n  - path: ~/Documents/manuals/workshop/\n"
+		"  - title: Trailer\n    path: ~/Documents/manuals/trailer.pdf\n  - path: ~/Documents/manuals/workshop/\n" +
+		"  - path: ~/Documents/manuals/never.pdf\n"
 	if err := os.WriteFile(filepath.Join(copyDir, "manuals.yaml"), []byte(definition), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -356,8 +357,9 @@ func TestBuildPlanUsesTheVaultCopyOnAnotherComputer(t *testing.T) {
 
 	want := "download: 1\n  + manuals\nremove: 0\nunmanaged: 0\n" +
 		"update manuals: +1 document, -1 document\n" +
-		"manuals: kept trailer.pdf: cannot read ~/Documents/manuals/trailer.pdf (defined on another computer)\n" +
-		"manuals: kept workshop/engine/timing.pdf: cannot read ~/Documents/manuals/workshop/ (defined on another computer)\n"
+		"manuals: kept trailer.pdf: local source, not refreshed from the vault's copy\n" +
+		"manuals: kept workshop/engine/timing.pdf: local source, not refreshed from the vault's copy\n" +
+		"manuals: not installed: ~/Documents/manuals/never.pdf is a local source of the computer that defined it\n"
 	if got := v.plan(); got != want {
 		t.Fatalf("plan from the vault's copy = %q, want %q", got, want)
 	}

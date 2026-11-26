@@ -237,6 +237,23 @@ func TestIndexDocumentsSkipsUnchangedAndReadsTouched(t *testing.T) {
 	if hits, _ := openIndex(t, root).Search("bravo", 1); len(hits) != 1 || !strings.HasPrefix(hits[0].Title, "Bravo Manual, p. ") {
 		t.Fatalf("hit after title change = %+v", hits)
 	}
+	if out := index(t, root); out != "" || len(reader.takeReads()) != 0 {
+		t.Fatalf("a run after the title change did work again: %q", out)
+	}
+
+	// So does a title taken out of the collection file again: the document
+	// goes back to its own title or its file name.
+	writeVaultFile(t, root, ".svalbard/documents.json", `{"books/manuals/b.pdf": {"collection": "manuals"}}`)
+	index(t, root)
+	if reads := reader.takeReads(); !reflect.DeepEqual(reads, []string{"b.pdf"}) {
+		t.Fatalf("after the title was removed read %v, want only b.pdf", reads)
+	}
+	if hits, _ := openIndex(t, root).Search("bravo", 1); len(hits) != 1 || !strings.HasPrefix(hits[0].Title, "b, p. ") {
+		t.Fatalf("hit after the title was removed = %+v", hits)
+	}
+	if out := index(t, root); out != "" || len(reader.takeReads()) != 0 {
+		t.Fatalf("a run after the title was removed did work again: %q", out)
+	}
 }
 
 func TestIndexDocumentsAndArchivesChangeIndependently(t *testing.T) {

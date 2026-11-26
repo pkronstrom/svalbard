@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -29,6 +30,12 @@ const (
 	documentsDir = "books"
 	// maxDocumentPartChars caps the text indexed for one page.
 	maxDocumentPartChars = 16000
+	// givenTitlesKey is the index's record of the title the collection file
+	// gave each document when it was last indexed (JSON, path to title; no
+	// entry for a document without one). The indexed title alone cannot tell
+	// a title that was given from the file's own, so a title that is later
+	// removed from the collection file would never be noticed.
+	givenTitlesKey = "document_titles"
 	// documentTimeout bounds the extraction of one file, so a page PDFium
 	// cannot get through does not hold up the rest of the index.
 	documentTimeout = 20 * time.Minute
@@ -145,6 +152,14 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 		return fmt.Errorf("reading document metadata: %w", err)
 	}
 
+	given := loadGivenTitles(db)
+	recorded := make(map[string]string, len(given))
+	for _, rel := range documents {
+		if title := given[rel]; title != "" {
+			recorded[rel] = title
+		}
+	}
+
 	type job struct {
 		rel  string
 		info os.FileInfo
@@ -161,12 +176,11 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 		}
 		stored := indexed[rel]
 		// The identity check is size and time only; hashing every file on
-		// every run would read the whole stick. A title set in the collection
-		// file since the last run is part of every article title.
-		current := stored.UUID != "" && stored.Size == info.Size() && stored.ModTimeNS == info.ModTime().UnixNano()
-		if title := metadata[rel].Title; title != "" && title != stored.Title {
-			current = false
-		}
+		// every run would read the whole stick. The title the collection
+		// file gives is part of every article title, so setting, changing or
+		// removing it since the last run makes the document stale too.
+		current := stored.UUID != "" && stored.Size == info.Size() && stored.ModTimeNS == info.ModTime().UnixNano() &&
+			given[rel] == metadata[rel].Title
 		switch {
 		case force || !current:
 			pending = append(pending, job{rel, info})
@@ -179,7 +193,7 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 		}
 	}
 	if len(pending) == 0 && len(noted) == 0 {
-		return nil
+		return saveGivenTitles(ctx, db, given, recorded)
 	}
 
 	width := 0
@@ -265,12 +279,41 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 		if err := db.ReplaceSource(ctx, identity, articles); err != nil {
 			return fmt.Errorf("replacing articles for %s: %w", doc.rel, err)
 		}
+		if title := metadata[doc.rel].Title; title != "" {
+			recorded[doc.rel] = title
+		} else {
+			delete(recorded, doc.rel)
+		}
 		outcome := documentOutcome(int64(len(articles)), kind.unit, text.Note)
 		report(doc.rel, outcome)
 		notify(IndexProgress{File: doc.rel, Status: "done", Detail: outcome, Current: int64(len(articles)), Total: int64(len(articles))})
 	}
 	if unchanged > 0 {
 		fmt.Fprintf(w, "  %s unchanged\n", plural(int64(unchanged), "document"))
+	}
+	return saveGivenTitles(ctx, db, given, recorded)
+}
+
+func loadGivenTitles(db *searchdb.DB) map[string]string {
+	titles := map[string]string{}
+	if raw, err := db.GetMeta(givenTitlesKey); err == nil && raw != "" {
+		_ = json.Unmarshal([]byte(raw), &titles)
+	}
+	return titles
+}
+
+// saveGivenTitles stores the record when it changed. A run that stops early
+// leaves the old record, so at worst a document is read once more.
+func saveGivenTitles(ctx context.Context, db *searchdb.DB, before, after map[string]string) error {
+	if maps.Equal(before, after) {
+		return nil
+	}
+	raw, err := json.Marshal(after)
+	if err != nil {
+		return err
+	}
+	if err := db.SetMetaContext(ctx, givenTitlesKey, string(raw)); err != nil {
+		return fmt.Errorf("recording document titles: %w", err)
 	}
 	return nil
 }

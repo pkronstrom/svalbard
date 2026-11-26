@@ -402,6 +402,9 @@ The repo was not modified.
 2. **PDFium (wasm) is the extractor**; the larger host CLI is accepted (D3).
 3. **A dead URL fails the item**, as any failed download does today (D10).
 
+4. **The vault keeps a copy of each collection's recipe** (added 2026-11-26, changes D1). Apply writes the definition file byte for byte to `.svalbard/recipes/<id>.yaml`, follows it at every apply and removes it with the collection. The file in the config folder stays the one to edit and wins when both exist. A computer without the definition uses the vault's copy for plan and apply and says so; D1's "definition not found here; updates paused" now appears only when neither exists.
+5. **A definition loaded from the vault's copy never reads `path:` sources from this computer**, not even when the path exists. Reason: a stick is something people hand to each other, and a prepared one must not be able to make `svalbard apply` copy host files onto it (`path: ~/.ssh/id_rsa`). The installed files of such entries stay, and each is reported as "local source, not refreshed from the vault's copy". Its `url:` documents are fetched as usual.
+
 Sequencing: chunks 1 and 2 are host-side and start now. Chunk 3 changes the same runtime files as the search and read tool fixes on branch `search-tools`, so it starts after that branch is merged.
 
 Kept open for later, not built here: the document pass in chunk 2 takes its file kinds from one place, so a second kind (Markdown pages from a wiki folder) can be added without reshaping it.
@@ -410,11 +413,7 @@ Kept open for later, not built here: the document pass in chunk 2 takes its file
 
 These differ from the sections above. Where they conflict, this section is what the code does.
 
-**Added by the owner after approval**
-
-- **The vault keeps a copy of each collection's recipe.** Apply writes the definition file byte for byte to `.svalbard/recipes/<id>.yaml`, updates it at every apply, and removes it with the collection. The file in the config folder stays the one to edit.
-- **A computer without the definition uses the vault's copy** for plan and apply, and says so (`note: <id> is not defined on this computer; using the vault's copy of its recipe`). The config file wins when both exist. This replaces D1's "definition not found here; updates paused", which now appears only when neither exists.
-- **`path:` entries of a vault copy are never read.** Their installed files are kept and listed one by one; its `url:` documents are fetched as usual. The entries are not read even when the path happens to exist on this computer: otherwise a vault from someone else could list `path: ~/.ssh/id_rsa` and have `svalbard apply` copy it onto the stick.
+**Added by the owner after approval:** the recipe copy on the vault and its rule for `path:` entries, section 9 items 4 and 5.
 
 **Changed for safety**
 
@@ -427,6 +426,7 @@ These differ from the sections above. Where they conflict, this section is what 
 **Changed for quality**
 
 - **Downloads identify as `svalbard`.** The plan's own example host (liberatedmanuals.com) answers Go's default agent with 403.
+- **A title set, changed or removed in the collection file re-indexes the document** although the file is unchanged. The index records the title each document was given (`meta` key `document_titles`), since the indexed title alone cannot tell a given title from the PDF's own.
 - **Document titles are written as soon as a collection's entries are saved**, not only by an apply that succeeds, so indexing by hand after a failed apply still cites documents by title.
 - **Sections JSON has an empty heading** (D4 said the article title). The semantic chunker prefixes the article title itself; repeating it as the heading produced "Title, p. 3 > Title, p. 3".
 - **`Body` is one line, `Sections` keeps the line breaks** (D4). Keyword search and snippets read the body as ZIM articles do; chunk 3 can read a page back with its table rows intact from the section.
@@ -438,6 +438,6 @@ These differ from the sections above. Where they conflict, this section is what 
 **Known limits**
 
 - A URL that is changed while the saved file name stays the same is not fetched again. Rename the file, or pin `sha256:`.
-- Removing a `title:` from the file keeps the old title in the index until the document itself changes.
+- A PDF deleted from the vault by hand is not noticed by `plan`, which compares the manifest and not the disk, as for every other recipe. The collection's next real change refetches it.
 - `svalbard status` shows the size of one document for a collection, not the sum.
 - Chunk 2 must not reach users without chunk 3: PDFs under `books/` (the built-in WHO manual included) now appear in search results, and the current stick runtime tries to open them through kiwix.

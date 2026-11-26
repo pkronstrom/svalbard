@@ -111,9 +111,17 @@ func WriteDocumentPlans(w io.Writer, documents []DocumentPlan) {
 // such source the vault holds nothing from.
 func WriteDocumentNotes(w io.Writer, item DocumentPlan) {
 	for _, kept := range item.Diff.Kept {
+		if kept.Source.Foreign {
+			fmt.Fprintf(w, "%s: kept %s: %s\n", item.ID, kept.RelPath, kept.Source.Reason)
+			continue
+		}
 		fmt.Fprintf(w, "%s: kept %s: cannot read %s (%s)\n", item.ID, kept.RelPath, kept.Source.Path, kept.Source.Reason)
 	}
 	for _, source := range item.Diff.Missing {
+		if source.Foreign {
+			fmt.Fprintf(w, "%s: not installed: %s is a local source of the computer that defined it\n", item.ID, source.Path)
+			continue
+		}
 		fmt.Fprintf(w, "%s: cannot read %s (%s)\n", item.ID, source.Path, source.Reason)
 	}
 }

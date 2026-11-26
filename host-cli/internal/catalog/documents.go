@@ -71,9 +71,15 @@ type UnreadableSource struct {
 	Name   string
 	Reason string
 	// Foreign is set when the definition is a vault's copy. Its local
-	// sources belong to the computer that wrote it and are never read here.
+	// sources belong to the computer that wrote it and are never read here,
+	// not even when the same path exists: a vault someone hands over must
+	// not be able to make apply copy this computer's files onto it.
 	Foreign bool
 }
+
+// foreignSourceReason is why a path: entry of a vault's recipe copy is not
+// read on this computer.
+const foreignSourceReason = "local source, not refreshed from the vault's copy"
 
 // Holds returns the unreadable source that a document path below the
 // collection directory came from, if any.
@@ -111,7 +117,7 @@ func ExpectedDocuments(item Item) (DocumentSet, error) {
 			name = filepath.Base(filepath.Clean(src.Path))
 		}
 		if item.VaultCopy {
-			unreadable(src, name, "defined on another computer")
+			unreadable(src, name, foreignSourceReason)
 			continue
 		}
 		info, err := os.Stat(src.Path)

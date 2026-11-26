@@ -190,8 +190,8 @@ func TestLoadVaultRecipesFillsInOnlyWhatThisComputerLacks(t *testing.T) {
 		t.Fatalf("documents = %+v, want only the URL document", set.Documents)
 	}
 	want := []UnreadableSource{
-		{Path: local, Name: "trailer.pdf", Reason: "defined on another computer", Foreign: true},
-		{Path: "~/Documents/manuals/workshop/", Name: "workshop", Reason: "defined on another computer", Foreign: true},
+		{Path: local, Name: "trailer.pdf", Reason: "local source, not refreshed from the vault's copy", Foreign: true},
+		{Path: "~/Documents/manuals/workshop/", Name: "workshop", Reason: "local source, not refreshed from the vault's copy", Foreign: true},
 	}
 	if !reflect.DeepEqual(set.Unreadable, want) {
 		t.Fatalf("unreadable = %+v, want %+v", set.Unreadable, want)

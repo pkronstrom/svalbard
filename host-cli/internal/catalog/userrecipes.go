@@ -107,10 +107,14 @@ func (c *Catalog) LoadUserRecipes(dirs ...string) []SkippedRecipe {
 
 // LoadVaultRecipes adds the recipe copies a vault keeps in dir for ids the
 // catalog does not define, and returns those ids. A definition on this
-// computer always wins over the vault's copy. A copy's local path: entries
-// are kept as written and never read: they name files of the computer that
-// wrote them, and a vault from elsewhere must not be able to make this one
-// copy its files (see ExpectedDocuments).
+// computer always wins over the vault's copy.
+//
+// A copy's local path: entries are kept as written and never read, not even
+// when the path exists here. They name files of the computer that wrote the
+// copy, and a vault is something people hand to each other: if apply read
+// them, a prepared stick could list path: ~/.ssh/id_rsa and have this
+// computer's file copied onto it. What was installed from such an entry
+// stays on the vault and is reported; see ExpectedDocuments.
 func (c *Catalog) LoadVaultRecipes(dir string) []string {
 	used, skipped := c.loadRecipeDir(dir, true)
 	c.skippedRecipes = append(c.skippedRecipes, skipped...)
