@@ -596,11 +596,30 @@ func fetchAndRecordAt(ctx context.Context, root, id string, recipe catalog.Item,
 	if filename == "" {
 		filename = filenameFromURL(dlURL)
 	}
+	cacheName := filename
+	// Per-platform binaries live in bin/<platform>/, where the drive runtime
+	// unpacks and resolves them. In flat bin/ the runtime unpacked every
+	// platform's archive into one directory and could run another platform's
+	// llama-server. A bare executable (omp-darwin-arm64, jq-linux-amd64) is
+	// stored under the recipe id, ready to run.
+	platformBinary := recipe.Type == "binary" && platform != ""
+	bareBinary := platformBinary && recipe.Filename == "" && filepath.Ext(filename) == ""
+	if platformBinary {
+		typeDir = filepath.Join(typeDir, drivePlatform(platform))
+	}
+	if bareBinary {
+		filename = id
+	}
 	destPath := filepath.Join(root, typeDir, filename)
 
-	result, err := fetchFile(ctx, id, dlURL, destPath, filename, recipe.SHA256, onProgress)
+	result, err := fetchFile(ctx, id, dlURL, destPath, cacheName, recipe.SHA256, onProgress)
 	if err != nil {
 		return manifest.RealizedEntry{}, err
+	}
+	if bareBinary {
+		if err := os.Chmod(destPath, 0o755); err != nil {
+			return manifest.RealizedEntry{}, fmt.Errorf("mark %s executable: %w", destPath, err)
+		}
 	}
 
 	fileInfo, err := os.Stat(destPath)
@@ -617,6 +636,25 @@ func fetchAndRecordAt(ctx context.Context, root, id string, recipe catalog.Item,
 		ChecksumSHA256: result.SHA256,
 		SourceStrategy: recipe.Strategy,
 	}, nil
+}
+
+// drivePlatform returns the name the drive runtime uses for a target platform:
+// "darwin-arm64" and "macos-aarch64" are both "macos-arm64" on the drive.
+func drivePlatform(platform string) string {
+	osName, archName, ok := strings.Cut(platform, "-")
+	if !ok {
+		return platform
+	}
+	if osName == "darwin" {
+		osName = "macos"
+	}
+	switch archName {
+	case "aarch64":
+		archName = "arm64"
+	case "amd64":
+		archName = "x86_64"
+	}
+	return osName + "-" + archName
 }
 
 // fetchFile downloads dlURL to destPath, reusing a locally cached copy
