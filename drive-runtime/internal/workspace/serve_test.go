@@ -262,3 +262,63 @@ func TestServeStopsAndReleasesThePortOnCancel(t *testing.T) {
 		t.Fatal("listener still accepts connections after cancellation")
 	}
 }
+
+func TestServeLimitedToTheFilesOptionsAccept(t *testing.T) {
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"a.pdf":          "%PDF",
+		"a.pdf.json":     "{}",
+		"sub/b.pdf":      "%PDF-b",
+		"sub/index.html": "<p>page</p>",
+	} {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	onlyPDF := func(name string) bool { return strings.HasSuffix(name, ".pdf") }
+
+	limited, err := OpenWith(dir, Options{Serves: onlyPDF})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer limited.Close()
+	base := serve(t, limited)
+
+	if response, body := get(t, base+"/"); response.StatusCode != http.StatusOK || !strings.Contains(body, `href="a.pdf"`) || !strings.Contains(body, `href="sub/"`) || strings.Contains(body, "a.pdf.json") {
+		t.Errorf("listing = %d %q, want a.pdf and sub/ only", response.StatusCode, body)
+	}
+	// An index page that is not served does not stand in for the listing.
+	if response, body := get(t, base+"/sub/"); response.StatusCode != http.StatusOK || !strings.Contains(body, `href="b.pdf"`) || strings.Contains(body, "page") {
+		t.Errorf("sub listing = %d %q, want the listing with b.pdf", response.StatusCode, body)
+	}
+	if response, body := get(t, base+"/sub/b.pdf"); response.StatusCode != http.StatusOK || body != "%PDF-b" {
+		t.Errorf("accepted file = %d %q", response.StatusCode, body)
+	}
+	for _, name := range []string{"/a.pdf.json", "/sub/index.html"} {
+		if response, _ := get(t, base+name); response.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", name, response.StatusCode)
+		}
+	}
+	// The limit is on serving alone.
+	if data, err := limited.ReadFile("a.pdf.json", 1024); err != nil || string(data) != "{}" {
+		t.Errorf("ReadFile = %q, %v", data, err)
+	}
+
+	// Without the option every file is served, as the workspace needs.
+	all, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer all.Close()
+	base = serve(t, all)
+	if response, body := get(t, base+"/a.pdf.json"); response.StatusCode != http.StatusOK || body != "{}" {
+		t.Errorf("unlimited file = %d %q", response.StatusCode, body)
+	}
+	if response, body := get(t, base+"/sub/"); response.StatusCode != http.StatusOK || body != "<p>page</p>" {
+		t.Errorf("unlimited index = %d %q", response.StatusCode, body)
+	}
+}

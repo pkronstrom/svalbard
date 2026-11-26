@@ -36,6 +36,9 @@ func Documents(ctx context.Context, stdout io.Writer, driveRoot, rel string, ope
 	if err != nil {
 		return fmt.Errorf("%s/%s is not on this drive", engine.DocumentsDir, rel)
 	}
+	if !info.IsDir() && !engine.IsDocumentFile(local) {
+		return fmt.Errorf("%s/%s is not a document", engine.DocumentsDir, rel)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -45,7 +48,8 @@ func Documents(ctx context.Context, stdout io.Writer, driveRoot, rel string, ope
 	if info.IsDir() {
 		address += "/"
 	}
-	return serve(ctx, stdout, "Documents", dir, listener, address, opener)
+	// Only documents: a download leaves its record beside the file.
+	return serve(ctx, stdout, "Documents", dir, workspace.Options{Serves: engine.IsDocumentFile}, listener, address, opener)
 }
 
 // Workspace serves the drive's workspace folder and opens its listing in the
@@ -62,7 +66,7 @@ func Workspace(ctx context.Context, stdout io.Writer, driveRoot string, opener f
 	}
 	// Spelled with "localhost", as the links the file tools give out are.
 	address := fmt.Sprintf("http://localhost:%d/", port)
-	return serve(ctx, stdout, "Workspace", filepath.Join(driveRoot, workspace.DirName), listener, address, opener)
+	return serve(ctx, stdout, "Workspace", filepath.Join(driveRoot, workspace.DirName), workspace.Options{}, listener, address, opener)
 }
 
 // WorkspaceMissing reports whether the drive has no workspace folder yet, and
@@ -77,11 +81,11 @@ func WorkspaceMissing(driveRoot string) (string, bool) {
 
 // serve answers for dir on listener until ctx is done, and opens address once
 // it does.
-func serve(ctx context.Context, stdout io.Writer, name, dir string, listener net.Listener, address string, opener func(string) error) error {
+func serve(ctx context.Context, stdout io.Writer, name, dir string, opts workspace.Options, listener net.Listener, address string, opener func(string) error) error {
 	if opener == nil {
 		opener = browser.Open
 	}
-	folder, err := workspace.Open(dir)
+	folder, err := workspace.OpenWith(dir, opts)
 	if err != nil {
 		listener.Close()
 		return err

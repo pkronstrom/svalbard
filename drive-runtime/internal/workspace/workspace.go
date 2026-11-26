@@ -42,6 +42,10 @@ type Options struct {
 	Place string
 	// Example is a path the folder would accept: "notes/page.html".
 	Example string
+	// Serves limits what Serve lists and answers for to the files whose name
+	// it accepts; folders are always shown. Nil serves every file. It does
+	// not limit the other methods.
+	Serves func(name string) bool
 }
 
 // Open creates the folder dir if it is missing and opens it as the drive's

@@ -181,6 +181,52 @@ func TestDocumentsOpensACollectionListing(t *testing.T) {
 	}
 }
 
+func TestDocumentsServesOnlyDocuments(t *testing.T) {
+	drive := t.TempDir()
+	books := filepath.Join(drive, "books")
+	writeFile(t, filepath.Join(books, "WHO.pdf"), "%PDF-who")
+	writeFile(t, filepath.Join(books, "WHO.pdf.download.json"), `{"url":"https://example.org"}`)
+	writeFile(t, filepath.Join(books, "manuals", "Volvo.PDF"), "%PDF-volvo")
+	writeFile(t, filepath.Join(books, "manuals", "novel.epub"), "epub")
+	writeFile(t, filepath.Join(books, "manuals", "Volvo.PDF.download.json"), "{}")
+	writeFile(t, filepath.Join(books, "manuals", "honda.pdf.part"), "%PDF-ha")
+	writeFile(t, filepath.Join(books, "manuals", "index.html"), "<h1>not a listing</h1>")
+	writeFile(t, filepath.Join(books, "manuals", "notes.txt"), "notes")
+
+	_, address := start(t, func(ctx context.Context, stdout io.Writer, opener func(string) error) error {
+		return Documents(ctx, stdout, drive, "manuals", opener)
+	})
+
+	// The collection, then the folder above it, reached through "../".
+	status, body := get(t, address)
+	if status != http.StatusOK || !strings.Contains(body, `href="Volvo.PDF"`) || !strings.Contains(body, `href="novel.epub"`) || !strings.Contains(body, `href="../"`) {
+		t.Errorf("collection listing = %d %q, want its two documents", status, body)
+	}
+	root := strings.TrimSuffix(address, "manuals/")
+	status, above := get(t, root)
+	if status != http.StatusOK || !strings.Contains(above, `href="WHO.pdf"`) || !strings.Contains(above, `href="manuals/"`) {
+		t.Errorf("books listing = %d %q, want the document and the collection", status, above)
+	}
+	for _, listing := range []string{body, above} {
+		for _, hidden := range []string{"download.json", ".part", "index.html", "notes.txt"} {
+			if strings.Contains(listing, hidden) {
+				t.Errorf("listing shows %s: %q", hidden, listing)
+			}
+		}
+	}
+
+	if status, body := get(t, address+"Volvo.PDF"); status != http.StatusOK || body != "%PDF-volvo" {
+		t.Errorf("document = %d %q", status, body)
+	}
+	// What is not a document is not served either, to someone who guesses
+	// the name.
+	for _, name := range []string{"WHO.pdf.download.json", "manuals/Volvo.PDF.download.json", "manuals/honda.pdf.part", "manuals/index.html", "manuals/notes.txt"} {
+		if status, body := get(t, root+name); status != http.StatusNotFound {
+			t.Errorf("GET %s = %d %q, want 404", name, status, body)
+		}
+	}
+}
+
 func TestDocumentsOpensASingleDocument(t *testing.T) {
 	drive := t.TempDir()
 	writeFile(t, filepath.Join(drive, "books", "WHO_Basic_Emergency_Care.pdf"), "%PDF-who")
@@ -202,7 +248,9 @@ func TestDocumentsRefusesWhatIsNotOnTheDrive(t *testing.T) {
 	writeFile(t, filepath.Join(drive, "books", "a.pdf"), "%PDF")
 	writeFile(t, filepath.Join(drive, "secret.txt"), "secret")
 
-	for _, rel := range []string{"", "missing", "../secret.txt", "/etc/hosts"} {
+	writeFile(t, filepath.Join(drive, "books", "a.pdf.download.json"), "{}")
+
+	for _, rel := range []string{"", "missing", "../secret.txt", "/etc/hosts", "a.pdf.download.json"} {
 		opened := false
 		err := Documents(context.Background(), io.Discard, drive, rel, func(string) error {
 			opened = true
@@ -244,6 +292,7 @@ func TestDocumentsPrintsTheAddressWhenNoBrowserOpens(t *testing.T) {
 func TestWorkspaceOpensTheFolderListing(t *testing.T) {
 	drive := t.TempDir()
 	writeFile(t, filepath.Join(drive, "workspace", "notes", "page.html"), "<h1>saved</h1>")
+	writeFile(t, filepath.Join(drive, "workspace", "data.download.json"), `{"saved":true}`)
 	before := tree(t, drive)
 
 	a, address := start(t, func(ctx context.Context, stdout io.Writer, opener func(string) error) error {
@@ -260,6 +309,14 @@ func TestWorkspaceOpensTheFolderListing(t *testing.T) {
 	}
 	if status, body := get(t, root+"/notes/page.html"); status != http.StatusOK || body != "<h1>saved</h1>" {
 		t.Errorf("page = %d %q", status, body)
+	}
+	// The workspace holds whatever the assistant saved: nothing is left out
+	// by its kind, as it is for documents.
+	if _, body := get(t, root+"/"); !strings.Contains(body, `href="data.download.json"`) {
+		t.Errorf("listing = %q, want every file", body)
+	}
+	if status, body := get(t, root+"/data.download.json"); status != http.StatusOK || body != `{"saved":true}` {
+		t.Errorf("file = %d %q", status, body)
 	}
 	// Read-only, as for the file tools' links.
 	response, err := http.Post(root+"/notes/page.html", "text/plain", strings.NewReader("x"))
