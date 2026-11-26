@@ -656,6 +656,73 @@ func TestGenerateOffersOpenWebUIOnlyWhenInstalled(t *testing.T) {
 	}
 }
 
+func TestGenerateOffersTheWikiOnceWhenInstalled(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	find := func(entries []manifest.RealizedEntry) (items []testMenuItem, groups []string) {
+		t.Helper()
+		root := t.TempDir()
+		if err := Generate(root, entries, "test"); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(filepath.Join(root, ".svalbard", "actions.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg testRuntimeConfig
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		for _, group := range cfg.Groups {
+			for _, item := range group.Items {
+				if item.ID == "silverbullet" || strings.Contains(strings.ToLower(item.Label), "wiki") || strings.Contains(strings.ToLower(item.Label), "silverbullet") {
+					items = append(items, item)
+					groups = append(groups, group.ID)
+				}
+			}
+		}
+		return items, groups
+	}
+
+	archive := manifest.RealizedEntry{ID: "ifixit", Type: "zim", Filename: "ifixit.zim"}
+	if items, _ := find([]manifest.RealizedEntry{archive, {ID: "dufs", Type: "binary", RelativePath: "bin/macos-arm64/dufs.tar.gz"}}); len(items) != 0 {
+		t.Fatalf("the wiki is offered without its recipe installed: %+v", items)
+	}
+
+	// One realized entry per platform must still give one menu entry, and
+	// none of the generated per-platform tool entries.
+	items, groups := find([]manifest.RealizedEntry{
+		archive,
+		{ID: "silverbullet", Type: "binary", RelativePath: "bin/macos-arm64/silverbullet-server-darwin-aarch64.zip"},
+		{ID: "silverbullet", Type: "binary", RelativePath: "bin/macos-x86_64/silverbullet-server-darwin-x86_64.zip"},
+		{ID: "silverbullet", Type: "binary", RelativePath: "bin/linux-arm64/silverbullet-server-linux-aarch64.zip"},
+		{ID: "silverbullet", Type: "binary", RelativePath: "bin/linux-x86_64/silverbullet-server-linux-x86_64.zip"},
+	})
+	if len(items) != 1 {
+		t.Fatalf("wiki menu entries = %+v, want exactly one", items)
+	}
+	item := items[0]
+	if groups[0] != "apps" || item.Label != "Wiki" {
+		t.Errorf("entry = %q in group %q, want Wiki in apps", item.Label, groups[0])
+	}
+	// `./run wiki` starts it.
+	if !slices.Contains(item.Aliases, "wiki") {
+		t.Errorf("aliases = %v, want wiki", item.Aliases)
+	}
+	var action testBuiltinConfig
+	if err := json.Unmarshal(item.Action.Config, &action); err != nil {
+		t.Fatal(err)
+	}
+	if item.Action.Type != "builtin" || action.Name != "wiki" || len(action.Args) != 0 {
+		t.Errorf("action = %s %+v, want builtin wiki without args", item.Action.Type, action)
+	}
+
+	// A drive with nothing but the wiki still gets the entry.
+	if items, _ := find([]manifest.RealizedEntry{{ID: "silverbullet", Type: "binary"}}); len(items) != 1 {
+		t.Errorf("wiki menu entries on a wiki-only drive = %+v, want one", items)
+	}
+}
+
 func TestGenerateWritesRecipeMetadataForRealizedEntries(t *testing.T) {
 	stubRuntimeBinarySources(t)
 

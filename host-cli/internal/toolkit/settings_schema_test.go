@@ -23,6 +23,35 @@ func readSettingsSchema(t *testing.T, root string) settingsSchema {
 	return schema
 }
 
+func TestGenerateNamesTheWikiSettingsAfterItsMenuEntry(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	recipes := map[string]catalog.Item{
+		"silverbullet": {ID: "silverbullet", Type: "binary", Settings: []catalog.SettingSpec{
+			{Name: "open_browser", Type: "bool", Default: true, Label: "Open browser on start", Description: "Open the browser when the wiki is ready."},
+			{Name: "fs_watch", Type: "choice", Default: "auto", Choices: []string{"auto", "poll"}, Label: "Notice changed pages", Description: "How the wiki sees pages changed on the drive."},
+		}},
+	}
+	// One realized entry per platform must still give one group.
+	entries := []manifest.RealizedEntry{
+		{ID: "silverbullet", Type: "binary", RelativePath: "bin/macos-arm64/silverbullet-server-darwin-aarch64.zip"},
+		{ID: "silverbullet", Type: "binary", RelativePath: "bin/linux-x86_64/silverbullet-server-linux-x86_64.zip"},
+	}
+	root := t.TempDir()
+	if err := Generate(root, entries, "test", GenerateOpts{Recipes: recipes}); err != nil {
+		t.Fatal(err)
+	}
+	schema := readSettingsSchema(t, root)
+	// The user starts "Wiki" from the menu; the settings are found under
+	// the same name, not under the server's.
+	if len(schema.Groups) != 1 || schema.Groups[0].Owner != "silverbullet" || schema.Groups[0].Label != "Wiki" {
+		t.Fatalf("groups = %+v, want one group Wiki owned by silverbullet", schema.Groups)
+	}
+	if settings := schema.Groups[0].Settings; len(settings) != 2 || settings[1].Name != "fs_watch" || len(settings[1].Choices) != 2 {
+		t.Errorf("settings = %+v, want open_browser and fs_watch with its two choices", settings)
+	}
+}
+
 func TestGenerateWritesSettingsSchemaForInstalledRecipes(t *testing.T) {
 	stubRuntimeBinarySources(t)
 

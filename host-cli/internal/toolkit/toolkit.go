@@ -255,7 +255,12 @@ type driveState struct {
 	HasToolchain bool
 	HasChecksums bool
 	HasOpenWebUI bool
+	HasWiki      bool
 }
+
+// wikiRecipeID is the recipe that installs the wiki's server. Keep in sync
+// with drive-runtime/internal/wiki.
+const wikiRecipeID = "silverbullet"
 
 type builtinCapability struct {
 	ID          string
@@ -282,6 +287,12 @@ var builtinCapabilities = []builtinCapability{
 		Description: "Chat with the local model and the vault's tools in the browser.", Order: 260, ActionID: "open-webui",
 		Aliases:   []string{"open-webui"},
 		Condition: func(s driveState) bool { return s.HasOpenWebUI }},
+	// The wiki is named for what it is to the user, not for the server
+	// behind it, and its settings appear under the same name.
+	{ID: wikiRecipeID, Group: "apps", Subheader: "Apps", Label: "Wiki",
+		Description: "Your own notes on this drive, in the browser. The AI clients can read and write them.", Order: 50, ActionID: "wiki",
+		Aliases:   []string{"wiki"},
+		Condition: func(s driveState) bool { return s.HasWiki }},
 	// Sharing
 	{ID: "serve-all", Group: "tools", Subheader: "Sharing", Label: "Serve Everything",
 		Description: "Start all services at once.", Order: 300, ActionID: "serve-all",
@@ -359,6 +370,13 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 		case "python-package":
 			if e.ID == "open-webui" {
 				state.HasOpenWebUI = true
+			}
+		case "binary":
+			if e.ID == wikiRecipeID {
+				// One fixed entry, added below, instead of one generated
+				// entry per platform.
+				state.HasWiki = true
+				continue
 			}
 		}
 
