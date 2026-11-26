@@ -40,13 +40,38 @@ func IsDocumentSource(filename string) bool {
 	return strings.HasPrefix(filename, DocumentsDir+"/")
 }
 
-// InScope reports whether an indexed source lies in a search scope: the empty
-// scope is every source, a scope ending in "/" is every source below that
-// folder (a document collection), and any other is one source by filename.
+// SkillsDir and LibraryDocsDir are the drive directories whose markdown is
+// indexed for agents: skills (a SKILL.md and the files beside it) and the
+// quickstarts of JS libraries. They are sources like documents, named by
+// path with one article per section (section/N), but they are procedures,
+// not knowledge: a search finds them only when its scope names them.
+const (
+	SkillsDir      = "skills"
+	LibraryDocsDir = "lib/js"
+)
+
+// SkillScope is the search scope of both skill roots and nothing else. No
+// source or folder can be named like it.
+const SkillScope = "\x00skills"
+
+// IsSkillSource reports whether an indexed source is a skill file or a
+// library quickstart rather than an archive or a document.
+func IsSkillSource(filename string) bool {
+	return strings.HasPrefix(filename, SkillsDir+"/") || strings.HasPrefix(filename, LibraryDocsDir+"/")
+}
+
+// InScope reports whether an indexed source lies in a search scope. The empty
+// scope is every knowledge source: the archives and the documents, not the
+// skills. SkillScope is the skills alone. A scope ending in "/" is every
+// source below that folder (a document collection, or a skill root or a
+// folder below one, which is how skills are searched by name), and any other
+// is one source by filename. scopeClause is the same rule in SQL.
 func InScope(filename, scope string) bool {
 	switch {
 	case scope == "":
-		return true
+		return !IsSkillSource(filename)
+	case scope == SkillScope:
+		return IsSkillSource(filename)
 	case strings.HasSuffix(scope, "/"):
 		return strings.HasPrefix(filename, scope)
 	}

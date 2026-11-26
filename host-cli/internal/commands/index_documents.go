@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -25,8 +26,8 @@ import (
 )
 
 const (
-	// documentsDir is the vault directory whose files are indexed as
-	// documents. Their source name in the index is the vault-relative path.
+	// documentsDir is the vault directory of document collections: PDFs,
+	// whose source name in the index is the vault-relative path.
 	documentsDir = "books"
 	// maxDocumentPartChars caps the text indexed for one page.
 	maxDocumentPartChars = 16000
@@ -50,10 +51,75 @@ type documentKind struct {
 	open func() (documentReader, error)
 }
 
-// documentKinds decides which files below books/ are indexed, by extension,
-// and what reads them. A second kind is added here and nowhere else.
+// documentKinds decides which files are indexed, by extension, and what reads
+// them. A kind is added here and nowhere else; documentRoots says where on
+// the vault files of it are looked for.
 var documentKinds = map[string]documentKind{
 	".pdf": {unit: "page", open: openPDFReader},
+	".md":  {unit: "section", open: openMarkdownReader},
+}
+
+// documentRoot is a vault directory whose files are indexed as documents,
+// each a source named by its vault-relative path.
+type documentRoot struct {
+	dir string
+	// extensions are the documentKinds looked for below dir.
+	extensions []string
+	// folders, when set, lists the directories below dir that are walked in
+	// place of dir itself, relative to it.
+	folders func(base string) ([]string, error)
+	// within, when set, narrows the files found to those it accepts, by
+	// vault-relative path.
+	within func(rel string) bool
+}
+
+// documentRoots are the indexed directories: document collections, agent
+// skills, and the quickstarts of JS libraries. Skills and quickstarts are
+// markdown, kept apart from the knowledge sources when the drive searches.
+var documentRoots = []documentRoot{
+	{dir: documentsDir, extensions: []string{".pdf"}},
+	{dir: "skills", extensions: []string{".md"}},
+	{dir: "lib/js", extensions: []string{".md"}, folders: libraryDocFolders, within: isLibraryDoc},
+}
+
+// libraryDocFolders lists the docs/ folder of each library recipe below
+// lib/js. Nothing else there is walked: the packages in node_modules hold
+// thousands of files and markdown of their own.
+func libraryDocFolders(base string) ([]string, error) {
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return nil, err
+	}
+	var folders []string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		// Stat, not the entry's type: a recipe folder may be a symlink. One
+		// that cannot be looked at is not an absent one: its quickstarts
+		// would be pruned.
+		info, err := os.Stat(filepath.Join(base, entry.Name()))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		docs := filepath.Join(entry.Name(), "docs")
+		if info, err := os.Stat(filepath.Join(base, docs)); err == nil && info.IsDir() {
+			folders = append(folders, docs)
+		} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return folders, nil
+}
+
+// isLibraryDoc reports whether a vault path is a library quickstart:
+// lib/js/<recipe>/docs/<file>.md, and nothing deeper.
+func isLibraryDoc(rel string) bool {
+	parts := strings.Split(rel, "/")
+	return len(parts) == 5 && parts[0] == "lib" && parts[1] == "js" && parts[3] == "docs"
 }
 
 // documentReader extracts the text of one kind of document.
@@ -83,54 +149,104 @@ type documentPart struct {
 // IsDocumentSource reports whether an index source name is a document path
 // rather than a ZIM file name.
 func IsDocumentSource(filename string) bool {
-	return strings.HasPrefix(filename, documentsDir+"/")
+	return documentRootOf(filename) != ""
+}
+
+// documentRootOf names the document root an index source was read from:
+// "books", "skills" or "lib/js", and "" for a ZIM file name.
+func documentRootOf(filename string) string {
+	for _, root := range documentRoots {
+		if strings.HasPrefix(filename, root.dir+"/") {
+			return root.dir
+		}
+	}
+	return ""
 }
 
 // ScanDocuments returns the vault-relative, slash-separated paths of the
-// indexable documents below books/, sorted. Hidden entries, including the
-// "._" sidecars macOS writes on exFAT, are skipped. A missing books/ is
-// reported as fs.ErrNotExist for the caller to judge; any other failure to
-// read it or a folder below it is an error, so that a tree that could not be
-// listed is never taken for an empty one. books/ itself may be a symlink.
+// indexable documents below every document root, sorted. A root that does not
+// exist has none; ScanDocumentRoots says which those are.
 func ScanDocuments(root string) ([]string, error) {
-	// WalkDir does not follow a symlink given as its root.
-	base, err := filepath.EvalSymlinks(filepath.Join(root, documentsDir))
-	if err != nil {
-		return nil, fmt.Errorf("scanning %s directory: %w", documentsDir, err)
-	}
-	if info, err := os.Stat(base); err != nil {
-		return nil, fmt.Errorf("scanning %s directory: %w", documentsDir, err)
-	} else if !info.IsDir() {
-		return nil, fmt.Errorf("scanning %s directory: not a directory", documentsDir)
-	}
-	var documents []string
-	err = filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+	documents, _, err := ScanDocumentRoots(root)
+	return documents, err
+}
+
+// ScanDocumentRoots lists the indexable documents below every document root,
+// sorted, and the roots that do not exist, for the caller to judge: a vault
+// that was never given books has no books/, and so has one that is only half
+// mounted. Hidden entries, including the "._" sidecars macOS writes on exFAT,
+// are skipped. Any other failure to read a root or a folder below it is an
+// error, so that a tree that could not be listed is never taken for an empty
+// one. A root may be a symlink.
+func ScanDocumentRoots(root string) (documents, missing []string, err error) {
+	for _, documentRoot := range documentRoots {
+		found, err := documentRoot.scan(root)
+		if errors.Is(err, fs.ErrNotExist) {
+			missing = append(missing, documentRoot.dir)
+			continue
+		}
 		if err != nil {
-			return err
+			return nil, nil, fmt.Errorf("scanning %s directory: %w", documentRoot.dir, err)
 		}
-		if p != base && strings.HasPrefix(d.Name(), ".") {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() || !d.Type().IsRegular() {
-			return nil
-		}
-		if _, ok := documentKinds[strings.ToLower(filepath.Ext(d.Name()))]; !ok {
-			return nil
-		}
-		rel, err := filepath.Rel(base, p)
-		if err != nil {
-			return err
-		}
-		documents = append(documents, path.Join(documentsDir, filepath.ToSlash(rel)))
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("scanning %s directory: %w", documentsDir, err)
+		documents = append(documents, found...)
 	}
 	sort.Strings(documents)
+	return documents, missing, nil
+}
+
+// scan lists one root's documents. A root that is not there is fs.ErrNotExist.
+func (r documentRoot) scan(root string) ([]string, error) {
+	// WalkDir does not follow a symlink given as its root.
+	base, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(r.dir)))
+	if err != nil {
+		return nil, err
+	}
+	if info, err := os.Stat(base); err != nil {
+		return nil, err
+	} else if !info.IsDir() {
+		return nil, errors.New("not a directory")
+	}
+	folders := []string{"."}
+	if r.folders != nil {
+		if folders, err = r.folders(base); err != nil {
+			return nil, err
+		}
+	}
+	var documents []string
+	for _, folder := range folders {
+		top := filepath.Join(base, folder)
+		err = filepath.WalkDir(top, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if p != top && strings.HasPrefix(d.Name(), ".") {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if d.IsDir() || !d.Type().IsRegular() {
+				return nil
+			}
+			ext := strings.ToLower(filepath.Ext(d.Name()))
+			if _, ok := documentKinds[ext]; !ok || !slices.Contains(r.extensions, ext) {
+				return nil
+			}
+			rel, err := filepath.Rel(base, p)
+			if err != nil {
+				return err
+			}
+			rel = path.Join(r.dir, filepath.ToSlash(rel))
+			if r.within != nil && !r.within(rel) {
+				return nil
+			}
+			documents = append(documents, rel)
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	return documents, nil
 }
 
@@ -423,8 +539,8 @@ func plural(n int64, unit string) string {
 	return fmt.Sprintf("%d %ss", n, unit)
 }
 
-// displayDocument shortens a source path for reports: the books/ prefix is
-// the same on every line.
+// displayDocument shortens a source path for reports: a collection's document
+// is named without the books/ prefix. Skills and quickstarts keep their path.
 func displayDocument(rel string) string {
 	return strings.TrimPrefix(rel, documentsDir+"/")
 }

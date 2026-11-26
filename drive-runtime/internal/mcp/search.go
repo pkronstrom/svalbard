@@ -31,6 +31,9 @@ type SearchCapability struct {
 
 	embedBackend *search.SemanticBackend
 
+	// read is the size of one search_read.
+	read ReadLimits
+
 	kiwixOnce sync.Once
 	kiwixCmd  *exec.Cmd
 	kiwixPort int
@@ -39,7 +42,7 @@ type SearchCapability struct {
 
 // NewSearchCapability creates a search capability for the given drive.
 func NewSearchCapability(driveRoot string, meta DriveMetadata) *SearchCapability {
-	return &SearchCapability{driveRoot: driveRoot, meta: meta, embedBackend: search.NewSemanticBackend(driveRoot)}
+	return &SearchCapability{driveRoot: driveRoot, meta: meta, embedBackend: search.NewSemanticBackend(driveRoot), read: ReadLimitsFor(0)}
 }
 
 func (c *SearchCapability) Tool() string { return "search" }
@@ -103,8 +106,11 @@ const (
 
 	// fullDetailChars is how much of each article a full-detail search
 	// returns. Five of them stay below a third of a 16K context; search_read
-	// has the rest.
-	fullDetailChars = 1500
+	// has the rest. smallFullDetailChars is the opening below the Balanced
+	// tier, where five full openings (8,300 characters on WikEM) made pi
+	// compact after each search: five of them are about one shorter read.
+	fullDetailChars      = 1500
+	smallFullDetailChars = 600
 )
 
 // searchResultItem is the JSON shape returned for search results.
@@ -158,21 +164,15 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	if err != nil {
 		return ActionResult{}, err
 	}
-	// source is the scope searched: an indexed filename, or a folder of
-	// documents ending in "/". sourceFilter is the name tools know it by.
+	// source is the scope searched: an indexed filename, a folder ending in
+	// "/", or empty for every knowledge source (the skills are searched only
+	// when the scope names them). sourceFilter is the name tools know it by.
 	source, sourceFilter := "", ""
 	if requested := getString(params, "source"); requested != "" {
 		if source, err = c.resolveScope(ctx, requested, false); err != nil {
 			return ActionResult{}, err
 		}
 		sourceFilter = strings.TrimSuffix(sourceName(source), "/")
-	}
-
-	// Fetch more results when filtering by source, then trim.
-	// Use 200 to avoid missing source-specific hits that rank below global top-N.
-	fetchLimit := limit
-	if sourceFilter != "" && fetchLimit < 200 {
-		fetchLimit = 200
 	}
 
 	// Building, legacy, and malformed semantic contracts remain keyword-only.
@@ -192,7 +192,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			if detail == "full" {
 				results, usable, embedErr = search.HybridSnapshotFull(ctx, db, contract, query, queryVec, limit, source)
 			} else {
-				results, usable, embedErr = search.HybridSnapshot(ctx, db, contract, query, queryVec, fetchLimit)
+				results, usable, embedErr = search.HybridSnapshot(ctx, db, contract, query, queryVec, limit, source)
 			}
 			if !usable {
 				results = nil
@@ -209,15 +209,8 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	}
 
 	if hybridUsed {
-		if sourceFilter != "" {
-			filtered := make([]engine.Result, 0, len(results))
-			for _, r := range results {
-				if engine.InScope(r.Filename, source) {
-					filtered = append(filtered, r)
-				}
-			}
-			results = filtered
-		}
+		// The engine kept to the scope, in its keyword candidates and in the
+		// vectors it scored.
 		if len(results) > limit {
 			results = results[:limit]
 		}
@@ -276,17 +269,17 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			// Try reading from search.db first (fast, no kiwix needed)
 			if hybridUsed {
 				// HybridSnapshot captured this body in its verified read snapshot.
-				item.Body = articleOpening(r.Body)
+				item.Body = articleOpening(r.Body, c.read.Opening)
 			} else if r.Body != "" {
-				item.Body = articleOpening(r.Body)
+				item.Body = articleOpening(r.Body, c.read.Opening)
 			} else if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
-				item.Body = articleOpening(body)
+				item.Body = articleOpening(body, c.read.Opening)
 			} else if engine.IsDocumentSource(r.Filename) {
 				item.Snippet = html.UnescapeString(r.Snippet) // a document has no page outside the index
 			} else {
 				// Fallback to kiwix for full HTML content
 				if page, _, fetchErr := c.fetchPage(ctx, sourceName(r.Filename), strings.TrimLeft(r.Path, "/")); fetchErr == nil {
-					item.Body = articleOpening(page.Body)
+					item.Body = articleOpening(page.Body, c.read.Opening)
 				} else {
 					item.Snippet = html.UnescapeString(r.Snippet) // last resort
 				}
@@ -310,7 +303,8 @@ func (c *SearchCapability) holdings(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	filenames, err := eng.SourceFilenames(ctx)
+	indexed, err := eng.SourceFilenames(ctx)
+	filenames := knowledgeSources(indexed)
 	if err != nil || len(filenames) == 0 {
 		return ""
 	}
@@ -390,16 +384,16 @@ func semanticRecorded(db *sql.DB) bool {
 	return db.QueryRow("SELECT value FROM meta WHERE key='semantic_state'").Scan(&state) == nil
 }
 
-// articleOpening is an article's body in a full-detail result. A model takes
-// a bare "..." for the end of the article, so a cut body says where the rest
-// is.
-func articleOpening(body string) string {
+// articleOpening is an article's body in a full-detail result, at most size
+// characters. A model takes a bare "..." for the end of the article, so a cut
+// body says where the rest is.
+func articleOpening(body string, size int) string {
 	body = html.UnescapeString(body)
 	runes := []rune(body)
-	if len(runes) <= fullDetailChars {
+	if len(runes) <= size {
 		return body
 	}
-	return strings.TrimSpace(string(runes[:fullDetailChars])) + "... [opening only: search_read has the whole article]"
+	return strings.TrimSpace(string(runes[:size])) + "... [opening only: search_read has the whole article]"
 }
 
 // opening returns the start of an indexed text, cut at a character boundary.

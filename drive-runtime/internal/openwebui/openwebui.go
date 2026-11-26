@@ -265,7 +265,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	}()
 	exited := make(chan error, 4)
 
-	mcpServer := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	mcpServer := mcp.NewDriveServer(driveRoot, mcp.DriveOptions{Context: ctxSize})
 	mcpServers := map[string]*mcp.Server{mcp.StreamableHTTPPath: mcpServer}
 	filesURL := ""
 	if files != nil {
@@ -307,7 +307,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		ModelName:   modelName,
 		LlamaURL:    llamaRoot + "/v1",
 		MCPURL:      fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
-		Wiki:        mcp.WikiInstalled(driveRoot),
+		Wiki:        mcp.WikiOffered(driveRoot, ctxSize),
 		FilesURL:    filesURL,
 		Port:        port,
 	}))...)

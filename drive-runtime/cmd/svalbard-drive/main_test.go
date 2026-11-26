@@ -261,12 +261,18 @@ func shellQuote(value string) string {
 // to stdout, which is a pipe here as it is under a script.
 func runSubcommand(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	return runAs(t, "svalbard-drive", args...)
+}
+
+// runAs is runSubcommand with the program run as argv0.
+func runAs(t *testing.T, argv0 string, args ...string) (string, error) {
+	t.Helper()
 	stdout, writeStdout, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	oldArgs, oldStdout := os.Args, os.Stdout
-	os.Args = append([]string{"svalbard-drive"}, args...)
+	os.Args = append([]string{argv0}, args...)
 	os.Stdout = writeStdout
 	runErr := run()
 	os.Args, os.Stdout = oldArgs, oldStdout
@@ -314,5 +320,13 @@ func TestSettingsSubcommandNeedsNoActionsFile(t *testing.T) {
 	// Everything else still needs the generated menu.
 	if _, err := runSubcommand(t, "inspect"); err == nil {
 		t.Fatal("a command other than settings ran without actions.json")
+	}
+}
+
+// The launchers pass the model's window to the MCP server; a value that is not
+// a number stops it before it serves anything.
+func TestMCPSubcommandRefusesAContextThatIsNotANumber(t *testing.T) {
+	if _, err := runSubcommand(t, "mcp", "--drive", t.TempDir(), "--context", "fast"); err == nil || !strings.Contains(err.Error(), "--context needs a number") {
+		t.Fatalf("err = %v, want the bad --context named", err)
 	}
 }

@@ -19,16 +19,41 @@ import (
 )
 
 const (
-	// readChars is one piece of an article: about 1,500 tokens, so a model
-	// with a 16K context can read several articles in one conversation.
+	// readChars is one piece of an article: 1,500 to 2,500 tokens, so a
+	// model with a 32K context can read several articles in one
+	// conversation.
 	readChars = 6000
 
 	// readLinks caps the links listed with the first piece.
 	readLinks = 20
 
+	// smallReadChars and smallReadLinks are the piece below the Balanced
+	// tier. pi keeps the last tool result whole when it compacts, and on the
+	// Fast tier (8K) a full piece of a WikEM page (2,460 tokens with its
+	// links) beside the prompt and the summary left the answer a few hundred
+	// tokens.
+	smallReadChars = 3000
+	smallReadLinks = 10
+
 	// nearPaths is how many existing paths a failed read names.
 	nearPaths = 5
 )
+
+// ReadLimits is how much one read returns: the characters of text of an
+// article, page or skill, the links listed with an article's first piece, and
+// the characters of each article's opening in a full-detail search.
+type ReadLimits struct {
+	Chars, Links, Opening int
+}
+
+// ReadLimitsFor is the size of a read for a model with a context window of
+// ctxSize tokens. 0, a client the drive did not start, gets the full size.
+func ReadLimitsFor(ctxSize int) ReadLimits {
+	if smallContext(ctxSize) {
+		return ReadLimits{Chars: smallReadChars, Links: smallReadLinks, Opening: smallFullDetailChars}
+	}
+	return ReadLimits{Chars: readChars, Links: readLinks, Opening: fullDetailChars}
+}
 
 // errPageNotFound is kiwix-serve answering 404, as opposed to not answering.
 var errPageNotFound = errors.New("page not found")
@@ -69,6 +94,9 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 	if engine.IsDocumentSource(source) {
 		return c.readDocument(ctx, source, rawPath, offset)
 	}
+	if engine.IsSkillSource(source) {
+		return c.readSkillSource(ctx, source, rawPath, offset)
+	}
 	candidates := pathCandidates(rawPath)
 
 	page, pagePath, err := c.readFullPage(ctx, source, candidates)
@@ -93,7 +121,7 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 		return ActionResult{}, fmt.Errorf("cannot open %s: %w", sourceName(source), err)
 	}
 
-	body, next, total := pageSlice(page.Body, offset, readChars)
+	body, next, total := pageSlice(page.Body, offset, c.read.Chars)
 	if offset > 0 && offset >= total {
 		return ActionResult{}, fmt.Errorf("offset %d is past the end of the article (%d characters)", offset, total)
 	}
@@ -109,8 +137,8 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 	}
 	if offset == 0 {
 		result.Links = page.Links
-		if extra := len(page.Links) - readLinks; extra > 0 {
-			result.Links = page.Links[:readLinks]
+		if extra := len(page.Links) - c.read.Links; extra > 0 {
+			result.Links = page.Links[:c.read.Links]
 			result.Note = strings.TrimSpace(result.Note + fmt.Sprintf(" %d more links are not listed; use search to find a page by name.", extra))
 		}
 		for i := range result.Links {
@@ -214,6 +242,14 @@ func (c *SearchCapability) resolveScope(ctx context.Context, name string, onDisk
 	want := strings.ToLower(sourceName(strings.TrimSpace(name)))
 	var partial []string
 	for _, filename := range known {
+		if engine.IsSkillSource(filename) {
+			// A skill file is a source only by its whole path: a loosely
+			// given name must never land on one in place of an archive.
+			if strings.ToLower(filename) == given {
+				return filename, nil
+			}
+			continue
+		}
 		if engine.IsDocumentSource(filename) {
 			forms := documentNames(filename)
 			if slices.Contains(forms, given) {
@@ -238,14 +274,27 @@ func (c *SearchCapability) resolveScope(ctx context.Context, name string, onDisk
 	if len(partial) == 1 {
 		return partial[0], nil
 	}
-	if len(known) == 0 {
+	knowledge := knowledgeSources(known)
+	if len(knowledge) == 0 {
 		return "", fmt.Errorf("unknown source %q: the drive has no archives or documents", name)
 	}
-	return "", fmt.Errorf("unknown source %q. Sources on this drive: %s", name, strings.Join(sourceNames(known), ", "))
+	return "", fmt.Errorf("unknown source %q. Sources on this drive: %s", name, strings.Join(sourceNames(knowledge), ", "))
 }
 
-// knownSources lists the indexed sources and, with onDisk, the archives in
-// zim/ that are not indexed.
+// knowledgeSources drops the skill files and library quickstarts from a list
+// of sources, for the lists that say what the drive holds.
+func knowledgeSources(filenames []string) []string {
+	var knowledge []string
+	for _, filename := range filenames {
+		if !engine.IsSkillSource(filename) {
+			knowledge = append(knowledge, filename)
+		}
+	}
+	return knowledge
+}
+
+// knownSources lists the indexed sources, skill files among them, and, with
+// onDisk, the archives in zim/ that are not indexed.
 func (c *SearchCapability) knownSources(ctx context.Context, onDisk bool) []string {
 	var known []string
 	listed := map[string]bool{}
@@ -271,9 +320,9 @@ func (c *SearchCapability) knownSources(ctx context.Context, onDisk bool) []stri
 }
 
 // sourceName is a source as tools name it: an archive's filename without
-// extension, a document's path on the drive as it is.
+// extension, the path on the drive of a document or a skill file as it is.
 func sourceName(filename string) string {
-	if engine.IsDocumentSource(filename) {
+	if engine.IsDocumentSource(filename) || engine.IsSkillSource(filename) {
 		return filename
 	}
 	return strings.TrimSuffix(filename, filepath.Ext(filename))

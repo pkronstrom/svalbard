@@ -115,42 +115,48 @@ func TestReadReturnsTheWholeArticleInPieces(t *testing.T) {
 	}
 	f.page("Long_article", "Long article", article("Long article", paragraphs...), "Paragraph 000")
 
-	var pieces []string
-	offset, calls := 0, 0
-	for {
-		params := map[string]any{"source": "wiki", "path": "/Long_article"}
-		if calls > 0 {
-			params["offset"] = float64(offset)
+	// Below the Balanced tier the pieces are shorter, and there are more.
+	for _, ctxSize := range []int{0, 8192} {
+		f.cap.read = ReadLimitsFor(ctxSize)
+		size := f.cap.read.Chars
+		var pieces []string
+		offset, calls := 0, 0
+		for {
+			params := map[string]any{"source": "wiki", "path": "/Long_article"}
+			if calls > 0 {
+				params["offset"] = float64(offset)
+			}
+			got, err := f.read(params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls++
+			if n := len([]rune(got.Body)); n > size {
+				t.Fatalf("piece %d has %d characters, want at most %d", calls, n, size)
+			}
+			if !strings.HasPrefix(got.Body, "Paragraph") || !strings.HasSuffix(got.Body, "so.") {
+				t.Fatalf("piece %d is not cut at paragraph breaks: %q ... %q", calls, got.Body[:20], got.Body[len(got.Body)-20:])
+			}
+			pieces = append(pieces, got.Body)
+			if got.Continues == "" {
+				break
+			}
+			// The line names the next offset; a model follows it literally.
+			if _, err := fmt.Sscanf(got.Continues[strings.Index(got.Continues, "offset "):], "offset %d", &offset); err != nil {
+				t.Fatalf("continues = %q does not name the next offset: %v", got.Continues, err)
+			}
+			if calls > 20 {
+				t.Fatal("paging does not end")
+			}
 		}
-		got, err := f.read(params)
-		if err != nil {
-			t.Fatal(err)
+		if want := 150 * 98 / size; calls < want {
+			t.Fatalf("a %d-character article came in %d pieces of up to %d characters, want at least %d", 150*98, calls, size, want)
 		}
-		calls++
-		if n := len([]rune(got.Body)); n > readChars {
-			t.Fatalf("piece %d has %d characters, want at most %d", calls, n, readChars)
-		}
-		if !strings.HasPrefix(got.Body, "Paragraph") || !strings.HasSuffix(got.Body, "so.") {
-			t.Fatalf("piece %d is not cut at paragraph breaks: %q ... %q", calls, got.Body[:20], got.Body[len(got.Body)-20:])
-		}
-		pieces = append(pieces, got.Body)
-		if got.Continues == "" {
-			break
-		}
-		// The line names the next offset; a model follows it literally.
-		if _, err := fmt.Sscanf(got.Continues[strings.Index(got.Continues, "offset "):], "offset %d", &offset); err != nil {
-			t.Fatalf("continues = %q does not name the next offset: %v", got.Continues, err)
-		}
-		if calls > 10 {
-			t.Fatal("paging does not end")
+		if got, want := strings.Join(pieces, "\n"), strings.Join(paragraphs, "\n"); got != want {
+			t.Fatalf("pieces do not add up to the article: got %d characters, want %d", len(got), len(want))
 		}
 	}
-	if calls < 3 {
-		t.Fatalf("a %d-character article came in %d pieces, want several", 150*98, calls)
-	}
-	if got, want := strings.Join(pieces, "\n"), strings.Join(paragraphs, "\n"); got != want {
-		t.Fatalf("pieces do not add up to the article: got %d characters, want %d", len(got), len(want))
-	}
+	f.cap.read = ReadLimitsFor(0)
 
 	if _, err := f.read(map[string]any{"source": "wiki", "path": "/Long_article", "offset": float64(1_000_000)}); err == nil || !strings.Contains(err.Error(), "past the end") {
 		t.Fatalf("offset past the end: err = %v", err)
@@ -253,6 +259,12 @@ func TestReadResolvesAndCapsLinks(t *testing.T) {
 	if !strings.Contains(got.Note, "12 more links") {
 		t.Errorf("note = %q, want the number of links left out", got.Note)
 	}
+	// Below the Balanced tier fewer are listed.
+	f.cap.read = ReadLimitsFor(8192)
+	if small, err := f.read(map[string]any{"source": "wiki", "path": "/site/medicines/aspirin/"}); err != nil || len(small.Links) != smallReadLinks || !strings.Contains(small.Note, "22 more links") {
+		t.Errorf("small context: %d links, note %q, %v; want %d", len(small.Links), small.Note, err, smallReadLinks)
+	}
+	f.cap.read = ReadLimitsFor(0)
 	// A listed link reads as it is.
 	if linked, err := f.read(map[string]any{"source": "wiki", "path": got.Links[0].Path}); err != nil || linked.Title != "Warfarin" {
 		t.Errorf("reading a listed link: %+v, %v", linked, err)
@@ -418,6 +430,17 @@ func TestDefaultResponsesStayWithinASmallContext(t *testing.T) {
 	if n := size("read", map[string]any{"source": "wiki", "path": "/www.example.org/a/rather/long/path/to/Water_treatment_00/"}); n > 9000 {
 		t.Errorf("default read response is %d characters, want at most 9000", n)
 	}
+
+	// Below the Balanced tier a full-detail search is about one read, and a
+	// read about half of one above it.
+	f.cap.read = ReadLimitsFor(8192)
+	if n := size("search", map[string]any{"query": "water treatment", "detail": "full"}); n > 4500 {
+		t.Errorf("small context: full-detail search response is %d characters, want at most 4500", n)
+	}
+	if n := size("read", map[string]any{"source": "wiki", "path": "/www.example.org/a/rather/long/path/to/Water_treatment_00/"}); n > 4800 {
+		t.Errorf("small context: read response is %d characters, want at most 4800", n)
+	}
+	f.cap.read = ReadLimitsFor(0)
 }
 
 func TestPathCandidates(t *testing.T) {
@@ -461,11 +484,11 @@ func TestPageSlice(t *testing.T) {
 
 func TestArticleOpeningMarksOnlyCutBodies(t *testing.T) {
 	short := "It&#x27;s short..."
-	if got := articleOpening(short); got != "It's short..." {
+	if got := articleOpening(short, fullDetailChars); got != "It's short..." {
 		t.Errorf("short body = %q, want it whole and unmarked", got)
 	}
 	long := strings.Repeat("ä", fullDetailChars+1)
-	if got := articleOpening(long); got != strings.Repeat("ä", fullDetailChars)+"... [opening only: search_read has the whole article]" {
+	if got := articleOpening(long, fullDetailChars); got != strings.Repeat("ä", fullDetailChars)+"... [opening only: search_read has the whole article]" {
 		t.Errorf("long body ends %q", got[len(got)-70:])
 	}
 }

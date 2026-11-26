@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -50,9 +52,20 @@ func run() error {
 		drive := ""
 		sse := false
 		streamable := false
+		// --context is the client model's window in tokens, which the
+		// drive's launchers pass; below the Balanced tier the server offers
+		// less.
+		var opts mcp.DriveOptions
 		for i, arg := range os.Args {
 			if arg == "--drive" && i+1 < len(os.Args) {
 				drive = os.Args[i+1]
+			}
+			if arg == "--context" && i+1 < len(os.Args) {
+				size, err := strconv.Atoi(os.Args[i+1])
+				if err != nil || size < 0 {
+					return fmt.Errorf("--context needs a number of tokens, not %q", os.Args[i+1])
+				}
+				opts.Context = size
 			}
 			if arg == "--sse" {
 				sse = true
@@ -68,12 +81,13 @@ func run() error {
 			return fmt.Errorf("--drive path required")
 		}
 		if sse {
-			return runMCPServe(drive)
+			return runMCPServe(drive, opts)
 		}
 		if streamable {
-			return runMCPHTTP(drive)
+			return runMCPHTTP(drive, opts)
 		}
-		return runMCP(drive)
+		opts.Stdio = true
+		return runMCP(drive, opts)
 	}
 
 	driveRoot, err := resolveDriveRoot()
@@ -84,6 +98,14 @@ func run() error {
 	// menu, so scripts and other programs can read and change a value.
 	if len(os.Args) > 1 && os.Args[1] == "settings" {
 		return settings.Run(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
+	}
+	// Skills subcommand: the same fast path, for an agent that has a shell
+	// and no MCP client.
+	if len(os.Args) > 1 && os.Args[1] == "skills" {
+		if strings.ContainsRune(os.Args[0], filepath.Separator) {
+			skillsProgram = filepath.Join(driveRoot, "run")
+		}
+		return runSkills(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
 	}
 	workDir, err := os.Getwd()
 	if err != nil {
@@ -126,7 +148,7 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 	case "verify":
 		return verify.Run(os.Stdout, driveRoot)
 	case "mcp-serve":
-		return runMCPServe(driveRoot)
+		return runMCPServe(driveRoot, mcp.DriveOptions{})
 	}
 
 	// SIGHUP is the terminal window being closed: the action stops as it
@@ -305,8 +327,8 @@ func reclaimTerminal(fd int) {
 	_ = unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, syscall.Getpgrp())
 }
 
-func runMCPServe(driveRoot string) error {
-	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+func runMCPServe(driveRoot string, opts mcp.DriveOptions) error {
+	srv := mcp.NewDriveServer(driveRoot, opts)
 	defer srv.Close()
 
 	port, err := netutil.FindAvailablePort("127.0.0.1", 8090)
@@ -325,8 +347,8 @@ func runMCPServe(driveRoot string) error {
 	return srv.ServeSSE(addr)
 }
 
-func runMCPHTTP(driveRoot string) error {
-	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+func runMCPHTTP(driveRoot string, opts mcp.DriveOptions) error {
+	srv := mcp.NewDriveServer(driveRoot, opts)
 	defer srv.Close()
 
 	listener, port, err := netutil.Listen("127.0.0.1", 8090)
@@ -339,15 +361,44 @@ func runMCPHTTP(driveRoot string) error {
 	return srv.ServeStreamableHTTP(ctx, listener)
 }
 
-func runMCP(driveRoot string) error {
-	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+func runMCP(driveRoot string, opts mcp.DriveOptions) error {
+	srv := mcp.NewDriveServer(driveRoot, opts)
 	defer srv.Close()
 	return srv.ServeStdio()
 }
 
 func resolveDriveRoot() (string, error) {
-	if driveRoot := os.Getenv("DRIVE_ROOT"); driveRoot != "" {
-		return driveRoot, nil
+	workDir, err := os.Getwd()
+	exe, _ := os.Executable()
+	if root := driveRootFor(os.Getenv("DRIVE_ROOT"), workDir, exe); root != "" {
+		return root, nil
 	}
-	return os.Getwd()
+	return workDir, err
+}
+
+// driveRootFor picks the drive a command runs on: the one the run script
+// names in DRIVE_ROOT, else the working folder when that is a drive, else the
+// drive the binary itself is on (<drive>/.svalbard/runtime/<platform>/), and
+// failing all of these the working folder.
+func driveRootFor(envRoot, workDir, exe string) string {
+	isDrive := func(dir string) bool {
+		info, err := os.Stat(filepath.Join(dir, ".svalbard"))
+		return err == nil && info.IsDir()
+	}
+	if envRoot != "" {
+		return envRoot
+	}
+	if workDir != "" && isDrive(workDir) {
+		return workDir
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	runtimeDir := filepath.Dir(filepath.Dir(exe))
+	if filepath.Base(runtimeDir) == "runtime" && filepath.Base(filepath.Dir(runtimeDir)) == ".svalbard" {
+		if root := filepath.Dir(filepath.Dir(runtimeDir)); isDrive(root) {
+			return root
+		}
+	}
+	return workDir
 }

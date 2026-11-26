@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +23,6 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
-	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
 type LaunchConfig struct {
@@ -83,13 +84,22 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
   "mcp": {
     "svalbard": {
       "type": "local",
-      "command": ["%[3]s", "mcp", "--drive", "%[4]s"],
+      "command": ["%[3]s", "mcp", "--drive", "%[4]s", "--context", "%[5]d"],
       "enabled": true
     }
   }
 }
 `, modelName, baseURL, mcpBinary, driveRoot, ctxSize)
 		if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+			return LaunchConfig{}, err
+		}
+		// opencode reads a global AGENTS.md from its config folder
+		// ($XDG_CONFIG_HOME/opencode); checked with 1.19.6.
+		contextPath := filepath.Join(configRoot, "opencode", "AGENTS.md")
+		if err := os.MkdirAll(filepath.Dir(contextPath), 0o755); err != nil {
+			return LaunchConfig{}, err
+		}
+		if err := writeGeneratedFile(contextPath, driveContextFor(driveRoot, OpencodeToolPrefix, ctxSize)); err != nil {
 			return LaunchConfig{}, err
 		}
 		cfg.Args = []string{"-m", "llama.cpp/" + modelName}
@@ -100,6 +110,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			"XDG_DATA_HOME":   dataRoot,
 			"OPENCODE_CONFIG": configPath,
 		}
+		maps.Copy(cfg.Env, drivePathEnv(driveRoot, mcpBinary))
 	case "goose":
 		for _, dir := range []string{configRoot, cacheRoot, dataRoot, homeRoot} {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -111,8 +122,13 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			return LaunchConfig{}, fmt.Errorf("resolve mcp binary: %w", err)
 		}
 		gooseConfigPath := filepath.Join(configRoot, "goose", "config.yaml")
-		if err := ensureGooseStdioExtension(gooseConfigPath, mcpBinary, driveRoot); err != nil {
+		if err := ensureGooseStdioExtension(gooseConfigPath, mcpBinary, driveRoot, ctxSize); err != nil {
 			return LaunchConfig{}, fmt.Errorf("write goose extension config: %w", err)
+		}
+		// Goose reads global hints from its config folder
+		// ($XDG_CONFIG_HOME/goose/.goosehints); checked with 1.61.1.
+		if err := writeGeneratedFile(filepath.Join(configRoot, "goose", ".goosehints"), driveContextFor(driveRoot, GooseToolPrefix, ctxSize)); err != nil {
+			return LaunchConfig{}, err
 		}
 		cfg.Env = map[string]string{
 			"HOME":                homeRoot,
@@ -129,6 +145,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			"GOOSE_TELEMETRY_OFF":     "1",
 			"GOOSE_TELEMETRY_ENABLED": "false",
 		}
+		maps.Copy(cfg.Env, drivePathEnv(driveRoot, mcpBinary))
 	case "pi":
 		for _, dir := range []string{configRoot, cacheRoot, dataRoot, homeRoot} {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -151,10 +168,10 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		// stdio server, at parity with OpenCode/Goose. pi's default exposure
 		// hides a server's tools behind one "codemode" script tool; "direct"
 		// declares them like built-ins, which small local models need.
-		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, driveRoot, map[string]any{"exposure": "direct"})); err != nil {
+		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, driveRoot, ctxSize, map[string]any{"exposure": "direct"})); err != nil {
 			return LaunchConfig{}, err
 		}
-		if err := writeGeneratedFile(filepath.Join(configRoot, "AGENTS.md"), piContext(driveRoot, mcp.WikiInstalled(driveRoot))); err != nil {
+		if err := writeGeneratedFile(filepath.Join(configRoot, "AGENTS.md"), driveContextFor(driveRoot, PiToolPrefix, ctxSize)); err != nil {
 			return LaunchConfig{}, err
 		}
 		if err := ensurePiSettings(filepath.Join(configRoot, "settings.json"), modelName, ctxSize); err != nil {
@@ -172,6 +189,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			"PI_CODING_AGENT_DIR": configRoot,
 			"PI_OFFLINE":          "1",
 		}
+		maps.Copy(cfg.Env, drivePathEnv(driveRoot, mcpBinary))
 	case "omp":
 		// oh-my-pi unpacks a native addon on first run; keep it on the drive.
 		nativesRoot := filepath.Join(runtimeRoot, "natives")
@@ -189,7 +207,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		if err := os.WriteFile(filepath.Join(configRoot, "models.yml"), []byte(ompModelsYAML(baseURL, modelName, ctxSize)), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
-		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, driveRoot, nil)); err != nil {
+		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, driveRoot, ctxSize, nil)); err != nil {
 			return LaunchConfig{}, err
 		}
 		// The user's own config.yml is left alone apart from marking setup as
@@ -205,16 +223,16 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			return LaunchConfig{}, err
 		}
 		promptPath := filepath.Join(configRoot, "lean-prompt.md")
-		if err := os.WriteFile(promptPath, []byte(ompPrompt(mcp.WikiInstalled(driveRoot))), 0o644); err != nil {
+		if err := os.WriteFile(promptPath, []byte(ompPrompt(driveRoot, ctxSize)), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
 		// The lean profile: six file and shell tools plus the drive's MCP
 		// tools. The default tool set and prompt cost about 7,700 tokens. omp
 		// enables only the tools named here, so the MCP tools are listed too,
-		// under the names omp gives them (mcp__<server>_<tool>).
+		// under the names omp gives them.
 		tools := []string{"read", "bash", "edit", "write", "grep", "glob"}
-		for _, name := range mcp.DriveToolNames(driveRoot) {
-			tools = append(tools, "mcp__svalbard_"+name)
+		for _, name := range mcp.DriveToolNames(driveRoot, ctxSize) {
+			tools = append(tools, OmpToolPrefix+name)
 		}
 		cfg.Args = []string{
 			"--model", piProvider + "/" + modelName,
@@ -236,6 +254,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			"PI_NO_TITLE":         "1",
 			"OMP_SKIP_SETUP":      "1",
 		}
+		maps.Copy(cfg.Env, drivePathEnv(driveRoot, mcpBinary))
 	default:
 		cfg.Env = map[string]string{}
 	}
@@ -249,7 +268,7 @@ const piProvider = "svalbard"
 
 func writePiModels(path, baseURL, modelName string, ctxSize int, isGemma bool) error {
 	model := map[string]any{
-		"id": modelName, "contextWindow": ctxSize, "maxTokens": piMaxTokens(ctxSize),
+		"id": modelName, "contextWindow": piContextWindow(ctxSize), "maxTokens": piMaxTokens(ctxSize),
 		"cost": map[string]float64{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
 	}
 	if sampling := llamaserve.SamplingParams(modelName); len(sampling) > 0 {
@@ -278,60 +297,19 @@ func writePiModels(path, baseURL, modelName string, ctxSize int, isGemma bool) e
 
 // svalbardMCPServers is the mcp.json both pi and oh-my-pi read; extra holds
 // client-specific keys for the svalbard server entry.
-func svalbardMCPServers(mcpBinary, driveRoot string, extra map[string]any) map[string]any {
-	server := map[string]any{"command": mcpBinary, "args": []string{"mcp", "--drive", driveRoot}}
+func svalbardMCPServers(mcpBinary, driveRoot string, ctxSize int, extra map[string]any) map[string]any {
+	server := map[string]any{"command": mcpBinary, "args": mcpArgs(driveRoot, ctxSize)}
 	for key, value := range extra {
 		server[key] = value
 	}
 	return map[string]any{"mcpServers": map[string]any{"svalbard": server}}
 }
 
-// piDriveContext is pi's global context file: what a small model has to be
-// told to use the drive instead of the network. pi names MCP tools
-// mcp__<server>__<tool>.
-const piDriveContext = `# Svalbard offline drive
-
-You run from a Svalbard USB drive at ` + "`%s`" + `. There is no internet. Do not try curl, wget, git clone, pip install, npm install or any other download. They fail.
-
-The drive has an offline library: reference archives, SQLite databases and maps. For a factual question, look it up with the ` + "`mcp__svalbard__`" + ` tools instead of guessing:
-
-1. ` + "`mcp__svalbard__vault_sources`" + ` lists what is on the drive. Call it first.
-2. ` + "`mcp__svalbard__search`" + ` finds articles by keyword. Use two to four specific words, not a sentence.
-3. ` + "`mcp__svalbard__search_read`" + ` reads one article. Pass the ` + "`source`" + ` and ` + "`path`" + ` from a search result. A long article comes in parts: when the result has ` + "`continues`" + `, call again with the offset it names.
-%s
-Rules:
-
-- Name the source you used.
-- If the drive has no answer, say so. Do not invent one.
-- Do not repeat a tool call with the same arguments. If it failed twice, stop and tell the user.
-- ` + "`./run`" + ` on the drive is an interactive menu for the user. Do not run it.
-`
-
-// piWikiContext is the one thing on the drive a model may write. Without
-// being told, a model that has just read "there is no internet" and a list
-// of reference tools does not try to save anything.
-const piWikiContext = `
-The drive also has a wiki, the user's own notebook, which you can write. To save what you found, create a page with ` + "`mcp__svalbard__wiki_create`" + `; ` + "`mcp__svalbard__wiki_search`" + ` and ` + "`mcp__svalbard__wiki_read`" + ` look in the notes already there.
-`
-
-// piLivePagesContext sends the model to the wiki's help page before it writes
-// a page that computes something. Told only in the tool's description, a 4B
-// model made up a syntax; the page holds the one that works.
-const piLivePagesContext = `A wiki page can update by itself (a live list of pages, a count, open tasks). Before writing such a page, read the page ` + "`" + wiki.HelpPage + "`" + ` with ` + "`mcp__svalbard__wiki_read`" + ` and copy its syntax exactly.
-`
-
-// piContext is the context file for the drive at driveRoot, with the wiki's
-// paragraph when the drive's server offers the wiki tools, and the pointer
-// to the help page when they may write live pages.
-func piContext(driveRoot string, hasWiki bool) string {
-	paragraph := ""
-	if hasWiki {
-		paragraph = piWikiContext
-		if wiki.LivePages(driveRoot) {
-			paragraph += piLivePagesContext
-		}
-	}
-	return fmt.Sprintf(piDriveContext, driveRoot, paragraph)
+// mcpArgs starts the drive's MCP server for a harness whose model has a
+// context window of ctxSize tokens: below the Balanced tier the server offers
+// fewer tools and reads shorter pieces.
+func mcpArgs(driveRoot string, ctxSize int) []string {
+	return []string{"mcp", "--drive", driveRoot, "--context", strconv.Itoa(ctxSize)}
 }
 
 // writeGeneratedFile keeps a Svalbard-written file current without touching
@@ -383,13 +361,19 @@ Inspect the relevant files before changing them. Use the provided tools rather t
 There is no network. The svalbard tools search and read the reference material stored on this drive.
 `
 
-// ompPrompt is the lean prompt, with a line about the wiki when the drive's
-// server offers the wiki tools.
-func ompPrompt(wiki bool) string {
-	if !wiki {
-		return ompLeanPrompt
+// ompPrompt is the lean prompt for the drive at driveRoot, with a line about
+// the wiki when the drive's server offers the wiki tools, and the lines of
+// the drive context about skills when the drive has them. omp gets no
+// generated context file, so this prompt is the orientation it gets.
+func ompPrompt(driveRoot string, ctxSize int) string {
+	prompt := ompLeanPrompt
+	if mcp.WikiOffered(driveRoot, ctxSize) {
+		prompt += "The svalbard wiki tools read and write the user's own notes on this drive: use them when asked to save or look up a note.\n"
 	}
-	return ompLeanPrompt + "The svalbard wiki tools read and write the user's own notes on this drive: use them when asked to save or look up a note.\n"
+	if mcp.SkillsInstalled(driveRoot) {
+		prompt += buildingContext(ContextOptions{DriveRoot: driveRoot, ToolPrefix: OmpToolPrefix, Skills: true, NoIndex: !mcp.SkillsIndexed(driveRoot)}) + "\n"
+	}
+	return prompt + stayInPlace + "\n"
 }
 
 // ompModelsYAML is oh-my-pi's provider file for the drive's llama-server. It
@@ -458,6 +442,57 @@ compaction:
 `, piProvider+"/"+modelName, piMaxTokens(ctxSize), min(ctxSize/4, 20000))
 }
 
+// piSafetyTokens is what pi 1.6.1 keeps free of every request, whatever the
+// window and whatever its settings say: it sends max_completion_tokens =
+// min(maxTokens, contextWindow - estimated prompt - 4096)
+// (clampMaxTokensToContext in its ai package). On the 8K tier that is 4,096
+// minus the prompt, and pi's own prompt with the drive's tools is 3,000 to
+// 4,800 tokens: with the wiki installed it asked the model for one token.
+const piSafetyTokens = 4096
+
+// piContextWindow is the window pi is told. From the Balanced tier up it is
+// llama-server's. Below, it is larger by pi's fixed margin less a sixteenth of
+// the real window, so that what pi takes to be free is what really is free,
+// with the sixteenth left for the error in its estimate of the prompt (it
+// counts characters). pi's footer then shows this number, not the tier's.
+func piContextWindow(ctxSize int) int {
+	if ctxSize >= llamaserve.CtxBalanced {
+		return ctxSize
+	}
+	return ctxSize + piSafetyTokens - ctxSize/16
+}
+
+// piReserveTokens is how much of the window pi keeps free before it compacts
+// the conversation (it compacts before a request whose context is past
+// contextWindow - reserveTokens). Below the Balanced tier that is pi's fixed
+// margin and room for an answer: pi does not compact a context just under the
+// threshold, and that context's answer gets what is left above it. Half of
+// an 8K window, as the larger tiers' rule gives, is less than the prompt
+// alone and would compact at every turn.
+func piReserveTokens(ctxSize int) int {
+	if ctxSize >= llamaserve.CtxBalanced {
+		return piMaxTokens(ctxSize)
+	}
+	return piSafetyTokens + piAnswerTokens
+}
+
+// piAnswerTokens is the least an answer gets below the Balanced tier: a
+// paragraph or two. With an eighth of the window the threshold left 512
+// tokens, and a model that read one more page before answering got 783.
+const piAnswerTokens = 1024
+
+// piKeepRecentTokens is how much of the latest messages pi keeps word for
+// word when it compacts. Below the Balanced tier it is an eighth of the
+// window: with a quarter, the prompt, the summary and what was kept came to
+// 6,018 of an 8K window, a page short of the threshold, so pi compacted again
+// after the next read.
+func piKeepRecentTokens(ctxSize int) int {
+	if ctxSize >= llamaserve.CtxBalanced {
+		return min(ctxSize/4, 20000)
+	}
+	return ctxSize / 8
+}
+
 func piMaxTokens(ctxSize int) int {
 	if ctxSize/2 < 8192 {
 		return ctxSize / 2
@@ -477,7 +512,7 @@ func ensurePiSettings(path, modelName string, ctxSize int) error {
 	}
 	settingsMissing := os.IsNotExist(err)
 
-	defaults := map[string]int{"reserveTokens": piMaxTokens(ctxSize), "keepRecentTokens": min(ctxSize/4, 20000)}
+	defaults := map[string]int{"reserveTokens": piReserveTokens(ctxSize), "keepRecentTokens": piKeepRecentTokens(ctxSize)}
 	sidecarPath := filepath.Join(filepath.Dir(path), ".svalbard-compaction.json")
 	owned, hasOwned, err := readPiCompactionOwnership(sidecarPath)
 	if err != nil {
@@ -683,7 +718,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	return clientCmd.Run()
 }
 
-func ensureGooseStdioExtension(configPath, mcpBinary, driveRoot string) error {
+func ensureGooseStdioExtension(configPath, mcpBinary, driveRoot string, ctxSize int) error {
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return err
 	}
@@ -693,11 +728,11 @@ func ensureGooseStdioExtension(configPath, mcpBinary, driveRoot string) error {
 		return err
 	}
 
-	updated := upsertGooseExtensionYAML(string(content), gooseExtensionBlock(mcpBinary, driveRoot))
+	updated := upsertGooseExtensionYAML(string(content), gooseExtensionBlock(mcpBinary, driveRoot, ctxSize))
 	return os.WriteFile(configPath, []byte(updated), 0o644)
 }
 
-func gooseExtensionBlock(mcpBinary, driveRoot string) string {
+func gooseExtensionBlock(mcpBinary, driveRoot string, ctxSize int) string {
 	return fmt.Sprintf(`  svalbard:
     enabled: true
     type: stdio
@@ -707,8 +742,10 @@ func gooseExtensionBlock(mcpBinary, driveRoot string) string {
       - "mcp"
       - "--drive"
       - %q
+      - "--context"
+      - "%d"
     timeout: 300
-`, mcpBinary, driveRoot)
+`, mcpBinary, driveRoot, ctxSize)
 }
 
 func upsertGooseExtensionYAML(existing, block string) string {

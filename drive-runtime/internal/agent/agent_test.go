@@ -148,8 +148,10 @@ func TestPrepareClientLaunchConfigForPi(t *testing.T) {
 		t.Fatal("mcp.json missing svalbard server")
 	}
 	args, ok := svalbard["args"].([]any)
-	if !ok || len(args) != 3 || args[0] != "mcp" || args[1] != "--drive" || args[2] != driveRoot {
-		t.Errorf("svalbard args = %v, want [mcp --drive %s]", svalbard["args"], driveRoot)
+	// The server is told the model's window: below the Balanced tier it
+	// offers less.
+	if want := []any{"mcp", "--drive", driveRoot, "--context", "32768"}; !ok || !reflect.DeepEqual(args, want) {
+		t.Errorf("svalbard args = %v, want %v", svalbard["args"], want)
 	}
 }
 
@@ -169,6 +171,12 @@ func TestPrepareClientLaunchConfigForPiQwen38UsesNativeDefaults(t *testing.T) {
 	model := provider["models"].([]any)[0].(map[string]any)
 	if got := model["maxTokens"]; got != float64(4096) {
 		t.Errorf("maxTokens = %v, want 4096 for an 8K context", got)
+	}
+	// pi keeps 4,096 tokens of whatever window it is told free of every
+	// request. Told the real 8,192, it has 4,096 minus its prompt left for
+	// the answer, which with the wiki's tools is nothing.
+	if got := model["contextWindow"]; got != float64(8192+4096-512) {
+		t.Errorf("contextWindow = %v, want the 8K window plus pi's margin less a sixteenth", got)
 	}
 	if got := model["reasoning"]; got != true {
 		t.Errorf("reasoning = %v, want true", got)
@@ -202,11 +210,13 @@ func TestPrepareClientLaunchConfigForPiQwen38UsesNativeDefaults(t *testing.T) {
 		t.Errorf("Qwen thinking level = %v, want medium", got)
 	}
 	compaction := settings["compaction"].(map[string]any)
-	if got := compaction["reserveTokens"]; got != float64(4096) {
-		t.Errorf("compaction reserveTokens = %v, want 4096", got)
+	// Compaction starts while an answer still fits: pi's fixed 4,096 and
+	// 1,024 for the answer. It keeps an eighth of the window word for word.
+	if got := compaction["reserveTokens"]; got != float64(5120) {
+		t.Errorf("compaction reserveTokens = %v, want 5120", got)
 	}
-	if got := compaction["keepRecentTokens"]; got != float64(2048) {
-		t.Errorf("compaction keepRecentTokens = %v, want 2048", got)
+	if got := compaction["keepRecentTokens"]; got != float64(1024) {
+		t.Errorf("compaction keepRecentTokens = %v, want 1024", got)
 	}
 
 	mcp := readJSON(t, filepath.Join(cfg.Env["PI_CODING_AGENT_DIR"], "mcp.json"))
@@ -235,8 +245,8 @@ func TestPrepareClientLaunchConfigForPiPreservesSettings(t *testing.T) {
 	if got := settings["compaction"].(map[string]any)["reserveTokens"]; got != float64(777) {
 		t.Errorf("custom reserveTokens = %v, want 777", got)
 	}
-	if got := settings["compaction"].(map[string]any)["keepRecentTokens"]; got != float64(2048) {
-		t.Errorf("generated keepRecentTokens = %v, want 2048", got)
+	if got := settings["compaction"].(map[string]any)["keepRecentTokens"]; got != float64(1024) {
+		t.Errorf("generated keepRecentTokens = %v, want 1024", got)
 	}
 	if got := settings["modelThinkingLevels"].(map[string]any)["svalbard/Qwen3.8"]; got != "high" {
 		t.Errorf("custom thinking level = %v, want high", got)
@@ -253,7 +263,7 @@ func TestPrepareClientLaunchConfigForPiRefreshesGeneratedCompaction(t *testing.T
 		wantReserve, wantKeep int
 	}{
 		{"max", 8192, 20000},
-		{"fast", 4096, 2048},
+		{"fast", 5120, 1024},
 		{"max again", 8192, 20000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -293,8 +303,8 @@ func TestPrepareClientLaunchConfigForPiPreservesModifiedGeneratedCompactionField
 	if got := compaction["reserveTokens"]; got != 333.0 {
 		t.Errorf("user reserveTokens = %v, want 333", got)
 	}
-	if got := compaction["keepRecentTokens"]; got != 2048.0 {
-		t.Errorf("generated keepRecentTokens = %v, want 2048", got)
+	if got := compaction["keepRecentTokens"]; got != 1024.0 {
+		t.Errorf("generated keepRecentTokens = %v, want 1024", got)
 	}
 	if _, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "Qwen3.8", 131072); err != nil {
 		t.Fatal(err)
@@ -322,8 +332,8 @@ func TestPrepareClientLaunchConfigForPiFillsMissingCustomCompactionReserve(t *te
 		t.Fatal(err)
 	}
 	compaction := readJSON(t, settingsPath)["compaction"].(map[string]any)
-	if got := compaction["reserveTokens"]; got != 4096.0 {
-		t.Errorf("generated reserveTokens = %v, want 4096", got)
+	if got := compaction["reserveTokens"]; got != 5120.0 {
+		t.Errorf("generated reserveTokens = %v, want 5120", got)
 	}
 	if got := compaction["keepRecentTokens"]; got != 111.0 {
 		t.Errorf("custom keepRecentTokens = %v, want 111", got)

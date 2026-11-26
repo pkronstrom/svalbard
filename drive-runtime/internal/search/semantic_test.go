@@ -417,7 +417,7 @@ func TestHybridSnapshotFallsBackWhenWriterSwitchesToBuilding(t *testing.T) {
 	if _, err := db.Exec("UPDATE meta SET value = 'building' WHERE key = 'semantic_state'"); err != nil {
 		t.Fatal(err)
 	}
-	if _, usable, err := HybridSnapshot(context.Background(), db, loaded, "article", []float32{1, 0}, 10); err != nil || usable {
+	if _, usable, err := HybridSnapshot(context.Background(), db, loaded, "article", []float32{1, 0}, 10, ""); err != nil || usable {
 		t.Fatalf("building generation snapshot = usable %v, err %v", usable, err)
 	}
 }
@@ -438,7 +438,7 @@ func TestHybridSnapshotFallsBackWhenContractGenerationChanges(t *testing.T) {
 	if _, err := db.Exec("UPDATE meta SET value = ? WHERE key = 'semantic_contract'", string(raw)); err != nil {
 		t.Fatal(err)
 	}
-	if _, usable, err := HybridSnapshot(context.Background(), db, loaded, "article", []float32{1, 0}, 10); err != nil || usable {
+	if _, usable, err := HybridSnapshot(context.Background(), db, loaded, "article", []float32{1, 0}, 10, ""); err != nil || usable {
 		t.Fatalf("changed generation snapshot = usable %v, err %v", usable, err)
 	}
 }
@@ -446,7 +446,7 @@ func TestHybridSnapshotFallsBackWhenContractGenerationChanges(t *testing.T) {
 func TestHybridSnapshotRetainsCapturedBodyAfterWriterReplacement(t *testing.T) {
 	contract := SemanticContract{Version: 1, Model: "models/embed/model.gguf", ModelSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Dimensions: 2}
 	db, dbPath := semanticSearchDB(t, contract)
-	metadata, usable, err := HybridSnapshot(context.Background(), db, contract, "water", []float32{1, 0}, 1)
+	metadata, usable, err := HybridSnapshot(context.Background(), db, contract, "water", []float32{1, 0}, 1, "")
 	if err != nil || !usable || len(metadata) != 1 {
 		t.Fatalf("HybridSnapshot() = %#v, usable %v, err %v", metadata, usable, err)
 	}

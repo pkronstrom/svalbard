@@ -189,7 +189,7 @@ Installing again replaces the previous copy, which is how you pick up a newer ve
 
 ### `svalbard index --vault <path> [--type keyword|semantic|full]`
 
-Build the SQLite search index from realized ZIM files under the vault: the keyword index by default, `semantic` for embeddings (needs an embedding model on the vault), `full` for both.
+Build the SQLite search index from the vault's ZIM files and documents: the keyword index by default, `semantic` for embeddings (needs an embedding model on the vault), `full` for both.
 
 The generated database is written under `data/search.db`.
 

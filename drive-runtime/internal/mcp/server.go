@@ -8,12 +8,17 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
@@ -25,10 +30,14 @@ type Server struct {
 
 // NewServer creates an MCP server that exposes each capability as a tool.
 func NewServer(caps ...Capability) *Server {
+	return newServer(caps)
+}
+
+func newServer(caps []Capability, options ...mcpserver.ServerOption) *Server {
 	inner := mcpserver.NewMCPServer(
 		"svalbard-drive",
 		"0.2.0",
-		mcpserver.WithToolCapabilities(false),
+		append([]mcpserver.ServerOption{mcpserver.WithToolCapabilities(false)}, options...)...,
 	)
 
 	s := &Server{inner: inner, caps: caps}
@@ -102,26 +111,137 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 	}
 }
 
+// DriveOptions is what the drive's MCP server is told about its client.
+type DriveOptions struct {
+	// Context is the context window of the client's model in tokens, 0 when
+	// it is not known (a client the drive did not start). Below the Balanced
+	// tier the server offers no wiki tools and reads shorter pieces, so that
+	// a lookup leaves the model room to answer.
+	Context int
+	// Stdio: the client started the server as its own process, so it is on
+	// this computer and can open a file on the drive by its whole path.
+	Stdio bool
+}
+
+// NewDriveServer creates the drive's MCP server: its capabilities and, on a
+// drive with skills, a line of instructions that points a client to them.
+func NewDriveServer(driveRoot string, opts DriveOptions) *Server {
+	var options []mcpserver.ServerOption
+	if meta, _ := LoadMetadata(driveRoot); skillToolsOffered(meta) {
+		options = append(options, mcpserver.WithInstructions(skillServerInstructions))
+	}
+	return newServer(DriveCapabilities(driveRoot, opts), options...)
+}
+
 // DriveCapabilities returns the capabilities the drive's MCP server exposes.
-// The wiki tools are among them on a drive that has the wiki installed.
-func DriveCapabilities(driveRoot string) []Capability {
+// The skill tools are among them on a drive that has skills or JS libraries
+// installed, and the wiki tools on one that has the wiki, from the Balanced
+// tier up.
+func DriveCapabilities(driveRoot string, opts DriveOptions) []Capability {
 	meta, _ := LoadMetadata(driveRoot)
-	caps := []Capability{
-		NewSearchCapability(driveRoot, meta),
+	searchTools := NewSearchCapability(driveRoot, meta)
+	searchTools.read = ReadLimitsFor(opts.Context)
+	caps := []Capability{searchTools}
+	if skillToolsOffered(meta) {
+		skillTools := newSharedSkillCapability(driveRoot, meta, searchTools)
+		skillTools.AbsolutePaths = opts.Stdio
+		caps = append(caps, skillTools)
+	}
+	caps = append(caps,
 		NewVaultCapability(driveRoot, meta),
 		NewQueryCapability(driveRoot, meta),
-	}
-	if wikiInstalled(meta) {
+	)
+	if wikiInstalled(meta) && !smallContext(opts.Context) {
 		caps = append(caps, NewWikiCapability(driveRoot))
 	}
 	return caps
 }
 
-// WikiInstalled reports whether the drive's MCP server offers the wiki tools,
-// for the prompts and descriptions that tell a model what it can do.
-func WikiInstalled(driveRoot string) bool {
+// smallContext is true for a context window below the Balanced tier. There
+// the eight wiki tools (1,224 tokens of every request) and a full read left
+// pi on the Fast tier (8K) a few hundred tokens to answer after one lookup,
+// and writing a wiki page needs room for the page. The wiki stays the user's
+// in the browser.
+func smallContext(ctxSize int) bool {
+	return ctxSize > 0 && ctxSize < llamaserve.CtxBalanced
+}
+
+// Recipe types whose content the skill tools search.
+const (
+	skillsRecipeType  = "skills"
+	libraryRecipeType = "js-lib"
+)
+
+// SkillsInstalled reports whether the drive has a skills recipe installed,
+// for the prompts that tell a model to look for a procedure first.
+func SkillsInstalled(driveRoot string) bool {
 	meta, _ := LoadMetadata(driveRoot)
-	return wikiInstalled(meta)
+	return recipeTypeInstalled(meta, skillsRecipeType)
+}
+
+// SkillsIndexed reports whether the skill tools have something to search on
+// the drive: its index strategy is not "none", and its search index holds a
+// skill file or a library quickstart. Whether search.db exists says neither:
+// a vault switched to "none" keeps its old index, and skills installed after
+// that are never in it.
+func SkillsIndexed(driveRoot string) bool {
+	if indexStrategy(driveRoot) == "none" {
+		return false
+	}
+	db, err := openSearchDB(driveRoot)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	sources, err := engine.New(db).SkillSources(context.Background())
+	return err == nil && len(sources) > 0
+}
+
+// indexStrategy is the vault's chosen index strategy as its manifest records
+// it (desired.options.index_strategy), "" for the default.
+func indexStrategy(driveRoot string) string {
+	data, err := os.ReadFile(filepath.Join(driveRoot, "manifest.yaml"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if value, ok := strings.CutPrefix(strings.TrimSpace(line), "index_strategy:"); ok {
+			return strings.ToLower(strings.Trim(strings.TrimSpace(value), `"'`))
+		}
+	}
+	return ""
+}
+
+// LibrariesInstalled reports whether the drive has JS libraries installed.
+func LibrariesInstalled(driveRoot string) bool {
+	meta, _ := LoadMetadata(driveRoot)
+	return recipeTypeInstalled(meta, libraryRecipeType)
+}
+
+// skillToolsOffered is true when apply has installed skills or JS libraries.
+// The tools only need the index, but offering them on every drive would add
+// their definitions to every prompt for skills that are not there.
+func skillToolsOffered(meta DriveMetadata) bool {
+	return recipeTypeInstalled(meta, skillsRecipeType) || recipeTypeInstalled(meta, libraryRecipeType)
+}
+
+// recipeTypeInstalled reports whether a realized recipe has the type.
+// recipes.json lists the realized recipes only.
+func recipeTypeInstalled(meta DriveMetadata, recipeType string) bool {
+	for _, recipe := range meta.Recipes {
+		if recipe.Type == recipeType {
+			return true
+		}
+	}
+	return false
+}
+
+// WikiOffered reports whether the drive's MCP server offers the wiki tools to
+// a model with a context window of ctxSize tokens, for the prompts and
+// descriptions that tell a model what it can do.
+func WikiOffered(driveRoot string, ctxSize int) bool {
+	meta, _ := LoadMetadata(driveRoot)
+	return wikiInstalled(meta) && !smallContext(ctxSize)
 }
 
 // wikiInstalled is true when apply has installed the wiki's recipe. The
@@ -132,17 +252,29 @@ func wikiInstalled(meta DriveMetadata) bool {
 	return ok
 }
 
-// DriveToolNames lists the tool names the drive's MCP server registers, for
-// clients that only enable tools named up front.
-func DriveToolNames(driveRoot string) []string {
+// DriveToolNames lists the tool names the drive's MCP server registers for a
+// model with a context window of ctxSize tokens, for clients that only enable
+// tools named up front.
+func DriveToolNames(driveRoot string, ctxSize int) []string {
 	var names []string
-	for _, cap := range DriveCapabilities(driveRoot) {
+	for _, cap := range DriveCapabilities(driveRoot, DriveOptions{Context: ctxSize}) {
 		for _, action := range cap.Actions() {
 			names = append(names, toolName(cap.Tool(), action.Name))
 		}
 		_ = cap.Close()
 	}
 	return names
+}
+
+// Tools returns the tools the server registers, by name, as a client
+// receives them.
+func (s *Server) Tools() []gomcp.Tool {
+	var tools []gomcp.Tool
+	for _, tool := range s.inner.ListTools() {
+		tools = append(tools, tool.Tool)
+	}
+	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
+	return tools
 }
 
 func toolName(prefix, action string) string {
