@@ -2,6 +2,7 @@ package builder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -28,61 +29,103 @@ func newPythonTestCatalog(t *testing.T) (*catalog.Catalog, catalog.Item) {
 	return cat, recipe
 }
 
-// fakeUV emulates uv inside the tools container: python installs create a
-// python-build-standalone layout, pip installs create a --target tree unless
-// the package/platform pair is listed in unavailable. angr needs an sdist
-// build, so its wheels-only attempt fails. A --no-deps install ships
-// requirements-slim.txt in the tree, and a -r install needs its file to exist.
+// fakeUV emulates the tools container. Each install records its uv commands
+// (environment first, {dir} unreplaced) and archives its result: an
+// interpreter install archives a python-build-standalone install dir (alias
+// link, uv's dot files, a terminfo pair that differs only in case, python3
+// linking a large binary); pip installs fill a --target dir unless the
+// package/platform pair is listed in unavailable. angr needs an sdist build,
+// so its wheels-only attempt fails. A --no-deps install ships
+// requirements-slim.txt in the tree, and a -r install needs its file to
+// exist. The unpack step extracts the rewritten archive. The build dir moves
+// to a temporary dir.
 func fakeUV(t *testing.T, unavailable map[string]bool) *[][]string {
 	needsBuild := map[string]bool{"angr": true}
 	t.Helper()
+	buildDir := t.TempDir()
+	previousDir := pythonBuildDir
+	pythonBuildDir = func() (string, error) { return buildDir, nil }
 	var calls [][]string
 	previous := runToolCommand
 	runToolCommand = func(_ context.Context, _ string, _ string, _ string, tool string, args []string) (string, error) {
-		if tool != "env" {
-			t.Fatalf("tool = %q, want env", tool)
+		if tool != "python3" || len(args) != 4 {
+			t.Fatalf("unexpected tool call %s %v", tool, args)
 		}
-		calls = append(calls, args)
-		uvAt := slices.Index(args, "uv")
-		uvArgs := args[uvAt+1:]
-		flag := func(name string) string { return uvArgs[slices.Index(uvArgs, name)+1] }
-		switch strings.Join(uvArgs[:2], " ") {
-		case "python install":
-			request := uvArgs[len(uvArgs)-1]
-			build := filepath.Join(flag("--install-dir"), strings.Replace(request, "3.12", "3.12.14", 1))
-			if err := os.MkdirAll(filepath.Join(build, "bin"), 0o755); err != nil {
-				return "", err
+		switch args[1] {
+		case containerUnpackScript:
+			return "", extractTestTar(args[2], args[3])
+		case containerInstallScript:
+		default:
+			t.Fatalf("unexpected script %q", args[1])
+		}
+		var spec struct {
+			Env      []string
+			Commands [][]string
+		}
+		if err := json.Unmarshal([]byte(args[2]), &spec); err != nil {
+			t.Fatal(err)
+		}
+		archive, dir := args[3], t.TempDir()
+		for _, command := range spec.Commands {
+			calls = append(calls, append(slices.Clone(spec.Env), command...))
+			uvArgs := make([]string, len(command)-1)
+			for i, arg := range command[1:] {
+				uvArgs[i] = strings.ReplaceAll(arg, "{dir}", dir)
 			}
-			if err := os.Symlink(build, filepath.Join(flag("--install-dir"), request)); err != nil {
-				return "", err
-			}
-			return "", os.WriteFile(filepath.Join(build, "bin", "python3.12"), nil, 0o755)
-		case "pip install":
-			if at := slices.Index(uvArgs, "-r"); at >= 0 {
-				if _, err := os.Stat(uvArgs[at+1]); err != nil {
+			flag := func(name string) string { return uvArgs[slices.Index(uvArgs, name)+1] }
+			switch strings.Join(uvArgs[:2], " ") {
+			case "python install":
+				request := uvArgs[len(uvArgs)-1]
+				build := strings.Replace(request, "3.12", "3.12.14", 1)
+				return "", writeTestTar(archive, []testTarEntry{
+					{name: "./", dir: true},
+					{name: "./.lock"},
+					{name: "./.temp/", dir: true},
+					{name: "./" + request, link: "/tmp/tmp.x/" + build},
+					{name: "./" + build + "/", dir: true},
+					{name: "./" + build + "/bin/", dir: true},
+					{name: "./" + build + "/bin/python3.12", data: make([]byte, treeLinkCopyLimit+1), mode: 0o755},
+					{name: "./" + build + "/bin/python3", link: "python3.12"},
+					{name: "./" + build + "/share/terminfo/h/hp2621", data: []byte("ti")},
+					{name: "./" + build + "/share/terminfo/2/2621A", link: "../h/hp2621"},
+					{name: "./" + build + "/share/terminfo/2/2621a", link: "../h/hp2621"},
+				})
+			case "pip install":
+				if at := slices.Index(uvArgs, "-r"); at >= 0 {
+					if _, err := os.Stat(uvArgs[at+1]); err != nil {
+						return "", err
+					}
+					if err := os.WriteFile(filepath.Join(flag("--target"), "deps-installed"), nil, 0o644); err != nil {
+						return "", err
+					}
+					continue
+				}
+				pkg := strings.Split(uvArgs[len(uvArgs)-1], "==")[0]
+				if unavailable[pkg+"/"+flag("--python-platform")] || (needsBuild[pkg] && slices.Contains(uvArgs, "--no-build")) {
+					return "", errors.New("no solution found")
+				}
+				target := flag("--target")
+				if err := os.MkdirAll(filepath.Join(target, "bin"), 0o755); err != nil {
 					return "", err
 				}
-				return "", os.WriteFile(filepath.Join(flag("--target"), "deps-installed"), nil, 0o644)
-			}
-			pkg := strings.Split(uvArgs[len(uvArgs)-1], "==")[0]
-			if unavailable[pkg+"/"+flag("--python-platform")] || (needsBuild[pkg] && slices.Contains(uvArgs, "--no-build")) {
-				return "", errors.New("no solution found")
-			}
-			target := flag("--target")
-			if err := os.MkdirAll(filepath.Join(target, "bin"), 0o755); err != nil {
-				return "", err
-			}
-			if slices.Contains(uvArgs, "--no-deps") {
-				if err := os.WriteFile(filepath.Join(target, "requirements-slim.txt"), []byte("dep==1.0\n"), 0o644); err != nil {
+				if slices.Contains(uvArgs, "--no-deps") {
+					if err := os.WriteFile(filepath.Join(target, "requirements-slim.txt"), []byte("dep==1.0\n"), 0o644); err != nil {
+						return "", err
+					}
+				}
+				if err := os.WriteFile(filepath.Join(target, "bin", pkg), []byte("#!/usr/local/bin/python\n"), 0o755); err != nil {
 					return "", err
 				}
+			default:
+				t.Fatalf("unexpected uv call %v", uvArgs)
 			}
-			return "", os.WriteFile(filepath.Join(target, "bin", pkg), []byte("#!/usr/local/bin/python\n"), 0o755)
 		}
-		t.Fatalf("unexpected uv call %v", uvArgs)
-		return "", nil
+		return "", tarTestDir(dir, archive)
 	}
-	t.Cleanup(func() { runToolCommand = previous })
+	t.Cleanup(func() {
+		runToolCommand = previous
+		pythonBuildDir = previousDir
+	})
 	return &calls
 }
 
@@ -203,7 +246,7 @@ func TestBuildPythonVenvInstallsShippedRequirements(t *testing.T) {
 	if !strings.Contains(installs[0], "pip install --no-build --target") || !strings.HasSuffix(installs[0], "--no-deps slimapp==1.0") {
 		t.Errorf("package install = %q, want wheels-only without dependencies", installs[0])
 	}
-	if !strings.HasSuffix(installs[1], "-r "+toolDir+".partial/requirements-slim.txt") || strings.Contains(installs[1], "--no-deps") || !strings.Contains(installs[1], "--no-build") {
+	if !strings.HasSuffix(installs[1], "-r {dir}/requirements-slim.txt") || strings.Contains(installs[1], "--no-deps") || !strings.Contains(installs[1], "--no-build") {
 		t.Errorf("requirements install = %q, want the shipped file with dependencies", installs[1])
 	}
 	if _, err := os.Stat(filepath.Join(toolDir, "deps-installed")); err != nil {

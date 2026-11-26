@@ -34,9 +34,11 @@ var pythonTargets = map[string]pythonTarget{
 // buildPythonVenv provisions Python tools for all python-package recipes that
 // reference this venv. uv runs in the tools image and cross-targets every
 // platform, so nothing is executed for a foreign platform:
-//  1. Installs a relocatable python-build-standalone interpreter per platform
-//  2. Installs each package with `uv pip install --target` into its own dir,
-//     resolving wheels for that platform's tags; a recipe with
+//  1. Installs a relocatable python-build-standalone interpreter per platform,
+//     rewritten to hold no symlinks or case-only name differences (exFAT)
+//  2. Installs each package with `uv pip install --target` into its own dir
+//     (both through installTree, which keeps symlinks off the vault and ._
+//     files off exFAT), resolving wheels for that platform's tags; a recipe with
 //     requirements_from installs the package without dependencies, then the
 //     requirements file the package ships
 //  3. Generates wrapper scripts in bin/<platform>/ that run the entry point
@@ -82,17 +84,12 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 		targets = []string{hostPlatformStr()}
 	}
 
-	workdir := filepath.Join(root, ".staging", "build", recipe.ID)
-	uvCache := filepath.Join(root, ".staging", "uv-cache")
-	for _, dir := range []string{workdir, uvCache} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, err
-		}
+	workdir, err := pythonBuildDir()
+	if err != nil {
+		return nil, err
 	}
-	uv := func(env []string, args ...string) error {
-		args = append(append(append([]string{}, env...), "uv"), args...)
-		_, err := runToolCommand(ctx, root, workdir, BaseToolsImage, "env", args)
-		return err
+	if err := os.MkdirAll(filepath.Join(workdir, "uv-cache"), 0o755); err != nil {
+		return nil, err
 	}
 
 	var entries []manifest.RealizedEntry
@@ -122,7 +119,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			slog.Info("installing python", "version", version, "platform", platform)
 			emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventProgress, Message: "installing python " + version + " for " + platform})
 			request := "cpython-" + version + "-" + target.python
-			if err := uv(nil, "python", "install", "--no-bin", "--install-dir", interpreterDir, request); err != nil {
+			if err := installInterpreter(ctx, root, workdir, request, interpreterDir); err != nil {
 				return nil, fmt.Errorf("installing python for %s: %w", platform, err)
 			}
 			if pythonBin = findInstalledPython(interpreterDir, version); pythonBin == "" {
@@ -157,29 +154,29 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 			if rebuild {
 				slog.Info("installing python package", "package", pkg.ID, "platform", platform)
 				emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventProgress, Message: "installing " + pkg.ID + " for " + platform})
-				staging := toolDir + ".partial"
-				_ = os.RemoveAll(staging)
 				var env []string
 				if target.macosMin != "" {
 					env = append(env, "MACOSX_DEPLOYMENT_TARGET="+target.macosMin)
 				}
 				install := func(flags ...string) error {
-					args := append([]string{"pip", "install"}, flags...)
+					args := append([]string{"uv", "pip", "install"}, flags...)
 					args = append(args,
-						"--target", staging,
+						"--target", "{dir}",
 						"--python-platform", target.uvPlatform,
 						"--python-version", version,
-						"--cache-dir", uvCache,
+						"--cache-dir", containerUVCache,
+						"--link-mode", "copy",
 					)
-					if pkg.RequirementsFrom == "" {
-						return uv(env, append(args, pkg.Packages...)...)
+					commands := [][]string{append(slices.Clone(args), pkg.Packages...)}
+					if pkg.RequirementsFrom != "" {
+						// The requirements file only exists once the package
+						// that ships it is in the tree.
+						commands = [][]string{
+							append(append(slices.Clone(args), "--no-deps"), pkg.Packages...),
+							append(args, "-r", "{dir}/"+filepath.ToSlash(pkg.RequirementsFrom)),
+						}
 					}
-					// The requirements file only exists once the package that
-					// ships it is in the tree.
-					if err := uv(env, append(append(slices.Clone(args), "--no-deps"), pkg.Packages...)...); err != nil {
-						return err
-					}
-					return uv(env, append(args, "-r", filepath.Join(staging, pkg.RequirementsFrom))...)
+					return installTree(ctx, root, workdir, env, commands, nil, toolDir)
 				}
 				// Wheels only first: with builds allowed uv picks the newest
 				// version even when only its sdist exists, and a native sdist
@@ -187,11 +184,9 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				// pure-python sdists (uv rejects built wheels that don't match).
 				err := install("--no-build")
 				if err != nil {
-					_ = os.RemoveAll(staging)
 					err = install()
 				}
 				if err != nil {
-					_ = os.RemoveAll(staging)
 					if isPlatformIOPythonPackage(pkg) {
 						return nil, fmt.Errorf("PlatformIO Python package %s could not be installed for required target %s: %w", pkg.ID, platform, err)
 					}
@@ -206,12 +201,6 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 						_ = os.Remove(filepath.Join(binDir, ep))
 					}
 					continue
-				}
-				if err := os.RemoveAll(toolDir); err != nil {
-					return nil, err
-				}
-				if err := os.Rename(staging, toolDir); err != nil {
-					return nil, err
 				}
 				if err := os.WriteFile(stampPath, []byte(stamp), 0o644); err != nil {
 					return nil, err
@@ -264,9 +253,31 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 		}
 	}
 
+	// Builds before the cache moved to the computer left it on the vault.
+	for _, legacy := range []string{filepath.Join(root, ".staging", "uv-cache"), filepath.Join(root, ".staging", "build", recipe.ID)} {
+		if err := os.RemoveAll(legacy); err != nil {
+			slog.Warn("could not remove old python build files", "path", legacy, "err", err)
+		}
+	}
+
 	venvEntry.SizeBytes = dirSize(filepath.Join(root, "runtime", "python"))
 	return append(entries, venvEntry), nil
 }
+
+// pythonBuildDir holds uv's cache and the interpreter archives while building,
+// on the computer rather than the vault: a uv cache holds about one file per
+// installed file, so on the vault it was a second loose copy of every tree.
+// It is the tools container's /work.
+var pythonBuildDir = func() (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "svalbard", "python-build"), nil
+}
+
+// containerUVCache is pythonBuildDir's uv-cache as the tools container sees it.
+const containerUVCache = "/work/uv-cache"
 
 func isPlatformIOPythonPackage(pkg catalog.Item) bool {
 	return pkg.ID == "platformio-core" || pkg.ID == "espidf-python"
