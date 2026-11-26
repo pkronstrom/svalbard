@@ -3,7 +3,7 @@
 ESP-IDF 6.1 in C, through PlatformIO (espressif32 7.1.3). Each snippet goes in
 `src/main.c` of a copy of the drive's example and builds with
 `sh <folder>/scripts/pio.sh <project> run`. Only components that ship with
-ESP-IDF are available: no Arduino, no `lib_deps`.
+ESP-IDF are available: no Arduino, no registry libraries.
 
 ## Log instead of printf
 

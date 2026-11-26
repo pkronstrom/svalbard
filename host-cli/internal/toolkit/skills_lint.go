@@ -34,7 +34,10 @@ func (p SkillProblem) String() string {
 const offlineFence = "not-for-this-stick"
 
 // lintedExtensions are the files the offline check reads.
-var lintedExtensions = map[string]bool{".md": true, ".html": true, ".py": true, ".sh": true, ".js": true}
+var lintedExtensions = map[string]bool{
+	".md": true, ".txt": true, ".html": true, ".css": true, ".js": true, ".mjs": true, ".ts": true,
+	".py": true, ".sh": true, ".json": true, ".ini": true, ".c": true, ".h": true,
+}
 
 // fetchRules flag lines that install software or load something from the
 // network. Plain links in prose are allowed: they attribute, nothing loads
@@ -47,22 +50,39 @@ var fetchRules = []struct {
 	{regexp.MustCompile(`\bpip3?\s+install\b`), "installs Python packages"},
 	{regexp.MustCompile(`\buv\s+(add|pip\s+install)\b`), "installs Python packages"},
 	{regexp.MustCompile(`(^|[^\w.-])(curl|wget)\b`), "downloads from the network"},
-	{regexp.MustCompile(`\bgit\s+clone\b`), "clones from the network"},
+	{regexp.MustCompile(`\b(pipx|uvx)\b`), "installs Python packages"},
+	{regexp.MustCompile(`["']pip3?["']\s*,\s*["']install["']`), "installs Python packages"},
+	{regexp.MustCompile(`\b(conda|mamba)\s+install\b`), "installs packages"},
+	{regexp.MustCompile(`\b(yarn|bun)\s+(add|install|x|dlx)\b`), "runs a Node package manager"},
+	{regexp.MustCompile(`\bbrew\s+install\b`), "installs packages"},
+	{regexp.MustCompile(`\bapt(-get)?\s+install\b`), "installs packages"},
+	{regexp.MustCompile(`\bgo\s+(install|get)\s+(-\S+\s+)*[\w-]+(\.[\w-]+)+/`), "installs Go modules"},
+	{regexp.MustCompile(`\bcargo\s+install\b`), "installs Rust crates"},
+	{regexp.MustCompile(`\bpio\s+(pkg|lib)\s+install\b|\bplatformio\s+(pkg|lib)\s+install\b`), "installs PlatformIO packages"},
+	{regexp.MustCompile(`\blib_deps\b|\bplatform_packages\b`), "makes PlatformIO download libraries"},
+	{regexp.MustCompile(`\bgit\s+(clone|fetch|pull)\b`), "fetches from the network"},
+	{regexp.MustCompile(`\burlopen\s*\(|\burllib\.request\b`), "opens a network address from Python"},
+	{regexp.MustCompile(`\brequests\.(get|post|put|patch|delete|head|request|Session)\b|\bhttpx\.`), "opens a network address from Python"},
+	{regexp.MustCompile(`\bhttp\.client\b|\bsocket\.create_connection\b`), "opens a network connection from Python"},
+	{regexp.MustCompile(`(?i)\bsrcset\s*=\s*["']?[^"'>]*(https?:)?//`), "loads a resource from the network"},
+	{regexp.MustCompile(`(?i)@import\s+(url\(\s*)?["']?(https?:)?//`), "loads a stylesheet from the network"},
+	{regexp.MustCompile(`\bWebSocket\s*\(\s*["'` + "`" + `]wss?://`), "opens a network connection"},
+	{regexp.MustCompile(`\bEventSource\s*\(\s*["'` + "`" + `](https?:)?//`), "opens a network connection"},
 	{regexp.MustCompile(`(?i)\bsrc\s*=\s*["']?(https?:)?//`), "loads a resource from the network"},
 	{regexp.MustCompile(`(?i)<link\b[^>]*\bhref\s*=\s*["']?(https?:)?//`), "loads a resource from the network"},
 	{regexp.MustCompile(`\bimport\b[^;]*?\bfrom\s*["'](https?:)?//`), "imports a module from the network"},
 	{regexp.MustCompile(`\bimport\s*\(\s*["'](https?:)?//`), "imports a module from the network"},
-	{regexp.MustCompile(`\bfetch\s*\(\s*["'](https?:)?//`), "fetches from the network"},
+	{regexp.MustCompile(`\bfetch\s*\(\s*["'` + "`" + `](https?:)?//`), "fetches from the network"},
 	{regexp.MustCompile(`(?i)\burl\(\s*["']?(https?:)?//`), "loads a resource from the network"},
 }
 
 // LintSkills checks a skill tree laid out as <recipe>/<skill>/: every skill
 // folder sits in a catalog recipe's directory and has a SKILL.md whose
 // frontmatter names it, describes it and requires only catalog recipes or
-// known types, and no file tells an agent to install or fetch anything
+// types some catalog recipe has, and no file tells an agent to install or fetch anything
 // outside a fence marked not-for-this-stick. Files at the top (the authoring
 // README) are not skills.
-func LintSkills(skills fs.FS, recipeIDs map[string]bool) []SkillProblem {
+func LintSkills(skills fs.FS, recipeIDs, recipeTypes map[string]bool) []SkillProblem {
 	var problems []SkillProblem
 	recipes, err := fs.ReadDir(skills, ".")
 	if err != nil {
@@ -85,13 +105,13 @@ func LintSkills(skills fs.FS, recipeIDs map[string]bool) []SkillProblem {
 			if !recipeIDs[recipe.Name()] {
 				problems = append(problems, SkillProblem{Skill: skill, Reason: fmt.Sprintf("folder %s is not a recipe in the catalog", recipe.Name())})
 			}
-			problems = append(problems, lintSkill(skills, skill, folder.Name(), recipeIDs)...)
+			problems = append(problems, lintSkill(skills, skill, folder.Name(), recipeIDs, recipeTypes)...)
 		}
 	}
 	return problems
 }
 
-func lintSkill(skills fs.FS, skill, name string, recipeIDs map[string]bool) []SkillProblem {
+func lintSkill(skills fs.FS, skill, name string, recipeIDs, recipeTypes map[string]bool) []SkillProblem {
 	var problems []SkillProblem
 	add := func(file string, line int, reason string) {
 		problems = append(problems, SkillProblem{Skill: skill, File: file, Line: line, Reason: reason})
@@ -113,8 +133,8 @@ func lintSkill(skills fs.FS, skill, name string, recipeIDs map[string]bool) []Sk
 		}
 		for _, req := range meta.Requires {
 			if t, ok := strings.CutPrefix(req, "type:"); ok {
-				if _, known := TypeDirs[t]; !known {
-					add("SKILL.md", 1, fmt.Sprintf("requires %s, but no recipe type is %q", req, t))
+				if !recipeTypes[t] {
+					add("SKILL.md", 1, fmt.Sprintf("requires %s, but no catalog recipe has type %q", req, t))
 				}
 			} else if !recipeIDs[req] {
 				add("SKILL.md", 1, fmt.Sprintf("requires %s, which is not in the catalog", req))
@@ -139,13 +159,15 @@ func lintSkill(skills fs.FS, skill, name string, recipeIDs map[string]bool) []Sk
 		}
 		markdown := path.Ext(p) == ".md"
 		fence := "" // the open fence's marker, "" outside one
+		fenceLine := 0
 		skip := false
-		for i, line := range strings.Split(string(data), "\n") {
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
 			if markdown {
 				trimmed := strings.TrimLeft(line, " ")
 				if fence == "" {
 					if marker := fenceMarker(trimmed); marker != "" {
-						fence = marker
+						fence, fenceLine = marker, i+1
 						info := strings.Fields(strings.TrimLeft(trimmed, marker[:1]))
 						skip = len(info) > 0 && info[0] == offlineFence
 						continue
@@ -164,6 +186,9 @@ func lintSkill(skills fs.FS, skill, name string, recipeIDs map[string]bool) []Sk
 					break
 				}
 			}
+		}
+		if fence != "" {
+			add(rel, fenceLine, "code fence is never closed")
 		}
 	}
 	return problems

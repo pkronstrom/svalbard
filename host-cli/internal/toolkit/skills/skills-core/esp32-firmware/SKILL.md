@@ -51,7 +51,8 @@ drive's `tools/`.
 - Boards in the example: `esp32` (esp32dev), `esp32s2` (esp32-s2-saola-1),
   `esp32s3` (esp32-s3-devkitc-1).
 - Not here, and not to be added offline: Arduino, other chip families,
-  `lib_deps` libraries, managed components, another platform version.
+  libraries from PlatformIO's registry, managed components, another
+  platform version.
   Write what a library would do with ESP-IDF's own drivers.
 - GPIO 2 is the LED on many ESP32 boards but not all; ask which pin the
   user's board uses. A build that succeeds does not prove the board works.
