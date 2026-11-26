@@ -3,7 +3,7 @@ type: pmtiles
 display_group: maps
 tags: [navigation, basemap, regional]
 depth: overview
-size_gb: 0.08
+size_gb: 0.164
 description: OpenStreetMap basemap extract for the Uusimaa region (Protomaps daily build)
 strategy: build
 

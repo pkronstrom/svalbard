@@ -3,7 +3,7 @@ type: pmtiles
 display_group: maps
 tags: [navigation, basemap]
 depth: comprehensive
-size_gb: 3.0
+size_gb: 3.2
 description: OpenStreetMap basemap extract for Finland (Protomaps daily build)
 strategy: build
 
