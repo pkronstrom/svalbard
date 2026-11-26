@@ -58,6 +58,7 @@ After `apply`, a vault typically contains:
 - `wiki/`: your own wiki pages, one Markdown file per page, created the first time the wiki is used
 - `.svalbard/`: runtime metadata, embedded runtime binaries, and generated action config
 - `run` and `activate`: launcher scripts for the on-drive runtime
+- `AGENTS.md`: what an AI agent started on the drive has to be told: there is no network, and which tools look things up. Written when the vault has an AI client; a copy you have edited is left alone
 - `apps/map/index.html`: offline PMTiles viewer when map content is present
 
 ## Commands
@@ -189,7 +190,7 @@ Installing again replaces the previous copy, which is how you pick up a newer ve
 
 ### `svalbard index --vault <path> [--type keyword|semantic|full]`
 
-Build the SQLite search index from realized ZIM files under the vault: the keyword index by default, `semantic` for embeddings (needs an embedding model on the vault), `full` for both.
+Build the SQLite search index from the vault's ZIM files and documents: the keyword index by default, `semantic` for embeddings (needs an embedding model on the vault), `full` for both.
 
 The generated database is written under `data/search.db`.
 
