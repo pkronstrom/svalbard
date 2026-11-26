@@ -1,6 +1,7 @@
 // Package workspace confines a model's file tools to one folder on the drive.
 // It checks every path the model supplies and serves the folder read-only for
-// links. The browser front end's file tools use it on <drive>/workspace.
+// links. The browser front end's file tools use it on <drive>/workspace, and
+// the wiki tools on the page folder and on its trash.
 package workspace
 
 import (
@@ -8,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -30,11 +32,33 @@ const (
 type Workspace struct {
 	dir  string // symlinks resolved, so resolved paths can be compared to it
 	root *os.Root
+	opts Options
 }
 
-// Open creates the folder dir if it is missing and opens it. The drive's own
-// workspace is filepath.Join(driveRoot, DirName).
+// Options is what the errors of one opened folder say about it. They are
+// sentences for a model, which acts on the folder's name and the example.
+type Options struct {
+	// Place names the folder: "workspace".
+	Place string
+	// Example is a path the folder would accept: "notes/page.html".
+	Example string
+}
+
+// Open creates the folder dir if it is missing and opens it as the drive's
+// workspace, which is filepath.Join(driveRoot, DirName).
 func Open(dir string) (*Workspace, error) {
+	return OpenWith(dir, Options{})
+}
+
+// OpenWith is Open for another confined folder, whose errors name it as opts
+// says. An empty field keeps the workspace's wording.
+func OpenWith(dir string, opts Options) (*Workspace, error) {
+	if opts.Place == "" {
+		opts.Place = "workspace"
+	}
+	if opts.Example == "" {
+		opts.Example = "notes/page.html"
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -46,7 +70,7 @@ func Open(dir string) (*Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Workspace{dir: dir, root: root}, nil
+	return &Workspace{dir: dir, root: root, opts: opts}, nil
 }
 
 func (w *Workspace) Close() error { return w.root.Close() }
@@ -58,12 +82,12 @@ func (w *Workspace) Dir() string { return w.dir }
 // separated and relative to the workspace ("." for the workspace itself).
 // The errors are written for the model: each says what to send instead.
 func (w *Workspace) Resolve(name string) (string, error) {
-	const example = `use a path inside the workspace, for example: notes/page.html`
+	example := fmt.Sprintf("use a path inside the %s, for example: %s", w.opts.Place, w.opts.Example)
 	switch {
 	case strings.ContainsRune(name, 0):
 		return "", fmt.Errorf("path contains a NUL byte; %s", example)
 	case strings.Contains(name, `\`):
-		return "", fmt.Errorf(`path %q uses "\"; separate folders with "/", for example: notes/page.html`, name)
+		return "", fmt.Errorf(`path %q uses "\"; separate folders with "/", for example: %s`, name, w.opts.Example)
 	case strings.HasPrefix(name, "/") || strings.HasPrefix(name, "~") || filepath.IsAbs(name):
 		return "", fmt.Errorf("path %q is absolute; %s", name, example)
 	}
@@ -93,7 +117,7 @@ func (w *Workspace) Resolve(name string) (string, error) {
 // a symlink takes it out of the workspace. Missing parts are created later
 // below that point, so they cannot be links.
 func (w *Workspace) checkLinks(rel string) error {
-	outside := fmt.Errorf("path %q leaves the workspace through a link; use a plain path inside the workspace, for example: notes/page.html", rel)
+	outside := fmt.Errorf("path %q leaves the %s through a link; use a plain path inside the %s, for example: %s", rel, w.opts.Place, w.opts.Place, w.opts.Example)
 	for current := filepath.Join(w.dir, filepath.FromSlash(rel)); ; current = filepath.Dir(current) {
 		resolved, err := filepath.EvalSymlinks(current)
 		switch {
@@ -168,7 +192,7 @@ func (w *Workspace) ReadFile(rel string, maxBytes int64) ([]byte, error) {
 // pulled mid-write leaves the old file or the new one, never half of one.
 func (w *Workspace) WriteFile(rel string, data []byte) error {
 	if rel == "." {
-		return errors.New("path is the workspace folder itself; give a file name, for example: notes/page.html")
+		return fmt.Errorf("path is the %s folder itself; give a file name, for example: %s", w.opts.Place, w.opts.Example)
 	}
 	if len(data) > MaxWriteBytes {
 		return fmt.Errorf("content is %d bytes, over the %d byte limit; write a shorter file or split it into several", len(data), MaxWriteBytes)
@@ -176,17 +200,14 @@ func (w *Workspace) WriteFile(rel string, data []byte) error {
 	if info, err := w.root.Lstat(rel); err == nil {
 		switch {
 		case info.IsDir():
-			return fmt.Errorf("%s is a folder; give a file name inside it, for example: %s/page.html", rel, rel)
+			return fmt.Errorf("%s is a folder; give a file name inside it, for example: %s", rel, path.Join(rel, path.Base(w.opts.Example)))
 		case !info.Mode().IsRegular():
 			return fmt.Errorf("%s is not a regular file and cannot be replaced; choose another name", rel)
 		}
 	}
 	dir := path.Dir(rel)
-	if err := w.root.MkdirAll(dir, 0o755); err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			err = syscall.ENOTDIR
-		}
-		return describe(dir, err)
+	if err := w.makeParents(rel); err != nil {
+		return err
 	}
 
 	suffix := make([]byte, 4)
@@ -215,12 +236,108 @@ func (w *Workspace) WriteFile(rel string, data []byte) error {
 	return nil
 }
 
+// Rename gives the file from the free name to, creating to's parent folders.
+// It refuses to replace anything; a name that differs only in letter case is
+// the same file on most sticks and may be renamed to.
+func (w *Workspace) Rename(from, to string) error {
+	info, err := w.movable(from)
+	if err != nil {
+		return err
+	}
+	if existing, err := w.root.Lstat(to); err == nil && !os.SameFile(info, existing) {
+		return &refusal{to + " already exists", fs.ErrExist}
+	}
+	if err := w.makeParents(to); err != nil {
+		return err
+	}
+	if err := w.root.Rename(from, to); err != nil {
+		return describe(from, err)
+	}
+	return nil
+}
+
+// MoveTo moves the file rel into the folder dest as the free name destRel,
+// creating its parent folders there. Both paths must have passed their
+// folder's Resolve. On one volume the move is a rename, so the file is never
+// in both folders or in neither.
+func (w *Workspace) MoveTo(rel string, dest *Workspace, destRel string) error {
+	if _, err := w.movable(rel); err != nil {
+		return err
+	}
+	if _, err := dest.root.Lstat(destRel); err == nil {
+		return &refusal{destRel + " already exists", fs.ErrExist}
+	}
+	if err := dest.makeParents(destRel); err != nil {
+		return err
+	}
+	// os.Root has no rename between two roots.
+	err := os.Rename(filepath.Join(w.dir, filepath.FromSlash(rel)), filepath.Join(dest.dir, filepath.FromSlash(destRel)))
+	if errors.Is(err, syscall.EXDEV) {
+		err = w.copyTo(rel, dest, destRel)
+	}
+	if err != nil {
+		return describe(rel, err)
+	}
+	return nil
+}
+
+// movable describes the regular file rel, which Rename and MoveTo may move.
+func (w *Workspace) movable(rel string) (fs.FileInfo, error) {
+	info, err := w.root.Lstat(rel)
+	switch {
+	case err != nil:
+		return nil, describe(rel, err)
+	case info.IsDir():
+		return nil, &refusal{fmt.Sprintf("%s is a folder, not a file", rel), ErrIsFolder}
+	case !info.Mode().IsRegular():
+		return nil, fmt.Errorf("%s is not a regular file and cannot be moved", rel)
+	}
+	return info, nil
+}
+
+func (w *Workspace) makeParents(rel string) error {
+	dir := path.Dir(rel)
+	if err := w.root.MkdirAll(dir, 0o755); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			err = syscall.ENOTDIR
+		}
+		return describe(dir, err)
+	}
+	return nil
+}
+
+// copyTo is MoveTo across volumes: the copy is complete before the original
+// is removed.
+func (w *Workspace) copyTo(rel string, dest *Workspace, destRel string) error {
+	source, err := w.root.Open(rel)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	target, err := dest.root.OpenFile(destRel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(target, source)
+	if err == nil {
+		err = target.Sync()
+	}
+	if closeErr := target.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = dest.root.Remove(destRel)
+		return err
+	}
+	return w.root.Remove(rel)
+}
+
 // ErrIsFolder is the kind of a refusal to read a folder as a file.
 var ErrIsFolder = errors.New("is a folder")
 
 // refusal is an error whose text is a sentence for the model. Its kind
-// (fs.ErrNotExist, syscall.ENOTDIR or ErrIsFolder) is what errors.Is matches,
-// so the caller can add which of its own tools to use next.
+// (fs.ErrNotExist, fs.ErrExist, syscall.ENOTDIR or ErrIsFolder) is what
+// errors.Is matches, so the caller can add which of its own tools to use next.
 type refusal struct {
 	text string
 	kind error
@@ -241,11 +358,16 @@ func describe(rel string, err error) error {
 	}
 }
 
-// pathErr drops the operation and host path an *fs.PathError carries.
+// pathErr drops the operation and host paths an *fs.PathError or, from a
+// rename, an *os.LinkError carries.
 func pathErr(err error) error {
 	var pathError *fs.PathError
 	if errors.As(err, &pathError) {
 		return pathError.Err
+	}
+	var linkError *os.LinkError
+	if errors.As(err, &linkError) {
+		return linkError.Err
 	}
 	return err
 }
