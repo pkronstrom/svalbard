@@ -692,3 +692,181 @@ func TestIndexDocumentsSkipsUnreadableFileAndGoesOn(t *testing.T) {
 		t.Fatalf("after the file became readable: %+v", hits)
 	}
 }
+
+const skillFixture = `---
+name: %s
+description: %s
+---
+# %s
+
+Intro.
+
+## Steps
+
+1. Draw the chart.
+
+## Check
+
+Open the page.
+`
+
+func writeSkill(t *testing.T, root, rel, name, description string) string {
+	t.Helper()
+	return writeVaultFile(t, root, rel, strings.ReplaceAll(strings.Replace(strings.Replace(skillFixture, "%s", name, 1), "%s", description, 1), "%s", name))
+}
+
+func TestIndexSkillsAndLibraryDocs(t *testing.T) {
+	root := documentsVault(t)
+	writeSkill(t, root, "skills/skills-core/a/SKILL.md", "alpha-skill", "Charts from tables")
+	writeVaultFile(t, root, "skills/skills-core/a/references/r.md", "# Reference\n\nAxis options.\n")
+	writeVaultFile(t, root, "skills/skills-core/a/scripts/run.py", "print('not indexed')\n")
+	writeVaultFile(t, root, "skills/skills-core/a/._SKILL.md", "macOS sidecar")
+	writeVaultFile(t, root, "lib/js/js-core/docs/chartjs.md", "# Chart.js\n\nImport chart.js/auto.\n")
+	writeVaultFile(t, root, "lib/js/js-core/docs/deep/extra.md", "# Not a quickstart\n")
+	writeVaultFile(t, root, "lib/js/js-core/node_modules/chart.js/README.md", "# Chart.js readme\n")
+	writeVaultFile(t, root, "lib/js/js-core/README.md", "# Recipe notes\n")
+
+	out := index(t, root)
+	want := "Indexing documents:\n" +
+		"  lib/js/js-core/docs/chartjs.md        1 section\n" +
+		"  skills/skills-core/a/SKILL.md         3 sections\n" +
+		"  skills/skills-core/a/references/r.md  1 section\n"
+	if out != want {
+		t.Fatalf("report = %q, want %q", out, want)
+	}
+	if got, want := indexedCounts(t, root), map[string]int64{
+		"skills/skills-core/a/SKILL.md":        3,
+		"skills/skills-core/a/references/r.md": 1,
+		"lib/js/js-core/docs/chartjs.md":       1,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("indexed = %v, want %v", got, want)
+	}
+	skill := indexedSource(t, root, "skills/skills-core/a/SKILL.md")
+	if skill.Title != "alpha-skill" || !strings.HasPrefix(skill.UUID, "sha256:") {
+		t.Errorf("skill source = %+v", skill)
+	}
+	hits, err := openIndex(t, root).Search("draw chart", 10)
+	if err != nil || len(hits) != 1 || hits[0].Path != "section/2" || hits[0].Title != "alpha-skill, Steps" {
+		t.Fatalf("hits = %+v, %v", hits, err)
+	}
+
+	// An unchanged file is not read again; a touched one is.
+	if out := index(t, root); out != "" {
+		t.Errorf("unchanged run reported %q", out)
+	}
+	touchLater(t, filepath.Join(root, "lib", "js", "js-core", "docs", "chartjs.md"))
+	if out := index(t, root); out != "Indexing documents:\n  lib/js/js-core/docs/chartjs.md  1 section\n  2 documents unchanged\n" {
+		t.Errorf("after touching the quickstart: %q", out)
+	}
+}
+
+func TestScanLibraryRootSkipsNodeModules(t *testing.T) {
+	root := documentsVault(t)
+	writeVaultFile(t, root, "lib/js/x/docs/y.md", "# Y\n")
+	writeVaultFile(t, root, "lib/js/x/docs/Z.MD", "# Z\n")
+	writeVaultFile(t, root, "lib/js/x/docs/notes.txt", "not markdown")
+	writeVaultFile(t, root, "lib/js/x/node_modules/a/docs/y.md", "# A dependency's docs\n")
+	writeVaultFile(t, root, "lib/js/.staging/docs/y.md", "# Hidden\n")
+	writeVaultFile(t, root, "lib/js/stray.md", "# Not in a recipe\n")
+	writeVaultFile(t, root, "skills/s/a/SKILL.md", "# A\n")
+	writeVaultFile(t, root, "skills/s/a/book.pdf", "a PDF is a document only below books/")
+
+	documents, missing, err := ScanDocumentRoots(root)
+	want := []string{"lib/js/x/docs/Z.MD", "lib/js/x/docs/y.md", "skills/s/a/SKILL.md"}
+	if err != nil || !reflect.DeepEqual(documents, want) {
+		t.Fatalf("ScanDocumentRoots = %v, %v; want %v", documents, err, want)
+	}
+	if !reflect.DeepEqual(missing, []string{"books"}) {
+		t.Fatalf("missing = %v, want books", missing)
+	}
+	for filename, dir := range map[string]string{
+		"books/m/a.pdf": "books", "skills/s/a/SKILL.md": "skills", "lib/js/x/docs/y.md": "lib/js", "wiki.zim": "zim",
+	} {
+		if got := sourceDir(filename); got != dir {
+			t.Errorf("sourceDir(%q) = %q, want %q", filename, got, dir)
+		}
+		if got := IsDocumentSource(filename); got != (dir != "zim") {
+			t.Errorf("IsDocumentSource(%q) = %v", filename, got)
+		}
+	}
+}
+
+func TestIndexSkillsOnlyVault(t *testing.T) { // RF2
+	root := t.TempDir()
+	writeVaultFile(t, root, "manifest.yaml", "version: 2\nrealized:\n  entries:\n    - id: skills-core\n      type: skills\n      relative_path: skills/skills-core\n")
+	writeSkill(t, root, "skills/skills-core/a/SKILL.md", "alpha-skill", "Charts from tables")
+
+	var out bytes.Buffer
+	if err := RunConfiguredIndex(context.Background(), root, "keyword", &out, nil, nil); err != nil {
+		t.Fatalf("RunConfiguredIndex: %v\n%s", err, out.String())
+	}
+	if strings.Contains(out.String(), "No ZIM archives") {
+		t.Fatalf("output = %q", out.String())
+	}
+	if got := indexedCounts(t, root); got["skills/skills-core/a/SKILL.md"] != 3 || len(got) != 1 {
+		t.Fatalf("indexed = %v, want the skill", got)
+	}
+
+	// Skills placed by hand, with nothing recorded, are indexed as well.
+	byHand := documentsVault(t)
+	writeVaultFile(t, byHand, "lib/js/js-core/docs/chartjs.md", "# Chart.js\n\nImport chart.js/auto.\n")
+	if err := RunConfiguredIndex(context.Background(), byHand, "", io.Discard, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := indexedCounts(t, byHand); got["lib/js/js-core/docs/chartjs.md"] != 1 {
+		t.Fatalf("indexed = %v, want the quickstart", got)
+	}
+
+	// The realized recipe with its folder gone is a vault that is not all
+	// there, not one without skills.
+	gone := t.TempDir()
+	writeVaultFile(t, gone, "manifest.yaml", "version: 2\nrealized:\n  entries:\n    - id: skills-core\n      type: skills\n      relative_path: skills/skills-core\n")
+	if err := RunConfiguredIndex(context.Background(), gone, "", io.Discard, nil, nil); err == nil || !strings.Contains(err.Error(), "skills") {
+		t.Fatalf("err = %v, want the missing skills directory", err)
+	}
+}
+
+func TestIndexMissingSkillsDirectoryIsNeverAPrune(t *testing.T) { // RF4
+	for _, dir := range []string{"skills", "lib/js"} {
+		for name, manifest := range map[string]string{
+			"recorded":   "version: 2\nrealized:\n  entries:\n    - id: recipe\n      type: skills\n      relative_path: " + dir + "/recipe\n",
+			"unrecorded": "version: 2\nrealized:\n  entries: []\n",
+		} {
+			root := t.TempDir()
+			writeVaultFile(t, root, "manifest.yaml", manifest)
+			if err := os.MkdirAll(filepath.Join(root, "zim"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			source := dir + "/recipe/docs/a.md"
+			writeVaultFile(t, root, source, "# A\n\nAlpha text.\n")
+			index(t, root)
+			if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(dir))); err != nil {
+				t.Fatal(err)
+			}
+			if err := IndexVault(root, false, io.Discard, nil); err == nil || !strings.Contains(err.Error(), dir) {
+				t.Fatalf("%s, %s: err = %v, want a refusal that names the directory", dir, name, err)
+			}
+			if got := indexedCounts(t, root); got[source] != 1 {
+				t.Fatalf("%s, %s: indexed after the refused run = %v, want the source kept", dir, name, got)
+			}
+		}
+	}
+}
+
+func TestIndexRemovedSkillFolderIsPruned(t *testing.T) { // RF4
+	root := documentsVault(t)
+	writeSkill(t, root, "skills/skills-core/a/SKILL.md", "alpha-skill", "Charts")
+	writeVaultFile(t, root, "skills/skills-core/a/references/r.md", "# Reference\n\nAxis options.\n")
+	writeSkill(t, root, "skills/skills-core/b/SKILL.md", "bravo-skill", "Maps")
+	index(t, root)
+	if got := indexedCounts(t, root); len(got) != 3 {
+		t.Fatalf("indexed = %v", got)
+	}
+	if err := os.RemoveAll(filepath.Join(root, "skills", "skills-core", "a")); err != nil {
+		t.Fatal(err)
+	}
+	index(t, root)
+	if got, want := indexedCounts(t, root), map[string]int64{"skills/skills-core/b/SKILL.md": 3}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("indexed after removing one skill = %v, want %v", got, want)
+	}
+}

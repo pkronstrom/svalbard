@@ -204,10 +204,11 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 // that does not exist counts as empty only when the manifest records nothing
 // installed there; otherwise it is an error, so an unmounted or half-copied
 // vault is never read as "everything was removed". zim/ keeps its older,
-// stricter rule and also needs a readable v2 manifest to be absent; books/
-// did not exist before documents were indexed, so a vault without a manifest
-// simply has none. The directories that are missing and accepted as empty are
-// returned for the caller to check against what the index already holds.
+// stricter rule and also needs a readable v2 manifest to be absent; the
+// document roots did not exist before their kind was indexed, so a vault
+// without a manifest simply has none. The directories that are missing and
+// accepted as empty are returned for the caller to check against what the
+// index already holds.
 func scanSources(root string) (zimFiles, documents []string, missing map[string]bool, err error) {
 	missing = map[string]bool{}
 	m, manifestErr := manifest.Load(filepath.Join(root, "manifest.yaml"))
@@ -227,20 +228,23 @@ func scanSources(root string) (zimFiles, documents []string, missing map[string]
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	documents, err = ScanDocuments(root)
-	if errors.Is(err, fs.ErrNotExist) && !(manifestErr == nil && recorded(documentsDir)) {
-		missing[documentsDir], err = true, nil
-	}
+	documents, absent, err := ScanDocumentRoots(root)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	for _, dir := range absent {
+		if manifestErr == nil && recorded(dir) {
+			return nil, nil, nil, fmt.Errorf("scanning %s directory: the manifest records content installed there: %w", dir, fs.ErrNotExist)
+		}
+		missing[dir] = true
 	}
 	return zimFiles, documents, missing, nil
 }
 
 // sourceDir names the vault directory an indexed source was read from.
 func sourceDir(filename string) string {
-	if IsDocumentSource(filename) {
-		return documentsDir
+	if dir := documentRootOf(filename); dir != "" {
+		return dir
 	}
 	return "zim"
 }
