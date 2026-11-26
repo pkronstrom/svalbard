@@ -306,7 +306,7 @@ func reclaimTerminal(fd int) {
 }
 
 func runMCPServe(driveRoot string) error {
-	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	srv := mcp.NewDriveServer(driveRoot)
 	defer srv.Close()
 
 	port, err := netutil.FindAvailablePort("127.0.0.1", 8090)
@@ -326,7 +326,7 @@ func runMCPServe(driveRoot string) error {
 }
 
 func runMCPHTTP(driveRoot string) error {
-	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	srv := mcp.NewDriveServer(driveRoot)
 	defer srv.Close()
 
 	listener, port, err := netutil.Listen("127.0.0.1", 8090)
@@ -340,7 +340,7 @@ func runMCPHTTP(driveRoot string) error {
 }
 
 func runMCP(driveRoot string) error {
-	srv := mcp.NewServer(mcp.DriveCapabilities(driveRoot)...)
+	srv := mcp.NewDriveServer(driveRoot)
 	defer srv.Close()
 	return srv.ServeStdio()
 }

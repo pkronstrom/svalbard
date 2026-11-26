@@ -25,10 +25,14 @@ type Server struct {
 
 // NewServer creates an MCP server that exposes each capability as a tool.
 func NewServer(caps ...Capability) *Server {
+	return newServer(caps)
+}
+
+func newServer(caps []Capability, options ...mcpserver.ServerOption) *Server {
 	inner := mcpserver.NewMCPServer(
 		"svalbard-drive",
 		"0.2.0",
-		mcpserver.WithToolCapabilities(false),
+		append([]mcpserver.ServerOption{mcpserver.WithToolCapabilities(false)}, options...)...,
 	)
 
 	s := &Server{inner: inner, caps: caps}
@@ -102,19 +106,71 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 	}
 }
 
+// NewDriveServer creates the drive's MCP server: its capabilities and, on a
+// drive with skills, a line of instructions that points a client to them.
+func NewDriveServer(driveRoot string) *Server {
+	var options []mcpserver.ServerOption
+	if meta, _ := LoadMetadata(driveRoot); skillToolsOffered(meta) {
+		options = append(options, mcpserver.WithInstructions(skillServerInstructions))
+	}
+	return newServer(DriveCapabilities(driveRoot), options...)
+}
+
 // DriveCapabilities returns the capabilities the drive's MCP server exposes.
-// The wiki tools are among them on a drive that has the wiki installed.
+// The skill tools are among them on a drive that has skills or JS libraries
+// installed, and the wiki tools on one that has the wiki.
 func DriveCapabilities(driveRoot string) []Capability {
 	meta, _ := LoadMetadata(driveRoot)
-	caps := []Capability{
-		NewSearchCapability(driveRoot, meta),
+	searchTools := NewSearchCapability(driveRoot, meta)
+	caps := []Capability{searchTools}
+	if skillToolsOffered(meta) {
+		caps = append(caps, newSharedSkillCapability(driveRoot, meta, searchTools.embedBackend))
+	}
+	caps = append(caps,
 		NewVaultCapability(driveRoot, meta),
 		NewQueryCapability(driveRoot, meta),
-	}
+	)
 	if wikiInstalled(meta) {
 		caps = append(caps, NewWikiCapability(driveRoot))
 	}
 	return caps
+}
+
+// Recipe types whose content the skill tools search.
+const (
+	skillsRecipeType  = "skills"
+	libraryRecipeType = "js-lib"
+)
+
+// SkillsInstalled reports whether the drive has a skills recipe installed,
+// for the prompts that tell a model to look for a procedure first.
+func SkillsInstalled(driveRoot string) bool {
+	meta, _ := LoadMetadata(driveRoot)
+	return recipeTypeInstalled(meta, skillsRecipeType)
+}
+
+// LibrariesInstalled reports whether the drive has JS libraries installed.
+func LibrariesInstalled(driveRoot string) bool {
+	meta, _ := LoadMetadata(driveRoot)
+	return recipeTypeInstalled(meta, libraryRecipeType)
+}
+
+// skillToolsOffered is true when apply has installed skills or JS libraries.
+// The tools only need the index, but offering them on every drive would add
+// their definitions to every prompt for skills that are not there.
+func skillToolsOffered(meta DriveMetadata) bool {
+	return recipeTypeInstalled(meta, skillsRecipeType) || recipeTypeInstalled(meta, libraryRecipeType)
+}
+
+// recipeTypeInstalled reports whether a realized recipe has the type.
+// recipes.json lists the realized recipes only.
+func recipeTypeInstalled(meta DriveMetadata, recipeType string) bool {
+	for _, recipe := range meta.Recipes {
+		if recipe.Type == recipeType {
+			return true
+		}
+	}
+	return false
 }
 
 // WikiInstalled reports whether the drive's MCP server offers the wiki tools,

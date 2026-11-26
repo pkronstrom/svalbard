@@ -69,6 +69,9 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 	if engine.IsDocumentSource(source) {
 		return c.readDocument(ctx, source, rawPath, offset)
 	}
+	if engine.IsSkillSource(source) {
+		return c.readSkillSource(ctx, source, rawPath, offset)
+	}
 	candidates := pathCandidates(rawPath)
 
 	page, pagePath, err := c.readFullPage(ctx, source, candidates)

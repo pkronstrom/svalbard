@@ -148,3 +148,75 @@ func TestListSourcesLeavesSkillsOut(t *testing.T) {
 		t.Fatalf("SourceFilenames = %v, %v; want all four", all, err)
 	}
 }
+
+func TestSectionsComeBackInFileOrderWithTheirLines(t *testing.T) {
+	db := documentDB(t)
+	skill := insertDocument(t, db, "skills/skills-core/a/SKILL.md", "data-dashboard", "")
+	// Section 10 sorts after 9, not after 1.
+	for _, number := range []int{10, 2, 9, 1} {
+		id := insertArticle(t, db, skill, SectionPath(number), "data-dashboard, Part", "one line of section "+SectionPath(number))
+		if number == 2 {
+			if _, err := db.Exec(`UPDATE articles SET sections = json_array(json_object('heading', '', 'body', ?)) WHERE id = ?`, "## Steps\n\n1. First.\n2. Second.", id); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	insertDocument(t, db, "lib/js/js-core/docs/chartjs.md", "Chart.js", "")
+	insertArticle(t, db, insertDocument(t, db, "books/x.pdf", "Statistics", ""), "page/1", "Statistics, p. 1", "a page")
+	eng := New(db)
+
+	sections, err := eng.Sections(context.Background(), "skills/skills-core/a/SKILL.md")
+	if err != nil || len(sections) != 4 {
+		t.Fatalf("Sections = %+v, %v", sections, err)
+	}
+	var order []int
+	for _, section := range sections {
+		order = append(order, section.Number)
+	}
+	if !reflect.DeepEqual(order, []int{1, 2, 9, 10}) {
+		t.Errorf("order = %v", order)
+	}
+	if sections[1].Text != "## Steps\n\n1. First.\n2. Second." || sections[0].Text != "one line of section section/1" {
+		t.Errorf("texts = %q, %q", sections[1].Text, sections[0].Text)
+	}
+	if none, err := eng.Sections(context.Background(), "skills/none/SKILL.md"); err != nil || len(none) != 0 {
+		t.Errorf("sections of a file that is not indexed = %+v, %v", none, err)
+	}
+
+	sources, err := eng.SkillSources(context.Background())
+	want := []SkillSource{{"lib/js/js-core/docs/chartjs.md", "Chart.js"}, {"skills/skills-core/a/SKILL.md", "data-dashboard"}}
+	if err != nil || !reflect.DeepEqual(sources, want) {
+		t.Fatalf("SkillSources = %+v, %v; want %+v", sources, err, want)
+	}
+}
+
+func TestSearchAnyWordKeepsTheNearestWhenNothingHasMostWords(t *testing.T) {
+	db := scopeDB(t)
+	// Neither skill file has "histogram"; knowledge search rules would return
+	// nothing for two words of which one is missing.
+	if matches := search(t, db, "chart histogram", KeywordOptions{Source: SkillScope}); len(matches.Results) != 0 {
+		t.Fatalf("without AnyWord: %v", filenames(matches.Results))
+	}
+	matches := search(t, db, "chart histogram", KeywordOptions{Source: SkillScope, AnyWord: true})
+	if !reflect.DeepEqual(filenames(matches.Results), skillSources) || matches.Exact != 0 || !reflect.DeepEqual(matches.Missing, []string{"histogram"}) {
+		t.Fatalf("with AnyWord: %v, exact %d, missing %v", filenames(matches.Results), matches.Exact, matches.Missing)
+	}
+	for _, result := range matches.Results {
+		if !result.Partial || !reflect.DeepEqual(result.Matched, []string{"chart"}) {
+			t.Errorf("%s: partial %v, matched %v", result.Filename, result.Partial, result.Matched)
+		}
+	}
+	// More of the words still comes first, and all of them before that.
+	matches = search(t, db, "import chart histogram zeppelin", KeywordOptions{Source: SkillScope, AnyWord: true})
+	if len(matches.Results) != 2 || matches.Results[0].Filename != "lib/js/js-core/docs/chartjs.md" || len(matches.Results[0].Matched) != 2 {
+		t.Fatalf("ordering: %+v", matches.Results)
+	}
+	// Words that are nowhere find nothing, with or without it.
+	if matches := search(t, db, "zeppelin airship", KeywordOptions{Source: SkillScope, AnyWord: true}); len(matches.Results) != 0 {
+		t.Fatalf("no word matches: %v", filenames(matches.Results))
+	}
+	// The knowledge scope is unchanged by the option being off.
+	if matches := search(t, db, "chart histogram", KeywordOptions{}); len(matches.Results) != 0 {
+		t.Fatalf("knowledge search returned a one-word match: %v", filenames(matches.Results))
+	}
+}

@@ -49,6 +49,11 @@ type KeywordOptions struct {
 	// knowledge source.
 	Source string
 	Limit  int
+	// AnyWord also returns articles that have only one or a few of the
+	// words, after those with more. Knowledge search leaves them out as
+	// being about something else; among a drive's few skills the nearest one
+	// is worth more than nothing.
+	AnyWord bool
 }
 
 // skillRoots is the SQL condition that a source joined as src is a skill
@@ -163,7 +168,10 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	}
 	// Two words have no "most": an article with one of them is a search for
 	// that word alone.
-	if len(matches.Words)-len(matches.Missing) < 2 || len(matches.Words) < 3 {
+	if !opts.AnyWord && (len(matches.Words)-len(matches.Missing) < 2 || len(matches.Words) < 3) {
+		return matches, ctx.Err()
+	}
+	if len(matches.Words) < 2 || len(matches.Words) == len(matches.Missing) {
 		return matches, ctx.Err()
 	}
 
@@ -189,7 +197,7 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	// An article with half of the words or fewer is about something else.
 	enough := partial[:0]
 	for _, result := range partial {
-		if 2*len(result.Matched) > len(matches.Words) {
+		if opts.AnyWord || 2*len(result.Matched) > len(matches.Words) {
 			enough = append(enough, result)
 		}
 	}
