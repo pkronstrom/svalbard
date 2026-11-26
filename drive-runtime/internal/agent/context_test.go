@@ -131,7 +131,8 @@ func TestDriveContextBudget(t *testing.T) {
 		}
 	}
 	for _, noIndex := range []bool{false, true} {
-		all := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/SVALBARD", ToolPrefix: longest, Wiki: true, LivePages: true, Skills: true, NoIndex: noIndex})
+		all := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/SVALBARD", ToolPrefix: longest, Wiki: true, LivePages: true, Skills: true, NoIndex: noIndex, Libraries: true})
+		t.Logf("every area (no index: %v): %d words", noIndex, len(strings.Fields(all)))
 		if words := len(strings.Fields(all)); words > 260 {
 			t.Errorf("the drive context with every area (no index: %v) is %d words, over the budget of 260:\n%s", noIndex, words, all)
 		}
@@ -349,9 +350,14 @@ func TestOmpPromptMentionsSkills(t *testing.T) {
 			t.Errorf("lean prompt does not name %s:\n%s", tool, prompt)
 		}
 	}
-	// The packing command arrives with stage 3; until then nothing names it.
-	if strings.Contains(prompt, "html pack") || strings.Contains(prompt, "mcp__svalbard__") || !strings.Contains(prompt, "Work only in your starting folder and the drive.") {
+	// With JS libraries the prompt names the packing command.
+	if !strings.Contains(prompt, "`svalbard-drive html pack`") || strings.Contains(prompt, "mcp__svalbard__") || !strings.Contains(prompt, "Work only in your starting folder and the drive.") {
 		t.Errorf("lean prompt:\n%s", prompt)
+	}
+	skillsOnly := t.TempDir()
+	installRecipes(t, skillsOnly, skillsRecipe)
+	if _, prompt := launch(skillsOnly); strings.Contains(prompt, "html pack") {
+		t.Errorf("a drive without JS libraries is told to pack pages:\n%s", prompt)
 	}
 }
 
@@ -382,5 +388,17 @@ func TestPrepareClientPutsDriveBinariesOnPath(t *testing.T) {
 	t.Setenv("PATH", "")
 	if got := prepare(t, driveRoot, "pi").Env["PATH"]; strings.HasSuffix(got, string(os.PathListSeparator)) || got == "" {
 		t.Errorf("PATH with nothing inherited = %q", got)
+	}
+}
+
+// With JS libraries the context names the command that packs a page; a
+// drive with skills and no libraries does not mention it.
+func TestDriveContextNamesHTMLPackWithLibraries(t *testing.T) {
+	with := agent.DriveContext(agent.ContextOptions{ToolPrefix: "mcp__svalbard__", Skills: true, Libraries: true})
+	if !strings.Contains(with, "`svalbard-drive html pack`") || !strings.Contains(with, "never link a CDN") {
+		t.Errorf("context with libraries:\n%s", with)
+	}
+	if without := agent.DriveContext(agent.ContextOptions{ToolPrefix: "mcp__svalbard__", Skills: true}); strings.Contains(without, "html pack") {
+		t.Errorf("context without libraries names html pack:\n%s", without)
 	}
 }
