@@ -323,7 +323,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	if err := syncRecipeCopies(root, m, cat); err != nil {
 		return fmt.Errorf("writing the vault's recipe copies: %w", err)
 	}
-	if err := syncMapViewer(root, m.Realized.Entries); err != nil {
+	if err := syncMapViewer(root, m.Realized.Entries, recipes); err != nil {
 		return fmt.Errorf("generating map viewer: %w", err)
 	}
 
@@ -579,9 +579,9 @@ func executeJob(
 	return downloadResult{id: job.id, entries: entries, err: err}
 }
 
-func syncMapViewer(root string, entries []manifest.RealizedEntry) error {
+func syncMapViewer(root string, entries []manifest.RealizedEntry, recipes map[string]catalog.Item) error {
 	viewerPath := filepath.Join(root, "apps", "map", "index.html")
-	layers := pmtilesLayers(entries)
+	layers := pmtilesLayers(entries, recipes)
 	if len(layers) == 0 {
 		if err := os.Remove(viewerPath); err != nil && !os.IsNotExist(err) {
 			return err
@@ -591,17 +591,29 @@ func syncMapViewer(root string, entries []manifest.RealizedEntry) error {
 	return mapview.Generate(root, layers)
 }
 
-func pmtilesLayers(entries []manifest.RealizedEntry) []mapview.Layer {
+func pmtilesLayers(entries []manifest.RealizedEntry, recipes map[string]catalog.Item) []mapview.Layer {
 	layers := make([]mapview.Layer, 0)
 	for _, e := range entries {
 		if e.Type != "pmtiles" {
 			continue
 		}
-		layers = append(layers, mapview.Layer{
-			Name:     e.ID,
-			Filename: e.Filename,
-			Category: "basemap",
-		})
+		layer := mapview.Layer{Name: e.ID, Filename: e.Filename, Path: filepath.ToSlash(e.RelativePath)}
+		recipe := recipes[e.ID]
+		if v := recipe.Viewer; v != nil {
+			if v.Name != "" {
+				layer.Name = v.Name
+			}
+			layer.Category = v.Category
+			layer.Style = v.Style
+		}
+		if recipe.Build != nil {
+			layer.SourceLayer = recipe.Build.Config["layer_name"]
+		}
+		if license := recipe.License; license != nil {
+			layer.Attribution = license.Attribution
+			layer.LicenseURL = license.URL
+		}
+		layers = append(layers, layer)
 	}
 	return layers
 }

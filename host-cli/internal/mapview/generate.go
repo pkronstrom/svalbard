@@ -1,6 +1,7 @@
 package mapview
 
 import (
+	_ "embed"
 	"html/template"
 	"os"
 	"path/filepath"
@@ -8,9 +9,14 @@ import (
 
 // Layer describes a PMTiles layer to render in the map viewer.
 type Layer struct {
-	Name     string // Display name (e.g., "OpenStreetMap Finland")
-	Filename string // PMTiles filename (e.g., "osm-finland.pmtiles")
-	Category string // "basemap" or overlay category
+	Name        string
+	Filename    string
+	Path        string
+	Category    string
+	SourceLayer string
+	Style       map[string]map[string]any
+	Attribution string
+	LicenseURL  string
 }
 
 type templateData struct {
@@ -20,57 +26,8 @@ type templateData struct {
 	PMTilesJSPath   string
 }
 
-const htmlTemplate = `<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Svalbard Maps</title>
-    <script src="{{.MapLibreJSPath}}"></script>
-    <link href="{{.MapLibreCSSPath}}" rel="stylesheet">
-    <script src="{{.PMTilesJSPath}}"></script>
-    <style>
-        body { margin: 0; }
-        #map { width: 100%; height: 100vh; }
-        #layers { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9);
-                   padding: 10px; border-radius: 4px; font-family: sans-serif; font-size: 13px; }
-        #layers label { display: block; margin: 4px 0; }
-    </style>
-</head>
-<body>
-    <div id="map"></div>
-    <div id="layers">
-        <strong>Layers</strong>
-        {{range .Layers}}
-        <label><input type="checkbox" checked data-source="{{.Filename}}"> {{.Name}}</label>
-        {{end}}
-    </div>
-    <script>
-        const protocol = new pmtiles.Protocol();
-        maplibregl.addProtocol("pmtiles", protocol.tile);
-
-        const mapView = new maplibregl.Map({
-            container: 'map',
-            style: {
-                version: 8,
-                sources: {
-                    {{range $i, $l := .Layers}}{{if $i}},{{end}}
-                    "{{$l.Filename}}": {
-                        type: "vector",
-                        url: "pmtiles://../../maps/{{$l.Filename}}"
-                    }
-                    {{end}}
-                },
-                layers: []
-            },
-            center: [0, 20],
-            zoom: 2
-        });
-
-        mapView.addControl(new maplibregl.NavigationControl());
-    </script>
-</body>
-</html>
-`
+//go:embed viewer.html
+var htmlTemplate string
 
 // The maplibre-vendor app-bundle installs into apps/maplibre-vendor/vendor/,
 // a sibling of this viewer's apps/map/ directory.

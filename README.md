@@ -4,221 +4,81 @@
 
 # Svalbard
 
-Seed vault for human knowledge — civilization on a stick.
+**Bring a library, a local model, and a place to save what you make.** Svalbard packs reference material and tools into a folder you can carry on a USB drive. Ask an assistant to read across your archives and turn what it finds into something you can open again tomorrow: a diagram, a field guide, or a small browser app.
 
-> **Alpha (v0.5.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
->
-> **Heads up:** the codebase was recently rewritten from Python to Go. Not every flow has been re-tested end-to-end on the new code path yet, so expect breakages — please file an issue if you hit one.
+Prepare the vault while you have internet access. At your destination, open the drive menu on a Mac or Linux computer. You can use the library and maps on their own, or start a local model in **Open WebUI**.
 
-## Why
+## What would you make with your vault?
 
-The information we take for granted today — encyclopedias, repair manuals, medical references, maps, how-to guides — might not always be a search away. Whether you're heading off-grid, preparing for disruptions, or just want a self-contained reference library that doesn't need a connection, having critical knowledge on a physical drive is surprisingly useful.
+### Turn two sources into one interactive page
 
-Svalbard is a one-shot provisioner for pre-built offline knowledge archives. A bugout stick. An off-grid reference library. A civilization reboot archive. Whatever you need it to be.
+> Find information on handmade paper and paper computers. Read *Paper* in Wikiciv and *CARDIAC* in Permacomputing. Make me a single-file HTML visualization that goes from pulp to a programmable page. Let me click through it, name the sources, and save it on the drive.
 
-The project ships with sanely curated presets built from open recipes, but it's designed to be extended and modified with your own data — and that's encouraged.
+A local Qwen3.5 4B model searched both ZIM archives, read the articles, and used the workspace file tool to write HTML. We checked its first draft against the articles, then asked for two illustrated cards with a source summary behind each button. The saved page opens directly in a browser.
 
-## What's on a drive
+![Open WebUI showing Qwen searching the vault, reading archived articles and writing an HTML visualization.](docs/open-webui-make-a-page.webp)
 
-- **Encyclopedias** — Wikipedia, Wiktionary, WikiMed
-- **Practical knowledge** — iFixit repair guides, Stack Exchange Q&A, Practical Action field guides
-- **Books and courses** — Project Gutenberg, Wikibooks, Khan Academy
-- **Maps** — OpenStreetMap regional extracts, geodata overlays
-- **AI models** — Portable Gemma 4 (QAT), Qwen 3.5 and Qwen 3.8 GGUFs that run locally from the drive; [RAM tiers and optional MTP](docs/plans/2026-09-30-catalog-refresh-results.md)
-- **Search** — Full-text and semantic search across all content — find answers, not just keywords
-- **Wiki** — your own notes as plain Markdown files, edited in the browser; the local AI clients can read and write the pages ([how](docs/usage.md#the-wiki))
-- **Tools** — CyberChef, Kiwix server, everything self-contained
+![The generated visualization opened as a local HTML file.](docs/offline-paper-visualization.webp)
 
-Deploy a 2 GB emergency kit on your phone with a few apps and be offgrid-certified. Or build a complete over-the-top 2 TB doomsday vault if you feel like it.
+Try the same pattern with your own topics: **“Read X and Y from this drive, show me how they relate, and save it as one HTML file I can use offline.”** Specify what you want to *do* with the result, such as switch views, compare two methods, or record a measurement.
 
-## How it works
+### Build a tool for a night outside
 
-A svalbard drive is not a bootable image or a compressed archive — it's a plain directory of standard open formats (ZIM, PMTiles, GGUF, HTML). No extraction, no installation. The drive includes its own binaries and tools for viewing and accessing data.
+> Make me an offline observing log. Draw a schematic of the Big Dipper, let me select a star and save a dated observation, and remember my notes when I reopen the page. Put everything in one HTML file.
 
-**On a computer** — plug in the drive, open a terminal, run `./run`. The drive launcher opens a keyboard-driven terminal UI with grouped menus for `Search`, `Library`, `Maps`, `Local AI`, `Apps`, `Tools` and `Settings`, plus any pack-defined extras on the drive. You can jump straight into archives and your own documents, view maps, chat with local models, launch bundled AI clients like OpenCode, Goose and pi or the opt-in Open WebUI browser front end, keep your own notes in the drive's wiki, inspect the drive, and share it over the local network. Choices such as the default model and the context size are kept on the drive: change them under `Settings`, or with `./run settings`. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
+This example uses the model as a tool builder. The chart is a schematic for choosing a star. The log stores observations in the browser on the computer you use.
 
-**On a phone or tablet** — carry a USB-C stick, plug it into your phone, and open the files directly with apps like Kiwix (encyclopedias), OsmAnd (maps), or any PDF/EPUB reader. Or just copy the directory (or a zip of it) to your phone's filesystem — the files are standard formats that any compatible app can open. See `provisioning/` for recommended apps on iOS and Android.
+![The generated offline Big Dipper observing log.](docs/offline-star-log.webp)
+
+The chat and generated-page screenshots were captured on an Apple Silicon Mac with a folder on its internal SSD. For this workflow, use the **Open WebUI** recipe from [Svalbard’s main branch](https://github.com/pkronstrom/svalbard/tree/main). Enable its file tools so the assistant can write to the vault’s `workspace/` folder.
+
+## Explore the drive yourself
+
+### Read the original in Kiwix
+
+Choose **Library**, open an installed archive, and search for the article title. Here’s *Paper*, one of the two sources in the visualization. You can follow its links, inspect the diagrams, and check which details the assistant added.
+
+![Kiwix displaying the archived Wikiciv article on paper with its search box and article text.](docs/kiwix-paper.webp)
+
+### Stack map layers for a field trip
+
+Open **Maps**, choose a basemap, and switch the overlays on or off. Around Helsinki harbour you can see where HSY marks public water posts and where SYKE marks protected areas, while keeping the coastline and streets in view. Pan and zoom work offline. **Turn-by-turn directions and route calculation are still planned.**
+
+![Svalbard Maps showing Helsinki harbour with the topographic basemap, public water posts and protected areas enabled.](docs/offline-map-helsinki.webp)
+
+This capture used three local PMTiles extracts. The basemap came from National Land Survey of Finland sheet L41R. The national topographic tile recipe currently has an unavailable endpoint, so reproducing this particular view requires a separately prepared sheet. Map data © National Land Survey of Finland, Helsinki Region Environmental Services (HSY), and Finnish Environment Institute (SYKE), CC BY 4.0. [Topographic sheet](https://kartat.kapsi.fi/files/maastokarttarasteri_100k_jhs180/kaikki/etrs89/png/L4/L41/) · [Water-post source](recipes/maps/hsy-vesipostit.yaml) · [Protected-areas source](recipes/maps/luonnonsuojelualueet.yaml)
 
 ## Install
 
-### Pre-built binary (recommended)
+Download the host binary for your Mac or Linux computer, extract it, and put `svalbard` on your path. To build from a checkout with Go installed, run `make build` and use `bin/svalbard`. Standard downloads use the host binary directly. Recipes that build tools, including the optional Open WebUI install, use Docker during preparation. [Release downloads](https://github.com/pkronstrom/svalbard/releases) · [Usage guide](docs/usage.md)
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/pkronstrom/svalbard/releases). The binary is self-contained — no Go toolchain or runtime dependencies required.
+### Prepare the drive
 
-```bash
-# macOS (Apple Silicon)
-tar xzf svalbard_darwin_arm64.tar.gz
-sudo mv svalbard /usr/local/bin/
+1. **Choose a destination.** Run `svalbard init` to open the guided setup. Pick a folder or mounted drive and the platforms you’ll use it on.
+2. **Choose the contents.** Start with a capacity preset, review its contents, then add or remove items. For the visualization above, include Wikiciv, Permacomputing, Open WebUI and Qwen3.5 4B. Keep the suggested dependencies and enable keyword indexing.
+3. **Apply while online.** Let the downloads and selected indexing finish. The vault keeps both your selections and a record of what was installed. Reopen it later to change its contents.
 
-# Linux (x86_64)
-tar xzf svalbard_linux_amd64.tar.gz
-sudo mv svalbard /usr/local/bin/
+<img src="docs/demo.gif" alt="Terminal setup wizard for choosing a vault and its contents" width="100%">
+
+### Use the drive offline
+
+Open the vault folder in a terminal and run `./run` to launch its keyboard-driven menu. **Library** opens installed archives through Kiwix. **Search** looks across indexed articles. **Maps** opens installed maps. On a phone or tablet, a compatible reader such as Kiwix can open the ZIM files directly.
+
+For browser chat, choose **Open WebUI** under **Local AI** and select your installed model if prompted. The drive starts the model and its vault tools locally and opens the chat in your browser. Ask for article titles and have the model read the matches before it summarizes them.
+
+```text
+Browser ── Open WebUI ──┬── local model (Qwen in the examples)
+                        └── Svalbard search and read tools ── ZIM archives
 ```
 
-The binary handles all download-based recipes (ZIMs, maps, models, PDFs, binaries) with zero dependencies. For build recipes (site scraping, geodata processing) and media import (YouTube, Yle), you also need Docker:
+### Bring your own agent
 
-```bash
-docker pull ghcr.io/pkronstrom/svalbard-tools
-```
-
-The `svalbard-tools` image includes warc2zim, tippecanoe, zim-tools, GDAL, ffmpeg, yt-dlp, yle-dl, and other build tools. Svalbard falls back to it automatically when a build step needs a tool that isn't available locally.
-
-### Build from source
-
-Requires Go 1.26+.
-
-```bash
-git clone https://github.com/pkronstrom/svalbard.git
-cd svalbard
-
-# Full build — embeds drive-runtime binaries for all platforms (~71 MB)
-make build
-
-# Dev build — smaller binary, compiles drive-runtime on-demand at apply-time
-make build-dev
-```
-
-The built binary is at `bin/svalbard`.
-
-| Make target | What it does |
-|-------------|-------------|
-| `make build` | Cross-compile drive-runtime for 4 platforms, embed into svalbard binary |
-| `make build-dev` | Quick build without embedding (requires Go at apply-time) |
-| `make build-drive-runtime` | Only cross-compile drive-runtime binaries |
-| `make test` / `make verify` | Check catalog parity and test all five Go modules |
-| `scripts/sync-catalog.sh` | Regenerate the embedded catalog after editing `recipes/` or `presets/` |
-| `make clean` | Remove build artifacts |
-
-## Architecture
-
-The core is Go:
-
-- `host-cli/` — host-side CLI for vault init, desired-state changes, apply, status, import, presets, and indexing
-- `host-tui/` — host-side TUI app (Bubble Tea) — interactive dashboard and init wizard
-- `tui/` — shared TUI component library used by `host-tui/` and `drive-runtime/` (layout, theme, key bindings, tree picker, progress views)
-- `drive-runtime/` — on-drive launcher and native runtime actions, embedded into the host binary at build time
-- `recipes/` and `presets/` — catalog inputs, embedded into the host binary via `//go:embed`
-
-Python exists only as a build-worker detail:
-
-- `recipes/builders/*.py` — specialized builder scripts for Docker-based builds (ZIM scraping, geodata processing)
-- These run inside the `svalbard-tools` container and are not needed for standard download-based provisioning
-
-## Presets
-
-Presets scale from pocket-sized emergency kits to full archives:
-
-| Preset | Content | What you get |
-|--------|---------|-------------|
-| `default-2` | ~1.3 GiB | Bugout kit — emergency medicine (WikEM, WHO, field manuals), water/food, knots, appropriate tech |
-| `default-32` | ~17 GiB | Survival core — Wikipedia top 50k, WikiMed, MedlinePlus, iFixit, repair/homesteading guides, practical Q&A |
-| `default-64` | ~40 GiB | Adds pictured top Wikipedia, Wikibooks, Gutenberg agriculture + medicine, trades textbooks, electronics/radio Q&A |
-| `default-128` | ~91 GiB | Full-text English Wikipedia (no pictures), Wiktionary, OSM wiki, DSP/IoT Q&A |
-| `default-256` | ~170 GiB | Sciences, Gutenberg technology, Make It Yourself, prepping videos, and a starter local AI (8–16 GB RAM models) |
-| `default-512` | ~366 GiB | Adds Khan Academy and 24 GB-class local AI |
-| `default-1tb` | ~700 GiB | Pictured English Wikipedia, Survivor Library, 64 GB-class local AI |
-| `default-2tb` | ~1 TiB | Full Gutenberg, Stack Overflow, sysadmin Q&A — everything curated |
-
-Sizes are catalog estimates in GiB for one target platform; tool binaries and Python tools are downloaded once per platform you pick, so each extra platform adds their size again. Every tier leaves at least ~15% of the drive free for search indexes and your own files. Specialization packs (cybersec, computing, sciences, engineering, communications, ESP32 dev, homesteading) are opt-in and not part of the default tiers.
-
-Finnish presets (`finland-*`) extend the same-size default tier plus the next-smaller Finnish tier: Finnish Wikipedia and Wiktionary, Finnish Gutenberg/Wikibooks/Wikisource, partiotaidot (scoutwiki), the Fimea medicine registry, and — from 32 GB up — Finnish maps and open geodata (recreation structures, nature reserves, groundwater).
-
-## Walkthrough: provision your own stick
-
-<img src="docs/demo.gif" alt="svalbard wizard demo" width="100%">
-
-```bash
-# 1. Launch the guided setup wizard — pick a preset and apply
-svalbard init /Volumes/MyStick
-
-# 2. Build the search index
-svalbard index --vault /Volumes/MyStick
-
-# 3. Done — unplug and go
-cd /Volumes/MyStick && ./run
-```
-
-`svalbard init` opens an interactive wizard that handles preset selection, manifest creation, and the initial download/apply in one flow. Run `svalbard` with no arguments to launch the dashboard for an existing vault. The non-interactive `add`/`remove`/`plan`/`apply`/`status`/`import` subcommands are for managing a vault that already exists.
-
-### Add your own content
-
-```bash
-# Import a local file into the vault library and desired state
-svalbard import ../manual.pdf --vault /Volumes/MyStick --add --name field-manual
-
-# Or add an existing item id, then apply again
-svalbard add local:field-manual --vault /Volumes/MyStick
-svalbard apply --vault /Volumes/MyStick
-```
+Give your agent the vault path, storage budget and subjects you need. Ask it to check the installed binary’s available commands, show the plan, and report which downloads completed. For interactive research on a prepared drive, supported clients such as OpenCode and Goose can use Svalbard’s Model Context Protocol (MCP) tools to look up sources. [Command reference and vault layout](docs/usage.md)
 
 ### Custom presets
 
-A custom preset is a YAML file in `~/.config/svalbard/presets/` (`$XDG_CONFIG_HOME/svalbard/presets/`). It composes built-in presets and packs with the same rules the built-in presets use: `extends` sources are merged in order and deduplicated by id, `sources` adds recipe ids, and `-id` drops an inherited one.
-
-```yaml
-# ~/.config/svalbard/presets/my-256.yaml
-name: my-256                      # optional; defaults to the file name
-description: finland-256 plus Qwen 27B and cybersec
-extends: [finland-256, cybersec, esp32-dev]
-sources: [qwen-27b, -gutenberg-en-lcc-t]
-```
-
-```bash
-svalbard preset copy finland-256 my-256   # writes an extends stub to ~/.config/svalbard/presets/my-256.yaml
-svalbard preset list                      # custom presets are marked "(user: <file>)"
-svalbard init                             # the wizard lists them, marked "(custom)"
-svalbard add cybersec --vault /Volumes/MyStick   # add/remove also accept preset and pack names
-```
-
-Custom presets are checked when the catalog loads: a custom preset may not reuse a built-in or another custom preset's name, and every `extends` entry and source id (including `-id` removals) must exist. An invalid file, and any custom preset that extends it, is skipped with one warning on stderr naming the file and the reason; everything else still loads, and naming a skipped preset (`preset copy`, `add`, `remove`) fails with that reason. A custom preset without a `region` takes the region of the first preset it extends, or `custom` if that has none. In a development checkout, the gitignored `local/presets/` is also read. `preset copy --flatten` writes the fully resolved source list instead of an `extends` stub.
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `svalbard` | Launch the interactive TUI (dashboard or wizard) |
-| `svalbard init [path]` | Open the guided wizard to create a vault — preset is chosen interactively |
-| `svalbard add <item...> --vault <path>` | Add catalog or local item ids, or every item of a preset/pack, to desired state |
-| `svalbard remove <item...> --vault <path>` | Remove item ids, or every item of a preset/pack, from desired state |
-| `svalbard plan --vault <path>` | Show the reconciliation plan |
-| `svalbard apply --vault <path>` | Download, materialize, and update the realized state |
-| `svalbard status --vault <path>` | Show desired, realized, and pending items |
-| `svalbard import <file> --vault <path> [--add]` | Import a local file into the vault library |
-| `svalbard preset list` | List built-in and custom presets |
-| `svalbard preset copy <source> <target> [--flatten]` | Start a custom preset that extends `<source>` (a bare `<target>` name goes to `~/.config/svalbard/presets/`) |
-| `svalbard index --vault <path>` | Build the full-text search index from vault ZIM files |
-
-Set `SVALBARD_DEBUG=1` for verbose structured logging (written to `$TMPDIR/svalbard.log`).
-
-Set `SVALBARD_CACHE_DIRS=/path/one:/path/two` to reuse already-downloaded files (e.g. a local model cache like `~/.models`) during `apply`. Each catalog file is matched by filename in those directories, size-checked against the source, and copied into the vault instead of re-downloaded.
-
-## Roadmap
-
-- [x] Go host CLI for vault init, desired-state edits, apply, status, import, preset listing, and indexing
-- [x] Parallel downloads with resume and checksum verification
-- [x] Composable presets with inheritance and regional packs
-- [x] Full-text and semantic search across all ZIM content
-- [x] Drive toolkit — Go launcher, embedded runtime binaries, local map viewer, bundled tools
-- [x] Interactive TUI wizard for guided vault setup
-- [x] Self-contained release binary with embedded drive-runtime and catalog
-- [x] Custom presets composed from built-in presets and packs
-- [ ] Expanded Go-side import flows beyond local-file ingestion
-- [ ] Fully curated and verified presets — every source checked, sized, and tested across tiers
-- [ ] Custom Wikipedia ZIM builds — compact/resized images for space-constrained tiers
-- [ ] Regional geodata packs — Finnish survival layers (shelters, water, foraging) as a first regional pack
-- [ ] Search across all content — index PDFs, geodata, and reference databases alongside ZIMs
-- [ ] RAG — query all drive content through the bundled local LLM
-- [ ] Offline routing — turn-by-turn navigation from preprocessed OSM graphs
-- [x] Offline coding assistant bootstrap — bundled llama.cpp runtime, portable models, and terminal AI clients
-- [ ] Mobile workflow — guides and tooling for viewing drive content on phones via USB-C
-- [ ] Hardware and programming toolkit — offline compilers, embedded toolchains, EDA tools, and documentation
-- [ ] Port the remaining shell-backed drive actions to portable static binaries
-- [ ] Limited Windows support
-
-## Documentation
-
-- [Usage guide](docs/usage.md) — current Go CLI flow, vault model, and builder boundary
+To repeat a setup, copy a built-in preset with `svalbard preset copy default-32 my-field-kit`. Edit the YAML under `~/.config/svalbard/presets/`, then select the named preset in the wizard. You can also import your own files into the vault. [Presets and imports](docs/usage.md)
 
 ## License
 
-[GPL-3.0](LICENSE) — Free to use, modify, and distribute. Derivatives must remain open source. Individual datasets on provisioned drives carry their own licenses. Third-party software bundled in the CLI is listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Svalbard is licensed under [GPL-3.0](LICENSE). The archives, tools and models you choose retain their own licenses.

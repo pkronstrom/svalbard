@@ -107,8 +107,9 @@ type EmbeddingSpec struct {
 
 // ViewerSpec describes how a recipe should be presented in a viewer.
 type ViewerSpec struct {
-	Name     string `yaml:"name"`
-	Category string `yaml:"category"`
+	Style    map[string]map[string]any `yaml:"style,omitempty"`
+	Name     string                    `yaml:"name"`
+	Category string                    `yaml:"category"`
 }
 
 // LicenseSpec captures the licensing information for a recipe.

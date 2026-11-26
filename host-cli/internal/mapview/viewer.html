@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Svalbard Maps</title>
+<link rel="stylesheet" href="{{.MapLibreCSSPath}}">
+<script src="{{.MapLibreJSPath}}"></script>
+<script src="{{.PMTilesJSPath}}"></script>
+<style>
+* { box-sizing: border-box }
+body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #203328 }
+#map { width: 100%; height: 100vh; height: 100dvh }
+aside { position: absolute; top: 12px; left: 12px; max-width: min(310px, 70vw);
+  max-height: 70vh; overflow: auto; background: #fff; border-radius: 6px;
+  box-shadow: 0 1px 7px #1a302744; padding: 10px 14px }
+summary { cursor: pointer; font-weight: 650 }
+label { display: block; margin-top: 7px; cursor: pointer }
+input { accent-color: #286243 }
+#errors { margin: 4px 0 0; font-size: 12px; color: #893c21; overflow-wrap: anywhere }
+</style>
+</head>
+<body>
+<div id="map" aria-label="Offline map"></div>
+<aside>
+<details open><summary>Map layers</summary>
+{{range $i, $l := .Layers}}<label><input id="layer-{{$i}}" type="{{if eq $l.Category "basemap"}}radio{{else}}checkbox{{end}}" {{if eq $l.Category "basemap"}}name="basemap"{{end}} disabled> {{$l.Name}}</label>
+{{end}}
+</details>
+<div id="errors" role="status"></div>
+</aside>
+<script>
+const installed = {{.Layers}} || [];
+const errors = new Set();
+function report(message) {
+  errors.add(message);
+  document.querySelector('#errors').textContent = Array.from(errors).join(' · ');
+}
+
+const colors = {
+  earth: '#eceade', landcover: '#c9debc', landuse: '#dae1c7', park: '#c1d9b5',
+  water: '#9acbd8', waterways: '#72b5cd', buildings: '#c6b9a9', roads: '#fffdf3',
+  boundaries: '#9a8d96', transit: '#a89d98'
+};
+const landColor = ['match', ['get','kind'],
+  ['wood','forest','nature_reserve'], '#b6d2ad', ['park','grass','meadow','grassland'], '#cce0b7',
+  ['industrial','commercial'], '#ddd6ce', 'residential', '#e8e2d7', '#dce2ca'];
+const roadColor = ['match',['get','kind'],
+  ['highway','major_road'], '#e9b776', ['path','other'], '#c2bba6', '#fffdf3'];
+const roadWidth = ['interpolate',['linear'],['zoom'],
+  5, 0.6, 11, ['match',['get','kind'],['highway','major_road'],2.8,1.1],
+  16, ['match',['get','kind'],['highway','major_road'],9,4]];
+
+function paints(config, name) {
+  if (config.Category !== 'basemap') {
+    return config.Style || {
+      polygons: {'fill-color':'#4c9b74','fill-opacity':0.38},
+      lines: {'line-color':'#298167','line-width':2},
+      points: {'circle-color':'#c86739','circle-radius':4,'circle-stroke-color':'#fff','circle-stroke-width':1}
+    };
+  }
+  const key = name.toLowerCase();
+  if (['places','pois','physical_point','addresses'].includes(key)) return {};
+  const water = /water|järvi|jarvi|meri|joki|vesi/.test(key);
+  const fill = colors[key] || (water ? colors.water : '#c9d8bc');
+  return {
+    polygons: {'fill-color': ['landuse','landcover'].includes(key) ? landColor : fill},
+    lines: {'line-color': key === 'roads' ? roadColor : (water ? colors.waterways : colors[key] || '#979b88'),
+            'line-width': key === 'roads' ? roadWidth : 1.2},
+    points: {'circle-color': '#807964','circle-radius':2}
+  };
+}
+
+function vectorLayers(config, source, metadata) {
+  const specs = metadata.vector_layers || [];
+  const names = specs.map(layer => layer.id);
+  if (!names.length && config.SourceLayer) names.push(config.SourceLayer);
+  if (!names.length) throw Error('Archive does not identify any vector layers');
+  // Protomaps lists layers alphabetically. Paint land and water before buildings and roads.
+  const order = ['earth','landcover','landuse','water','buildings','boundaries','transit','roads','places'];
+  const rank = name => order.includes(name) ? order.indexOf(name) : 3.5;
+  names.sort((a,b) => rank(a) - rank(b));
+  const geometry = new Map((metadata.tilestats?.layers || []).map(layer => [layer.layer, layer.geometry]));
+  const layers = [];
+  for (const name of names) {
+    const style = paints(config, name);
+    function add(type, geom, paint) {
+      if (!paint || !Object.keys(paint).length) return;
+      layers.push({id:source+'-'+layers.length, type, source, 'source-layer':name,
+        filter:['==',['geometry-type'],geom], paint});
+    }
+    // tilestats reports the predominant geometry. A service layer may mix all three.
+    const geom = config.Category === 'basemap' ? geometry.get(name) : null;
+    const props = (obj, prefix) => Object.fromEntries(Object.entries(obj || {}).filter(([key]) => key.startsWith(prefix)));
+    if (!geom || geom === 'Polygon') {
+      add('fill','Polygon', props(style.polygons,'fill-'));
+      add('line','Polygon', props(style.polygons,'line-'));
+    }
+    if (!geom || geom === 'LineString') add('line','LineString', style.lines);
+    if (!geom || geom === 'Point') add('circle','Point', style.points);
+    if (config.Category === 'basemap' && name === 'places') {
+      layers.push({id:source+'-labels', type:'symbol', source, 'source-layer':name,
+        layout:{'text-field':['coalesce',['get','name'],['get','name:en'],''], 'text-font':['sans-serif'],
+          'text-size':['interpolate',['linear'],['zoom'],4,11,14,16], 'text-padding':5,
+          'symbol-sort-key':['coalesce',['get','min_zoom'],0]},
+        paint:{'text-color':'#384238','text-halo-color':'#fffff6','text-halo-width':1.5}});
+    }
+  }
+  return layers;
+}
+
+async function start() {
+  if (location.protocol === 'file:') throw Error('Open Maps from the vault menu to serve local map files.');
+  if (!window.pmtiles || !window.maplibregl) throw Error('The local map viewer libraries are missing.');
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol('pmtiles', protocol.tile);
+  const archives = await Promise.all(installed.map(async (config, i) => {
+    try {
+      const path = config.Path || 'maps/' + config.Filename;
+      const url = new URL('../../'+path.split('/').map(encodeURIComponent).join('/'), document.baseURI).href;
+      const archive = new pmtiles.PMTiles(url);
+      protocol.add(archive);
+      const header = await archive.getHeader();
+      const source = 'archive-'+i;
+      const vector = header.tileType === pmtiles.TileType.Mvt;
+      const rasterTypes = [pmtiles.TileType.Png, pmtiles.TileType.Jpeg, pmtiles.TileType.Webp, pmtiles.TileType.Avif];
+      if (!vector && !rasterTypes.includes(header.tileType)) throw Error('Unsupported archive tile format');
+      const layers = vector ? vectorLayers(config, source, await archive.getMetadata()) :
+        [{id:source+'-image', type:'raster', source}];
+      const attribution = document.createElement('span');
+      attribution.textContent = config.Attribution;
+      if (config.LicenseURL && /^https?:\/\//i.test(config.LicenseURL)) {
+        const link = document.createElement('a');
+        link.href = config.LicenseURL;
+        link.textContent = config.Attribution || config.Name;
+        attribution.replaceChildren(link);
+      }
+      const definition = {type:vector ? 'vector' : 'raster', url:'pmtiles://'+url, attribution:attribution.innerHTML};
+      if (!vector) definition.tileSize = 256;
+      return {config, source, definition, layers, header, input:document.querySelector('#layer-'+i)};
+    } catch (error) { report(config.Name+' — '+error.message); }
+  }));
+  const loaded = archives.filter(Boolean);
+  if (!loaded.length) throw Error('No readable map archives.');
+  const base = loaded.find(a => a.config.Category === 'basemap');
+  const ordered = loaded.slice().sort((a,b) => Number(b.config.Category === 'basemap') - Number(a.config.Category === 'basemap'));
+  const sources = {};
+  const layers = [{id:'paper',type:'background',paint:{'background-color':'#f4f1e7'}}];
+  for (const a of ordered) {
+    sources[a.source] = a.definition;
+    a.input.checked = a.config.Category !== 'basemap' || a === base;
+    for (const layer of a.layers) {
+      layer.layout = {...layer.layout, visibility:a.input.checked ? 'visible' : 'none'};
+      layers.push(layer);
+    }
+  }
+  const h = (base || loaded[0]).header;
+  const map = new maplibregl.Map({container:'map', style:{version:8,sources,layers},
+    bounds:[[h.minLon,h.minLat],[h.maxLon,h.maxLat]], fitBoundsOptions:{padding:32,maxZoom:15},
+    attributionControl:{compact:false}});
+  map.on('error', event => report(event.error.message));
+  map.addControl(new maplibregl.NavigationControl());
+  map.addControl(new maplibregl.ScaleControl({unit:'metric'}), 'bottom-left');
+  map.on('load', () => {
+    for (const a of loaded) {
+      a.input.disabled = false;
+      a.input.addEventListener('change', () => {
+        for (const item of loaded) {
+          for (const layer of item.layers) map.setLayoutProperty(layer.id,'visibility',item.input.checked ? 'visible' : 'none');
+        }
+      });
+    }
+  });
+}
+start().catch(error => report(error.message));
+</script>
+</body>
+</html>

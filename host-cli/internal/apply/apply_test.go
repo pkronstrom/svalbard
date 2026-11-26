@@ -504,16 +504,34 @@ func TestApplyUsesRecipeFilename(t *testing.T) {
 
 func TestApplyGeneratesOfflineMapViewerForPMTiles(t *testing.T) {
 	content := "pmtiles test content"
-	useMockHTTPResponses(t, map[string]string{"/osm.pmtiles": content})
+	useMockHTTPResponses(t, map[string]string{"/water.pmtiles": content})
 
 	root := t.TempDir()
 	writeVendorBundle(t, root)
 
 	m := manifest.New("test")
-	m.Desired.Items = []string{"osm"}
+	m.Desired.Items = []string{"water"}
 
-	cat := newTestCatalogWithURL(t, "osm", "pmtiles", "http://example.test/osm.pmtiles")
-	plan := planner.Plan{ToDownload: []string{"osm"}}
+	recipes := fstest.MapFS{"water.yaml": {Data: []byte(`id: water
+type: pmtiles
+strategy: download
+url: http://example.test/water.pmtiles
+viewer:
+  name: Public water posts
+  category: water
+  style:
+    points:
+      circle-color: "#1f78b4"
+      circle-radius: 5
+license:
+  attribution: Helsinki Region Environmental Services
+  url: https://www.hsy.fi/avoindata
+`)}}
+	cat, err := catalog.LoadFromFS(recipes, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := planner.Plan{ToDownload: []string{"water"}}
 	if err := Run(context.Background(), root, &m, plan, cat); err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +550,12 @@ func TestApplyGeneratesOfflineMapViewerForPMTiles(t *testing.T) {
 		"../maplibre-vendor/vendor/maplibre-gl.js",
 		"../maplibre-vendor/vendor/maplibre-gl.css",
 		"../maplibre-vendor/vendor/pmtiles.js",
-		"osm.pmtiles",
+		"maps/water.pmtiles",
+		"Public water posts",
+		`"Category":"water"`,
+		`"points":{"circle-color":"#1f78b4","circle-radius":5}`,
+		"Helsinki Region Environmental Services",
+		"https://www.hsy.fi/avoindata",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("map viewer missing %q", want)
