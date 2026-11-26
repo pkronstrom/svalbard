@@ -77,7 +77,8 @@ func BuildPlan(m manifest.Manifest, cat *catalog.Catalog) (planner.Plan, []Docum
 	}
 	// An item with nothing to install on the vault's platforms stays
 	// selected and is reported by status, instead of failing every apply.
-	skip := OtherPlatformItems(cat, m)
+	// So does one the catalog no longer has: nothing can download it.
+	skip := append(OtherPlatformItems(cat, m), UnknownItems(cat, m.Desired.Items)...)
 	plan.ToDownload = slices.DeleteFunc(plan.ToDownload, func(id string) bool { return slices.Contains(skip, id) })
 	return plan, documents
 }

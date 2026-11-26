@@ -244,6 +244,9 @@ func NewRootCommand() *cobra.Command {
 				return err
 			}
 			commands.WriteVaultDocumentNotes(cmd.ErrOrStderr(), vaultRoot, cat)
+			if m, err := manifest.Load(filepath.Join(vaultRoot, "manifest.yaml")); err == nil {
+				commands.WriteSkipped(cmd.ErrOrStderr(), cat, m)
+			}
 			return applyAndIndex(ctx, vaultRoot, cat, cmd.OutOrStdout())
 		},
 	}
@@ -445,7 +448,9 @@ func newUpdateCommand() *cobra.Command {
 			"With item ids, or --all for every item with an update, acquires them again.\n\n" +
 			"Each installed copy is kept until its new one is in place and restored if the\n" +
 			"download or build fails. Items the catalog no longer has cannot be updated and\n" +
-			"stay on the vault. \"svalbard apply\" never updates installed items.",
+			"stay on the vault. \"svalbard apply\" never updates installed items.\n\n" +
+			"An item installed before versions were recorded reads as unknown. If you trust\n" +
+			"that it matches today's recipe, --mark-current records that without downloading.",
 		Example: "  svalbard update\n  svalbard update --all\n  svalbard update wikipedia-en-100 ifixit\n  svalbard update wikipedia-en-maxi --replace",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -468,6 +473,25 @@ func newUpdateCommand() *cobra.Command {
 			replace, _ := cmd.Flags().GetBool("replace")
 			available := commands.AvailableUpdates(cat, m)
 
+			if mark, _ := cmd.Flags().GetBool("mark-current"); mark {
+				if all || replace {
+					return fmt.Errorf("--mark-current downloads nothing, so it takes neither --all nor --replace; without item ids it marks every item of unknown version")
+				}
+				marked, differing, err := commands.MarkCurrent(vaultRoot, cat, args)
+				if err != nil {
+					return err
+				}
+				if len(marked) > 0 {
+					fmt.Fprintf(out, "Marked %d item(s) as current without downloading: %s\n", len(marked), strings.Join(marked, ", "))
+				} else if len(differing) == 0 {
+					fmt.Fprintln(out, "No items of unknown version")
+				}
+				if len(differing) > 0 {
+					fmt.Fprintf(out, "Left as unknown, the installed file is not the one the recipe pins: %s. \"svalbard update %s\" downloads it.\n", strings.Join(differing, ", "), strings.Join(differing, " "))
+				}
+				return nil
+			}
+
 			if len(args) == 0 && !all {
 				if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 					return writeJSON(out, available)
@@ -480,8 +504,12 @@ func newUpdateCommand() *cobra.Command {
 				} else {
 					fmt.Fprintln(out, "No updates available")
 				}
-				if withdrawn := commands.BuildStatus(cat, m).Withdrawn; len(withdrawn) > 0 {
-					fmt.Fprintf(out, "No longer in the catalog, kept on this vault: %s\n", strings.Join(withdrawn, ", "))
+				report := commands.BuildStatus(cat, m)
+				if len(report.Unknown) > 0 {
+					fmt.Fprintf(out, "%d item(s) of unknown version; \"svalbard update --mark-current\" records them as current without downloading.\n", len(report.Unknown))
+				}
+				if len(report.Withdrawn) > 0 {
+					fmt.Fprintf(out, "No longer in the catalog, kept on this vault: %s\n", strings.Join(report.Withdrawn, ", "))
 				}
 				return nil
 			}
@@ -506,6 +534,7 @@ func newUpdateCommand() *cobra.Command {
 	}
 	cmd.Flags().Bool("all", false, "update every item that has an update available")
 	cmd.Flags().Bool("replace", false, "delete each installed copy before downloading its update (for vaults without room for both)")
+	cmd.Flags().Bool("mark-current", false, "record items of unknown version (the ids given, or all of them) as current without downloading")
 	cmd.Flags().Bool("json", false, "print the available updates as JSON")
 	return cmd
 }
@@ -934,7 +963,7 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			status.WithdrawnCount = len(report.Withdrawn)
 			// Items with nothing to install on this vault's platforms
 			// do not keep it from reading as synced.
-			status.DesiredCount -= len(report.OtherPlatform)
+			status.DesiredCount -= len(report.OtherPlatform) + len(report.Unavailable)
 			status.PendingCount = report.Pending
 		}
 		return status, nil

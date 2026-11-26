@@ -78,6 +78,10 @@ func TestPlanLeavesChangedAndWithdrawnItemsAlone(t *testing.T) {
 	if p := planner.Build(m); len(p.ToRemove) != 0 || !reflect.DeepEqual(p.ToDownload, []string{"never-arrived"}) || len(p.ToUpdate) != 0 {
 		t.Errorf("plan = %+v", p)
 	}
+	// Nor try to download the item the catalog no longer has.
+	if p, _ := BuildPlan(m, cat); len(p.ToDownload) != 0 {
+		t.Errorf("plan downloads %v, which the catalog does not have", p.ToDownload)
+	}
 	d := DescribePlan(cat, m)
 	if len(d.Updates) != 1 || d.Updates[0].ID != "wikipedia-en-nopic" || d.Updates[0].Action != "update" {
 		t.Errorf("plan updates = %+v", d.Updates)
@@ -115,5 +119,36 @@ func TestUpdateRefusesItemsItCannotReacquire(t *testing.T) {
 	}
 	if !reflect.DeepEqual(saved.Realized.Entries, m.Realized.Entries) {
 		t.Error("a refused update changed the manifest")
+	}
+}
+
+func TestMarkCurrentTracksUnknownItemsWithoutDownloading(t *testing.T) {
+	cat := catalog.NewTestCatalog(t)
+	root := t.TempDir()
+	m := agedVault(t, cat)
+	// Installed before versions were recorded.
+	m.Realized.Entries[0].AcquisitionHash = ""
+	if err := manifest.Save(root+"/manifest.yaml", m); err != nil {
+		t.Fatal(err)
+	}
+	if r := BuildStatus(cat, m); !reflect.DeepEqual(r.Unknown, []string{"ifixit"}) {
+		t.Fatalf("unknown = %v, want ifixit", r.Unknown)
+	}
+
+	// An item with a real update is not silently marked current.
+	if _, _, err := MarkCurrent(root, cat, []string{"wikipedia-en-nopic"}); err == nil || !strings.Contains(err.Error(), "update available") {
+		t.Errorf("marking an item with an update = %v, want a refusal", err)
+	}
+	marked, differing, err := MarkCurrent(root, cat, nil)
+	if err != nil || !reflect.DeepEqual(marked, []string{"ifixit"}) || len(differing) != 0 {
+		t.Fatalf("MarkCurrent = %v, %v, %v", marked, differing, err)
+	}
+	saved, err := manifest.Load(root + "/manifest.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := BuildStatus(cat, saved)
+	if len(r.Unknown) != 0 || !reflect.DeepEqual(r.Updates, []string{"wikipedia-en-nopic"}) {
+		t.Errorf("after marking: unknown = %v, updates = %v", r.Unknown, r.Updates)
 	}
 }

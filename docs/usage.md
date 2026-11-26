@@ -115,7 +115,7 @@ Execute the reconciliation plan:
 - build the vault's configured search index
 - generate or remove the offline map viewer based on realized PMTiles
 
-### `svalbard update [item...] [--all] [--replace] [--json]`
+### `svalbard update [item...] [--all] [--replace] [--mark-current] [--json]`
 
 Update installed items whose recipe changed since they were installed. `apply` never does this: it only downloads what is missing and deletes what was deselected.
 
@@ -129,7 +129,7 @@ Each installed copy is kept until its new one is in place, and put back if the d
 
 - `current`: installed from the recipe as it is now
 - `update available`: the recipe changed
-- `unknown`: installed before versions were recorded; `svalbard update <id>` refreshes it
+- `unknown`: installed before versions were recorded. `svalbard update <id>` downloads it again; `svalbard update --mark-current` records it as current without downloading, for the ids given or for every unknown item. Use that when you trust the installed copy matches today's recipe. An item whose recipe pins a checksum the installed file does not have is left unknown
 - `withdrawn, kept`: no longer in the catalog. It cannot be updated, stays on the vault through `apply` and `update`, and goes only if you `remove` it
 - `local`: a file you imported
 - `by document`: a document collection. `apply` fetches its new and changed documents, and `update` leaves it alone
@@ -140,7 +140,7 @@ Python tools cannot be updated this way yet; remove them, apply, and add them ba
 
 Print the vault name, preset, desired count, realized count, pending count, and a per-item table.
 
-An item whose recipe has no download for any of the vault's platforms, such as a Linux-only tool on a vault made for macOS, is listed as `other platform`. `apply` skips it and it does not count as pending.
+An item whose recipe has no download for any of the vault's platforms, such as a Linux-only tool on a vault made for macOS, is listed as `other platform`. A selected item that was never installed and is not in the catalog on this computer is listed as `unavailable`. `apply` skips both, says so, and neither counts as pending.
 
 ### `svalbard import <file> --vault <path> [--add] [--name <name>]`
 

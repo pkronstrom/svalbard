@@ -139,3 +139,48 @@ func runPlan(ctx context.Context, root string, m *manifest.Manifest, plan planne
 	}
 	return nil
 }
+
+// MarkCurrent records today's recipe as the version of installed items whose
+// version is unknown, without downloading anything: the ids given, or every
+// such item when ids is empty. An item whose recipe pins a checksum that the
+// installed file does not have is returned in differing and left unknown.
+func MarkCurrent(root string, cat *catalog.Catalog, ids []string) (marked, differing []string, err error) {
+	mPath := filepath.Join(root, "manifest.yaml")
+	m, err := manifest.Load(mPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	installed := realizedByID(m)
+	if len(ids) == 0 {
+		for _, id := range m.Desired.Items {
+			if entries := installed[id]; len(entries) > 0 && ItemVersion(cat, entries) == VersionUnknown {
+				ids = append(ids, id)
+			}
+		}
+	}
+	for _, id := range ids {
+		entries := installed[id]
+		if len(entries) == 0 {
+			return nil, nil, fmt.Errorf("%s is not installed", id)
+		}
+		if version := ItemVersion(cat, entries); version != VersionUnknown {
+			return nil, nil, fmt.Errorf("%s is %s; only an item of unknown version can be marked current", id, versionLabels[version])
+		}
+		recipe, _ := cat.RecipeByID(id)
+		if pinned := recipe.SHA256; pinned != "" && len(entries) == 1 && entries[0].ChecksumSHA256 != "" && !strings.EqualFold(pinned, entries[0].ChecksumSHA256) {
+			differing = append(differing, id)
+			continue
+		}
+		hash := recipe.AcquisitionHash()
+		for i := range m.Realized.Entries {
+			if m.Realized.Entries[i].ID == id {
+				m.Realized.Entries[i].AcquisitionHash = hash
+			}
+		}
+		marked = append(marked, id)
+	}
+	if len(marked) == 0 {
+		return marked, differing, nil
+	}
+	return marked, differing, manifest.Save(mPath, m)
+}

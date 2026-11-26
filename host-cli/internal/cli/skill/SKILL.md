@@ -43,7 +43,7 @@ svalbard plan --vault /Volumes/MyDrive --json
 |---|---|
 | `current` | installed from the recipe as it is now |
 | `update` | the recipe changed; an update is available |
-| `unknown` | installed before versions were recorded |
+| `unknown` | installed before versions were recorded; see below |
 | `withdrawn` | no longer in the catalog; the installed copy is kept |
 | `local` | a file the user imported |
 | `documents` | a document collection; `apply`, not `update`, fetches its new and changed documents |
@@ -74,6 +74,8 @@ svalbard update zimgit-knots --vault /Volumes/MyDrive
 - `--all` updates those items. Naming ids downloads those items again whatever their state.
 - The installed copy is kept until the new one is in place, so an update needs room for both. If it is refused for space, offer `--replace`, which deletes first, and say that a failed download then leaves the item missing until the next `apply`.
 
+An `unknown` item was installed before versions were recorded, so nobody knows whether it matches today's recipe. Ask the user which they want: `svalbard update <id>` downloads it again, and `svalbard update --mark-current --vault /Volumes/MyDrive` records every unknown item as current without downloading.
+
 ## Withdrawn items
 
 A `withdrawn` item cannot be downloaded again. It stays on the vault through `apply` and `update`. Never remove one unless the user asks for that item by name, and tell them it is not recoverable. If it was removed by mistake and `apply` has not run, `svalbard add <id>` takes the removal back.
@@ -92,5 +94,5 @@ svalbard apply --vault /Volumes/MyDrive
 ## When something fails
 
 - `apply` prints a line as each item starts and finishes, and exits non-zero if any failed. Running it again continues with what is missing.
-- An `unavailable` item is selected, not installed and gone from the catalog; `apply` fails until you `svalbard remove` it.
+- An `unavailable` item is selected, not installed and not in the catalog on this computer. `apply` skips it and says so; `svalbard remove` deselects it.
 - Build recipes need Docker. `plan --json` sets `tools_required` when a pending item is one.

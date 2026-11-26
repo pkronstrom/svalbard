@@ -34,6 +34,8 @@ type StatusReport struct {
 	LastApplied string   `json:"last_applied,omitempty"`
 	Updates     []string `json:"updates_available"`
 	Withdrawn   []string `json:"withdrawn"`
+	// Unknown lists items installed before versions were recorded.
+	Unknown     []string `json:"unknown_version"`
 	Unavailable []string `json:"unavailable"`
 	// OtherPlatform lists selected items with no payload for the vault's
 	// platforms; apply skips them.
@@ -51,6 +53,7 @@ func BuildStatus(cat *catalog.Catalog, m manifest.Manifest) StatusReport {
 		LastApplied: m.Realized.AppliedAt,
 		Updates:     []string{},
 		Withdrawn:   []string{},
+		Unknown:     []string{},
 		Unavailable: []string{},
 		Items:       []StatusItem{},
 	}
@@ -74,6 +77,8 @@ func BuildStatus(cat *catalog.Catalog, m manifest.Manifest) StatusReport {
 				r.Updates = append(r.Updates, id)
 			case VersionWithdrawn:
 				r.Withdrawn = append(r.Withdrawn, id)
+			case VersionUnknown:
+				r.Unknown = append(r.Unknown, id)
 			}
 			r.Realized++
 		} else if slices.Contains(r.OtherPlatform, id) {
@@ -86,7 +91,7 @@ func BuildStatus(cat *catalog.Catalog, m manifest.Manifest) StatusReport {
 	}
 	// An installed item is not skipped, whatever the recipe says now.
 	r.OtherPlatform = slices.DeleteFunc(r.OtherPlatform, func(id string) bool { return len(installed[id]) > 0 })
-	r.Pending = r.Desired - r.Realized - len(r.OtherPlatform)
+	r.Pending = r.Desired - r.Realized - len(r.OtherPlatform) - len(r.Unavailable)
 	return r
 }
 
@@ -129,11 +134,14 @@ func WriteStatus(w io.Writer, cat *catalog.Catalog, m manifest.Manifest) error {
 	tw.Flush()
 
 	fmt.Fprintln(w)
-	if pending := r.Pending - len(r.Unavailable); pending > 0 {
+	if pending := r.Pending; pending > 0 {
 		fmt.Fprintf(w, "Run \"svalbard apply\" to download the %d pending.\n", pending)
 	}
 	if len(r.Updates) > 0 {
 		fmt.Fprintf(w, "%d update(s) available; run \"svalbard update\" to review them.\n", len(r.Updates))
+	}
+	if len(r.Unknown) > 0 {
+		fmt.Fprintf(w, "%d item(s) of unknown version; \"svalbard update --mark-current\" records them as current without downloading.\n", len(r.Unknown))
 	}
 	if len(r.Withdrawn) > 0 {
 		fmt.Fprintf(w, "No longer in the catalog, kept on this vault: %s.\n", strings.Join(r.Withdrawn, ", "))
@@ -142,7 +150,7 @@ func WriteStatus(w io.Writer, cat *catalog.Catalog, m manifest.Manifest) error {
 		fmt.Fprintf(w, "Skipped, not available for %s: %s.\n", strings.Join(vaultPlatforms(m), ", "), strings.Join(r.OtherPlatform, ", "))
 	}
 	if len(r.Unavailable) > 0 {
-		fmt.Fprintf(w, "Not installed and no longer in the catalog: %s. Run \"svalbard remove\" on them.\n", strings.Join(r.Unavailable, ", "))
+		fmt.Fprintf(w, "Skipped, not in the catalog on this computer: %s. \"svalbard remove\" deselects them.\n", strings.Join(r.Unavailable, ", "))
 	}
 	return nil
 }
@@ -164,5 +172,17 @@ func humanSize(bytes int64) string {
 		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
 	default:
 		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
+	}
+}
+
+// WriteSkipped tells w which selected items an apply of m will leave out,
+// and why, so that a skipped item is never a silent one.
+func WriteSkipped(w io.Writer, cat *catalog.Catalog, m manifest.Manifest) {
+	r := BuildStatus(cat, m)
+	if len(r.OtherPlatform) > 0 {
+		fmt.Fprintf(w, "note: skipping %s: not available for %s\n", strings.Join(r.OtherPlatform, ", "), strings.Join(vaultPlatforms(m), ", "))
+	}
+	if len(r.Unavailable) > 0 {
+		fmt.Fprintf(w, "note: skipping %s: not in the catalog on this computer\n", strings.Join(r.Unavailable, ", "))
 	}
 }

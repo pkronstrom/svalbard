@@ -200,7 +200,9 @@ func TestApplyVaultRetainsApplyAndSaveErrors(t *testing.T) {
 	if err := InitVaultWithOptions(root, []string{"missing"}, "chosen", "fi", nil); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := catalog.LoadFromFS(fstest.MapFS{}, fstest.MapFS{})
+	// A recipe whose download cannot succeed: nothing listens on port 1.
+	recipe := "id: missing\ntype: zim\nstrategy: download\nurl: http://127.0.0.1:1/missing.zim\n"
+	cat, err := catalog.LoadFromFS(fstest.MapFS{"missing.yaml": &fstest.MapFile{Data: []byte(recipe)}}, fstest.MapFS{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +217,7 @@ func TestApplyVaultRetainsApplyAndSaveErrors(t *testing.T) {
 		}
 	})
 	var pathErr *os.LinkError
-	if err == nil || !strings.Contains(err.Error(), `recipe "missing" not found`) || !errors.As(err, &pathErr) {
+	if err == nil || !strings.Contains(err.Error(), "missing: ") || !errors.As(err, &pathErr) {
 		t.Fatalf("apply/save causes not retained: %v", err)
 	}
 }

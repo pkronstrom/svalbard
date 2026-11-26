@@ -21,6 +21,7 @@ Status: implemented 2026-11-26, uncommitted; verified on macOS arm64 in a dispos
   | `withdrawn` | the id is not in the catalog; the installed copy is kept |
   | `local` | imported by the user |
 
+- `update --mark-current` records `unknown` items as current without downloading, except one whose recipe pins a checksum the installed file does not have.
 - `update --all` takes `update` items only. `update <id>` reacquires that item whatever its state, which is also how a `url_pattern` recipe picks up a newer upstream file and how an `unknown` item becomes tracked.
 - A withdrawn item cannot be updated. Only `remove` deletes it, and `remove` says it cannot be downloaded again.
 - An update swaps: the installed files are moved aside, the item is acquired again, and the old files are deleted only after it succeeds. On failure they are moved back.
@@ -34,7 +35,7 @@ Status: implemented 2026-11-26, uncommitted; verified on macOS arm64 in a dispos
 - Downloads reuse a final file whose sidecar matches URL and pin (`downloader.reusableFinal`). Moving the file aside avoids reusing the old artifact.
 - Python packages are installed by their venv's aggregate job, so the job id differs from the item id. They are out of scope here: `update` refuses them and says so.
 - A `content-archive` update is a full rebuild. That is correct but slow; its own targeted refetch stays the tool for partial refreshes.
-- A desired item that is neither installed nor in the catalog still fails `apply`. Status now names it `unavailable`; changing apply's behaviour there touches the preset-customization contract and is left alone.
+- A desired item that is neither installed nor in the catalog used to fail every `apply`. Plan and apply now leave it out and say so, and status names it `unavailable`. The saved selection is not changed, so the preset-customization contract holds.
 
 ## Chunks
 
@@ -48,4 +49,3 @@ Status: implemented 2026-11-26, uncommitted; verified on macOS arm64 in a dispos
 
 - Remote freshness behind a stable URL (a separate, queued question).
 - Python package and venv updates.
-- A one-step way to mark an `unknown` item as current without downloading it.
