@@ -139,10 +139,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		detail = d
 	}
 
-	limit := defaultSearchLimit
-	if l, ok := intParam(params, "limit"); ok {
-		limit = l
-	}
+	limit := intParam(params, "limit", defaultSearchLimit)
 	if limit < 1 {
 		limit = 1
 	}

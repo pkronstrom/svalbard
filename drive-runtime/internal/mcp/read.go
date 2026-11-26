@@ -55,7 +55,7 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 	if err != nil {
 		return ActionResult{}, err
 	}
-	offset, _ := intParam(params, "offset")
+	offset := intParam(params, "offset", 0)
 	if offset < 0 {
 		offset = 0
 	}
@@ -357,14 +357,4 @@ func pageSlice(body string, offset, size int) (piece string, next, total int) {
 		}
 	}
 	return strings.TrimSpace(string(runes[offset:next])), next, total
-}
-
-func intParam(params map[string]any, key string) (int, bool) {
-	switch value := params[key].(type) {
-	case float64:
-		return int(value), true
-	case int:
-		return value, true
-	}
-	return 0, false
 }
