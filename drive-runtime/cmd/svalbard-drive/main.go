@@ -33,6 +33,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/share"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/shell"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/verify"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
 func main() {
@@ -143,6 +144,8 @@ func runNativeInvocation(invocation actions.NativeInvocation, driveRoot string) 
 		return chat.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
 	case "open-webui":
 		return openwebui.Run(ctx, os.Stdout, driveRoot, invocation.Args["model"], nil)
+	case "wiki":
+		return wiki.Run(ctx, os.Stdout, driveRoot, nil)
 	case "agent":
 		return agent.Run(ctx, os.Stdout, driveRoot, invocation.Args["client"], invocation.Args["model"])
 	case "serve-all":
