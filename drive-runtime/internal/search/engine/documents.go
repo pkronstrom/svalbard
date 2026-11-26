@@ -35,9 +35,37 @@ func IsDocumentFile(name string) bool {
 var ErrNoPage = errors.New("page not indexed")
 
 // IsDocumentSource reports whether an indexed source is a document rather
-// than a ZIM archive.
+// than a ZIM archive: a file below DocumentsDir, or a PDF or EPUB stored
+// inside an archive.
 func IsDocumentSource(filename string) bool {
-	return strings.HasPrefix(filename, DocumentsDir+"/")
+	return strings.HasPrefix(filename, DocumentsDir+"/") || IsEmbeddedSource(filename)
+}
+
+// IsEmbeddedSource reports whether an indexed source is a document stored
+// inside a ZIM. The host names one "<zim filename>/<entry path>"
+// ("usda.zim/files/guide.pdf"); it is read from the index like any document
+// and opened through kiwix-serve.
+func IsEmbeddedSource(filename string) bool {
+	_, _, ok := EmbeddedArchive(filename)
+	return ok
+}
+
+// EmbeddedArchive splits an embedded document's source name into its
+// archive's filename and its entry path.
+func EmbeddedArchive(filename string) (archive, entry string, ok bool) {
+	if strings.HasPrefix(filename, DocumentsDir+"/") || IsSkillSource(filename) {
+		return "", "", false
+	}
+	cut := strings.Index(filename, "/")
+	if cut <= 0 || !isArchiveName(filename[:cut]) || cut == len(filename)-1 {
+		return "", "", false
+	}
+	return filename[:cut], filename[cut+1:], true
+}
+
+// isArchiveName reports whether a source name is a ZIM archive's filename.
+func isArchiveName(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".zim")
 }
 
 // SkillsDir and LibraryDocsDir are the drive directories whose markdown is
@@ -74,6 +102,9 @@ func InScope(filename, scope string) bool {
 		return IsSkillSource(filename)
 	case strings.HasSuffix(scope, "/"):
 		return strings.HasPrefix(filename, scope)
+	case isArchiveName(scope):
+		// An archive's scope holds the documents stored inside it.
+		return filename == scope || strings.HasPrefix(filename, scope+"/")
 	}
 	return filename == scope
 }
@@ -114,7 +145,7 @@ func (e *Engine) Documents(ctx context.Context) ([]Document, error) {
 		return e.db.QueryContext(ctx,
 			`SELECT src.filename, src.title, `+note+`, COUNT(a.id) FROM sources src
              LEFT JOIN articles a ON a.source_id = src.id
-             WHERE src.filename LIKE ? GROUP BY src.id ORDER BY src.filename`, DocumentsDir+"/%")
+             WHERE src.filename LIKE ? OR src.filename LIKE '%.zim/%' GROUP BY src.id ORDER BY src.filename`, DocumentsDir+"/%")
 	}
 	rows, err := query("COALESCE(src.note, '')")
 	if err != nil {
