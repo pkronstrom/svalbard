@@ -214,3 +214,46 @@ func TestPlanStatusAndCatalogSpeakJSON(t *testing.T) {
 		t.Errorf("preset list --json: err = %v", err)
 	}
 }
+
+func TestAnItemForOtherPlatformsIsSkippedNotPending(t *testing.T) {
+	// toybox has Linux payloads only.
+	mac := filepath.Join(t.TempDir(), "mac")
+	if _, _, err := run(t, "init", mac, "--add", "toybox", "--platform", "macos-arm64"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := run(t, "plan", "--vault", mac, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan commands.PlanDetail
+	if err := json.Unmarshal([]byte(out), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Download) != 0 {
+		t.Fatalf("plan downloads %v on a macOS-only vault", plan.Download)
+	}
+	out, _, err = run(t, "status", "--vault", mac, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status commands.StatusReport
+	if err := json.Unmarshal([]byte(out), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(status.OtherPlatform, "toybox") || status.Pending != 0 {
+		t.Fatalf("status = other_platform %v, pending %d; want toybox skipped and nothing pending", status.OtherPlatform, status.Pending)
+	}
+	text, _, _ := run(t, "status", "--vault", mac)
+	if !strings.Contains(text, "not available for macos-arm64: toybox") {
+		t.Errorf("status does not explain the skipped item:\n%s", text)
+	}
+
+	linux := filepath.Join(t.TempDir(), "linux")
+	if _, _, err := run(t, "init", linux, "--add", "toybox", "--platform", "linux-x86_64"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, _ = run(t, "plan", "--vault", linux, "--json")
+	if !strings.Contains(out, `"id": "toybox"`) {
+		t.Errorf("plan on a Linux vault does not download toybox:\n%s", out)
+	}
+}

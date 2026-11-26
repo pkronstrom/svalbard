@@ -3,8 +3,10 @@ package commands
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/apply"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
@@ -42,7 +44,7 @@ type PlanDetail struct {
 // DescribePlan builds the plan for m and fills in each item's catalog
 // details, sized for the vault's platforms.
 func DescribePlan(cat *catalog.Catalog, m manifest.Manifest) PlanDetail {
-	p := planner.Build(m)
+	p := buildPlan(cat, m)
 	platforms := m.Desired.Options.HostPlatforms
 	d := PlanDetail{Download: []PlanItem{}, Remove: []PlanItem{}, Updates: AvailableUpdates(cat, m)}
 	for _, id := range p.ToDownload {
@@ -108,4 +110,41 @@ func WritePlanDetail(w io.Writer, d PlanDetail) error {
 	}
 	_, err := fmt.Fprintln(w, "\nRun \"svalbard apply\" to make these changes.")
 	return err
+}
+
+// vaultPlatforms returns the platforms m targets: the saved ones, or this
+// computer's when none were saved, as apply assumes.
+func vaultPlatforms(m manifest.Manifest) []string {
+	if platforms := m.Desired.Options.HostPlatforms; len(platforms) > 0 {
+		return platforms
+	}
+	return []string{apply.HostPlatform()}
+}
+
+// OtherPlatformItems returns the selected items that cannot be installed on
+// m because their recipe has payloads only for platforms m does not target,
+// such as a Linux-only tool on a vault made for macOS.
+func OtherPlatformItems(cat *catalog.Catalog, m manifest.Manifest) []string {
+	platforms := vaultPlatforms(m)
+	ids := []string{}
+	for _, id := range m.Desired.Items {
+		recipe, ok := cat.RecipeByID(id)
+		if !ok || len(recipe.Platforms) == 0 {
+			continue
+		}
+		if !slices.ContainsFunc(platforms, recipe.SupportsPlatform) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// buildPlan is the reconciliation plan for m, leaving out the items that
+// have nothing to install on m's platforms: they stay selected and are
+// reported by status, instead of failing every apply.
+func buildPlan(cat *catalog.Catalog, m manifest.Manifest) planner.Plan {
+	p := planner.Build(m)
+	skip := OtherPlatformItems(cat, m)
+	p.ToDownload = slices.DeleteFunc(p.ToDownload, func(id string) bool { return slices.Contains(skip, id) })
+	return p
 }

@@ -37,7 +37,7 @@ svalbard status --vault /Volumes/MyDrive --json
 svalbard plan --vault /Volumes/MyDrive --json
 ```
 
-`status` gives each item a `status` (`realized`, `pending`, `unavailable`) and, when installed, a `version`:
+`status` gives each item a `status` (`realized`, `pending`, `unavailable`, or `other platform` for an item that has no download for this vault's platforms and is skipped) and, when installed, a `version`:
 
 | version | meaning |
 |---|---|

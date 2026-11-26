@@ -139,6 +139,8 @@ Python tools cannot be updated this way yet; remove them, apply, and add them ba
 
 Print the vault name, preset, desired count, realized count, pending count, and a per-item table.
 
+An item whose recipe has no download for any of the vault's platforms, such as a Linux-only tool on a vault made for macOS, is listed as `other platform`. `apply` skips it and it does not count as pending.
+
 ### `svalbard import <file> --vault <path> [--add] [--name <name>]`
 
 Import a local file into the vault library.

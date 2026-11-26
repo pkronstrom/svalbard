@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -34,6 +35,9 @@ type StatusReport struct {
 	Updates     []string     `json:"updates_available"`
 	Withdrawn   []string     `json:"withdrawn"`
 	Unavailable []string     `json:"unavailable"`
+	// OtherPlatform lists selected items with no payload for the vault's
+	// platforms; apply skips them.
+	OtherPlatform []string `json:"other_platform"`
 	Items       []StatusItem `json:"items"`
 }
 
@@ -50,6 +54,7 @@ func BuildStatus(cat *catalog.Catalog, m manifest.Manifest) StatusReport {
 		Unavailable: []string{},
 		Items:       []StatusItem{},
 	}
+	r.OtherPlatform = OtherPlatformItems(cat, m)
 	if len(m.Desired.Presets) > 0 {
 		r.Preset = m.Desired.Presets[0]
 	}
@@ -71,13 +76,17 @@ func BuildStatus(cat *catalog.Catalog, m manifest.Manifest) StatusReport {
 				r.Withdrawn = append(r.Withdrawn, id)
 			}
 			r.Realized++
+		} else if slices.Contains(r.OtherPlatform, id) {
+			item.Status = "other platform"
 		} else if len(UnknownItems(cat, []string{id})) > 0 {
 			item.Status = "unavailable"
 			r.Unavailable = append(r.Unavailable, id)
 		}
 		r.Items = append(r.Items, item)
 	}
-	r.Pending = r.Desired - r.Realized
+	// An installed item is not skipped, whatever the recipe says now.
+	r.OtherPlatform = slices.DeleteFunc(r.OtherPlatform, func(id string) bool { return len(installed[id]) > 0 })
+	r.Pending = r.Desired - r.Realized - len(r.OtherPlatform)
 	return r
 }
 
@@ -127,6 +136,9 @@ func WriteStatus(w io.Writer, cat *catalog.Catalog, m manifest.Manifest) error {
 	}
 	if len(r.Withdrawn) > 0 {
 		fmt.Fprintf(w, "No longer in the catalog, kept on this vault: %s.\n", strings.Join(r.Withdrawn, ", "))
+	}
+	if len(r.OtherPlatform) > 0 {
+		fmt.Fprintf(w, "Skipped, not available for %s: %s.\n", strings.Join(vaultPlatforms(m), ", "), strings.Join(r.OtherPlatform, ", "))
 	}
 	if len(r.Unavailable) > 0 {
 		fmt.Fprintf(w, "Not installed and no longer in the catalog: %s. Run \"svalbard remove\" on them.\n", strings.Join(r.Unavailable, ", "))

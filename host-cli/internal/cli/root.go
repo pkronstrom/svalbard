@@ -903,6 +903,10 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			report := commands.BuildStatus(cat, m)
 			status.UpdateCount = len(report.Updates)
 			status.WithdrawnCount = len(report.Withdrawn)
+			// Items with nothing to install on this vault's platforms
+			// do not keep it from reading as synced.
+			status.DesiredCount -= len(report.OtherPlatform)
+			status.PendingCount = report.Pending
 		}
 		return status, nil
 	}

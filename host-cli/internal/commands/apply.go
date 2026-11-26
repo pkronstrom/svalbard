@@ -8,7 +8,6 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/apply"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
-	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
 )
 
 // ApplyVault loads the manifest, builds a reconciliation plan, executes it,
@@ -22,7 +21,7 @@ func ApplyVault(ctx context.Context, root string, cat *catalog.Catalog, onProgre
 		return err
 	}
 
-	plan := planner.Build(m)
+	plan := buildPlan(cat, m)
 	slog.Debug("manifest loaded", "desired", len(m.Desired.Items), "realized", len(m.Realized.Entries))
 
 	return runPlan(ctx, root, &m, plan, cat, onProgress...)
