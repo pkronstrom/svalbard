@@ -4,12 +4,14 @@ go 1.26.0
 
 require (
 	github.com/andybalholm/cascadia v1.3.5
+	github.com/klippa-app/go-pdfium v1.21.5
 	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
 	github.com/ncruces/go-sqlite3 v0.38.0
 	github.com/pkronstrom/svalbard/host-tui v0.0.0-00010101000000-000000000000
 	github.com/pkronstrom/svalbard/tui v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.10.2
 	github.com/stazelabs/gozim v0.1.0
+	github.com/tetratelabs/wazero v1.12.0
 	golang.org/x/image v0.48.0
 	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0
@@ -31,7 +33,9 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jolestar/go-commons-pool/v2 v2.1.2 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

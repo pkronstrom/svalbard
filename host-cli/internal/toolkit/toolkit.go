@@ -338,7 +338,7 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			state.HasChecksums = true
 		}
 		switch e.Type {
-		case "zim":
+		case "zim", "pdf":
 			state.HasLibrary = true
 		case "pmtiles":
 			state.HasMaps = true

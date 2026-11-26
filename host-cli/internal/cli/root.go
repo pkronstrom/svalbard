@@ -192,7 +192,7 @@ func NewRootCommand() *cobra.Command {
 
 	indexCmd := &cobra.Command{
 		Use:   "index",
-		Short: "Build full-text search index from ZIM files in the vault",
+		Short: "Build full-text search index from ZIM files and documents in the vault",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
