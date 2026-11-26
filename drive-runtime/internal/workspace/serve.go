@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -134,7 +135,7 @@ func (w *Workspace) serveListing(rw http.ResponseWriter, r *http.Request, rel st
 		http.NotFound(rw, r)
 		return
 	}
-	title := "workspace"
+	title := filepath.Base(w.dir)
 	if rel != "." {
 		title += "/" + rel
 	}

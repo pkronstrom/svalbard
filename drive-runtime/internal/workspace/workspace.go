@@ -1,6 +1,6 @@
-// Package workspace is the one folder on the drive that the browser front
-// end's file tools may read and write: <drive>/workspace. It checks every
-// path the model supplies and serves the folder read-only for links.
+// Package workspace confines a model's file tools to one folder on the drive.
+// It checks every path the model supplies and serves the folder read-only for
+// links. The browser front end's file tools use it on <drive>/workspace.
 package workspace
 
 import (
@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	// DirName is the folder's name at the root of the drive.
+	// DirName is the name of the drive's workspace folder, at its root.
 	DirName = "workspace"
 
 	// MaxWriteBytes caps one written file. A page a local model writes is a
@@ -32,9 +32,9 @@ type Workspace struct {
 	root *os.Root
 }
 
-// Open creates <driveRoot>/workspace if it is missing and opens it.
-func Open(driveRoot string) (*Workspace, error) {
-	dir := filepath.Join(driveRoot, DirName)
+// Open creates the folder dir if it is missing and opens it. The drive's own
+// workspace is filepath.Join(driveRoot, DirName).
+func Open(dir string) (*Workspace, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (w *Workspace) ReadFile(rel string, maxBytes int64) ([]byte, error) {
 	}
 	switch {
 	case info.IsDir():
-		return nil, fmt.Errorf("%s is a folder, not a file; list it with file_list", rel)
+		return nil, &refusal{fmt.Sprintf("%s is a folder, not a file", rel), ErrIsFolder}
 	case !info.Mode().IsRegular():
 		return nil, fmt.Errorf("%s is not a regular file and cannot be read", rel)
 	case info.Size() > maxBytes:
@@ -215,13 +215,27 @@ func (w *Workspace) WriteFile(rel string, data []byte) error {
 	return nil
 }
 
+// ErrIsFolder is the kind of a refusal to read a folder as a file.
+var ErrIsFolder = errors.New("is a folder")
+
+// refusal is an error whose text is a sentence for the model. Its kind
+// (fs.ErrNotExist, syscall.ENOTDIR or ErrIsFolder) is what errors.Is matches,
+// so the caller can add which of its own tools to use next.
+type refusal struct {
+	text string
+	kind error
+}
+
+func (r *refusal) Error() string { return r.text }
+func (r *refusal) Unwrap() error { return r.kind }
+
 // describe turns a file system error into a sentence without the host path.
 func describe(rel string, err error) error {
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return fmt.Errorf("%s does not exist; call file_list to see what is in the workspace", rel)
+		return &refusal{rel + " does not exist", fs.ErrNotExist}
 	case errors.Is(err, syscall.ENOTDIR):
-		return fmt.Errorf("part of %s is a file, not a folder; call file_list to see what is in the workspace", rel)
+		return &refusal{fmt.Sprintf("part of %s is a file, not a folder", rel), syscall.ENOTDIR}
 	default:
 		return fmt.Errorf("%s: %v", rel, pathErr(err))
 	}

@@ -3,12 +3,14 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/workspace"
@@ -89,18 +91,34 @@ func (c *FilesCapability) Actions() []ActionDef {
 }
 
 func (c *FilesCapability) Handle(_ context.Context, action string, params map[string]any) (ActionResult, error) {
+	var result ActionResult
+	var err error
 	switch action {
 	case "list":
-		return c.handleList(params)
+		result, err = c.handleList(params)
 	case "read":
-		return c.handleRead(params)
+		result, err = c.handleRead(params)
 	case "write":
-		return c.handleWrite(params)
+		result, err = c.handleWrite(params)
 	case "edit":
-		return c.handleEdit(params)
+		result, err = c.handleEdit(params)
 	default:
 		return ActionResult{}, fmt.Errorf("unknown file action: %s", action)
 	}
+	return result, nextStep(err)
+}
+
+// nextStep adds the tool to call next to a workspace error that has an
+// obvious one. The workspace package states what is wrong and knows no tool
+// names, so other tool sets can use it.
+func nextStep(err error) error {
+	switch {
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+		return fmt.Errorf("%v; call file_list to see what is in the workspace", err)
+	case errors.Is(err, workspace.ErrIsFolder):
+		return fmt.Errorf("%v; list it with file_list", err)
+	}
+	return err
 }
 
 func (c *FilesCapability) Close() error { return nil }

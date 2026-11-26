@@ -19,7 +19,7 @@ const filesBaseURL = "http://127.0.0.1:8086"
 // folder's host path, and a directory outside the drive nothing may reach.
 func newFilesCapability(t *testing.T) (cap *mcp.FilesCapability, dir, outside string) {
 	t.Helper()
-	ws, err := workspace.Open(t.TempDir())
+	ws, err := workspace.Open(filepath.Join(t.TempDir(), workspace.DirName))
 	if err != nil {
 		t.Fatal(err)
 	}

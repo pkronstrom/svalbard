@@ -13,7 +13,7 @@ import (
 // directory outside the drive that nothing may reach.
 func newWorkspace(t *testing.T) (ws *Workspace, outside string) {
 	t.Helper()
-	ws, err := Open(t.TempDir())
+	ws, err := Open(filepath.Join(t.TempDir(), DirName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,22 +32,26 @@ func symlink(t *testing.T, target, link string) {
 	}
 }
 
-func TestOpenCreatesTheFolderAtTheDriveRoot(t *testing.T) {
-	drive := t.TempDir()
-	ws, err := Open(drive)
+func TestOpenCreatesTheFolderItIsGiven(t *testing.T) {
+	// The folder is the caller's choice; nothing is added to the path.
+	dir := filepath.Join(t.TempDir(), "drive", "wiki")
+	ws, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ws.Close()
-	info, err := os.Stat(filepath.Join(drive, "workspace"))
+	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
-		t.Fatalf("workspace folder missing: %v", err)
+		t.Fatalf("folder missing: %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("a new folder holds %d entries", len(entries))
 	}
 	// A second open finds the same folder with its content.
 	if err := ws.WriteFile("page.html", []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	again, err := Open(drive)
+	again, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

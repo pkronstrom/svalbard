@@ -357,7 +357,7 @@ func openFileTools(driveRoot string) (*fileTools, error) {
 	if !fileToolsEnabled(driveRoot) {
 		return nil, nil
 	}
-	ws, err := workspace.Open(driveRoot)
+	ws, err := workspace.Open(filepath.Join(driveRoot, workspace.DirName))
 	if err != nil {
 		return nil, err
 	}
