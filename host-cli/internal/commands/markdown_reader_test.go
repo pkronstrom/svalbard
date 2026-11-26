@@ -143,18 +143,41 @@ func TestMarkdownReaderSplitKeepsIndentation(t *testing.T) {
 		if !strings.HasPrefix(part.Text, "        return compute(value)") {
 			t.Errorf("part %s starts %q, want its indentation kept", part.Path, part.Text[:40])
 		}
-		if strings.HasSuffix(part.Text, "\n") {
-			t.Errorf("part %s ends with a line break", part.Path)
-		}
 	}
-	// Put back together with one line break, the parts are the section.
-	var pieces []string
-	for _, part := range text.Parts {
-		pieces = append(pieces, part.Text)
-	}
-	if got, want := strings.Join(pieces, "\n"), "## Code\n\n```python\ndef f(value):\n"+block+"```"; got != want {
+	// Put back together with nothing between them, the parts are the section.
+	if got, want := joinParts(text), "## Code\n\n```python\ndef f(value):\n"+block+"```"; got != want {
 		t.Errorf("the parts joined differ from the section (%d and %d characters)", len(got), len(want))
 	}
+}
+
+// A line longer than half a part, with no line break where the part ends, is
+// cut at a space, or inside a word when it has none (minified code, a data:
+// URI). Joined again the parts are the section to the character: no space
+// turns into a line break and no line break appears inside a word.
+func TestMarkdownReaderSplitKeepsLongLinesExact(t *testing.T) {
+	words := strings.Repeat("minified(code); ", 700)                 // 11,200 characters, spaces only
+	token := "data:image/png;base64," + strings.Repeat("QUJD", 2500) // 10,022 characters, no space
+	section := "## Template\n\n" + words + "\n" + token + "\n" + words + token
+	text := readMarkdown(t, "skills/x/a/SKILL.md", section+"\n")
+	if len(text.Parts) < 3 {
+		t.Fatalf("parts = %q, want the section split", partPaths(text))
+	}
+	for _, part := range text.Parts {
+		if n := len([]rune(part.Text)); n > maxDocumentPartChars {
+			t.Errorf("part %s has %d characters, over the cap", part.Path, n)
+		}
+	}
+	if got := joinParts(text); got != section {
+		t.Errorf("the parts joined differ from the section (%d and %d characters)", len(got), len(section))
+	}
+}
+
+func joinParts(text documentText) string {
+	var joined strings.Builder
+	for _, part := range text.Parts {
+		joined.WriteString(part.Text)
+	}
+	return joined.String()
 }
 
 func TestMarkdownReaderLeadingRuleIsNotFrontmatter(t *testing.T) {

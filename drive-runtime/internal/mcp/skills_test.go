@@ -656,11 +656,11 @@ func TestSkillReadSectionEdges(t *testing.T) {
 	// same heading. Asked for by number it is still the whole section.
 	indexSkillFile(t, f.db, "skills/skills-core/split/SKILL.md", "split",
 		[2]string{"Overview", "Intro."},
-		[2]string{"Steps", "## Steps\n\n```python\ndef f():\n    first = 1"},
-		[2]string{"Steps (cont.)", "    second = 2"},
-		[2]string{"Steps (cont.)", "    return first + second\n```"},
+		[2]string{"Steps", "## Steps\n\n```python\ndef f():\n    first = 1\n"},
+		[2]string{"Steps (cont.)", "    second = 2; third = "},
+		[2]string{"Steps (cont.)", "3\n    return first + second + third\n```"},
 		[2]string{"Check", "## Check\n\nDone."})
-	want := "## Steps\n\n```python\ndef f():\n    first = 1\n    second = 2\n    return first + second\n```"
+	want := "## Steps\n\n```python\ndef f():\n    first = 1\n    second = 2; third = 3\n    return first + second + third\n```"
 	for _, section := range []any{"Steps", float64(2), "section/2"} {
 		result, err := f.read(map[string]any{"id": "skills/skills-core/split", "section": section})
 		if err != nil || result.Body != want {

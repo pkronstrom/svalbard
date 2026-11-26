@@ -695,8 +695,8 @@ func readMarkdownSource(ctx context.Context, eng *engine.Engine, filename, sourc
 		if text.oneSection && len(bodies) == 0 {
 			text.title, text.number = part.title, part.first
 		}
-		// The host cut the pieces at line breaks.
-		bodies = append(bodies, strings.Join(part.pieces, "\n"))
+		// The host keeps the break it cut at in the piece before it.
+		bodies = append(bodies, strings.Join(part.pieces, ""))
 	}
 	if len(bodies) == 0 {
 		return markdownText{}, fmt.Errorf("%s has no section %q. Its sections: %s", filename, fmt.Sprint(section), strings.Join(text.headings, ", "))

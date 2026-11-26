@@ -188,11 +188,13 @@ func firstNonEmpty(values ...string) string {
 }
 
 // splitAtLines cuts text into pieces of at most limit characters, so that no
-// piece is cut again when it is stored: at a line break when one falls in the
-// second half of a piece, at a space otherwise. The break itself is dropped
-// and nothing else, so a piece keeps its indentation (the cut may fall inside
-// a code block) and the pieces joined by line breaks are the text again.
-// Empty text has no pieces.
+// piece is cut again when it is stored: after a line break when one falls in
+// the second half of a piece, after a space otherwise, and where the limit
+// falls in a line with neither. A piece keeps the break it was cut at and
+// nothing is dropped, so a piece keeps its indentation (the cut may fall
+// inside a code block) and the pieces joined with nothing are the text
+// again, also when a long line (minified code, a data: URI) is cut. Empty
+// text has no pieces.
 func splitAtLines(text string, limit int) []string {
 	var pieces []string
 	add := func(piece []rune) {
@@ -202,18 +204,18 @@ func splitAtLines(text string, limit int) []string {
 	}
 	runes := []rune(text)
 	for len(runes) > limit {
-		cut, dropped := limit, 0
+		cut := limit
 		for _, separator := range []rune{'\n', ' '} {
 			at := limit
 			for at > limit/2 && runes[at-1] != separator {
 				at--
 			}
 			if at > limit/2 {
-				cut, dropped = at, 1
+				cut = at
 				break
 			}
 		}
-		add(runes[:cut-dropped])
+		add(runes[:cut])
 		runes = runes[cut:]
 	}
 	add(runes)
