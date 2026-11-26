@@ -20,6 +20,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
 )
 
 type LaunchConfig struct {
@@ -558,6 +559,29 @@ func writeJSON(path string, value any) error {
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
+// pickContext is a package var so tests can skip the terminal picker.
+var pickContext = contextpicker.Pick
+
+// resolveLaunch decides what a launch starts before any process is: the model
+// (the one named, else the drive's ai.default_model setting) and the context
+// window (the ai.context setting, else the picker).
+func resolveLaunch(stdout io.Writer, driveRoot, clientName, selectedModel string) (model string, ctxSize int, err error) {
+	prefs := settings.OpenForAction(driveRoot, stdout)
+	model, err = prefs.ResolveModel(stdout, selectedModel)
+	if err != nil {
+		return "", 0, err
+	}
+	ctxSize = prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
+	if err := checkClientContext(clientName, ctxSize); err != nil {
+		if saved := prefs.String(settings.KeyContext); saved != settings.Ask {
+			// Nothing was picked at this launch, so say where the size came from.
+			return "", 0, fmt.Errorf("%w (the size comes from the setting %s = %s; change it under Settings)", err, settings.KeyContext, saved)
+		}
+		return "", 0, err
+	}
+	return model, ctxSize, nil
+}
+
 func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedModel string) error {
 	clientBin, err := binary.Resolve(clientName, driveRoot)
 	if err != nil {
@@ -567,7 +591,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	if err != nil {
 		return fmt.Errorf("llama-server not found")
 	}
-	model, err := llamaserve.ResolveModel(driveRoot, selectedModel)
+	model, ctxSize, err := resolveLaunch(stdout, driveRoot, clientName, selectedModel)
 	if err != nil {
 		return err
 	}
@@ -585,10 +609,6 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	}
 	defer logFile.Close()
 
-	ctxSize := contextpicker.Pick(llamaserve.ContextForHost())
-	if err := checkClientContext(clientName, ctxSize); err != nil {
-		return err
-	}
 	fmt.Fprintf(stdout, "Starting llama-server with %s (context %d)\n", modelName, ctxSize)
 	fmt.Fprintf(stdout, "llama-server log: %s\n", logPath)
 	llamaArgs := []string{"-m", model, "--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port)}

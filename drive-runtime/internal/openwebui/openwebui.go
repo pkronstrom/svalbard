@@ -27,6 +27,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
 )
 
 const (
@@ -35,6 +36,9 @@ const (
 	// mcpServerID names the drive's tool server inside Open WebUI, which
 	// prefixes every tool with it ("svalbard_search").
 	mcpServerID = "svalbard"
+
+	// settingOpenBrowser is declared by the open-webui recipe.
+	settingOpenBrowser = recipeID + ".open_browser"
 )
 
 // pickContext is a package var so tests can skip the terminal picker.
@@ -169,7 +173,8 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if err != nil {
 		return err
 	}
-	model, err := llamaserve.ResolveModel(driveRoot, selected)
+	prefs := settings.OpenForAction(driveRoot, stdout)
+	model, err := prefs.ResolveModel(stdout, selected)
 	if err != nil {
 		return err
 	}
@@ -193,7 +198,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return err
 	}
 
-	ctxSize := pickContext(llamaserve.ContextForHost())
+	ctxSize := prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
 
 	// The MCP listener is held from here on. The two child servers bind their
 	// own ports later, so their searches must not land on the same free port.
@@ -271,8 +276,10 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	}
 
 	url := fmt.Sprintf("http://localhost:%d", port)
-	if err := opener(url); err != nil {
-		fmt.Fprintf(stdout, "  Open: %s\n", url)
+	if opensBrowser(prefs) {
+		if err := opener(url); err != nil {
+			fmt.Fprintf(stdout, "  Open: %s\n", url)
+		}
 	}
 	fmt.Fprintf(stdout, "Open WebUI: %s\n", url)
 	fmt.Fprintln(stdout, "Press Ctrl+C to stop.")
@@ -283,6 +290,13 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	case <-ctx.Done():
 		return nil
 	}
+}
+
+// opensBrowser reads the recipe's open_browser setting. A drive whose schema
+// file predates the setting opens the browser, as it always did.
+func opensBrowser(prefs *settings.Store) bool {
+	_, declared := prefs.Lookup(settingOpenBrowser)
+	return !declared || prefs.Bool(settingOpenBrowser)
 }
 
 // stopped turns a server's exit into the action's result. Ctrl+C reaches the

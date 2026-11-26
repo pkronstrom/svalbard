@@ -12,13 +12,18 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/contextpicker"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
 )
+
+// pickContext is a package var so tests can skip the terminal picker.
+var pickContext = contextpicker.Pick
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, opener func(string) error) error {
 	if opener == nil {
 		opener = browser.Open
 	}
-	model, err := llamaserve.ResolveModel(driveRoot, selected)
+	prefs := settings.OpenForAction(driveRoot, stdout)
+	model, err := prefs.ResolveModel(stdout, selected)
 	if err != nil {
 		return err
 	}
@@ -31,7 +36,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return err
 	}
 
-	ctxSize := contextpicker.Pick(llamaserve.ContextForHost())
+	ctxSize := prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
 	fmt.Fprintf(stdout, "Starting llama-server on port %d with %s (context %d)...\n", port, filepath.Base(model), ctxSize)
 	args := []string{"-m", model, "--port", fmt.Sprintf("%d", port), "--host", "127.0.0.1"}
 	args = append(args, llamaserve.ExtraFlags(model, ctxSize)...)
