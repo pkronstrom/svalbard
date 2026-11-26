@@ -82,14 +82,22 @@ func IsDocumentSource(filename string) bool {
 // ScanDocuments returns the vault-relative, slash-separated paths of the
 // indexable documents below books/, sorted. Hidden entries, including the
 // "._" sidecars macOS writes on exFAT, are skipped. A missing books/ is
-// reported as fs.ErrNotExist for the caller to judge.
+// reported as fs.ErrNotExist for the caller to judge; any other failure to
+// read it or a folder below it is an error, so that a tree that could not be
+// listed is never taken for an empty one. books/ itself may be a symlink.
 func ScanDocuments(root string) ([]string, error) {
-	base := filepath.Join(root, documentsDir)
-	if _, err := os.Stat(base); err != nil {
+	// WalkDir does not follow a symlink given as its root.
+	base, err := filepath.EvalSymlinks(filepath.Join(root, documentsDir))
+	if err != nil {
 		return nil, fmt.Errorf("scanning %s directory: %w", documentsDir, err)
 	}
+	if info, err := os.Stat(base); err != nil {
+		return nil, fmt.Errorf("scanning %s directory: %w", documentsDir, err)
+	} else if !info.IsDir() {
+		return nil, fmt.Errorf("scanning %s directory: not a directory", documentsDir)
+	}
 	var documents []string
-	err := filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -105,11 +113,11 @@ func ScanDocuments(root string) ([]string, error) {
 		if _, ok := documentKinds[strings.ToLower(filepath.Ext(d.Name()))]; !ok {
 			return nil
 		}
-		rel, err := filepath.Rel(root, p)
+		rel, err := filepath.Rel(base, p)
 		if err != nil {
 			return err
 		}
-		documents = append(documents, filepath.ToSlash(rel))
+		documents = append(documents, path.Join(documentsDir, filepath.ToSlash(rel)))
 		return nil
 	})
 	if err != nil {
@@ -124,8 +132,10 @@ func ScanDocuments(root string) ([]string, error) {
 // skipped without being opened; any other is hashed, read and replaced as one
 // source with an article per part. Scanned, password-protected and broken
 // files are recorded with a note and no articles, so they are reported once
-// and not read again until the file changes. The caller holds the writer
-// lock and prunes sources that are no longer present.
+// and not read again until the file changes. A file that cannot be read at
+// all (a permission or disk error) is reported and skipped, keeping whatever
+// the index held for it; one document never stops the others. The caller
+// holds the writer lock and prunes sources that are no longer present.
 func indexDocuments(ctx context.Context, root string, documents []string, force bool, db *searchdb.DB, indexed map[string]searchdb.Source, w io.Writer, notify func(IndexProgress)) error {
 	if len(documents) == 0 {
 		return nil
@@ -145,7 +155,9 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 	for _, rel := range documents {
 		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
-			return fmt.Errorf("reading %s: %w", rel, err)
+			// Reported when its turn comes; the stat is repeated there.
+			pending = append(pending, job{rel, nil})
+			continue
 		}
 		stored := indexed[rel]
 		// The identity check is size and time only; hashing every file on
@@ -211,27 +223,40 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 			readers[ext] = reader
 		}
 		notify(IndexProgress{File: doc.rel, Status: "extracting", Detail: "reading " + kind.unit + "s..."})
+		// skip leaves the index as it was for this document and goes on.
+		skip := func(reason string) {
+			report(doc.rel, "skipped: "+reason)
+			notify(IndexProgress{File: doc.rel, Status: "failed", Detail: reason})
+		}
 
 		file := filepath.Join(root, filepath.FromSlash(doc.rel))
-		identity, err := documentIdentity(ctx, file, doc.rel, doc.info)
+		info := doc.info
+		if info == nil {
+			if info, err = os.Stat(file); err != nil {
+				skip("cannot read file: " + unwrapPathError(err))
+				continue
+			}
+		}
+		identity, err := documentIdentity(ctx, file, doc.rel, info)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err != nil {
-			notify(IndexProgress{File: doc.rel, Status: "failed", Detail: err.Error()})
-			return fmt.Errorf("reading identity for %s: %w", doc.rel, err)
+			skip("cannot read file: " + unwrapPathError(err))
+			continue
 		}
 		text, err := reader.Read(ctx, file)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err != nil {
-			notify(IndexProgress{File: doc.rel, Status: "failed", Detail: err.Error()})
-			return fmt.Errorf("reading %s: %w", doc.rel, err)
+			skip(err.Error())
+			continue
 		}
 		after, err := os.Stat(file)
 		if err != nil || after.Size() != identity.Size || after.ModTime().UnixNano() != identity.ModTimeNS {
-			return fmt.Errorf("source %s changed during extraction; retry indexing", doc.rel)
+			skip("the file changed while it was read; run the index again")
+			continue
 		}
 
 		identity.Title = documentTitle(metadata[doc.rel].Title, text.Title, doc.rel)
@@ -279,6 +304,15 @@ func documentIdentity(ctx context.Context, file, rel string, info os.FileInfo) (
 		Size:      info.Size(),
 		ModTimeNS: info.ModTime().UnixNano(),
 	}, nil
+}
+
+// unwrapPathError drops the path from a file error; the report line names it.
+func unwrapPathError(err error) string {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err.Error()
+	}
+	return err.Error()
 }
 
 var titleFileSuffixRe = regexp.MustCompile(`(?i)\.(pdf|docx?|indd|qxd|dvi|tex|pptx?|pages|odt)$`)

@@ -575,3 +575,103 @@ func TestConfiguredIndexSkipsVaultWithoutArchivesOrDocuments(t *testing.T) {
 		t.Errorf("output = %q", out.String())
 	}
 }
+
+// books/ may be a symlink (a vault whose documents live on another volume).
+// WalkDir does not follow a symlinked root: read naively it lists nothing,
+// and every document source would be pruned from the index.
+func TestIndexFollowsSymlinkedBooksDirectory(t *testing.T) {
+	root := documentsVault(t)
+	elsewhere := t.TempDir()
+	writeVaultFile(t, elsewhere, "manuals/a.pdf", "a")
+	writeVaultFile(t, elsewhere, "manuals/workshop/b.pdf", "b")
+	if err := os.Symlink(elsewhere, filepath.Join(root, "books")); err != nil {
+		t.Skipf("symlinks not available: %v", err)
+	}
+	reader := useFakeDocumentReader(t, map[string]documentText{"a.pdf": pages("alpha text"), "b.pdf": pages("bravo text")})
+
+	documents, err := ScanDocuments(root)
+	if want := []string{"books/manuals/a.pdf", "books/manuals/workshop/b.pdf"}; err != nil || !reflect.DeepEqual(documents, want) {
+		t.Fatalf("ScanDocuments = %v, %v; want %v", documents, err, want)
+	}
+	index(t, root)
+	index(t, root)
+	if got, want := indexedCounts(t, root), map[string]int64{"books/manuals/a.pdf": 1, "books/manuals/workshop/b.pdf": 1}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("indexed = %v, want %v", got, want)
+	}
+	if reads := reader.takeReads(); len(reads) != 2 {
+		t.Fatalf("files read over two runs = %v, want each once", reads)
+	}
+
+	// A books/ that is a file, or a link to nowhere, is not an empty one.
+	for name, replace := range map[string]func(string) error{
+		"dangling link": func(path string) error { return os.Symlink(filepath.Join(elsewhere, "gone"), path) },
+		"a file":        func(path string) error { return os.WriteFile(path, []byte("x"), 0o644) },
+	} {
+		books := filepath.Join(root, "books")
+		if err := os.Remove(books); err != nil {
+			t.Fatal(err)
+		}
+		if err := replace(books); err != nil {
+			t.Fatal(err)
+		}
+		if err := IndexVault(root, false, io.Discard, nil); err == nil {
+			t.Fatalf("books/ as %s: the index ran", name)
+		}
+		if got := indexedCounts(t, root); len(got) != 2 {
+			t.Fatalf("books/ as %s: indexed = %v, want both documents kept", name, got)
+		}
+	}
+}
+
+// One file that cannot be read must not stop the other documents, and must
+// not cost it what the index already held.
+func TestIndexDocumentsSkipsUnreadableFileAndGoesOn(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root reads every file")
+	}
+	root := documentsVault(t)
+	locked := writeVaultFile(t, root, "books/manuals/b-locked.pdf", "b")
+	writeVaultFile(t, root, "books/manuals/a.pdf", "a")
+	writeVaultFile(t, root, "books/manuals/c.pdf", "c")
+	reader := useFakeDocumentReader(t, map[string]documentText{"a.pdf": pages("alpha text"), "b-locked.pdf": pages("bravo text"), "c.pdf": pages("charlie text")})
+	index(t, root)
+	reader.takeReads()
+
+	// Every file changed; the middle one can no longer be opened.
+	for _, name := range []string{"a.pdf", "b-locked.pdf", "c.pdf"} {
+		touchLater(t, filepath.Join(root, "books", "manuals", name))
+	}
+	reader.texts["a.pdf"], reader.texts["c.pdf"] = pages("alpha revised"), pages("charlie revised")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o644) })
+
+	var out bytes.Buffer
+	if err := IndexVault(root, false, &out, nil); err != nil {
+		t.Fatalf("one unreadable file failed the index: %v\n%s", err, out.String())
+	}
+	want := "Indexing documents:\n" +
+		"  manuals/a.pdf         1 page\n" +
+		"  manuals/b-locked.pdf  skipped: cannot read file: permission denied\n" +
+		"  manuals/c.pdf         1 page\n"
+	if out.String() != want {
+		t.Fatalf("report = %q, want %q", out.String(), want)
+	}
+	db := openIndex(t, root)
+	for query, body := range map[string]string{"alpha": "alpha revised", "charlie": "charlie revised", "bravo": "bravo text"} {
+		if hits, err := db.Search(query, 5); err != nil || len(hits) != 1 || hits[0].Body != body {
+			t.Errorf("search %q = %+v, %v; want %q", query, hits, err, body)
+		}
+	}
+
+	// Readable again, it is picked up by the next run.
+	if err := os.Chmod(locked, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reader.texts["b-locked.pdf"] = pages("bravo revised")
+	index(t, root)
+	if hits, _ := db.Search("bravo", 5); len(hits) != 1 || hits[0].Body != "bravo revised" {
+		t.Fatalf("after the file became readable: %+v", hits)
+	}
+}

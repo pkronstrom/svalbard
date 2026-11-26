@@ -129,6 +129,10 @@ func (e *Extractor) Close() error {
 	return e.pool.Close()
 }
 
+// killInstance interrupts an instance in the middle of a call. A variable so
+// a test can watch it.
+var killInstance = func(instance pdfium.Pdfium) { _ = instance.Kill() }
+
 // Document extracts every page of the PDF at path. It returns ErrPassword
 // for a file that needs a password; a file locked only against editing reads
 // normally. Cancelling ctx stops the extraction, also in the middle of a page.
@@ -154,11 +158,19 @@ func (e *Extractor) Document(ctx context.Context, path string) (doc Doc, err err
 		return Doc{}, fmt.Errorf("starting PDF reader: %w", err)
 	}
 	// Kill interrupts the instance from another goroutine; it also closes
-	// it, so exactly one of Kill and Close runs.
-	stop := context.AfterFunc(ctx, func() { _ = instance.Kill() })
+	// it, so exactly one of Kill and Close runs, and Document does not
+	// return while a Kill is still tearing the instance down: the caller may
+	// close the extractor or ask for the next document right away.
+	killed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		defer close(killed)
+		killInstance(instance)
+	})
 	defer func() {
 		if stop() {
 			_ = instance.Close()
+		} else {
+			<-killed
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			doc, err = Doc{}, ctxErr

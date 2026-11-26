@@ -6,8 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/klippa-app/go-pdfium"
 	"github.com/klippa-app/go-pdfium/responses"
 )
 
@@ -187,5 +190,43 @@ func TestPageSections(t *testing.T) {
 	}
 	if pageSections(nil, 3) != nil {
 		t.Error("a document without an outline got sections")
+	}
+}
+
+// Cancelling in the middle of a document kills its instance from another
+// goroutine. Document must not return before that is finished: the caller
+// reads the next document, or closes the extractor, straight away.
+func TestDocumentWaitsForTheKillOfACancelledInstance(t *testing.T) {
+	extractor := testExtractor
+	var started, finished atomic.Int32
+	kill := killInstance
+	killInstance = func(instance pdfium.Pdfium) {
+		started.Add(1)
+		time.Sleep(20 * time.Millisecond) // a kill that takes its time
+		kill(instance)
+		finished.Add(1)
+	}
+	t.Cleanup(func() { killInstance = kill })
+
+	path := filepath.Join("testdata", "text.pdf")
+	for i := 0; i < 400 && started.Load() < 3; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		timer := time.AfterFunc(time.Duration(i%40)*100*time.Microsecond, cancel)
+		_, err := extractor.Document(ctx, path)
+		if s, f := started.Load(), finished.Load(); s != f {
+			t.Fatalf("run %d: Document returned while a kill was still running (%d started, %d finished)", i, s, f)
+		}
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("run %d: err = %v, want success or context.Canceled", i, err)
+		}
+		timer.Stop()
+		cancel()
+		// The next document is read by a fresh instance.
+		if doc, err := extractor.Document(context.Background(), path); err != nil || len(doc.Pages) != 3 {
+			t.Fatalf("run %d: document after a cancelled one = %d pages, %v", i, len(doc.Pages), err)
+		}
+	}
+	if started.Load() == 0 {
+		t.Skip("no cancellation landed in the middle of a document")
 	}
 }
