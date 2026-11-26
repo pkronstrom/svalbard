@@ -1,0 +1,36 @@
+id: silverbullet
+type: binary
+display_group: tools
+tags:
+- computing
+- agentic
+depth: reference-only
+size_gb: 0.020
+# One 3.0.x release: the drive runtime writes this server's state files itself
+# (drive-runtime/internal/wiki), and their format is the release's own.
+platforms:
+  linux-x86_64: https://github.com/silverbulletmd/silverbullet/releases/download/3.0.1/silverbullet-server-linux-x86_64.zip
+  linux-arm64: https://github.com/silverbulletmd/silverbullet/releases/download/3.0.1/silverbullet-server-linux-aarch64.zip
+  macos-arm64: https://github.com/silverbulletmd/silverbullet/releases/download/3.0.1/silverbullet-server-darwin-aarch64.zip
+  macos-x86_64: https://github.com/silverbulletmd/silverbullet/releases/download/3.0.1/silverbullet-server-darwin-x86_64.zip
+platform_sha256:
+  linux-x86_64: daf4455383dbb90176c0abc7d70095b15dc88e71cf411cd29f0bcc56a7f08f14
+  linux-arm64: c5bc246e8e6fb1b1c6f68cd335d68b4752cafda10368d011eb61d83627f57380
+  macos-arm64: d89f24792bf7232e46d883a3a781561624d3fb3b67eb5c4c228b6d37db5cee65
+  macos-x86_64: b83e1e46c6a8370c4be58da9560b10e912c77ad699f38b91ff4f8d2834be1141
+description: SilverBullet wiki for your own notes on the drive; the AI clients can read and write its pages
+settings:
+- name: open_browser
+  type: bool
+  default: true
+  label: Open browser on start
+  description: Open the browser when the wiki is ready.
+- name: fs_watch
+  type: choice
+  default: auto
+  choices: [auto, poll]
+  label: Notice changed pages
+  description: How the wiki sees pages changed on the drive. Use poll if changes do not show up.
+license:
+  id: MIT
+  attribution: Zef Hemel and SilverBullet contributors
