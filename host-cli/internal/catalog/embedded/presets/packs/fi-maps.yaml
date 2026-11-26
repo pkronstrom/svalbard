@@ -11,7 +11,7 @@ target_size_gb: 4
 sources:
 - natural-earth
 - osm-finland
-- mml-maastokartta
+# mml-maastokartta: re-add once the raster-sheets builder lands (kapsi's tile service is gone)
 - mml-topo-uusimaa
 - pohjavesialueet
 - luonnonsuojelualueet
