@@ -168,6 +168,7 @@ Scope: let a chat in Open WebUI save what it found. The model searches the vault
 2. A new chat has two tool servers switched on, **Svalbard vault** and **Svalbard files**. Each has its own switch in the chat's Tools menu.
 3. "Search the vault for X and Y, read both and save a page as notes.html" produces `<drive>/workspace/notes.html` and a reply with a clickable link to it. "Change the heading in notes.html" edits the same file.
 4. The folder is an ordinary folder at the root of the stick. Files put there by hand can be read and edited by the model, and the address above lists them.
+5. **File tools** under Open WebUI on the Settings screen, or `./run settings open-webui.file_tools false`, turns all of this off for the next start: no second tool server, no workspace address, and the folder is not created.
 
 ```text
 ┌─────────────────────────┐ tools ┌──────────────────────────────────────┐
@@ -196,7 +197,8 @@ Scope: let a chat in Open WebUI save what it found. The model searches the vault
 - **Pages are served from a different origin than Open WebUI**, on a third listener bound to 127.0.0.1 (preferred port 8086), read-only. Each response carries `Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src data: blob: 'self'; font-src data: 'self'; media-src data: blob: 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-site` and `Cache-Control: no-store`. A request whose `Host` is not `localhost` or `127.0.0.1` on that port gets 403, and everything outside the folder is the same 404. Folders get a plain index unless they hold an `index.html`.
 - **`'self'` is allowed** for scripts, styles, images, fonts and media so a page can use other workspace files. It still cannot fetch, post a form or load from another origin. A page can navigate away; no header prevents that.
 - **`same-site`, not `same-origin`**, so Open WebUI (localhost on another port) can show an image the model saved, while a page on any other site cannot embed workspace files.
-- **The on/off decision is one function**, `fileToolsEnabled` in `drive-runtime/internal/openwebui`, which returns true until the stick's settings store exists.
+- **The on/off switch is the recipe setting `open-webui.file_tools`** (bool, default on), declared beside `open_browser` and read in one function, `fileToolsEnabled` in `drive-runtime/internal/openwebui`, the way `opensBrowser` reads its own. Off means the workspace is not opened, its listener is not started and Open WebUI is given the vault's tool server alone. A drive whose schema predates the setting keeps file tools on. The store itself is recorded in the [settings implementation](2026-11-26-stick-settings-implementation.md).
+- **`workspace.Open` takes the folder**, not the drive root, so another tool set can confine itself to a folder of its own; the drive's workspace is `filepath.Join(driveRoot, workspace.DirName)`. The package's errors name no tool: they say what is wrong and carry a kind (`fs.ErrNotExist`, `syscall.ENOTDIR`, `workspace.ErrIsFolder`), and the files capability adds which of its tools to call next. Its path errors still say "workspace" and give `notes/page.html` as the example.
 - **No system prompt and no model metadata were added.** Both models used the tools from their descriptions alone. Three things were changed after watching real runs, all in the tools:
   - `file_read` now says "give only the path" and marks the line range as "only for a very long file". With the first wording Qwen3.5 4B read a 314-line page in 22 calls of ten to fifty lines.
   - The link is spelled `http://localhost:<port>/...`, not `127.0.0.1`. The model copied `127.0.0.1:8086` into its reply as `127.0.0.806` in one chat.
@@ -205,13 +207,14 @@ Scope: let a chat in Open WebUI save what it found. The model searches the vault
 
 ### Verified, and how
 
-Unit tests (`make verify`, 56 tested packages, and `make build`):
+Unit tests (`make verify`, 58 tested packages after the merge with the settings store, and `make build`):
 
 - Workspace: accepted and cleaned paths; every escape (absolute, home, `..` in any position, backslash, NUL, dot names, a symlink to an outside folder or file, a dangling symlink, a symlinked parent with missing folders below it); the same escapes sent straight to the file operations without the check; atomic replacement with no leftover; the size cap at and over the limit; a folder or a file in the way; folders, oversized files, a named pipe and a missing file refused for reading without naming the host path.
 - Static server: the header values and each CSP directive, no `connect-src` and no remote source; folder index, redirect to the slash, `index.html` preferred, hidden files absent; 404 for `..`, a doubled slash, an absolute host path, both symlink kinds, a hidden file and the drive's own manifest; 405 for POST, PUT and DELETE; 403 for a foreign `Host`; the port released on cancellation.
 - Tools: list (empty workspace, depth, the 200-entry cap, hidden files and outward links left out), read (whole, by line range, continued part by part until the file is rebuilt byte for byte, one over-long line, binary and non-UTF-8 refused), write (parents created, replacement, the size cap, the link with spaces, brackets and parentheses), edit (one occurrence, absent, ambiguous, `replace_all`, the indentation hint, deletion, an edit that would exceed the cap), and all four tools against every escape with the outside directory and the drive's manifest checked afterwards.
 - Servers: the drive server has exactly the eight vault tools and creates no workspace; the file tools carry write hints; two servers on one listener each list their own tools, a write over HTTP lands in the folder, and a refused path comes back as a tool error; a write request with a form content type or a foreign `Host`, which is what a page on another site could send, is refused, while the same request from a local client writes.
-- Action: both tool servers and both default tool ids with file tools on, one of each with them off; a start against stand-in servers serves both MCP paths, writes through the file tools into `<drive>/workspace`, serves that file from a localhost origin other than Open WebUI's with the CSP, prints the workspace address, opens only Open WebUI, and closes every port on cancellation; a drive whose `workspace` is a file starts without file tools and says so.
+- Action: both tool servers and both default tool ids with file tools on, one of each with them off; a start against stand-in servers serves both MCP paths, writes through the file tools into `<drive>/workspace`, serves that file from a localhost origin other than Open WebUI's with the CSP, prints the workspace address, opens only Open WebUI, and closes every port on cancellation; a drive whose `workspace` is a file starts without file tools and says so; the setting read with no schema, an older schema, the default, on, off, an invalid value and the other switch off; with it off, a start gives Open WebUI one tool server and one default tool id, answers 404 at `/files/mcp`, creates no folder and prints no workspace line, and no listener is opened until it is switched on.
+- Catalog: the real `open-webui` recipe declares `open_browser` and `file_tools`, both bool and on by default.
 
 Real run on this Mac (64 GB, internal SSD), runtime built from the branch and applied to a copy of the phase A scratch vault (`wikem`, NHS medicines, keyword index), 32K context, driven through the page itself in an isolated browser profile with `open` replaced by a no-op:
 
@@ -224,7 +227,8 @@ Real run on this Mac (64 GB, internal SSD), runtime built from the branch and ap
 - Against the running server: `/../manifest.yaml`, `/..%2fmanifest.yaml`, `/%2e%2e/manifest.yaml`, `//etc/passwd`, `/.svalbard/recipes.json`, the Open WebUI secret and a symlink to `/etc/hosts` all returned 404, POST returned 405, and a foreign `Host` 403.
 - The real binary's `mcp --drive` over stdio listed the eight vault tools and created no workspace folder.
 - With a second Open WebUI instance from another vault running on this machine, the action moved to free ports (Open WebUI 8085, MCP 8091, workspace 8086) and a write through `/files/mcp` returned a link that served the file.
-- Ctrl+C, eight stops: exit status 0 on the seven where it was recorded; after the first and the last no process and no listener was left, and every restart got the same ports back. The no-op `open` recorded one call per start, for Open WebUI's address only.
+- The setting, on the scratch vault after `svalbard apply` wrote it into `settings.schema.json`: `./run settings` listed `open-webui.file_tools on`. After `./run settings open-webui.file_tools false` (with the workspace folder moved aside) a start printed no workspace line, the runtime held the MCP port only, Open WebUI listed **Svalbard vault** alone with one default tool id, and no folder was created. The Settings screen showed `File tools * off`; Enter on that row turned it on and removed the key from `settings.json`, and the next start printed the workspace address, held the second port, created the folder and listed both tool servers.
+- Ctrl+C, ten stops: exit status 0 on the nine where it was recorded; after the first and the last no process and no listener was left, and every restart got the same ports back. The no-op `open` recorded one call per start, for Open WebUI's address only.
 
 ### Not verified
 
@@ -240,7 +244,6 @@ Real run on this Mac (64 GB, internal SSD), runtime built from the branch and ap
 
 | Item | Size | Risk that could change the size |
 |---|---|---|
-| Read the on/off switch from the stick's settings | S | M if it must be changeable from the menu before each launch |
 | Delete and move | S | M if deletion needs a trash folder or a confirmation in the page |
 | A workspace on a host folder | S | M if one stick must remember a different folder per host |
 | Open the result automatically | S | M if the signal has to come from Open WebUI and not from the tool call |
