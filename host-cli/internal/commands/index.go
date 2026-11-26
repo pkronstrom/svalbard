@@ -2,21 +2,24 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 	"github.com/pkronstrom/svalbard/host-cli/internal/zimext"
 )
 
 // IndexProgress reports per-file indexing progress.
 type IndexProgress struct {
-	File    string // ZIM filename
+	File    string // ZIM filename, or a document's path below the vault root
 	Status  string // "extracting", "skip", "done", "failed"
 	Detail  string // e.g. "3864 articles"
 	Current int64  // articles indexed so far for this file
@@ -45,15 +48,16 @@ func ScanZIMFiles(root string) ([]string, error) {
 	return files, nil
 }
 
-// IndexVault scans ZIM files in the vault and builds a SQLite FTS5 search index.
+// IndexVault scans the vault's ZIM files and documents and builds a SQLite
+// FTS5 search index.
 // Progress is reported per-file via onProgress. Text output goes to w.
 func IndexVault(root string, force bool, w io.Writer, onProgress func(IndexProgress)) error {
 	return IndexVaultContext(context.Background(), root, force, w, onProgress)
 }
 
-// IndexVaultContext scans ZIM files and reconciles their searchable articles.
-// It preserves prior sources until each replacement has been fully extracted
-// and its archive identity has been rechecked.
+// IndexVaultContext scans ZIM files and documents and reconciles their
+// searchable articles. It preserves prior sources until each replacement has
+// been fully extracted and its identity has been rechecked.
 func IndexVaultContext(ctx context.Context, root string, force bool, w io.Writer, onProgress func(IndexProgress)) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -68,7 +72,7 @@ func IndexVaultContext(ctx context.Context, root string, force bool, w io.Writer
 
 // indexVaultUnlocked runs while the caller owns the vault index writer lock.
 func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Writer, onProgress func(IndexProgress)) error {
-	zimFiles, err := ScanZIMFiles(root)
+	zimFiles, documents, missing, err := scanSources(root)
 	if err != nil {
 		return err
 	}
@@ -96,6 +100,11 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 	indexedByFilename := make(map[string]searchdb.Source, len(indexed))
 	for _, source := range indexed {
 		indexedByFilename[source.Filename] = source
+		// Sources already indexed from a directory that is now gone are a
+		// lost mount, not a removal: pruning them would empty the index.
+		if dir := sourceDir(source.Filename); missing[dir] {
+			return fmt.Errorf("the index holds sources from %s/, which is missing; not pruning them", dir)
+		}
 	}
 
 	notify := func(p IndexProgress) {
@@ -104,7 +113,10 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 		}
 	}
 
-	present := make(map[string]bool, len(zimFiles))
+	present := make(map[string]bool, len(zimFiles)+len(documents))
+	for _, doc := range documents {
+		present[doc] = true
+	}
 	for _, zf := range zimFiles {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -162,14 +174,17 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 			Current: int64(len(articles)), Total: int64(len(articles)),
 		})
 	}
+	if err := indexDocuments(ctx, root, documents, force, db, indexedByFilename, w, notify); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := db.PruneSources(ctx, present); err != nil {
 		return fmt.Errorf("pruning removed sources: %w", err)
 	}
-	if len(zimFiles) == 0 {
-		fmt.Fprintln(w, "Search index: no ZIM files to index")
+	if len(zimFiles) == 0 && len(documents) == 0 {
+		fmt.Fprintln(w, "Search index: no ZIM files or documents to index")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -181,6 +196,51 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 	}
 
 	return nil
+}
+
+// scanSources lists the vault's ZIM files and documents. A source directory
+// that does not exist counts as empty only when the manifest records nothing
+// installed there; otherwise it is an error, so an unmounted or half-copied
+// vault is never read as "everything was removed". zim/ keeps its older,
+// stricter rule and also needs a readable v2 manifest to be absent; books/
+// did not exist before documents were indexed, so a vault without a manifest
+// simply has none. The directories that are missing and accepted as empty are
+// returned for the caller to check against what the index already holds.
+func scanSources(root string) (zimFiles, documents []string, missing map[string]bool, err error) {
+	missing = map[string]bool{}
+	m, manifestErr := manifest.Load(filepath.Join(root, "manifest.yaml"))
+	recorded := func(dir string) bool {
+		for _, entry := range m.Realized.Entries {
+			if strings.HasPrefix(filepath.ToSlash(entry.RelativePath), dir+"/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	zimFiles, err = ScanZIMFiles(root)
+	if errors.Is(err, fs.ErrNotExist) && manifestErr == nil && m.Version == 2 && !recorded("zim") {
+		missing["zim"], err = true, nil
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	documents, err = ScanDocuments(root)
+	if errors.Is(err, fs.ErrNotExist) && !(manifestErr == nil && recorded(documentsDir)) {
+		missing[documentsDir], err = true, nil
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return zimFiles, documents, missing, nil
+}
+
+// sourceDir names the vault directory an indexed source was read from.
+func sourceDir(filename string) string {
+	if IsDocumentSource(filename) {
+		return documentsDir
+	}
+	return "zim"
 }
 
 func archiveSourceIdentity(ctx context.Context, path, filename string) (searchdb.Source, error) {

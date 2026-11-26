@@ -45,3 +45,21 @@ name: test
 		t.Fatalf("updated config lost top-level keys:\n%s", updated)
 	}
 }
+
+func TestOmpIsRefusedBelowTheBalancedContext(t *testing.T) {
+	err := checkClientContext("omp", 8192)
+	if err == nil {
+		t.Fatal("omp accepted at 8K, where its prompt leaves no room for work")
+	}
+	for _, want := range []string{"32K", "8K", "Balanced", "pi"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+	if err := checkClientContext("omp", 32768); err != nil {
+		t.Errorf("omp refused at 32K: %v", err)
+	}
+	if err := checkClientContext("pi", 8192); err != nil {
+		t.Errorf("pi refused at 8K: %v", err)
+	}
+}

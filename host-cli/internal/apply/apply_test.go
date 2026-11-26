@@ -3,6 +3,8 @@ package apply
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -605,5 +607,118 @@ func TestCheckpointFailureCancelsStartedPeersAndPreventsQueuedAcquisition(t *tes
 	}
 	if len(m.Realized.Entries) != 0 || m.Realized.AppliedAt != "" {
 		t.Fatalf("rejected state realized: %+v", m.Realized)
+	}
+}
+
+func TestApplyEnforcesPlatformSHA256(t *testing.T) {
+	content := "pinned binary"
+	sum := sha256.Sum256([]byte(content))
+	good := hex.EncodeToString(sum[:])
+	useMockHTTPResponses(t, map[string]string{"/tool-linux-amd64.tar.gz": content})
+
+	for _, tc := range []struct {
+		name    string
+		hash    string
+		wantErr bool
+	}{
+		{"match", good, false},
+		{"mismatch", strings.Repeat("0", 64), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recipeYAML := "id: tool\ntype: binary\nplatforms:\n  linux-x86_64: http://example.test/tool-linux-amd64.tar.gz\n" +
+				"platform_sha256:\n  linux-x86_64: " + tc.hash + "\n"
+			cat, err := catalog.LoadFromFS(fstest.MapFS{"tool.yaml": &fstest.MapFile{Data: []byte(recipeYAML)}}, fstest.MapFS{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			m := manifest.New("test")
+			m.Desired.Items = []string{"tool"}
+			m.Desired.Options.HostPlatforms = []string{"linux-x86_64"}
+
+			err = Run(context.Background(), root, &m, planner.Plan{ToDownload: []string{"tool"}}, cat)
+			dest := filepath.Join(root, "bin", "linux-x86_64", "tool-linux-amd64.tar.gz")
+			if tc.wantErr {
+				if err == nil || len(m.Realized.Entries) != 0 {
+					t.Fatalf("err = %v, realized = %d; want failure with nothing realized", err, len(m.Realized.Entries))
+				}
+				if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+					t.Errorf("mismatching download left on disk: %v", statErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := m.Realized.Entries[0].ChecksumSHA256; got != good {
+				t.Errorf("checksum = %q, want %q", got, good)
+			}
+		})
+	}
+}
+
+func TestPlatformBinariesAreKeptApartPerPlatform(t *testing.T) {
+	useMockHTTPResponses(t, map[string]string{
+		"/tool-darwin-arm64":          "mac build",
+		"/tool-linux-x64":             "linux build",
+		"/packed-darwin-arm64.tar.gz": "mac archive",
+		"/packed-linux-x64.tar.gz":    "linux archive",
+	})
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"tool.yaml":   &fstest.MapFile{Data: []byte("id: tool\ntype: binary\nstrategy: download\nplatforms:\n  macos-arm64: http://example.test/tool-darwin-arm64\n  linux-x86_64: http://example.test/tool-linux-x64\n")},
+		"packed.yaml": &fstest.MapFile{Data: []byte("id: packed\ntype: binary\nstrategy: download\nplatforms:\n  macos-arm64: http://example.test/packed-darwin-arm64.tar.gz\n  linux-x86_64: http://example.test/packed-linux-x64.tar.gz\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	m := manifest.New("test")
+	m.Desired.Items = []string{"tool", "packed"}
+	// "darwin-arm64" is what an unset host platform resolves to on a Mac.
+	m.Desired.Options.HostPlatforms = []string{"darwin-arm64", "linux-x86_64"}
+	if err := Run(context.Background(), root, &m, planner.Plan{ToDownload: []string{"tool", "packed"}}, cat); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	// A bare executable is stored under the recipe id, ready to run. An archive
+	// keeps its upstream name for the drive runtime to unpack in place.
+	for rel, want := range map[string]string{
+		"bin/macos-arm64/tool":                       "mac build",
+		"bin/linux-x86_64/tool":                      "linux build",
+		"bin/macos-arm64/packed-darwin-arm64.tar.gz": "mac archive",
+		"bin/linux-x86_64/packed-linux-x64.tar.gz":   "linux archive",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("platform binary not at %s: %v", rel, err)
+		}
+		if string(data) != want {
+			t.Errorf("%s = %q, want %q", rel, data, want)
+		}
+		if info, _ := os.Stat(path); !strings.HasSuffix(rel, ".tar.gz") && info.Mode()&0o111 == 0 {
+			t.Errorf("%s mode = %v, want executable", rel, info.Mode())
+		}
+	}
+	// Nothing per-platform is left in flat bin/, where the runtime would unpack
+	// every platform's archive into one directory.
+	entries, err := os.ReadDir(filepath.Join(root, "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			t.Errorf("per-platform file left in flat bin/: %s", entry.Name())
+		}
+	}
+	var paths []string
+	for _, e := range m.Realized.Entries {
+		if e.ID == "tool" {
+			paths = append(paths, filepath.ToSlash(e.RelativePath))
+		}
+	}
+	slices.Sort(paths)
+	if !slices.Equal(paths, []string{"bin/linux-x86_64/tool", "bin/macos-arm64/tool"}) {
+		t.Errorf("realized paths = %v", paths)
 	}
 }

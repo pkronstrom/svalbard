@@ -2,9 +2,11 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,17 +38,19 @@ func RunConfiguredIndex(ctx context.Context, root, strategy string, w io.Writer,
 		return err
 	}
 	defer release()
-	// A fresh tools-only vault has no archive directory or search database.
-	// Existing indexes and recorded archives still require a readable source
-	// directory, so a missing mount/directory cannot silently prune their data.
+	// A fresh tools-only vault has no archive directory, no documents and no
+	// search database, and gets none. Existing indexes and recorded archives
+	// or documents still require a readable source directory, so a missing
+	// mount/directory cannot silently prune their data.
 	if _, statErr := os.Stat(filepath.Join(root, "zim")); os.IsNotExist(statErr) {
 		m, manifestErr := manifest.Load(filepath.Join(root, "manifest.yaml"))
-		hasArchives := false
+		hasSources := false
 		for _, entry := range m.Realized.Entries {
-			hasArchives = hasArchives || entry.Type == "zim"
+			hasSources = hasSources || entry.Type == "zim" || strings.HasPrefix(filepath.ToSlash(entry.RelativePath), documentsDir+"/")
 		}
-		if _, dbErr := os.Stat(filepath.Join(root, "data", "search.db")); manifestErr == nil && m.Version == 2 && !hasArchives && os.IsNotExist(dbErr) {
-			fmt.Fprintln(w, "No ZIM archives to index.")
+		documents, _ := ScanDocuments(root)
+		if _, dbErr := os.Stat(filepath.Join(root, "data", "search.db")); manifestErr == nil && m.Version == 2 && !hasSources && len(documents) == 0 && os.IsNotExist(dbErr) {
+			fmt.Fprintln(w, "No ZIM archives or documents to index.")
 			return ctx.Err()
 		}
 	}
@@ -56,11 +60,17 @@ func RunConfiguredIndex(ctx context.Context, root, strategy string, w io.Writer,
 	if strategy != "semantic" && strategy != "full" {
 		return nil
 	}
+	// The keyword stage has just accepted the source directories, so a
+	// missing one here is an empty one.
 	files, err := ScanZIMFiles(root)
-	if err != nil {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if len(files) == 0 {
+	documents, err := ScanDocuments(root)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if len(files) == 0 && len(documents) == 0 {
 		return nil
 	}
 	if err := runConfiguredSemantic(ctx, root, false, w, semanticProgress); err != nil {

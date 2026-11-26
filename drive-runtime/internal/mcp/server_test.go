@@ -3,7 +3,19 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
+	"time"
+
+	mcpclient "github.com/mark3labs/mcp-go/client"
+	gomcp "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/workspace"
 )
 
 // stubCap is a minimal Capability for testing.
@@ -122,5 +134,264 @@ func TestAllCapabilitiesRegisterExpectedTools(t *testing.T) {
 	}
 	if _, ok := searchTool.InputSchema.Properties["source"]; !ok {
 		t.Fatalf("search tool missing optional source filter in schema: %#v", searchTool.InputSchema.Properties)
+	}
+}
+
+// The terminal harnesses use this server over stdio and bring their own file
+// tools, so the workspace tools must not appear in it.
+func TestDriveServerHasTheVaultToolsAndNoFileTools(t *testing.T) {
+	root := t.TempDir()
+	srv := NewServer(DriveCapabilities(root)...)
+	defer srv.Close()
+
+	var names []string
+	for name := range srv.inner.ListTools() {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	want := []string{"query_describe", "query_sql", "search", "search_read", "vault_databases", "vault_maps", "vault_sources", "vault_stats"}
+	if !slices.Equal(names, want) {
+		t.Errorf("drive tools = %v, want %v", names, want)
+	}
+	listed := DriveToolNames(root)
+	slices.Sort(listed)
+	if !slices.Equal(listed, want) {
+		t.Errorf("DriveToolNames() = %v, want %v", listed, want)
+	}
+	if _, err := os.Stat(filepath.Join(root, workspace.DirName)); err == nil {
+		t.Error("the drive server created a workspace folder")
+	}
+}
+
+func TestFileToolsAreMarkedAsWritingWhereTheyWrite(t *testing.T) {
+	ws, err := workspace.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	srv := NewServer(NewFilesCapability(ws, ""))
+	defer srv.Close()
+
+	tools := srv.inner.ListTools()
+	if len(tools) != 4 {
+		t.Fatalf("len(tools) = %d, want 4", len(tools))
+	}
+	for name, writes := range map[string]bool{"file_list": false, "file_read": false, "file_write": true, "file_edit": true} {
+		tool, ok := tools[name]
+		if !ok {
+			t.Errorf("missing tool %q", name)
+			continue
+		}
+		hints := tool.Tool.Annotations
+		if *hints.ReadOnlyHint == writes || *hints.DestructiveHint != writes {
+			t.Errorf("%s: readOnlyHint=%v destructiveHint=%v, want writes=%v", name, *hints.ReadOnlyHint, *hints.DestructiveHint, writes)
+		}
+	}
+	if got := tools["file_edit"].Tool.InputSchema.Required; !slices.Equal(got, []string{"path", "old_text", "new_text"}) {
+		t.Errorf("file_edit required fields = %v", got)
+	}
+}
+
+// Open WebUI shows each path as a tool server of its own, which is what lets a
+// chat switch the file tools off and keep vault search.
+func TestServeStreamableHTTPServesEachServerAtItsPath(t *testing.T) {
+	ws, err := workspace.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	drive := NewServer(&stubCap{})
+	defer drive.Close()
+	files := NewServer(NewFilesCapability(ws, "http://127.0.0.1:8086"))
+	defer files.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	served := make(chan error, 1)
+	go func() {
+		served <- ServeStreamableHTTP(ctx, listener, map[string]*Server{StreamableHTTPPath: drive, FilesStreamableHTTPPath: files})
+	}()
+
+	connect := func(path string) *mcpclient.Client {
+		t.Helper()
+		client, err := mcpclient.NewStreamableHttpClient("http://" + listener.Addr().String() + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := client.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.Initialize(ctx, gomcp.InitializeRequest{}); err != nil {
+			t.Fatalf("Initialize(%s) error = %v", path, err)
+		}
+		return client
+	}
+	toolNames := func(client *mcpclient.Client) []string {
+		t.Helper()
+		tools, err := client.ListTools(ctx, gomcp.ListToolsRequest{})
+		if err != nil {
+			t.Fatalf("ListTools() error = %v", err)
+		}
+		var names []string
+		for _, tool := range tools.Tools {
+			names = append(names, tool.Name)
+		}
+		slices.Sort(names)
+		return names
+	}
+
+	driveClient := connect(StreamableHTTPPath)
+	defer driveClient.Close()
+	if got := toolNames(driveClient); !slices.Equal(got, []string{"test_tool_echo", "test_tool_ping"}) {
+		t.Errorf("tools at %s = %v", StreamableHTTPPath, got)
+	}
+	filesClient := connect(FilesStreamableHTTPPath)
+	defer filesClient.Close()
+	if got := toolNames(filesClient); !slices.Equal(got, []string{"file_edit", "file_list", "file_read", "file_write"}) {
+		t.Errorf("tools at %s = %v", FilesStreamableHTTPPath, got)
+	}
+
+	call := gomcp.CallToolRequest{}
+	call.Params.Name = "file_write"
+	call.Params.Arguments = map[string]any{"path": "notes/page.html", "content": "<h1>Hi</h1>"}
+	result, err := filesClient.CallTool(ctx, call)
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	if text, ok := result.Content[0].(gomcp.TextContent); !ok || text.Text != `{"path":"notes/page.html","bytes":11,"link":"[notes/page.html](http://127.0.0.1:8086/notes/page.html)"}` {
+		t.Fatalf("file_write result = %#v", result.Content)
+	}
+	if data, err := os.ReadFile(filepath.Join(ws.Dir(), "notes", "page.html")); err != nil || string(data) != "<h1>Hi</h1>" {
+		t.Fatalf("written file = %q, %v", data, err)
+	}
+	// A refused path is a tool error the model can read, not a protocol error.
+	call.Params.Arguments = map[string]any{"path": "../page.html", "content": "x"}
+	result, err = filesClient.CallTool(ctx, call)
+	if err != nil || !result.IsError {
+		t.Fatalf("file_write outside the workspace: result = %#v, error = %v; want a tool error", result, err)
+	}
+	if text, ok := result.Content[0].(gomcp.TextContent); !ok || !strings.Contains(text.Text, "notes/page.html") {
+		t.Errorf("tool error = %#v, want it to say what to send instead", result.Content)
+	}
+
+	// A page on some other site must not be able to write files. A browser
+	// sends a cross-site POST without asking only when its content type is a
+	// plain form type, and a name rebound to this address keeps its own Host.
+	post := func(body string, change func(*http.Request)) *http.Response {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodPost, "http://"+listener.Addr().String()+FilesStreamableHTTPPath, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json, text/event-stream")
+		change(request)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		return response
+	}
+	session := post(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`,
+		func(*http.Request) {}).Header.Get("Mcp-Session-Id")
+	body := `{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"file_write","arguments":{"path":"planted.html","content":"x"}}}`
+	planted := filepath.Join(ws.Dir(), "planted.html")
+	for name, change := range map[string]func(*http.Request){
+		"form content type": func(r *http.Request) { r.Header.Set("Content-Type", "text/plain") },
+		"foreign Host":      func(r *http.Request) { r.Host = "evil.example" },
+	} {
+		response := post(body, func(r *http.Request) {
+			r.Header.Set("Mcp-Session-Id", session)
+			change(r)
+		})
+		if response.StatusCode != http.StatusBadRequest && response.StatusCode != http.StatusForbidden {
+			t.Errorf("POST with %s: status = %d, want it refused", name, response.StatusCode)
+		}
+		if response.Header.Get("Access-Control-Allow-Origin") != "" {
+			t.Errorf("POST with %s: the server allows cross-origin reads", name)
+		}
+		if _, err := os.Stat(planted); err == nil {
+			t.Fatalf("POST with %s wrote a file", name)
+		}
+	}
+	// The same request sent as a local client sends it does write, so each
+	// refusal above is about the one header it changed.
+	response := post(body, func(r *http.Request) { r.Header.Set("Mcp-Session-Id", session) })
+	if _, err := os.Stat(planted); response.StatusCode != http.StatusOK || err != nil {
+		t.Errorf("POST as a local client: status = %d, file: %v; want it written", response.StatusCode, err)
+	}
+
+	cancel()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatalf("ServeStreamableHTTP() error = %v, want nil after cancellation", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ServeStreamableHTTP() did not return after cancellation")
+	}
+	if _, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second); err == nil {
+		t.Fatal("listener still accepts connections after cancellation")
+	}
+}
+
+func TestServeStreamableHTTPListsAndCallsTools(t *testing.T) {
+	srv := NewServer(&stubCap{})
+	defer srv.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	served := make(chan error, 1)
+	go func() { served <- srv.ServeStreamableHTTP(ctx, listener) }()
+
+	client, err := mcpclient.NewStreamableHttpClient("http://" + listener.Addr().String() + StreamableHTTPPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Initialize(ctx, gomcp.InitializeRequest{}); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	tools, err := client.ListTools(ctx, gomcp.ListToolsRequest{})
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	if len(tools.Tools) != 2 {
+		t.Fatalf("tools = %d, want 2", len(tools.Tools))
+	}
+	call := gomcp.CallToolRequest{}
+	call.Params.Name = "test_tool_echo"
+	call.Params.Arguments = map[string]any{"text": "hello"}
+	result, err := client.CallTool(ctx, call)
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	if text, ok := result.Content[0].(gomcp.TextContent); !ok || text.Text != "hello" {
+		t.Fatalf("echo result = %#v, want hello", result.Content)
+	}
+
+	cancel()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatalf("ServeStreamableHTTP() error = %v, want nil after cancellation", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ServeStreamableHTTP() did not return after cancellation")
+	}
+	if _, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second); err == nil {
+		t.Fatal("listener still accepts connections after cancellation")
 	}
 }

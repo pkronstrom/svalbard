@@ -18,6 +18,15 @@ type SourceInfo struct {
 	Size        int64    `json:"size"`
 	Description string   `json:"description,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
+	// The fields below describe a book. Path is where it is on the drive
+	// (books/manuals/volvo.pdf), which is also its source name for search.
+	// Title, PagesIndexed and Note come from the search index: PagesIndexed
+	// is absent for a book that is not indexed and 0 for one with no text,
+	// and Note says why a book is not, or not fully, searchable.
+	Path         string `json:"path,omitempty"`
+	Title        string `json:"title,omitempty"`
+	PagesIndexed *int   `json:"pages_indexed,omitempty"`
+	Note         string `json:"note,omitempty"`
 }
 
 // DriveStats holds aggregate drive statistics.
@@ -81,12 +90,20 @@ func Sources(driveRoot, filter string) ([]SourceInfo, error) {
 				}
 				name := filepath.Base(f)
 				id := strings.TrimSuffix(name, filepath.Ext(name))
-				sources = append(sources, SourceInfo{
+				source := SourceInfo{
 					ID:   id,
 					Type: sd.typ,
 					Name: name,
 					Size: info.Size(),
-				})
+				}
+				if sd.typ == "book" {
+					// Books sit in folders, one per collection, and two
+					// collections may hold a file of the same name.
+					if rel, err := filepath.Rel(driveRoot, f); err == nil {
+						source.Path = filepath.ToSlash(rel)
+					}
+				}
+				sources = append(sources, source)
 			}
 		}
 	}

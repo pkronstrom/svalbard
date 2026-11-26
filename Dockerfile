@@ -1,5 +1,5 @@
 ARG ZIMIT_VERSION=3.1.3
-FROM python:3.12-alpine3.21 AS builder
+FROM python:3.12-alpine3.24 AS builder
 
 RUN apk add --no-cache build-base sqlite-dev zlib-dev curl bash
 
@@ -33,7 +33,7 @@ RUN ARCH=$(uname -m) && \
 
 # Build magic.mgc compatible with the static zimwriterfs binary (libmagic 5.44)
 # Must use glibc (Ubuntu) to match the struct layout of the prebuilt binary
-FROM ubuntu:22.04 AS magic-builder
+FROM ubuntu:24.04 AS magic-builder
 RUN apt-get update -qq && apt-get install -y -qq curl build-essential autoconf automake libtool > /dev/null 2>&1
 RUN curl -fsSL "https://github.com/file/file/archive/refs/tags/FILE5_44.tar.gz" \
     | tar xz && cd file-FILE5_44 \
@@ -41,14 +41,14 @@ RUN curl -fsSL "https://github.com/file/file/archive/refs/tags/FILE5_44.tar.gz" 
     && cp magic/magic.mgc /magic.mgc
 
 # Build zim-dither (Go image processing tool)
-FROM golang:1.25-alpine AS go-builder
+FROM golang:1.27-alpine AS go-builder
 RUN apk add --no-cache git
 COPY build-tools/ /src/
 WORKDIR /src
 RUN go build -o /usr/local/bin/zim-dither ./cmd/zim-dither/ \
     && go build -o /usr/local/bin/zim-compact ./cmd/zim-compact/
 
-FROM python:3.12-alpine3.21 AS tools-base
+FROM python:3.12-alpine3.24 AS tools-base
 
 RUN apk add --no-cache \
     ca-certificates \
@@ -69,7 +69,7 @@ ENV MAGIC=/usr/share/misc/magic.mgc
 COPY --from=go-builder /usr/local/bin/zim-dither /usr/local/bin/
 COPY --from=go-builder /usr/local/bin/zim-compact /usr/local/bin/
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.21 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /usr/local/bin/uv
 
 RUN apk add --no-cache --virtual .build-deps gcc g++ musl-dev python3-dev \
     && pip install --no-cache-dir \

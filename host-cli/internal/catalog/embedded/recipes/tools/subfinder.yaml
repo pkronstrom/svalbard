@@ -6,10 +6,15 @@ tags:
 depth: reference-only
 size_gb: 0.02
 platforms:
-  linux-x86_64: https://github.com/projectdiscovery/subfinder/releases/download/v2.16.0/subfinder_2.16.0_linux_amd64.zip
-  linux-arm64: https://github.com/projectdiscovery/subfinder/releases/download/v2.16.0/subfinder_2.16.0_linux_arm64.zip
-  macos-arm64: https://github.com/projectdiscovery/subfinder/releases/download/v2.16.0/subfinder_2.16.0_macOS_arm64.zip
-  macos-x86_64: https://github.com/projectdiscovery/subfinder/releases/download/v2.16.0/subfinder_2.16.0_macOS_amd64.zip
+  linux-x86_64: https://github.com/projectdiscovery/subfinder/releases/download/v2.17.0/subfinder_2.17.0_linux_amd64.zip
+  linux-arm64: https://github.com/projectdiscovery/subfinder/releases/download/v2.17.0/subfinder_2.17.0_linux_arm64.zip
+  macos-arm64: https://github.com/projectdiscovery/subfinder/releases/download/v2.17.0/subfinder_2.17.0_macOS_arm64.zip
+  macos-x86_64: https://github.com/projectdiscovery/subfinder/releases/download/v2.17.0/subfinder_2.17.0_macOS_amd64.zip
+platform_sha256:
+  linux-x86_64: a39c3e5c7a26ef3c430915c4d6cbf7716a00f26769a75e9405aba796142eba37
+  linux-arm64: 24913d49dddc1d3a5e99a4a7580da5be980959b9415b96f52c4f7f4124392190
+  macos-arm64: 012d6ff91ef932ac6d1a321fb5735cf1412168d163e6adbc6cbe5fc42fe03c3b
+  macos-x86_64: 75bf5990b409c6fd1116c81cd64fbdfd2cfd5bfb1f43542035b42344cb9fdffa
 description: Subdomain enumeration tool
 license:
   id: MIT

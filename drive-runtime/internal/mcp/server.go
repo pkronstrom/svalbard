@@ -1,9 +1,15 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"strings"
+	"time"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -45,9 +51,9 @@ func (s *Server) buildActionTool(cap Capability, action ActionDef) gomcp.Tool {
 	options := []gomcp.ToolOption{
 		gomcp.WithDescription(action.Desc),
 		gomcp.WithTitleAnnotation(toolName(cap.Tool(), action.Name)),
-		gomcp.WithReadOnlyHintAnnotation(true),
-		gomcp.WithDestructiveHintAnnotation(false),
-		gomcp.WithIdempotentHintAnnotation(true),
+		gomcp.WithReadOnlyHintAnnotation(!action.Writes),
+		gomcp.WithDestructiveHintAnnotation(action.Writes),
+		gomcp.WithIdempotentHintAnnotation(!action.Writes),
 		gomcp.WithOpenWorldHintAnnotation(false),
 	}
 
@@ -76,11 +82,15 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 		}
 
 		if result.Data != nil {
-			data, jErr := json.Marshal(result.Data)
-			if jErr != nil {
+			// Not json.Marshal: it writes "<", ">" and "&" as six-character
+			// escapes, which a model pays for and reads worse.
+			var data bytes.Buffer
+			encoder := json.NewEncoder(&data)
+			encoder.SetEscapeHTML(false)
+			if jErr := encoder.Encode(result.Data); jErr != nil {
 				return nil, fmt.Errorf("marshalling result data: %w", jErr)
 			}
-			toolResult := gomcp.NewToolResultText(string(data))
+			toolResult := gomcp.NewToolResultText(strings.TrimSuffix(data.String(), "\n"))
 			if result.Text != "" {
 				toolResult.Content = append(toolResult.Content, gomcp.TextContent{Type: gomcp.ContentTypeText, Text: result.Text})
 			}
@@ -88,6 +98,29 @@ func (s *Server) makeHandler(cap Capability, actionName string) mcpserver.ToolHa
 		}
 		return gomcp.NewToolResultText(result.Text), nil
 	}
+}
+
+// DriveCapabilities returns the capabilities the drive's MCP server exposes.
+func DriveCapabilities(driveRoot string) []Capability {
+	meta, _ := LoadMetadata(driveRoot)
+	return []Capability{
+		NewSearchCapability(driveRoot, meta),
+		NewVaultCapability(driveRoot, meta),
+		NewQueryCapability(driveRoot, meta),
+	}
+}
+
+// DriveToolNames lists the tool names the drive's MCP server registers, for
+// clients that only enable tools named up front.
+func DriveToolNames(driveRoot string) []string {
+	var names []string
+	for _, cap := range DriveCapabilities(driveRoot) {
+		for _, action := range cap.Actions() {
+			names = append(names, toolName(cap.Tool(), action.Name))
+		}
+		_ = cap.Close()
+	}
+	return names
 }
 
 func toolName(prefix, action string) string {
@@ -139,6 +172,56 @@ func (s *Server) ServeStdio() error {
 func (s *Server) ServeSSE(addr string) error {
 	sse := mcpserver.NewSSEServer(s.inner, mcpserver.WithBaseURL("http://"+addr))
 	return sse.Start(addr)
+}
+
+// StreamableHTTPPath is where ServeStreamableHTTP mounts the server.
+const StreamableHTTPPath = "/mcp"
+
+// FilesStreamableHTTPPath is where the Open WebUI action mounts the file
+// tools, beside the drive's server on the same listener.
+const FilesStreamableHTTPPath = "/files/mcp"
+
+// ServeStreamableHTTP serves the server over Streamable HTTP on listener until
+// ctx is done. Clients that speak neither stdio nor SSE (Open WebUI) connect
+// here. The listener is closed on return.
+func (s *Server) ServeStreamableHTTP(ctx context.Context, listener net.Listener) error {
+	return ServeStreamableHTTP(ctx, listener, map[string]*Server{StreamableHTTPPath: s})
+}
+
+// ServeStreamableHTTP serves each server at its path on one listener until ctx
+// is done. A client sees every path as a tool server of its own, so it can
+// switch one off and keep the other. The listener is closed on return.
+func ServeStreamableHTTP(ctx context.Context, listener net.Listener, servers map[string]*Server) error {
+	mux := http.NewServeMux()
+	httpServer := &http.Server{Handler: mux}
+	var streamables []*mcpserver.StreamableHTTPServer
+	for path, server := range servers {
+		streamable := mcpserver.NewStreamableHTTPServer(server.inner)
+		mux.Handle(path, streamable)
+		streamables = append(streamables, streamable)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- httpServer.Serve(listener) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		// Sessions hold long-lived streams open; closing them first lets the
+		// HTTP server drain.
+		for _, streamable := range streamables {
+			_ = streamable.Shutdown(shutdownCtx)
+		}
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			_ = httpServer.Close()
+		}
+		if err := <-done; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
 }
 
 // Close shuts down all capabilities.

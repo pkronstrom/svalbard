@@ -181,3 +181,46 @@ func TestExtractTextSkipsScriptAndStyleContent(t *testing.T) {
 		t.Errorf("body should contain visible content, got: %q", page.Body)
 	}
 }
+
+func TestExtractPageResolvesLinksAgainstThePage(t *testing.T) {
+	html := `<html><head><title>Aspirin - Site</title></head><body>
+		<nav><a href="/content/site/menu">Menu</a> navigation text</nav>
+		<h1>Aspirin</h1>
+		<p>Take with food.
+		<a href="../warfarin/">warfarin</a>
+		<a href="dose/?tab=2#adults">dose</a>
+		<a href="./">this page</a>
+		<a href="#uses">uses</a>
+		<a href="../warfarin/#interactions">warfarin   again</a>
+		<a href="/content/site/medicines/ibuprofen/">ibuprofen</a>
+		<a href="../../img/logo.PNG">logo</a>
+		<a href="mailto:a@example.org">mail</a>
+		<a href="https://example.org/">elsewhere</a>
+		</p>
+		<footer>footer text</footer>
+	</body></html>`
+
+	page, err := ExtractPage(html, "medicines/aspirin/")
+	if err != nil {
+		t.Fatalf("ExtractPage error = %v", err)
+	}
+	want := []PageLink{
+		{Path: "medicines/warfarin/", Label: "warfarin"},
+		{Path: "medicines/aspirin/dose/", Label: "dose"},
+		{Path: "medicines/ibuprofen/", Label: "ibuprofen"},
+	}
+	if len(page.Links) != len(want) {
+		t.Fatalf("links = %+v, want %+v", page.Links, want)
+	}
+	for i := range want {
+		if page.Links[i] != want[i] {
+			t.Errorf("link %d = %+v, want %+v", i, page.Links[i], want[i])
+		}
+	}
+	if page.Title != "Aspirin - Site" {
+		t.Errorf("title = %q", page.Title)
+	}
+	if page.Body != "Aspirin\nTake with food.\nwarfarin\ndose\nthis page\nuses\nwarfarin   again\nibuprofen\nlogo\nmail\nelsewhere" {
+		t.Errorf("body = %q, want the article text without title, navigation or footer", page.Body)
+	}
+}

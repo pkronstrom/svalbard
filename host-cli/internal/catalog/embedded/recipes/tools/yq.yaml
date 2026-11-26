@@ -1,0 +1,21 @@
+id: yq
+type: binary
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.006
+platforms:
+  linux-x86_64: https://github.com/mikefarah/yq/releases/download/v4.54.3/yq_linux_amd64.tar.gz
+  linux-arm64: https://github.com/mikefarah/yq/releases/download/v4.54.3/yq_linux_arm64.tar.gz
+  macos-arm64: https://github.com/mikefarah/yq/releases/download/v4.54.3/yq_darwin_arm64.tar.gz
+  macos-x86_64: https://github.com/mikefarah/yq/releases/download/v4.54.3/yq_darwin_amd64.tar.gz
+platform_sha256:
+  linux-x86_64: 09a25baa0e136b8633949e03117fc82cb9e50d10910f988ef17a1305539ebce4
+  linux-arm64: 980de87c439acb5172707560dd137e9fe4a1628af5aaf6f33b293f04c71d4e9d
+  macos-arm64: 153069933ca07d6a3a2212641a4393f198aea0c7bfc7418a4a9d11445792cd6d
+  macos-x86_64: 5874384a8a7ed8731c76da33fa571d1dc30c95a63e9689266bf8aeb4f0e94b01
+description: yq — jq-style processor for YAML, JSON, XML, TOML and CSV
+license:
+  id: MIT
+  attribution: Mike Farah

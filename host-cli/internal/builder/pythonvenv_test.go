@@ -31,7 +31,8 @@ func newPythonTestCatalog(t *testing.T) (*catalog.Catalog, catalog.Item) {
 // fakeUV emulates uv inside the tools container: python installs create a
 // python-build-standalone layout, pip installs create a --target tree unless
 // the package/platform pair is listed in unavailable. angr needs an sdist
-// build, so its wheels-only attempt fails.
+// build, so its wheels-only attempt fails. A --no-deps install ships
+// requirements-slim.txt in the tree, and a -r install needs its file to exist.
 func fakeUV(t *testing.T, unavailable map[string]bool) *[][]string {
 	needsBuild := map[string]bool{"angr": true}
 	t.Helper()
@@ -57,6 +58,12 @@ func fakeUV(t *testing.T, unavailable map[string]bool) *[][]string {
 			}
 			return "", os.WriteFile(filepath.Join(build, "bin", "python3.12"), nil, 0o755)
 		case "pip install":
+			if at := slices.Index(uvArgs, "-r"); at >= 0 {
+				if _, err := os.Stat(uvArgs[at+1]); err != nil {
+					return "", err
+				}
+				return "", os.WriteFile(filepath.Join(flag("--target"), "deps-installed"), nil, 0o644)
+			}
 			pkg := strings.Split(uvArgs[len(uvArgs)-1], "==")[0]
 			if unavailable[pkg+"/"+flag("--python-platform")] || (needsBuild[pkg] && slices.Contains(uvArgs, "--no-build")) {
 				return "", errors.New("no solution found")
@@ -64,6 +71,11 @@ func fakeUV(t *testing.T, unavailable map[string]bool) *[][]string {
 			target := flag("--target")
 			if err := os.MkdirAll(filepath.Join(target, "bin"), 0o755); err != nil {
 				return "", err
+			}
+			if slices.Contains(uvArgs, "--no-deps") {
+				if err := os.WriteFile(filepath.Join(target, "requirements-slim.txt"), []byte("dep==1.0\n"), 0o644); err != nil {
+					return "", err
+				}
 			}
 			return "", os.WriteFile(filepath.Join(target, "bin", pkg), []byte("#!/usr/local/bin/python\n"), 0o755)
 		}
@@ -158,6 +170,75 @@ func TestBuildPythonVenvFailsWhenPackageInstallsNowhere(t *testing.T) {
 
 	_, err := buildPythonVenv(root, recipe, cat, Options{Platforms: []string{"macos-x86_64"}, DesiredIDs: map[string]bool{"angr": true}})
 	if err == nil || !strings.Contains(err.Error(), "angr could not be installed") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBuildPythonVenvInstallsShippedRequirements(t *testing.T) {
+	root := t.TempDir()
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"python.yaml": {Data: []byte("id: svalbard-python\ntype: python-venv\npython: \"3.12\"\nbuild: {family: python-venv}\n")},
+		"slim.yaml":   {Data: []byte("id: slimapp\ntype: python-package\nvenv: svalbard-python\npackages: [slimapp==1.0]\nrequirements_from: requirements-slim.txt\nentry_points: [slimapp]\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe, _ := cat.RecipeByID("svalbard-python")
+	calls := fakeUV(t, nil)
+
+	if _, err := buildPythonVenv(root, recipe, cat, Options{Platforms: []string{"linux-arm64"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var installs []string
+	for _, call := range *calls {
+		if joined := strings.Join(call, " "); strings.Contains(joined, "pip install") {
+			installs = append(installs, joined)
+		}
+	}
+	toolDir := filepath.Join(root, "runtime", "python", "linux-arm64", "tools", "slimapp")
+	if len(installs) != 2 {
+		t.Fatalf("pip installs = %v, want package then requirements", installs)
+	}
+	if !strings.Contains(installs[0], "pip install --no-build --target") || !strings.HasSuffix(installs[0], "--no-deps slimapp==1.0") {
+		t.Errorf("package install = %q, want wheels-only without dependencies", installs[0])
+	}
+	if !strings.HasSuffix(installs[1], "-r "+toolDir+".partial/requirements-slim.txt") || strings.Contains(installs[1], "--no-deps") || !strings.Contains(installs[1], "--no-build") {
+		t.Errorf("requirements install = %q, want the shipped file with dependencies", installs[1])
+	}
+	if _, err := os.Stat(filepath.Join(toolDir, "deps-installed")); err != nil {
+		t.Errorf("requirements were not installed into the package tree: %v", err)
+	}
+	stamp, err := os.ReadFile(toolDir + ".packages")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(stamp) != "slimapp==1.0\nrequirements_from: requirements-slim.txt\n" {
+		t.Errorf("stamp = %q", stamp)
+	}
+
+	*calls = nil
+	if _, err := buildPythonVenv(root, recipe, cat, Options{Platforms: []string{"linux-arm64"}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("rebuild ran uv: %v", *calls)
+	}
+}
+
+func TestBuildPythonVenvRejectsRequirementsOutsideTree(t *testing.T) {
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"python.yaml": {Data: []byte("id: svalbard-python\ntype: python-venv\npython: \"3.12\"\nbuild: {family: python-venv}\n")},
+		"slim.yaml":   {Data: []byte("id: slimapp\ntype: python-package\nvenv: svalbard-python\npackages: [slimapp==1.0]\nrequirements_from: ../requirements.txt\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe, _ := cat.RecipeByID("svalbard-python")
+	fakeUV(t, nil)
+
+	_, err = buildPythonVenv(t.TempDir(), recipe, cat, Options{Platforms: []string{"linux-arm64"}})
+	if err == nil || !strings.Contains(err.Error(), "must be a path inside the package tree") {
 		t.Fatalf("err = %v", err)
 	}
 }

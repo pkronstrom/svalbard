@@ -152,7 +152,8 @@ type GenerateOpts struct {
 	PlatformIOPlatforms []string
 
 	// Recipes holds catalog metadata for realized entries, written to
-	// .svalbard/recipes.json for the MCP server.
+	// .svalbard/recipes.json for the MCP server; the settings they declare go
+	// to .svalbard/settings.schema.json.
 	Recipes map[string]catalog.Item
 }
 
@@ -193,6 +194,9 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	if err := writeRecipesMetadata(root, entries, recipes); err != nil {
 		return err
 	}
+	if err := writeSettingsSchema(root, entries, recipes); err != nil {
+		return err
+	}
 	if err := installRuntimeBinaries(root); err != nil {
 		return err
 	}
@@ -227,6 +231,8 @@ var groupRegistry = map[string]groupInfo{
 	"local-ai": {Label: "Local AI", Description: "Chat with local models and launch AI clients.", Order: 400},
 	"apps":     {Label: "Apps", Description: "Interactive offline applications.", Order: 450},
 	"tools":    {Label: "Tools", Description: "Inspect the drive and launch bundled utilities.", Order: 500},
+	// Last: a group the registry does not know gets order 999.
+	"settings": {Label: "Settings", Description: "Choices saved on this drive.", Order: 1000, AutoActivate: true},
 }
 
 type typeDefault struct {
@@ -253,6 +259,7 @@ type driveState struct {
 	HasChat      bool
 	HasToolchain bool
 	HasChecksums bool
+	HasOpenWebUI bool
 }
 
 type builtinCapability struct {
@@ -274,6 +281,12 @@ var builtinCapabilities = []builtinCapability{
 		Description: "Query the on-drive search index.", Order: 100, ActionID: "search",
 		Aliases:   []string{"search"},
 		Condition: func(s driveState) bool { return s.HasLibrary }},
+	// Local AI. The label is fixed here, not taken from the recipe: the Open
+	// WebUI License forbids renaming it.
+	{ID: "open-webui", Group: "local-ai", Subheader: "AI Clients", Label: "Open WebUI",
+		Description: "Chat with the local model and the vault's tools in the browser.", Order: 260, ActionID: "open-webui",
+		Aliases:   []string{"open-webui"},
+		Condition: func(s driveState) bool { return s.HasOpenWebUI }},
 	// Sharing
 	{ID: "serve-all", Group: "tools", Subheader: "Sharing", Label: "Serve Everything",
 		Description: "Start all services at once.", Order: 300, ActionID: "serve-all",
@@ -296,6 +309,9 @@ var builtinCapabilities = []builtinCapability{
 	{ID: "verify-checksums", Group: "tools", Subheader: "Drive", Label: "Verify Checksums",
 		Description: "Verify file integrity using checksums.", Order: 510, ActionID: "verify",
 		Condition: func(s driveState) bool { return s.HasChecksums }},
+	// Settings. A screen of the menu itself; `./run settings` is the command.
+	{ID: "settings", Group: "settings", Label: "Settings",
+		Description: "Change the choices saved on this drive.", Order: 100, ActionID: "settings"},
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +352,7 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			state.HasChecksums = true
 		}
 		switch e.Type {
-		case "zim":
+		case "zim", "pdf":
 			state.HasLibrary = true
 		case "pmtiles":
 			state.HasMaps = true
@@ -345,6 +361,10 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			hasChatModels = true
 		case "toolchain":
 			state.HasToolchain = true
+		case "python-package":
+			if e.ID == "open-webui" {
+				state.HasOpenWebUI = true
+			}
 		}
 
 		td, ok := typeDefaults[e.Type]

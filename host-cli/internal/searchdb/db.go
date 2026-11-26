@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS sources (
     indexed_at TEXT,
     source_uuid TEXT,
     source_size INTEGER,
-    source_mtime_ns INTEGER
+    source_mtime_ns INTEGER,
+    note TEXT
 );
 
 CREATE TABLE IF NOT EXISTS articles (
@@ -122,6 +123,7 @@ func Open(path string) (*DB, error) {
 		{"source_uuid", "TEXT"},
 		{"source_size", "INTEGER"},
 		{"source_mtime_ns", "INTEGER"},
+		{"note", "TEXT"},
 	} {
 		var present int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, tableForColumn(column.name), column.name).Scan(&present); err != nil {
@@ -226,20 +228,25 @@ func (d *DB) IndexedFilenames() ([]string, error) {
 	return filenames, rows.Err()
 }
 
-// Source identifies an archive and the cheap identity used to tell whether its
-// indexed articles are still current.
+// Source identifies an archive or document and the cheap identity used to
+// tell whether its indexed articles are still current. A document's Filename
+// is its vault-relative path (books/...), which holds a "/" where an archive
+// name never does.
 type Source struct {
 	Filename  string
 	Title     string
 	UUID      string
 	Size      int64
 	ModTimeNS int64
+	// Note says why a source is not, or not fully, searchable: a scanned or
+	// password-protected document. Empty for a fully indexed source.
+	Note string
 }
 
 // IndexedSources returns all currently indexed source identities. Legacy rows
 // without an identity are returned with an empty UUID and are never current.
 func (d *DB) IndexedSources() ([]Source, error) {
-	rows, err := d.db.Query(`SELECT filename, title, COALESCE(source_uuid, ''), COALESCE(source_size, 0), COALESCE(source_mtime_ns, 0) FROM sources ORDER BY filename`)
+	rows, err := d.db.Query(`SELECT filename, title, COALESCE(source_uuid, ''), COALESCE(source_size, 0), COALESCE(source_mtime_ns, 0), COALESCE(note, '') FROM sources ORDER BY filename`)
 	if err != nil {
 		return nil, fmt.Errorf("searchdb: query sources: %w", err)
 	}
@@ -248,7 +255,7 @@ func (d *DB) IndexedSources() ([]Source, error) {
 	var sources []Source
 	for rows.Next() {
 		var source Source
-		if err := rows.Scan(&source.Filename, &source.Title, &source.UUID, &source.Size, &source.ModTimeNS); err != nil {
+		if err := rows.Scan(&source.Filename, &source.Title, &source.UUID, &source.Size, &source.ModTimeNS, &source.Note); err != nil {
 			return nil, fmt.Errorf("searchdb: scan source: %w", err)
 		}
 		sources = append(sources, source)
@@ -286,9 +293,13 @@ func (d *DB) ReplaceSource(ctx context.Context, source Source, articles []Articl
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO sources (filename, title, indexed_at, source_uuid, source_size, source_mtime_ns) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(filename) DO UPDATE SET title=excluded.title, indexed_at=excluded.indexed_at, source_uuid=excluded.source_uuid, source_size=excluded.source_size, source_mtime_ns=excluded.source_mtime_ns`,
-		source.Filename, source.Title, now, source.UUID, source.Size, source.ModTimeNS); err != nil {
+	var note any
+	if source.Note != "" {
+		note = source.Note
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sources (filename, title, indexed_at, source_uuid, source_size, source_mtime_ns, note) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(filename) DO UPDATE SET title=excluded.title, indexed_at=excluded.indexed_at, source_uuid=excluded.source_uuid, source_size=excluded.source_size, source_mtime_ns=excluded.source_mtime_ns, note=excluded.note`,
+		source.Filename, source.Title, now, source.UUID, source.Size, source.ModTimeNS, note); err != nil {
 		return fmt.Errorf("searchdb: replace source: %w", err)
 	}
 	var sourceID int64

@@ -10,6 +10,11 @@ platforms:
   linux-arm64: https://github.com/OJ/gobuster/releases/download/v3.8.2/gobuster_Linux_arm64.tar.gz
   macos-arm64: https://github.com/OJ/gobuster/releases/download/v3.8.2/gobuster_Darwin_arm64.tar.gz
   macos-x86_64: https://github.com/OJ/gobuster/releases/download/v3.8.2/gobuster_Darwin_x86_64.tar.gz
+platform_sha256:
+  linux-x86_64: c8a8c6a966eeb011d682a0ef2305a3e3a86b8b3fabe744350c00a766cc0f8021
+  linux-arm64: 84b175ae5ae770efddb3e675b0e24e56ef0f484a0d751beff0b0629e52c7f4da
+  macos-arm64: dc37fdfcb67db44e90f54db785218e2ed4ba4fe7552979f9032c6cc8df93d94e
+  macos-x86_64: f98ff2425bb1fda031556e1459ee86160a539464274a785cb203524fc8121df3
 description: Directory, DNS, and vhost brute-forcing tool
 license:
   id: Apache-2.0

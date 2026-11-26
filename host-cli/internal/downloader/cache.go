@@ -116,6 +116,7 @@ func remoteSize(ctx context.Context, url string) (int64, bool) {
 	if err != nil {
 		return 0, false
 	}
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return 0, false

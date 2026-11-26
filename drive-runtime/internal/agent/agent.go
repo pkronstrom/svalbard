@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,8 +17,10 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/contextpicker"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/platform"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
 )
 
 type LaunchConfig struct {
@@ -119,6 +123,10 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			"GOOSE_CONTEXT_LIMIT": fmt.Sprintf("%d", ctxSize),
 			"OPENAI_API_KEY":      "local",
 			"OPENAI_HOST":         hostRoot,
+			// GOOSE_TELEMETRY_OFF is the environment switch; the config key
+			// records the choice so Goose has no consent question to ask.
+			"GOOSE_TELEMETRY_OFF":     "1",
+			"GOOSE_TELEMETRY_ENABLED": "false",
 		}
 	case "pi":
 		for _, dir := range []string{configRoot, cacheRoot, dataRoot, homeRoot} {
@@ -139,16 +147,22 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			return LaunchConfig{}, err
 		}
 		// pi supports MCP natively (no plugin) via mcp.json — wire the svalbard
-		// stdio server, at parity with OpenCode/Goose.
-		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), map[string]any{
-			"mcpServers": map[string]any{"svalbard": map[string]any{"command": mcpBinary, "args": []string{"mcp", "--drive", driveRoot}}},
-		}); err != nil {
+		// stdio server, at parity with OpenCode/Goose. pi's default exposure
+		// hides a server's tools behind one "codemode" script tool; "direct"
+		// declares them like built-ins, which small local models need.
+		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, driveRoot, map[string]any{"exposure": "direct"})); err != nil {
+			return LaunchConfig{}, err
+		}
+		if err := writeGeneratedFile(filepath.Join(configRoot, "AGENTS.md"), fmt.Sprintf(piDriveContext, driveRoot)); err != nil {
 			return LaunchConfig{}, err
 		}
 		if err := ensurePiSettings(filepath.Join(configRoot, "settings.json"), modelName, ctxSize); err != nil {
 			return LaunchConfig{}, err
 		}
-		cfg.Args = []string{"--model", piProvider + "/" + modelName}
+		// No skill discovery: pi also walks the working folder's parents, so a
+		// host with ~/.agents/skills adds its whole skill list to every prompt
+		// (about 5,000 tokens for 80 skills, more than the Fast tier holds).
+		cfg.Args = []string{"--model", piProvider + "/" + modelName, "--no-skills"}
 		cfg.Env = map[string]string{
 			"HOME":                homeRoot,
 			"XDG_CONFIG_HOME":     configRoot,
@@ -156,6 +170,70 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			"XDG_DATA_HOME":       dataRoot,
 			"PI_CODING_AGENT_DIR": configRoot,
 			"PI_OFFLINE":          "1",
+		}
+	case "omp":
+		// oh-my-pi unpacks a native addon on first run; keep it on the drive.
+		nativesRoot := filepath.Join(runtimeRoot, "natives")
+		for _, dir := range []string{configRoot, cacheRoot, dataRoot, homeRoot, nativesRoot} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return LaunchConfig{}, err
+			}
+		}
+		mcpBinary, err := os.Executable()
+		if err != nil {
+			return LaunchConfig{}, fmt.Errorf("resolve mcp binary: %w", err)
+		}
+		// omp reads the same mcp.json as pi, but its own models.yml: the compat
+		// schema differs, so pi's models.json does not carry over.
+		if err := os.WriteFile(filepath.Join(configRoot, "models.yml"), []byte(ompModelsYAML(baseURL, modelName, ctxSize)), 0o644); err != nil {
+			return LaunchConfig{}, err
+		}
+		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, driveRoot, nil)); err != nil {
+			return LaunchConfig{}, err
+		}
+		// The user's own config.yml is left alone apart from marking setup as
+		// done; the offline profile is a per-run overlay passed with --config.
+		userConfig := filepath.Join(configRoot, "config.yml")
+		if _, err := os.Stat(userConfig); os.IsNotExist(err) {
+			if err := os.WriteFile(userConfig, []byte("setupVersion: 2\n"), 0o644); err != nil {
+				return LaunchConfig{}, err
+			}
+		}
+		overlayPath := filepath.Join(configRoot, "svalbard.yml")
+		if err := os.WriteFile(overlayPath, []byte(ompOverlayYAML(modelName, ctxSize)), 0o644); err != nil {
+			return LaunchConfig{}, err
+		}
+		promptPath := filepath.Join(configRoot, "lean-prompt.md")
+		if err := os.WriteFile(promptPath, []byte(ompLeanPrompt), 0o644); err != nil {
+			return LaunchConfig{}, err
+		}
+		// The lean profile: six file and shell tools plus the drive's MCP
+		// tools. The default tool set and prompt cost about 7,700 tokens. omp
+		// enables only the tools named here, so the MCP tools are listed too,
+		// under the names omp gives them (mcp__<server>_<tool>).
+		tools := []string{"read", "bash", "edit", "write", "grep", "glob"}
+		for _, name := range mcp.DriveToolNames(driveRoot) {
+			tools = append(tools, "mcp__svalbard_"+name)
+		}
+		cfg.Args = []string{
+			"--model", piProvider + "/" + modelName,
+			"--config", overlayPath,
+			"--offline", "--tools=" + strings.Join(tools, ","),
+			"--no-lsp", "--no-skills", "--no-rules", "--no-extensions",
+			"--system-prompt", promptPath,
+		}
+		if strings.Contains(strings.ToLower(modelName), "qwen3.8") {
+			cfg.Args = append(cfg.Args, "--thinking=medium")
+		}
+		cfg.Env = map[string]string{
+			"HOME":                homeRoot,
+			"XDG_CONFIG_HOME":     configRoot,
+			"XDG_CACHE_HOME":      cacheRoot,
+			"XDG_DATA_HOME":       dataRoot,
+			"PI_CODING_AGENT_DIR": configRoot,
+			"PI_NATIVES_DIR":      nativesRoot,
+			"PI_NO_TITLE":         "1",
+			"OMP_SKIP_SETUP":      "1",
 		}
 	default:
 		cfg.Env = map[string]string{}
@@ -195,6 +273,152 @@ func writePiModels(path, baseURL, modelName string, ctxSize int, isGemma bool) e
 			"compat": map[string]any{"supportsDeveloperRole": false, "supportsReasoningEffort": false}, "models": []any{model},
 		},
 	}})
+}
+
+// svalbardMCPServers is the mcp.json both pi and oh-my-pi read; extra holds
+// client-specific keys for the svalbard server entry.
+func svalbardMCPServers(mcpBinary, driveRoot string, extra map[string]any) map[string]any {
+	server := map[string]any{"command": mcpBinary, "args": []string{"mcp", "--drive", driveRoot}}
+	for key, value := range extra {
+		server[key] = value
+	}
+	return map[string]any{"mcpServers": map[string]any{"svalbard": server}}
+}
+
+// piDriveContext is pi's global context file: what a small model has to be
+// told to use the drive instead of the network. pi names MCP tools
+// mcp__<server>__<tool>.
+const piDriveContext = `# Svalbard offline drive
+
+You run from a Svalbard USB drive at ` + "`%s`" + `. There is no internet. Do not try curl, wget, git clone, pip install, npm install or any other download. They fail.
+
+The drive has an offline library: reference archives, SQLite databases and maps. For a factual question, look it up with the ` + "`mcp__svalbard__`" + ` tools instead of guessing:
+
+1. ` + "`mcp__svalbard__vault_sources`" + ` lists what is on the drive. Call it first.
+2. ` + "`mcp__svalbard__search`" + ` finds articles by keyword. Use two to four specific words, not a sentence.
+3. ` + "`mcp__svalbard__search_read`" + ` reads one article. Pass the ` + "`source`" + ` and ` + "`path`" + ` from a search result. A long article comes in parts: when the result has ` + "`continues`" + `, call again with the offset it names.
+
+Rules:
+
+- Name the source you used.
+- If the drive has no answer, say so. Do not invent one.
+- Do not repeat a tool call with the same arguments. If it failed twice, stop and tell the user.
+- ` + "`./run`" + ` on the drive is an interactive menu for the user. Do not run it.
+`
+
+// writeGeneratedFile keeps a Svalbard-written file current without touching
+// the user's edits: the file is replaced only while it still matches what
+// Svalbard last wrote, recorded in a ".svalbard-sha256" file beside it.
+func writeGeneratedFile(path, content string) error {
+	markerPath := path + ".svalbard-sha256"
+	existing, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		marker, _ := os.ReadFile(markerPath)
+		if sha256Hex(existing) != strings.TrimSpace(string(marker)) {
+			return nil
+		}
+		if string(existing) == content {
+			return nil
+		}
+	case !os.IsNotExist(err):
+		return err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(markerPath, []byte(sha256Hex([]byte(content))+"\n"), 0o644)
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// ompMinContext is the smallest context oh-my-pi is offered at. Its lean
+// prompt and tool schemas take about 2,500 tokens, which leaves too little of
+// the 8K tier for the work itself.
+const ompMinContext = llamaserve.CtxBalanced
+
+func checkClientContext(clientName string, ctxSize int) error {
+	if clientName == "omp" && ctxSize < ompMinContext {
+		return fmt.Errorf("oh-my-pi needs a %dK context or larger (chosen: %dK): pick Balanced or Max, or use pi, which fits the Fast tier",
+			ompMinContext/1024, ctxSize/1024)
+	}
+	return nil
+}
+
+const ompLeanPrompt = `You are a coding assistant running offline from a Svalbard drive against a local model.
+
+Inspect the relevant files before changing them. Use the provided tools rather than guessing. Keep edits focused on what was asked. Run the smallest relevant check after a change, then state which files changed and what the check showed.
+
+There is no network. The svalbard tools search and read the reference material stored on this drive.
+`
+
+// ompModelsYAML is oh-my-pi's provider file for the drive's llama-server. It
+// has no sampling fields: llama-server already applies the per-family sampler.
+func ompModelsYAML(baseURL, modelName string, ctxSize int) string {
+	lower := strings.ToLower(modelName)
+	isQwen38 := strings.Contains(lower, "qwen3.8")
+	var b strings.Builder
+	fmt.Fprintf(&b, "providers:\n  %s:\n    baseUrl: %q\n    api: openai-completions\n    auth: none\n    models:\n", piProvider, baseURL)
+	fmt.Fprintf(&b, "      - id: %q\n        name: %q\n        reasoning: %t\n        input: [text]\n", modelName, modelName, isQwen38)
+	b.WriteString("        cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0}\n")
+	fmt.Fprintf(&b, "        contextWindow: %d\n        maxTokens: %d\n", ctxSize, piMaxTokens(ctxSize))
+	switch {
+	case isQwen38:
+		b.WriteString("        thinking:\n          mode: effort\n          efforts: [low, medium, xhigh]\n")
+		b.WriteString("        compat:\n          supportsDeveloperRole: false\n          thinkingFormat: qwen-chat-template\n")
+		b.WriteString("          qwenTemplateReasoningEffort: true\n          reasoningContentField: reasoning_content\n")
+	case strings.Contains(lower, "gemma"):
+		// Same tool-result flags as pi needs for Gemma's chat template.
+		b.WriteString("        compat:\n          supportsDeveloperRole: false\n          requiresToolResultName: true\n          requiresAssistantAfterToolResult: true\n")
+	default:
+		b.WriteString("        compat:\n          supportsDeveloperRole: false\n")
+	}
+	return b.String()
+}
+
+// ompOverlayYAML turns off what cannot work from the drive: services that need
+// the network, and background model calls that would queue behind the user's
+// turn on the single llama-server slot. Compaction mirrors ensurePiSettings.
+func ompOverlayYAML(modelName string, ctxSize int) string {
+	return fmt.Sprintf(`# Written by Svalbard at every launch and passed with --config.
+# Change your own settings in config.yml; this file is overwritten.
+modelRoles:
+  default: %q
+startup:
+  setupWizard: false
+  checkUpdate: false
+  changelogMode: hidden
+update:
+  auto: false
+marketplace:
+  autoUpdate: "off"
+dev:
+  autoqa: false
+telemetry:
+  otlpExportEnabled: false
+web_search:
+  enabled: false
+fetch:
+  enabled: false
+browser:
+  enabled: false
+exa:
+  enabled: false
+recap:
+  enabled: false
+composer:
+  predictions: false
+providers:
+  cacheWarming: "off"
+memory:
+  backend: "off"
+compaction:
+  reserveTokens: %d
+  keepRecentTokens: %d
+`, piProvider+"/"+modelName, piMaxTokens(ctxSize), min(ctxSize/4, 20000))
 }
 
 func piMaxTokens(ctxSize int) int {
@@ -335,6 +559,29 @@ func writeJSON(path string, value any) error {
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
+// pickContext is a package var so tests can skip the terminal picker.
+var pickContext = contextpicker.Pick
+
+// resolveLaunch decides what a launch starts before any process is: the model
+// (the one named, else the drive's ai.default_model setting) and the context
+// window (the ai.context setting, else the picker).
+func resolveLaunch(stdout io.Writer, driveRoot, clientName, selectedModel string) (model string, ctxSize int, err error) {
+	prefs := settings.OpenForAction(driveRoot, stdout)
+	model, err = prefs.ResolveModel(stdout, selectedModel)
+	if err != nil {
+		return "", 0, err
+	}
+	ctxSize = prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
+	if err := checkClientContext(clientName, ctxSize); err != nil {
+		if saved := prefs.String(settings.KeyContext); saved != settings.Ask {
+			// Nothing was picked at this launch, so say where the size came from.
+			return "", 0, fmt.Errorf("%w (the size comes from the setting %s = %s; change it under Settings)", err, settings.KeyContext, saved)
+		}
+		return "", 0, err
+	}
+	return model, ctxSize, nil
+}
+
 func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedModel string) error {
 	clientBin, err := binary.Resolve(clientName, driveRoot)
 	if err != nil {
@@ -344,7 +591,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	if err != nil {
 		return fmt.Errorf("llama-server not found")
 	}
-	model, err := llamaserve.ResolveModel(driveRoot, selectedModel)
+	model, ctxSize, err := resolveLaunch(stdout, driveRoot, clientName, selectedModel)
 	if err != nil {
 		return err
 	}
@@ -362,7 +609,6 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	}
 	defer logFile.Close()
 
-	ctxSize := contextpicker.Pick(llamaserve.ContextForHost())
 	fmt.Fprintf(stdout, "Starting llama-server with %s (context %d)\n", modelName, ctxSize)
 	fmt.Fprintf(stdout, "llama-server log: %s\n", logPath)
 	llamaArgs := []string{"-m", model, "--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port)}

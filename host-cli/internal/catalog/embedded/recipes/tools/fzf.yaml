@@ -6,10 +6,15 @@ tags:
 depth: reference-only
 size_gb: 0.003
 platforms:
-  linux-x86_64: https://github.com/junegunn/fzf/releases/download/v0.74.4/fzf-0.74.4-linux_amd64.tar.gz
-  linux-arm64: https://github.com/junegunn/fzf/releases/download/v0.74.4/fzf-0.74.4-linux_arm64.tar.gz
-  macos-arm64: https://github.com/junegunn/fzf/releases/download/v0.74.4/fzf-0.74.4-darwin_arm64.tar.gz
-  macos-x86_64: https://github.com/junegunn/fzf/releases/download/v0.74.4/fzf-0.74.4-darwin_amd64.tar.gz
+  linux-x86_64: https://github.com/junegunn/fzf/releases/download/v0.75.0/fzf-0.75.0-linux_amd64.tar.gz
+  linux-arm64: https://github.com/junegunn/fzf/releases/download/v0.75.0/fzf-0.75.0-linux_arm64.tar.gz
+  macos-arm64: https://github.com/junegunn/fzf/releases/download/v0.75.0/fzf-0.75.0-darwin_arm64.tar.gz
+  macos-x86_64: https://github.com/junegunn/fzf/releases/download/v0.75.0/fzf-0.75.0-darwin_amd64.tar.gz
+platform_sha256:
+  linux-x86_64: 0d6640f83582d991cf429754baad64b07e3a4e439a6019670f4b91da1314141c
+  linux-arm64: bd0717badb6a5620387e014bb94209aac4d9eab6ab77b5348eabb0833aeb4d59
+  macos-arm64: 1e76698eb481436e42119bea6aa6e2bd9552ff090789d769c286e3c3a4e0ded6
+  macos-x86_64: 8fa67fa874468b8e73ecad2df82cc110026f45d10605128aaac6b191262d2844
 description: fzf — fuzzy finder for interactive menu selection
 license:
   id: MIT

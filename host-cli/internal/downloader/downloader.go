@@ -32,6 +32,10 @@ type ProgressFunc func(downloaded, total int64)
 
 var httpClient = &http.Client{}
 
+// userAgent names the client. Some document hosts answer Go's default
+// "Go-http-client" agent with 403.
+const userAgent = "svalbard"
+
 type transferState struct {
 	Version        int    `json:"version"`
 	URL            string `json:"url"`
@@ -170,6 +174,7 @@ func download(ctx context.Context, url, dest, part, statePath string, state tran
 		return Result{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Accept-Encoding", "identity")
+	req.Header.Set("User-Agent", userAgent)
 	if canResume {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", existing))
 		if state.ETag != "" {

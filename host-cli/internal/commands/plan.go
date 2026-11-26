@@ -9,7 +9,6 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/apply"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
-	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
 	"github.com/pkronstrom/svalbard/tui"
 )
 
@@ -44,7 +43,7 @@ type PlanDetail struct {
 // DescribePlan builds the plan for m and fills in each item's catalog
 // details, sized for the vault's platforms.
 func DescribePlan(cat *catalog.Catalog, m manifest.Manifest) PlanDetail {
-	p := buildPlan(cat, m)
+	p, _ := BuildPlan(m, cat)
 	platforms := m.Desired.Options.HostPlatforms
 	d := PlanDetail{Download: []PlanItem{}, Remove: []PlanItem{}, Updates: AvailableUpdates(cat, m)}
 	for _, id := range p.ToDownload {
@@ -79,37 +78,53 @@ func DescribePlan(cat *catalog.Catalog, m manifest.Manifest) PlanDetail {
 	return d
 }
 
-// WritePlanDetail writes d as text: what apply would download and remove,
-// with sizes, and the command that does it.
-func WritePlanDetail(w io.Writer, d PlanDetail) error {
-	if len(d.Updates) > 0 {
-		defer fmt.Fprintf(w, "\n%d update(s) available; run \"svalbard update\" to review them.\n", len(d.Updates))
+// sized appends an estimated size to label in the given format, when there
+// is one: a document collection has none.
+func sized(label, format string, gb float64) string {
+	if gb <= 0 {
+		return label
 	}
+	return label + fmt.Sprintf(format, tui.FormatSize(gb))
+}
+
+// WritePlanDetail prints what apply would download and remove. Follow it
+// with WritePlanNext, after anything else the plan reports.
+func WritePlanDetail(w io.Writer, d PlanDetail) error {
 	if len(d.Download) == 0 && len(d.Remove) == 0 {
 		_, err := fmt.Fprintln(w, "Nothing to download or remove.")
 		return err
 	}
 	if len(d.Download) > 0 {
-		fmt.Fprintf(w, "download: %d (%s)\n", len(d.Download), tui.FormatSize(d.DownloadGB))
+		fmt.Fprintln(w, sized(fmt.Sprintf("download: %d", len(d.Download)), " (%s)", d.DownloadGB))
 	}
 	for _, item := range d.Download {
-		line := fmt.Sprintf("  + %s  %s", item.ID, tui.FormatSize(item.SizeGB))
+		line := sized("  + "+item.ID, "  %s", item.SizeGB)
 		if len(item.Requires) > 0 {
 			line += "  builds with " + strings.Join(item.Requires, ", ")
 		}
 		fmt.Fprintln(w, line)
 	}
 	if len(d.Remove) > 0 {
-		fmt.Fprintf(w, "remove: %d (%s)\n", len(d.Remove), tui.FormatSize(d.RemoveGB))
+		fmt.Fprintln(w, sized(fmt.Sprintf("remove: %d", len(d.Remove)), " (%s)", d.RemoveGB))
 	}
 	for _, item := range d.Remove {
-		fmt.Fprintf(w, "  - %s  %s\n", item.ID, tui.FormatSize(item.SizeGB))
+		fmt.Fprintln(w, sized("  - "+item.ID, "  %s", item.SizeGB))
 	}
 	if d.BuildDownloadGB > 0 || d.BuildWorkGB > 0 {
 		fmt.Fprintf(w, "builds: ~%.1f GB of sources, ~%.1f GB of staging space\n", d.BuildDownloadGB, d.BuildWorkGB)
 	}
-	_, err := fmt.Fprintln(w, "\nRun \"svalbard apply\" to make these changes.")
-	return err
+	return nil
+}
+
+// WritePlanNext prints what to run next: apply for pending changes, and
+// update for installed items whose recipe changed.
+func WritePlanNext(w io.Writer, d PlanDetail) {
+	if len(d.Download) > 0 || len(d.Remove) > 0 {
+		fmt.Fprintln(w, "\nRun \"svalbard apply\" to make these changes.")
+	}
+	if len(d.Updates) > 0 {
+		fmt.Fprintf(w, "\n%d update(s) available; run \"svalbard update\" to review them.\n", len(d.Updates))
+	}
 }
 
 // vaultPlatforms returns the platforms m targets: the saved ones, or this
@@ -137,14 +152,4 @@ func OtherPlatformItems(cat *catalog.Catalog, m manifest.Manifest) []string {
 		}
 	}
 	return ids
-}
-
-// buildPlan is the reconciliation plan for m, leaving out the items that
-// have nothing to install on m's platforms: they stay selected and are
-// reported by status, instead of failing every apply.
-func buildPlan(cat *catalog.Catalog, m manifest.Manifest) planner.Plan {
-	p := planner.Build(m)
-	skip := OtherPlatformItems(cat, m)
-	p.ToDownload = slices.DeleteFunc(p.ToDownload, func(id string) bool { return slices.Contains(skip, id) })
-	return p
 }

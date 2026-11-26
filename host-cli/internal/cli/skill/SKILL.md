@@ -46,6 +46,7 @@ svalbard plan --vault /Volumes/MyDrive --json
 | `unknown` | installed before versions were recorded |
 | `withdrawn` | no longer in the catalog; the installed copy is kept |
 | `local` | a file the user imported |
+| `documents` | a document collection; `apply`, not `update`, fetches its new and changed documents |
 
 ## Add or remove content
 

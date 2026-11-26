@@ -28,6 +28,7 @@ const (
 	NativeAppsSubcommand     = "__native-apps"
 	NativeMapsSubcommand     = "__native-maps"
 	NativeChatSubcommand     = "__native-chat"
+	NativeWebUISubcommand    = "__native-open-webui"
 	NativeAgentSubcommand    = "__native-agent"
 	NativeServeAllSubcommand = "__native-serve-all"
 	NativeSearchSubcommand   = "__native-search"
@@ -63,6 +64,7 @@ var nativeActionSpecs = []nativeActionSpec{
 	{actionID: "apps", subcommand: NativeAppsSubcommand, args: []nativeArgument{{name: "app", required: true}}},
 	{actionID: "maps", subcommand: NativeMapsSubcommand},
 	{actionID: "chat", subcommand: NativeChatSubcommand, args: []nativeArgument{{name: "model"}}},
+	{actionID: "open-webui", subcommand: NativeWebUISubcommand, args: []nativeArgument{{name: "model"}}},
 	{actionID: "agent", subcommand: NativeAgentSubcommand, args: []nativeArgument{{name: "client", required: true}, {name: "model"}}},
 	{actionID: "serve-all", subcommand: NativeServeAllSubcommand, args: []nativeArgument{{name: "bind", defaultValue: "127.0.0.1"}}},
 	{actionID: "search", subcommand: NativeSearchSubcommand, args: []nativeArgument{{name: "query"}}},

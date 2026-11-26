@@ -45,6 +45,7 @@ type Session struct {
 	embedBackend *SemanticBackend
 	kiwixServer  *exec.Cmd
 	kiwixPort    int
+	documents    *documentServer // started by the first document that is opened
 }
 
 func NewSession(driveRoot string, opener func(string) error) (*Session, error) {
@@ -152,13 +153,29 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 	}
 
 	if effectiveMode == ModeKeyword {
-		results, err = s.eng.KeywordContext(ctx, query, limit)
+		matches, err := s.eng.Search(ctx, query, engine.KeywordOptions{Limit: limit})
 		if err != nil {
 			return SearchResponse{}, err
 		}
 		if err := ctx.Err(); err != nil {
 			return SearchResponse{}, err
 		}
+		results = matches.Results
+		// Partial matches follow the complete ones; say where they start, and
+		// name the words that are nowhere in the index.
+		var notes []string
+		if status != "" {
+			notes = append(notes, status)
+		}
+		if partial := len(results) - matches.Exact; partial > 0 && matches.Exact > 0 {
+			notes = append(notes, fmt.Sprintf("First %d have every word; the rest are partial matches", matches.Exact))
+		} else if partial > 0 {
+			notes = append(notes, "No result has every word; showing partial matches")
+		}
+		if len(matches.Missing) > 0 {
+			notes = append(notes, "No article mentions: "+strings.Join(matches.Missing, ", "))
+		}
+		status = strings.Join(notes, ". ")
 	}
 
 	return SearchResponse{
@@ -171,6 +188,20 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 func (s *Session) OpenResult(result Result) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// A document opens in the browser's own PDF viewer at the page of the
+	// hit; kiwix-serve only knows ZIM archives.
+	if IsDocumentSource(result.Filename) {
+		if s.documents == nil {
+			server, err := startDocumentServer(s.driveRoot)
+			if err != nil {
+				return fmt.Errorf("serving documents: %w", err)
+			}
+			s.documents = server
+		}
+		page, _ := engine.PageNumber(result.Path)
+		return s.opener(s.documents.pageURL(result.Filename, page))
+	}
 
 	if err := s.ensureKiwix(context.Background()); err != nil {
 		return err
@@ -187,6 +218,10 @@ func (s *Session) Close() error {
 
 	if s.embedBackend != nil {
 		_ = s.embedBackend.Close()
+	}
+	if s.documents != nil {
+		s.documents.Close()
+		s.documents = nil
 	}
 	if s.kiwixServer != nil && s.kiwixServer.Process != nil {
 		_ = s.kiwixServer.Process.Kill()

@@ -30,13 +30,19 @@ const (
 )
 
 // ExtraFlags returns the llama-server flags implied by a model's filename for
-// the given context size: a context cap, the published per-family sampling
-// recipe, and any correctness/speed flags the family requires. Callers append
-// the result to their base arg list ("-m", model, "--port", ...).
+// the given context size: a context cap, a single slot, the published
+// per-family sampling recipe, and any correctness/speed flags the family
+// requires. Callers append the result to their base arg list ("-m", model,
+// "--port", ...).
+//
+// The default auto slot count (4) shares one ctxSize KV pool between slots, so
+// two overlapping long requests (a harness firing parallel calls, two LAN
+// users) both fail with "Context size has been exceeded" (b11840). One slot
+// queues the second request and gives each the full context.
 func ExtraFlags(modelPath string, ctxSize int) []string {
 	name := strings.ToLower(filepath.Base(modelPath))
 
-	flags := []string{"--ctx-size", strconv.Itoa(ctxSize)}
+	flags := []string{"--ctx-size", strconv.Itoa(ctxSize), "--parallel", "1"}
 	for _, param := range modelSampler(name) {
 		flags = append(flags, param.flag, param.value)
 	}
@@ -52,7 +58,7 @@ func ExtraFlags(modelPath string, ctxSize int) []string {
 	}
 
 	if draft, nMax, ok := packagedDraft(modelPath, name); ok {
-		flags = append(flags, "--spec-type", "draft-mtp", "--spec-draft-model", draft, "--spec-draft-n-max", nMax, "--parallel", "1")
+		flags = append(flags, "--spec-type", "draft-mtp", "--spec-draft-model", draft, "--spec-draft-n-max", nMax)
 	}
 
 	return flags

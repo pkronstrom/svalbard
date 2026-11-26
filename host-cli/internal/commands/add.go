@@ -12,7 +12,7 @@ import (
 // ExpandItemRefs replaces each preset or pack name in refs with the recipe ids
 // it resolves to. Recipe ids, local ids and unknown refs pass through
 // unchanged; a recipe id wins over a preset of the same name. Naming a user
-// preset that was skipped at load is an error that says why.
+// preset or user recipe that was skipped at load is an error that says why.
 func ExpandItemRefs(cat *catalog.Catalog, refs []string) ([]string, error) {
 	var ids []string
 	for _, ref := range refs {
@@ -22,6 +22,9 @@ func ExpandItemRefs(cat *catalog.Catalog, refs []string) ([]string, error) {
 		}
 		if _, ok := cat.PresetByName(ref); !ok {
 			if skipped, ok := cat.SkippedUserPreset(ref); ok {
+				return nil, skipped.Err()
+			}
+			if skipped, ok := cat.SkippedUserRecipe(ref); ok {
 				return nil, skipped.Err()
 			}
 			ids = append(ids, ref)

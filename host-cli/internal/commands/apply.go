@@ -21,7 +21,7 @@ func ApplyVault(ctx context.Context, root string, cat *catalog.Catalog, onProgre
 		return err
 	}
 
-	plan := buildPlan(cat, m)
+	plan, _ := BuildPlan(m, cat)
 	slog.Debug("manifest loaded", "desired", len(m.Desired.Items), "realized", len(m.Realized.Entries))
 
 	return runPlan(ctx, root, &m, plan, cat, onProgress...)

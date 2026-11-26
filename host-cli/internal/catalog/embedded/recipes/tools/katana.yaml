@@ -6,10 +6,15 @@ tags:
 depth: reference-only
 size_gb: 0.032
 platforms:
-  linux-x86_64: https://github.com/projectdiscovery/katana/releases/download/v1.7.0/katana_1.7.0_linux_amd64.zip
-  linux-arm64: https://github.com/projectdiscovery/katana/releases/download/v1.7.0/katana_1.7.0_linux_arm64.zip
-  macos-arm64: https://github.com/projectdiscovery/katana/releases/download/v1.7.0/katana_1.7.0_macOS_arm64.zip
-  macos-x86_64: https://github.com/projectdiscovery/katana/releases/download/v1.7.0/katana_1.7.0_macOS_amd64.zip
+  linux-x86_64: https://github.com/projectdiscovery/katana/releases/download/v1.8.0/katana_1.8.0_linux_amd64.zip
+  linux-arm64: https://github.com/projectdiscovery/katana/releases/download/v1.8.0/katana_1.8.0_linux_arm64.zip
+  macos-arm64: https://github.com/projectdiscovery/katana/releases/download/v1.8.0/katana_1.8.0_macOS_arm64.zip
+  macos-x86_64: https://github.com/projectdiscovery/katana/releases/download/v1.8.0/katana_1.8.0_macOS_amd64.zip
+platform_sha256:
+  linux-x86_64: cb027ae99d0757061b70c07a15c7a80f62c5a535ab52c4a329f80c4b0a7309d2
+  linux-arm64: 80e269210727a855511ffac8dfb01297b2344742acec71a35e8ba4a67a90f0f2
+  macos-arm64: 52e9802e9f83012a089fe57fb1ac476b936f181ac033c71bfa55f913c07cede6
+  macos-x86_64: 806256316dd45e0fe0e3985fd7283ddffc376c95cbaa3dcfd14cde6e1de61aaf
 description: Web crawling and spidering framework
 license:
   id: MIT

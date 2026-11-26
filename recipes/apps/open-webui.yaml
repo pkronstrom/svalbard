@@ -1,0 +1,33 @@
+id: open-webui
+type: python-package
+display_group: tools
+tags:
+- computing
+- agentic
+depth: reference-only
+size_gb: 0.58
+venv: svalbard-python
+deps: [svalbard-python, llama-server]
+packages:
+- open-webui==0.13.5
+# Slim install: the default dependency set pulls PyTorch (1.9 GB on macOS
+# arm64, a 3.5 GB CUDA download on Linux) and has no Intel Mac wheels.
+requirements_from: requirements-slim.txt
+entry_points:
+- open-webui
+description: Open WebUI browser front end for the drive's local models and vault tools (slim install)
+settings:
+- name: open_browser
+  type: bool
+  default: true
+  label: Open browser on start
+  description: Open the browser when Open WebUI is ready.
+- name: file_tools
+  type: bool
+  default: true
+  label: File tools
+  description: Let the assistant save and edit files in the drive's workspace folder.
+license:
+  id: LicenseRef-Open-WebUI
+  attribution: Open WebUI Inc. (Timothy Jaeryang Baek); Open WebUI License, BSD-3-Clause terms plus a branding clause
+  url: https://docs.openwebui.com/license

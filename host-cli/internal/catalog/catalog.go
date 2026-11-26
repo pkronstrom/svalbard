@@ -37,9 +37,23 @@ type Item struct {
 	Menu           *MenuSpec         `yaml:"menu,omitempty"`
 	Env            map[string]string `yaml:"env,omitempty"`
 
+	// Settings are the choices the recipe lets the user make on the drive,
+	// each with a default (see SettingSpec). Apply writes those of the
+	// installed recipes to .svalbard/settings.schema.json.
+	Settings []SettingSpec `yaml:"settings,omitempty"`
+
 	// Bundle lists pinned downloads assembled into the item's directory
 	// (<type dir>/<id>/), for example npm package tarballs for a web app.
 	Bundle []BundleSource `yaml:"bundle,omitempty"`
+
+	// Documents lists the files of a user document collection, staged into
+	// <type dir>/<id>/ (see LoadUserRecipes and ExpectedDocuments).
+	Documents []DocumentSource `yaml:"documents,omitempty"`
+	// Path is the file a user recipe was loaded from; empty for built-ins.
+	Path string `yaml:"-"`
+	// VaultCopy marks a user recipe loaded from the copy a vault keeps of it
+	// (see LoadVaultRecipes) because this computer has no definition.
+	VaultCopy bool `yaml:"-"`
 
 	// Recipe dependency declarations.
 	Deps []string `yaml:"deps,omitempty"`
@@ -55,6 +69,12 @@ type Item struct {
 	Venv        string   `yaml:"venv,omitempty"`
 	Packages    []string `yaml:"packages,omitempty"`
 	EntryPoints []string `yaml:"entry_points,omitempty"`
+	// RequirementsFrom is a pip requirements file inside the installed
+	// packages, relative to the install root. When set, the packages are
+	// installed without their declared dependencies and this file is installed
+	// in their place, for a package that ships a smaller dependency set than
+	// its metadata declares.
+	RequirementsFrom string `yaml:"requirements_from,omitempty"`
 }
 
 // BundleSource is one pinned download of an item bundle. An archive (.zip, .tgz
@@ -136,6 +156,8 @@ type Catalog struct {
 	recipes map[string]Item
 	presets map[string]Preset
 	skipped []SkippedPreset // user presets left out by LoadUserPresets
+
+	skippedRecipes []SkippedRecipe // user recipes left out by LoadUserRecipes
 }
 
 // LoadFromFS walks both FS trees, parsing .yaml files into recipes and presets maps.
@@ -170,6 +192,9 @@ func LoadFromFS(recipesFS fs.FS, presetsFS fs.FS) (*Catalog, error) {
 		return nil, fmt.Errorf("walking recipes: %w", err)
 	}
 	if err := c.validateDraftTargets(); err != nil {
+		return nil, err
+	}
+	if err := c.validateSettings(); err != nil {
 		return nil, err
 	}
 

@@ -69,6 +69,9 @@ func TestPrepareClientLaunchConfigForGoose(t *testing.T) {
 		"GOOSE_MODEL":    "qwen",
 		"OPENAI_API_KEY": "local",
 		"OPENAI_HOST":    "http://127.0.0.1:8082",
+		// Telemetry stays off, and Goose has no consent question to ask.
+		"GOOSE_TELEMETRY_OFF":     "1",
+		"GOOSE_TELEMETRY_ENABLED": "false",
 	} {
 		if got := cfg.Env[key]; got != want {
 			t.Fatalf("Env[%q] = %q, want %q", key, got, want)
@@ -83,8 +86,9 @@ func TestPrepareClientLaunchConfigForPi(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
 	}
-	if len(cfg.Args) != 2 || cfg.Args[0] != "--model" || cfg.Args[1] != "svalbard/qwen" {
-		t.Fatalf("Args = %v, want pi model args", cfg.Args)
+	// The host's own skills stay out of the prompt (--no-skills).
+	if want := []string{"--model", "svalbard/qwen", "--no-skills"}; !reflect.DeepEqual(cfg.Args, want) {
+		t.Fatalf("Args = %v, want %v", cfg.Args, want)
 	}
 	piDir := cfg.Env["PI_CODING_AGENT_DIR"]
 	if piDir == "" {
@@ -446,5 +450,183 @@ func TestPrepareClientLaunchConfigGooseIncludesMCPServers(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Fatalf("config.yaml missing %q:\n%s", want, content)
 		}
+	}
+}
+
+func TestPrepareClientLaunchConfigForOmp(t *testing.T) {
+	driveRoot := t.TempDir()
+
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "omp", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "Qwen3.8-27B-UD-IQ4_XS", 32768)
+	if err != nil {
+		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+	}
+	ompDir := cfg.Env["PI_CODING_AGENT_DIR"]
+	if want := filepath.Join(driveRoot, ".svalbard", "runtime", "omp", "config"); ompDir != want {
+		t.Fatalf("PI_CODING_AGENT_DIR = %q, want %q", ompDir, want)
+	}
+	// Everything omp writes stays on the drive, including its native addon.
+	for key, want := range map[string]string{
+		"HOME":           filepath.Join(driveRoot, ".svalbard", "runtime", "omp", "home"),
+		"PI_NATIVES_DIR": filepath.Join(driveRoot, ".svalbard", "runtime", "omp", "natives"),
+		"PI_NO_TITLE":    "1",
+		"OMP_SKIP_SETUP": "1",
+	} {
+		if got := cfg.Env[key]; got != want {
+			t.Errorf("Env[%q] = %q, want %q", key, got, want)
+		}
+	}
+	args := strings.Join(cfg.Args, " ")
+	for _, want := range []string{
+		"--model svalbard/Qwen3.8-27B-UD-IQ4_XS",
+		"--config " + filepath.Join(ompDir, "svalbard.yml"),
+		"--offline", "--tools=read,bash,edit,write,grep,glob,mcp__svalbard_search,",
+		// The drive's MCP tools are only enabled when named.
+		"mcp__svalbard_search_read", "mcp__svalbard_vault_sources", "mcp__svalbard_query_sql",
+		"--no-lsp", "--no-skills", "--no-rules", "--no-extensions",
+		"--system-prompt " + filepath.Join(ompDir, "lean-prompt.md"),
+		"--thinking=medium",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("Args missing %q: %s", want, args)
+		}
+	}
+	// --no-tools would also drop the drive's MCP server.
+	if strings.Contains(args, "--no-tools") {
+		t.Errorf("Args must keep MCP tools: %s", args)
+	}
+
+	models, err := os.ReadFile(filepath.Join(ompDir, "models.yml"))
+	if err != nil {
+		t.Fatalf("read models.yml: %v", err)
+	}
+	for _, want := range []string{
+		`baseUrl: "http://127.0.0.1:8082/v1"`, "auth: none", `id: "Qwen3.8-27B-UD-IQ4_XS"`,
+		"contextWindow: 32768", "maxTokens: 8192", "reasoning: true",
+		"thinkingFormat: qwen-chat-template", "qwenTemplateReasoningEffort: true",
+	} {
+		if !strings.Contains(string(models), want) {
+			t.Errorf("models.yml missing %q:\n%s", want, models)
+		}
+	}
+	// pi's template-kwargs compat is not valid in omp.
+	if strings.Contains(string(models), "chatTemplateKwargs") {
+		t.Errorf("models.yml carries pi-only compat:\n%s", models)
+	}
+
+	overlay, err := os.ReadFile(filepath.Join(ompDir, "svalbard.yml"))
+	if err != nil {
+		t.Fatalf("read svalbard.yml: %v", err)
+	}
+	for _, want := range []string{
+		"checkUpdate: false", "setupWizard: false", "otlpExportEnabled: false",
+		`autoUpdate: "off"`, `cacheWarming: "off"`, `backend: "off"`,
+		"reserveTokens: 8192", "keepRecentTokens: 8192",
+		`default: "svalbard/Qwen3.8-27B-UD-IQ4_XS"`,
+	} {
+		if !strings.Contains(string(overlay), want) {
+			t.Errorf("svalbard.yml missing %q:\n%s", want, overlay)
+		}
+	}
+
+	var mcp map[string]any
+	data, err := os.ReadFile(filepath.Join(ompDir, "mcp.json"))
+	if err != nil || json.Unmarshal(data, &mcp) != nil {
+		t.Fatalf("mcp.json unreadable: %v", err)
+	}
+	if _, ok := mcp["mcpServers"].(map[string]any)["svalbard"]; !ok {
+		t.Errorf("mcp.json missing the svalbard server: %s", data)
+	}
+	if prompt, err := os.ReadFile(filepath.Join(ompDir, "lean-prompt.md")); err != nil || len(prompt) == 0 {
+		t.Errorf("lean prompt not written: %v", err)
+	}
+}
+
+func TestPrepareClientLaunchConfigForOmpKeepsUserConfig(t *testing.T) {
+	driveRoot := t.TempDir()
+	configDir := filepath.Join(driveRoot, ".svalbard", "runtime", "omp", "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	userConfig := filepath.Join(configDir, "config.yml")
+	if err := os.WriteFile(userConfig, []byte("setupVersion: 2\ntheme: light\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := agent.PrepareClientLaunchConfig(driveRoot, "omp", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "gemma-4-12B-it-qat", 32768); err != nil {
+		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+	}
+	got, err := os.ReadFile(userConfig)
+	if err != nil || string(got) != "setupVersion: 2\ntheme: light\n" {
+		t.Errorf("user config.yml changed: %q (%v)", got, err)
+	}
+	models, _ := os.ReadFile(filepath.Join(configDir, "models.yml"))
+	for _, want := range []string{"requiresToolResultName: true", "requiresAssistantAfterToolResult: true", "reasoning: false"} {
+		if !strings.Contains(string(models), want) {
+			t.Errorf("gemma models.yml missing %q:\n%s", want, models)
+		}
+	}
+}
+
+func TestPiSeesTheDriveToolsDirectly(t *testing.T) {
+	driveRoot := t.TempDir()
+	cfg, err := agent.PrepareClientLaunchConfig(driveRoot, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen", 32768)
+	if err != nil {
+		t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+	}
+	piDir := cfg.Env["PI_CODING_AGENT_DIR"]
+
+	// pi's default exposure would hide the eight drive tools behind "codemode".
+	var mcp struct {
+		MCPServers map[string]map[string]any `json:"mcpServers"`
+	}
+	data, err := os.ReadFile(filepath.Join(piDir, "mcp.json"))
+	if err != nil || json.Unmarshal(data, &mcp) != nil {
+		t.Fatalf("mcp.json unreadable: %v", err)
+	}
+	if got := mcp.MCPServers["svalbard"]["exposure"]; got != "direct" {
+		t.Errorf("svalbard exposure = %v, want direct", got)
+	}
+
+	contextPath := filepath.Join(piDir, "AGENTS.md")
+	context, err := os.ReadFile(contextPath)
+	if err != nil {
+		t.Fatalf("drive context file not written: %v", err)
+	}
+	for _, want := range []string{driveRoot, "no internet", "mcp__svalbard__search_read"} {
+		if !strings.Contains(string(context), want) {
+			t.Errorf("AGENTS.md missing %q", want)
+		}
+	}
+}
+
+func TestPiDriveContextFollowsTheDriveButKeepsUserEdits(t *testing.T) {
+	driveRoot := t.TempDir()
+	prepare := func(root string) {
+		t.Helper()
+		if _, err := agent.PrepareClientLaunchConfig(root, "pi", "http://127.0.0.1:8082", "http://127.0.0.1:8082/v1", "qwen", 32768); err != nil {
+			t.Fatalf("PrepareClientLaunchConfig() error = %v", err)
+		}
+	}
+	prepare(driveRoot)
+	contextPath := filepath.Join(driveRoot, ".svalbard", "runtime", "pi", "config", "AGENTS.md")
+
+	// The same drive mounted somewhere else: the generated file follows it.
+	moved := filepath.Join(t.TempDir(), "moved")
+	if err := os.Rename(driveRoot, moved); err != nil {
+		t.Fatal(err)
+	}
+	prepare(moved)
+	contextPath = filepath.Join(moved, ".svalbard", "runtime", "pi", "config", "AGENTS.md")
+	if data, _ := os.ReadFile(contextPath); !strings.Contains(string(data), moved) || strings.Contains(string(data), driveRoot) {
+		t.Errorf("generated AGENTS.md did not follow the mount point:\n%s", data)
+	}
+
+	// Once the user edits it, it is theirs.
+	if err := os.WriteFile(contextPath, []byte("my own notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prepare(moved)
+	if data, _ := os.ReadFile(contextPath); string(data) != "my own notes\n" {
+		t.Errorf("user-edited AGENTS.md was overwritten:\n%s", data)
 	}
 }

@@ -6,11 +6,16 @@ tags:
 depth: reference-only
 size_gb: 0.017
 platforms:
-  linux-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b11146/llama-b11146-bin-ubuntu-x64.tar.gz
-  linux-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b11146/llama-b11146-bin-ubuntu-arm64.tar.gz
-  macos-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b11146/llama-b11146-bin-macos-arm64.tar.gz
-  macos-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b11146/llama-b11146-bin-macos-x64.tar.gz
-description: llama.cpp server binary for serving GGUF models (v0.5.0 / b11146 — portable CPU/Metal builds with native MTP support)
+  linux-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-ubuntu-x64.tar.gz
+  linux-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-ubuntu-arm64.tar.gz
+  macos-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-macos-arm64.tar.gz
+  macos-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-macos-x64.tar.gz
+platform_sha256:
+  linux-x86_64: 0bc1f091e8916102b6d8f2cf944233a620e90a0f856c72d0ce41150c65c2e72e
+  linux-arm64: dc7aa17a67884619b7223870aca9fd6addbc01717713b04a714add1c31137359
+  macos-arm64: 82b00abc740160e1b9980e6cc79c117345fa34af058c80e6c0a69aa8ddccde75
+  macos-x86_64: 25320d529077ef5a3d16e7b5da26438f221d88c8c0930a32b0c79457f5eede56
+description: llama.cpp server binary for serving GGUF models (v1.0.0 / b12359 — portable CPU/Metal builds with native MTP support)
 license:
   id: MIT
   attribution: Georgi Gerganov and llama.cpp contributors

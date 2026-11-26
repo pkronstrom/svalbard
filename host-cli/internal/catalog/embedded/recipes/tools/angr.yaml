@@ -8,7 +8,7 @@ depth: reference-only
 size_gb: 0.43
 venv: svalbard-python
 packages:
-- angr==10.0.1
+- angr==10.0.7
 entry_points:
 - angr
 description: Binary analysis and symbolic execution framework

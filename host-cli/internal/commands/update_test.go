@@ -86,6 +86,7 @@ func TestPlanLeavesChangedAndWithdrawnItemsAlone(t *testing.T) {
 	if err := WritePlanDetail(&text, d); err != nil {
 		t.Fatal(err)
 	}
+	WritePlanNext(&text, d)
 	if !strings.Contains(text.String(), "svalbard update") {
 		t.Errorf("plan text does not point at update:\n%s", text.String())
 	}

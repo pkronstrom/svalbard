@@ -1,0 +1,21 @@
+id: jq
+type: binary
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.002
+platforms:
+  linux-x86_64: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+  linux-arm64: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-arm64
+  macos-arm64: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-arm64
+  macos-x86_64: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-amd64
+platform_sha256:
+  linux-x86_64: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
+  linux-arm64: 8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309
+  macos-arm64: 2d75340ba57a4b4b4c8708a21c2dc8e958a48aaa8bba13b27f77f6e4c0eca07e
+  macos-x86_64: e94b266e3c26690550006abe63152b782280f4e14374accdf04cbde844f00bc0
+description: jq — command-line JSON processor (filter, transform, query)
+license:
+  id: MIT
+  attribution: Stephen Dolan and jq contributors

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -360,7 +361,7 @@ func TestGenerateToolsAlwaysPresent(t *testing.T) {
 	stubRuntimeBinarySources(t)
 
 	root := t.TempDir()
-	// No entries at all — tools group should still be present.
+	// No entries at all — the tools and settings groups should still be present.
 	if err := Generate(root, nil, "empty"); err != nil {
 		t.Fatal(err)
 	}
@@ -369,11 +370,14 @@ func TestGenerateToolsAlwaysPresent(t *testing.T) {
 	var cfg testRuntimeConfig
 	json.Unmarshal(raw, &cfg)
 
-	if len(cfg.Groups) != 1 {
-		t.Fatalf("expected 1 group (tools only), got %d", len(cfg.Groups))
+	if len(cfg.Groups) != 2 {
+		t.Fatalf("expected 2 groups (tools and settings), got %d", len(cfg.Groups))
 	}
 	if cfg.Groups[0].ID != "tools" {
 		t.Errorf("expected tools group, got %q", cfg.Groups[0].ID)
+	}
+	if cfg.Groups[1].ID != "settings" {
+		t.Errorf("expected settings group, got %q", cfg.Groups[1].ID)
 	}
 	// With no entries: activate-shell, mcp-serve, inspect are always present.
 	// verify-checksums is conditional (needs checksums), serve/share conditional (needs services).
@@ -402,10 +406,11 @@ func TestGenerateGroupsOrderedCorrectly(t *testing.T) {
 	var cfg testRuntimeConfig
 	json.Unmarshal(raw, &cfg)
 
-	if len(cfg.Groups) != 4 {
-		t.Fatalf("expected 4 groups, got %d", len(cfg.Groups))
+	if len(cfg.Groups) != 5 {
+		t.Fatalf("expected 5 groups, got %d", len(cfg.Groups))
 	}
-	// Should be ordered: search (100), library (200), maps (300), tools (500).
+	// Should be ordered: search (100), library (200), maps (300), tools (500),
+	// settings (1000).
 	if cfg.Groups[0].ID != "search" {
 		t.Errorf("groups[0] = %q, want search", cfg.Groups[0].ID)
 	}
@@ -420,6 +425,42 @@ func TestGenerateGroupsOrderedCorrectly(t *testing.T) {
 	}
 	if cfg.Groups[3].ID != "tools" {
 		t.Errorf("groups[3] = %q, want tools", cfg.Groups[3].ID)
+	}
+	if cfg.Groups[4].ID != "settings" {
+		t.Errorf("groups[4] = %q, want settings", cfg.Groups[4].ID)
+	}
+}
+
+func TestGenerateEndsTheMenuWithSettings(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	root := t.TempDir()
+	// A recipe menu group the registry does not know sorts at 999; Settings
+	// must still come after it.
+	entries := []manifest.RealizedEntry{{ID: "radio-tool", Type: "binary", Filename: "radio-tool"}}
+	if err := Generate(root, entries, "test", GenerateOpts{Menus: map[string]catalog.MenuSpec{
+		"radio-tool": {Group: "radio", Label: "Radio tool"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".svalbard", "actions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg testRuntimeConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	last := cfg.Groups[len(cfg.Groups)-1]
+	if last.ID != "settings" || last.Label != "Settings" || !last.AutoActivate || len(last.Items) != 1 {
+		t.Fatalf("last group = %+v, want the auto-activated Settings group with one item", last)
+	}
+	var action testBuiltinConfig
+	if err := json.Unmarshal(last.Items[0].Action.Config, &action); err != nil {
+		t.Fatal(err)
+	}
+	if last.Items[0].Action.Type != "builtin" || action.Name != "settings" {
+		t.Errorf("action = %s %+v, want builtin settings", last.Items[0].Action.Type, action)
 	}
 }
 
@@ -552,6 +593,66 @@ func TestDraftModelsAreInstalledSeparatelyWithoutChatActions(t *testing.T) {
 				t.Fatalf("drafter must not appear as a selectable chat model: %s", item.ID)
 			}
 		}
+	}
+}
+
+func TestGenerateOffersOpenWebUIOnlyWhenInstalled(t *testing.T) {
+	stubRuntimeBinarySources(t)
+
+	find := func(entries []manifest.RealizedEntry) (testMenuItem, string, bool) {
+		t.Helper()
+		root := t.TempDir()
+		if err := Generate(root, entries, "test"); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(filepath.Join(root, ".svalbard", "actions.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg testRuntimeConfig
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		for _, group := range cfg.Groups {
+			for _, item := range group.Items {
+				if item.ID == "open-webui" {
+					return item, group.ID, true
+				}
+			}
+		}
+		return testMenuItem{}, "", false
+	}
+
+	model := manifest.RealizedEntry{ID: "qwen-4b", Type: "gguf", Filename: "qwen.gguf"}
+	if _, _, ok := find([]manifest.RealizedEntry{model, {ID: "sqlmap", Type: "python-package"}}); ok {
+		t.Fatal("Open WebUI offered without its recipe installed")
+	}
+
+	// One realized entry per platform must still give one menu entry.
+	item, group, ok := find([]manifest.RealizedEntry{
+		model,
+		{ID: "open-webui", Type: "python-package", RelativePath: "runtime/python/macos-arm64/tools/open-webui"},
+		{ID: "open-webui", Type: "python-package", RelativePath: "runtime/python/linux-x86_64/tools/open-webui"},
+	})
+	if !ok {
+		t.Fatal("Open WebUI missing from the menu")
+	}
+	if group != "local-ai" {
+		t.Errorf("group = %q, want local-ai", group)
+	}
+	// The licence's branding clause forbids any other name.
+	if item.Label != "Open WebUI" {
+		t.Errorf("label = %q, want Open WebUI", item.Label)
+	}
+	if !slices.Contains(item.Aliases, "open-webui") {
+		t.Errorf("aliases = %v, want open-webui", item.Aliases)
+	}
+	var action testBuiltinConfig
+	if err := json.Unmarshal(item.Action.Config, &action); err != nil {
+		t.Fatal(err)
+	}
+	if item.Action.Type != "builtin" || action.Name != "open-webui" || len(action.Args) != 0 {
+		t.Errorf("action = %s %+v, want builtin open-webui without args", item.Action.Type, action)
 	}
 }
 

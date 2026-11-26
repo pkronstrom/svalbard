@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,13 +55,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	if os.Getenv("SVALBARD_TEST_MCP_KIWIX") != "1" {
+		kiwixBasePort = 18480
 		os.Exit(m.Run())
 	}
 	for i, arg := range os.Args {
 		if arg == "--port" && i+1 < len(os.Args) {
-			if err := http.ListenAndServe("127.0.0.1:"+os.Args[i+1], http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusOK)
-			})); err != nil {
+			if err := http.ListenAndServe("127.0.0.1:"+os.Args[i+1], http.HandlerFunc(fakeKiwix)); err != nil {
 				os.Exit(1)
 			}
 		}
@@ -68,12 +68,43 @@ func TestMain(m *testing.M) {
 	os.Exit(1)
 }
 
+// fakeKiwix stands in for kiwix-serve. With SVALBARD_TEST_MCP_KIWIX_PAGES it
+// serves /content/<book>/<path> from the file <dir>/<book>/<escaped path>,
+// answers 404 for anything else, and redirects a book's root to the page
+// named in <dir>/<book>/.main, as kiwix-serve does. Without it every request
+// succeeds with an empty page.
+func fakeKiwix(w http.ResponseWriter, r *http.Request) {
+	pages := os.Getenv("SVALBARD_TEST_MCP_KIWIX_PAGES")
+	rest, isContent := strings.CutPrefix(r.URL.Path, "/content/")
+	if pages == "" || !isContent {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	book, path, _ := strings.Cut(rest, "/")
+	if path == "" {
+		if main, err := os.ReadFile(filepath.Join(pages, book, ".main")); err == nil {
+			http.Redirect(w, r, "/content/"+book+"/"+string(main), http.StatusFound)
+			return
+		}
+	}
+	// Listed, not opened by name: paths are case-sensitive in an archive,
+	// whatever the file system under the test does.
+	entries, _ := os.ReadDir(filepath.Join(pages, book))
+	for _, entry := range entries {
+		if entry.Name() == url.PathEscape(path) {
+			page, _ := os.ReadFile(filepath.Join(pages, book, entry.Name()))
+			_, _ = w.Write(page)
+			return
+		}
+	}
+	http.Error(w, "<html><body>Not Found</body></html>", http.StatusNotFound)
+}
+
 func TestSearchFallbackMetadataSerializesJSONThenAdvisory(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		meta []string
 	}{
-		{name: "absent"},
 		{name: "legacy", meta: []string{"INSERT INTO meta VALUES ('semantic_state', 'complete')"}},
 		{name: "building", meta: []string{"INSERT INTO meta VALUES ('semantic_state', 'building')"}},
 		{name: "malformed", meta: []string{"INSERT INTO meta VALUES ('semantic_state', 'complete')", "INSERT INTO meta VALUES ('semantic_contract', '{')"}},
@@ -99,6 +130,24 @@ func TestSearchFallbackMetadataSerializesJSONThenAdvisory(t *testing.T) {
 				t.Fatalf("second content = %#v, want fallback advisory", result.Content[1])
 			}
 		})
+	}
+}
+
+// A drive indexed for keywords only was never meant to answer with hybrid
+// search, so its results carry no fallback notice.
+func TestSearchWithoutSemanticIndexSerializesOnlyResults(t *testing.T) {
+	root := searchFixtureDrive(t)
+	cap := NewSearchCapability(root, DriveMetadata{})
+	defer cap.Close()
+	result, err := NewServer(cap).makeHandler(cap, "search")(context.Background(), gomcp.CallToolRequest{Params: gomcp.CallToolParams{Arguments: map[string]any{"query": "water"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("content blocks = %d, want the JSON results alone: %#v", len(result.Content), result.Content)
+	}
+	if first, ok := result.Content[0].(gomcp.TextContent); !ok || !strings.Contains(first.Text, "Water purification") {
+		t.Fatalf("content = %#v, want JSON results", result.Content[0])
 	}
 }
 

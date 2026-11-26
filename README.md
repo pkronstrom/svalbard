@@ -6,7 +6,7 @@
 
 Seed vault for human knowledge — civilization on a stick.
 
-> **Alpha (v0.4.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
+> **Alpha (v0.5.0)** — Under active development. Presets, datasets, and curation will change significantly. Expect rough edges.
 >
 > **Heads up:** the codebase was recently rewritten from Python to Go. Not every flow has been re-tested end-to-end on the new code path yet, so expect breakages — please file an issue if you hit one.
 
@@ -34,7 +34,7 @@ Deploy a 2 GB emergency kit on your phone with a few apps and be offgrid-certifi
 
 A svalbard drive is not a bootable image or a compressed archive — it's a plain directory of standard open formats (ZIM, PMTiles, GGUF, HTML). No extraction, no installation. The drive includes its own binaries and tools for viewing and accessing data.
 
-**On a computer** — plug in the drive, open a terminal, run `./run`. The drive launcher opens a keyboard-driven terminal UI with grouped menus for `Search`, `Library`, `Maps`, `Local AI`, and `Tools`, plus any pack-defined extras on the drive. You can jump straight into archives, view maps, chat with local models, launch bundled AI clients like OpenCode, Crush, and Goose, inspect the drive, and share it over the local network. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
+**On a computer** — plug in the drive, open a terminal, run `./run`. The drive launcher opens a keyboard-driven terminal UI with grouped menus for `Search`, `Library`, `Maps`, `Local AI`, `Tools` and `Settings`, plus any pack-defined extras on the drive. You can jump straight into archives, view maps, chat with local models, launch bundled AI clients like OpenCode, Goose and pi or the opt-in Open WebUI browser front end, inspect the drive, and share it over the local network. Choices such as the default model and the context size are kept on the drive: change them under `Settings`, or with `./run settings`. Works on Mac and Linux with nothing to install on the host. Windows support is planned.
 
 **On a phone or tablet** — carry a USB-C stick, plug it into your phone, and open the files directly with apps like Kiwix (encyclopedias), OsmAnd (maps), or any PDF/EPUB reader. Or just copy the directory (or a zip of it) to your phone's filesystem — the files are standard formats that any compatible app can open. See `provisioning/` for recommended apps on iOS and Android.
 
@@ -64,7 +64,7 @@ The `svalbard-tools` image includes warc2zim, tippecanoe, zim-tools, GDAL, ffmpe
 
 ### Build from source
 
-Requires Go 1.25+.
+Requires Go 1.26+.
 
 ```bash
 git clone https://github.com/pkronstrom/svalbard.git
@@ -220,4 +220,4 @@ Set `SVALBARD_CACHE_DIRS=/path/one:/path/two` to reuse already-downloaded files 
 
 ## License
 
-[GPL-3.0](LICENSE) — Free to use, modify, and distribute. Derivatives must remain open source. Individual datasets on provisioned drives carry their own licenses.
+[GPL-3.0](LICENSE) — Free to use, modify, and distribute. Derivatives must remain open source. Individual datasets on provisioned drives carry their own licenses. Third-party software bundled in the CLI is listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

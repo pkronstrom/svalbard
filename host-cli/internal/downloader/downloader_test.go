@@ -40,6 +40,23 @@ func TestDownloadNewFile(t *testing.T) {
 	}
 }
 
+func TestDownloadIdentifiesItself(t *testing.T) {
+	var agent string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agent = r.Header.Get("User-Agent")
+		w.Write([]byte("content"))
+	}))
+	defer ts.Close()
+
+	if _, err := Download(context.Background(), ts.URL+"/file.txt", filepath.Join(t.TempDir(), "file.txt"), ""); err != nil {
+		t.Fatal(err)
+	}
+	// Hosts that refuse the default Go client agent must not see it.
+	if agent != "svalbard" {
+		t.Fatalf("User-Agent = %q, want svalbard", agent)
+	}
+}
+
 func TestDownloadResumesPartialFile(t *testing.T) {
 	content := "hello world test content"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

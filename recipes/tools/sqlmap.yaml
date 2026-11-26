@@ -7,7 +7,7 @@ depth: reference-only
 size_gb: 0.017
 venv: svalbard-python
 packages:
-- sqlmap==1.10.9
+- sqlmap==1.10.11
 entry_points:
 - sqlmap
 description: Automatic SQL injection and database takeover tool

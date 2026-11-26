@@ -10,6 +10,11 @@ platforms:
   linux-arm64: https://github.com/ffuf/ffuf/releases/download/v2.3.0/ffuf_2.3.0_linux_arm64.tar.gz
   macos-arm64: https://github.com/ffuf/ffuf/releases/download/v2.3.0/ffuf_2.3.0_macOS_arm64.tar.gz
   macos-x86_64: https://github.com/ffuf/ffuf/releases/download/v2.3.0/ffuf_2.3.0_macOS_amd64.tar.gz
+platform_sha256:
+  linux-x86_64: b2a3c725fcb9da175159682f54d6e9149f2905b00d84d155e7efc5d599975ceb
+  linux-arm64: e2d712615d53da797ee929006e41f2df5a7960a5353133db9c150ddaa22ae4e8
+  macos-arm64: 891e6358f7c72c951ce6fcef82a3736e91b34034e95edbd305505c9d31cfff13
+  macos-x86_64: c1d1a0320b299d2c7f3a62163b336fe861954ea865bab13b9e80f128eb985997
 description: Fast web fuzzer (Fuzz Faster U Fool)
 license:
   id: MIT

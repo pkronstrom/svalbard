@@ -24,6 +24,7 @@ const (
 	VersionUnknown   = "unknown"   // installed before hashes were recorded
 	VersionWithdrawn = "withdrawn" // no longer in the catalog; the copy is kept
 	VersionLocal     = "local"     // imported by the user
+	VersionDocuments = "documents" // a collection; apply updates it by document
 )
 
 // ItemVersion returns the version state of the installed item whose realized
@@ -35,6 +36,9 @@ func ItemVersion(cat *catalog.Catalog, entries []manifest.RealizedEntry) string 
 	recipe, ok := cat.RecipeByID(entries[0].ID)
 	if !ok {
 		return VersionWithdrawn
+	}
+	if recipe.IsCollection() {
+		return VersionDocuments
 	}
 	hash := recipe.AcquisitionHash()
 	version := VersionCurrent
@@ -101,6 +105,8 @@ func UpdateVault(ctx context.Context, root string, cat *catalog.Catalog, ids []s
 			return fmt.Errorf("%s is no longer in the catalog, so it cannot be updated; its installed copy is kept", id)
 		case VersionLocal:
 			return fmt.Errorf("%s is a local import; import the new file to replace it", id)
+		case VersionDocuments:
+			return fmt.Errorf("%s is a document collection; \"svalbard apply\" fetches its new and changed documents", id)
 		}
 		recipe, _ := cat.RecipeByID(id)
 		if recipe.Type == "python-package" || recipe.Type == "python-venv" {

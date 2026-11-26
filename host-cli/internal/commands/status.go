@@ -25,20 +25,20 @@ type StatusItem struct {
 
 // StatusReport is the vault state the status command prints.
 type StatusReport struct {
-	Vault       string       `json:"vault"`
-	Preset      string       `json:"preset,omitempty"`
-	Platforms   []string     `json:"platforms"`
-	Desired     int          `json:"desired"`
-	Realized    int          `json:"realized"`
-	Pending     int          `json:"pending"`
-	LastApplied string       `json:"last_applied,omitempty"`
-	Updates     []string     `json:"updates_available"`
-	Withdrawn   []string     `json:"withdrawn"`
-	Unavailable []string     `json:"unavailable"`
+	Vault       string   `json:"vault"`
+	Preset      string   `json:"preset,omitempty"`
+	Platforms   []string `json:"platforms"`
+	Desired     int      `json:"desired"`
+	Realized    int      `json:"realized"`
+	Pending     int      `json:"pending"`
+	LastApplied string   `json:"last_applied,omitempty"`
+	Updates     []string `json:"updates_available"`
+	Withdrawn   []string `json:"withdrawn"`
+	Unavailable []string `json:"unavailable"`
 	// OtherPlatform lists selected items with no payload for the vault's
 	// platforms; apply skips them.
-	OtherPlatform []string `json:"other_platform"`
-	Items       []StatusItem `json:"items"`
+	OtherPlatform []string     `json:"other_platform"`
+	Items         []StatusItem `json:"items"`
 }
 
 // BuildStatus summarizes m: each desired item, whether it is realized, and
@@ -97,6 +97,7 @@ var versionLabels = map[string]string{
 	VersionUnknown:   "unknown",
 	VersionWithdrawn: "withdrawn, kept",
 	VersionLocal:     "local",
+	VersionDocuments: "by document",
 }
 
 // WriteStatus prints a human-readable summary of vault state including

@@ -1,0 +1,29 @@
+id: omp
+type: binary
+display_group: tools
+tags:
+- computing
+- agentic
+- coding
+depth: reference-only
+size_gb: 0.309
+platforms:
+  linux-x86_64: https://github.com/can1357/oh-my-pi/releases/download/v19.2.1/omp-linux-x64
+  linux-arm64: https://github.com/can1357/oh-my-pi/releases/download/v19.2.1/omp-linux-arm64
+  macos-arm64: https://github.com/can1357/oh-my-pi/releases/download/v19.2.1/omp-darwin-arm64
+  macos-x86_64: https://github.com/can1357/oh-my-pi/releases/download/v19.2.1/omp-darwin-x64
+platform_sha256:
+  linux-x86_64: e8b937f9bf023baa147bdd300ad5421af0a6ef8b1f350c47a9a93d5fca94feca
+  linux-arm64: 92d4cce4b14814f6b838aa86dcec6359f0cb089cbcc300e8463cbb5326991fe0
+  macos-arm64: 43943119837612b2da72250ab7efe22ff8ca239eabebd4f702f34e3a144fdd3d
+  macos-x86_64: 4face26750f5679857a606a61df22b1587925d4b308d5938de470d8c780cd871
+description: oh-my-pi (omp) terminal coding agent — opt-in alternative to pi, launched with a lean offline profile; needs a 32K context or larger
+menu:
+  group: local-ai
+  subheader: AI Clients
+  label: oh-my-pi
+  description: Launch the oh-my-pi coding agent (lean offline profile) against local models
+  order: 250
+license:
+  id: MIT
+  attribution: Can Bölük, Stencil Labs and Mario Zechner
