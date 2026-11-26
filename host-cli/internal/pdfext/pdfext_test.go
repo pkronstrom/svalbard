@@ -152,18 +152,68 @@ func TestClassify(t *testing.T) {
 
 func TestCleanText(t *testing.T) {
 	cases := map[string]struct{ raw, want string }{
-		"line ends":       {"first line\r\nsecond  line\r\n", "first line\nsecond line"},
-		"hyphenated word": {"the cool\x02\r\nant level", "the coolant level"},
-		"stray marker":    {"type\x02C coolant", "type-C coolant"},
-		"ocr hyphen":      {"the necessary calcu¬\r\nlations and co\u00AD\r\nolant, soft\u00ADhyphen", "the necessary calculations and coolant, softhyphen"},
-		"paragraph break": {"one\r\n\r\n\r\n\r\ntwo", "one\n\ntwo"},
-		"unmapped glyphs": {"a￾b￿ c\x00d", "ab cd"},
-		"only space":      {" \r\n\t\r\n", ""},
+		"line ends":       {"first line\nsecond  line\n", "first line\nsecond line"},
+		"broken word":     {"the cool\uFFFEant level", "the coolant level"},
+		"older marker":    {"the cool\x02\nant level", "the coolant level"},
+		"number range":    {"doses of 10\uFFFE20 mg and type\x02 C", "doses of 10-20 mg and type-C"},
+		"ocr hyphen":      {"the necessary calcu¬\nlations and co\u00AD\nolant, soft\u00ADhyphen", "the necessary calculations and coolant, softhyphen"},
+		"paragraph break": {"one\n\n\n\ntwo", "one\n\ntwo"},
+		"unmapped glyphs": {"a\uFFFF c\x00d", "a cd"},
+		"only space":      {" \n\t\n", ""},
 		"finnish":         {"Jäähdytysneste  ja öljy", "Jäähdytysneste ja öljy"},
 	}
 	for name, tc := range cases {
-		if got := CleanText(tc.raw); got != tc.want {
-			t.Errorf("%s: CleanText(%q) = %q, want %q", name, tc.raw, got, tc.want)
+		if got := cleanText(tc.raw, buildVocabulary([]string{tc.raw})); got != tc.want {
+			t.Errorf("%s: cleanText(%q) = %q, want %q", name, tc.raw, got, tc.want)
+		}
+	}
+}
+
+// A hyphen at a line end may belong to the word or only break it, and PDFium
+// marks both alike. What the rest of the document writes decides, so neither
+// "medications" nor "acting" is lost to search.
+func TestBrokenWordsFollowTheDocumentsOwnSpelling(t *testing.T) {
+	elsewhere := "Give medications by mouth. A longer course of acting on symptoms. Other long-acting drugs. " +
+		"Formation of information. Tämä jäähdytysneste ja järjestelmä sekä linja-auto."
+	cases := []struct{ raw, want, why string }{
+		{"the medica\uFFFEtions", "the medications", "written unbroken elsewhere"},
+		{"are longer\uFFFEacting", "are longer-acting", "two words of their own, never written as one"},
+		{"a long\uFFFEacting agent", "a long-acting agent", "written with a hyphen elsewhere"},
+		{"respira\uFFFEtory", "respiratory", "neither half is a word"},
+		{"in\uFFFEformation", "information", "written unbroken elsewhere"},
+		{"The Anglo\uFFFESaxon chart", "The Anglo-Saxon chart", "the second half is capitalised"},
+		{"jäähdytys\uFFFEneste", "jäähdytysneste", "Finnish, written unbroken elsewhere"},
+		{"linja\uFFFEauto", "linja-auto", "Finnish compound written with a hyphen elsewhere"},
+		{"be\uFFFEacting", "beacting", "a short first half is a syllable"},
+	}
+	for _, tc := range cases {
+		vocab := buildVocabulary([]string{tc.raw, elsewhere})
+		if got := cleanText(tc.raw, vocab); got != tc.want {
+			t.Errorf("cleanText(%q) = %q, want %q (%s)", tc.raw, got, tc.want, tc.why)
+		}
+	}
+	// The halves of a broken word are not evidence that they are words.
+	only := "medica\uFFFEtions and medica\uFFFEtions"
+	if got := cleanText(only, buildVocabulary([]string{only})); got != "medications and medications" {
+		t.Errorf("a word broken twice = %q", got)
+	}
+}
+
+func TestDocumentJoinsWordsBrokenAcrossLines(t *testing.T) {
+	doc := extract(t, "hyphens.pdf")
+	if len(doc.Pages) != 1 {
+		t.Fatalf("pages = %d", len(doc.Pages))
+	}
+	text := doc.Pages[0].Text
+	for _, want := range []string{
+		"medications are longer-acting and may need",
+		"Repeat the medications as needed",
+		"for respiratory depression",
+		"use a long-acting agent, as with other long-acting drugs",
+		"The Anglo-Saxon chart lists doses of 10-\n20 mg.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("page text misses %q:\n%s", want, text)
 		}
 	}
 }

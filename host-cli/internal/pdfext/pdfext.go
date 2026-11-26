@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/klippa-app/go-pdfium"
 	"github.com/klippa-app/go-pdfium/enums"
@@ -224,9 +226,19 @@ func (e *Extractor) Document(ctx context.Context, path string) (doc Doc, err err
 		}
 		doc.Pages = append(doc.Pages, page)
 	}
+	// Words broken across lines are settled with the whole document in view.
+	raw := make([]string, len(doc.Pages))
+	for i, page := range doc.Pages {
+		raw[i] = page.Text
+	}
+	vocab := buildVocabulary(raw)
+	for i := range doc.Pages {
+		doc.Pages[i].Text = cleanText(raw[i], vocab)
+	}
 	return doc, nil
 }
 
+// pageText returns a page's text as PDFium gives it, before cleanText.
 func pageText(instance pdfium.Pdfium, page requests.Page) string {
 	textPage, err := instance.FPDFText_LoadPage(&requests.FPDFText_LoadPage{Page: page})
 	if err != nil {
@@ -241,7 +253,7 @@ func pageText(instance pdfium.Pdfium, page requests.Page) string {
 	if err != nil {
 		return ""
 	}
-	return CleanText(text.Text)
+	return normalizeLines(text.Text)
 }
 
 func pageImages(instance pdfium.Pdfium, page requests.Page) int {
@@ -308,19 +320,90 @@ func pageSections(outline []responses.GetBookmarksBookmark, pages int) []string 
 	return sections
 }
 
-// lineBreakHyphens are the marks of a word split across a line break: U+0002
-// is PDFium's own, the soft hyphen is what typesetters emit, and "¬" is what
-// the OCR text layer of archive.org scans uses.
-var lineBreakHyphens = strings.NewReplacer("\x02\n", "", "\u00AD\n", "", "¬\n", "")
+// PDFium replaces a hyphen at the end of a line with a marker (U+FFFE, U+0002
+// in older builds) when the next line continues with a letter. It cannot say
+// whether the hyphen belongs to the word ("longer-acting") or only breaks it
+// ("medica-tions"), and dropping or keeping it blindly loses a searchable
+// word either way. The document's own text decides instead: see vocabulary.
+var (
+	brokenWordRe = regexp.MustCompile(`(\pL+)[\x{FFFE}\x02]\n?[ \t]*(\pL*)`)
+	wordRe       = regexp.MustCompile(`\pL+`)
+	compoundRe   = regexp.MustCompile(`\pL+(?:[-\x{2010}\x{2011}]\pL+)+`)
+	// softBreaks are marks that only ever break a word: the soft hyphen
+	// typesetters emit, and the "¬" of archive.org's OCR text layers.
+	softBreaks = strings.NewReplacer("\u00AD\n", "", "¬\n", "")
+)
 
-// CleanText turns PDFium's page text into trimmed lines separated by "\n".
-// A word hyphenated across a line break is joined so it can be found. Other
-// control characters and the U+FFFE/U+FFFF stand-ins for glyphs without a
-// Unicode value are dropped.
-func CleanText(raw string) string {
+// vocabulary is what a document says about its own words outside the places
+// where a line break split one.
+type vocabulary struct {
+	words     map[string]bool // every word, lowercased
+	compounds map[string]bool // "long-acting": two words joined by a hyphen
+}
+
+func buildVocabulary(pages []string) vocabulary {
+	v := vocabulary{words: map[string]bool{}, compounds: map[string]bool{}}
+	for _, page := range pages {
+		// The two halves of a broken word are not evidence of anything.
+		page = strings.ToLower(brokenWordRe.ReplaceAllString(page, " "))
+		for _, word := range wordRe.FindAllString(page, -1) {
+			v.words[word] = true
+		}
+		for _, compound := range compoundRe.FindAllString(page, -1) {
+			parts := wordRe.FindAllString(compound, -1)
+			for i := 1; i < len(parts); i++ {
+				v.compounds[parts[i-1]+"-"+parts[i]] = true
+			}
+		}
+	}
+	return v
+}
+
+// hyphenated reports whether a word broken into before and after at a line
+// end keeps its hyphen. It does when the next line starts a capitalised
+// word, when the document writes the same compound with a hyphen elsewhere,
+// or when both halves are words of their own that the document never writes
+// as one; in the last case both stay findable. Otherwise the halves are one
+// word: the document writes it unbroken elsewhere, or a half is no word.
+func (v vocabulary) hyphenated(before, after string) bool {
+	if after == "" {
+		return true
+	}
+	if first, _ := utf8.DecodeRuneInString(after); unicode.IsUpper(first) {
+		return true
+	}
+	before, after = strings.ToLower(before), strings.ToLower(after)
+	switch {
+	case v.words[before+after]:
+		return false
+	case v.compounds[before+"-"+after]:
+		return true
+	}
+	// A short first half is far more often a syllable ("in-formation",
+	// "be-cause") than the first word of a compound.
+	return utf8.RuneCountInString(before) >= 3 && utf8.RuneCountInString(after) >= 3 && v.words[before] && v.words[after]
+}
+
+// normalizeLines gives PDFium's page text plain "\n" line ends.
+func normalizeLines(raw string) string {
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
-	raw = strings.ReplaceAll(raw, "\r", "\n")
-	raw = lineBreakHyphens.Replace(raw)
+	return strings.ReplaceAll(raw, "\r", "\n")
+}
+
+// cleanText turns one page of PDFium's text, already through normalizeLines,
+// into trimmed lines separated by "\n". Words split across a line break are
+// put back together, with or without their hyphen as the vocabulary says.
+// Other control characters and the stand-ins for glyphs without a Unicode
+// value are dropped.
+func cleanText(raw string, vocab vocabulary) string {
+	raw = softBreaks.Replace(raw)
+	raw = brokenWordRe.ReplaceAllStringFunc(raw, func(match string) string {
+		parts := brokenWordRe.FindStringSubmatch(match)
+		if vocab.hyphenated(parts[1], parts[2]) {
+			return parts[1] + "-" + parts[2]
+		}
+		return parts[1] + parts[2]
+	})
 	var lines []string
 	blank := false
 	for _, line := range strings.Split(raw, "\n") {
@@ -344,13 +427,13 @@ func cleanLine(line string) string {
 	space := false
 	for _, r := range line {
 		switch {
-		case r == '\x02':
-			// A hyphenation mark that is not at a line end is a plain hyphen.
+		case r == '\x02' || r == 0xFFFE:
+			// A line-end hyphen that was not followed by a letter.
 			r = '-'
 		case unicode.IsSpace(r):
 			space = b.Len() > 0
 			continue
-		case unicode.IsControl(r) || r == 0xFFFE || r == 0xFFFF || r == unicode.ReplacementChar || r == '\u00AD':
+		case unicode.IsControl(r) || r == 0xFFFF || r == unicode.ReplacementChar || r == '\u00AD':
 			continue
 		}
 		if space {

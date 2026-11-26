@@ -3,6 +3,7 @@
 text.pdf   three text pages (the second in Finnish), a Title and an outline
 scan.pdf   two pages that are only an image, like a scan without OCR
 mixed.pdf  text pages alternating with image-only pages
+hyphens.pdf  one page whose lines break inside words and at real hyphens
 
 enc-user.pdf and enc-owner.pdf are text.pdf encrypted with AES-256 by pdfcpu
 (api.EncryptFile with model.NewAESConfiguration): the first with the user
@@ -79,3 +80,15 @@ text_pages = [
 open(dest + "/text.pdf", "wb").write(build(text_pages, title="Fixture Owner's Manual", outline=[("Cooling system", 0), ("Brakes", 2)]))
 open(dest + "/scan.pdf", "wb").write(build([("image",), ("image",)]))
 open(dest + "/mixed.pdf", "wb").write(build([("text", ["Wiring diagrams", "The following pages are scanned drawings of the harness."]), ("image",), ("text", ["Fuse 7 feeds the cooling fan relay and the horn."]), ("image",)]))
+hyphen_lines = [
+    "Many opioid medications are longer-",
+    "acting and may need more doses. Repeat the medica-",
+    "tions as needed and monitor the patient for respira-",
+    "tory depression. Give medications by mouth where",
+    "possible. A longer course of acting on symptoms is not",
+    "advised; use a long-",
+    "acting agent, as with other long-acting drugs. The Anglo-",
+    "Saxon chart lists doses of 10-",
+    "20 mg.",
+]
+open(dest + "/hyphens.pdf", "wb").write(build([("text", hyphen_lines)]))
