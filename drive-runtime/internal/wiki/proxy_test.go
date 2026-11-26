@@ -305,8 +305,20 @@ func TestProxyKeepsTheWikiOutOfOtherSitesFrames(t *testing.T) {
 		if got := response.Header.Get("X-Frame-Options"); got != "SAMEORIGIN" {
 			t.Errorf("GET %s X-Frame-Options = %q, want SAMEORIGIN", target, got)
 		}
-		if got := response.Header.Get("Content-Security-Policy"); !strings.Contains(got, "frame-ancestors 'self'") || !strings.Contains(got, "form-action 'self'") {
-			t.Errorf("GET %s Content-Security-Policy = %q, want frame-ancestors and form-action limited to the wiki", target, got)
+		policy := response.Header.Get("Content-Security-Policy")
+		// A script on the wiki's address reaches nothing but the wiki.
+		for _, want := range []string{
+			"frame-ancestors 'self'", "form-action 'self'", "default-src 'self'", "connect-src 'self' data: blob:",
+			"img-src 'self' data: blob:", "object-src 'none'", "base-uri 'self'",
+		} {
+			if !strings.Contains(policy, want) {
+				t.Errorf("GET %s Content-Security-Policy = %q, want it to hold %q", target, policy, want)
+			}
+		}
+		for _, directive := range strings.Split(policy, ";") {
+			if strings.Contains(directive, "http:") || strings.Contains(directive, "https:") || strings.Contains(directive, "*") {
+				t.Errorf("GET %s policy lets another address in: %q", target, directive)
+			}
 		}
 		// A page's text must not load as another site's script or image.
 		if got := response.Header.Get("Cross-Origin-Resource-Policy"); got != "same-origin" {

@@ -42,7 +42,7 @@ func newProxy(socket string, port int, folder string) http.Handler {
 			// The wiki in a frame on another site writes as the user clicks,
 			// and its writes are same-origin. It frames its own widgets.
 			response.Header.Set("X-Frame-Options", "SAMEORIGIN")
-			response.Header.Add("Content-Security-Policy", "frame-ancestors 'self'; form-action 'self'")
+			response.Header.Add("Content-Security-Policy", contentPolicy)
 			// No other site may load a page's text as a script or an image.
 			response.Header.Set("Cross-Origin-Resource-Policy", "same-origin")
 			return nil
@@ -53,6 +53,19 @@ func newProxy(socket string, port int, folder string) http.Handler {
 	}
 	return guard(port, upstream)
 }
+
+// contentPolicy limits what a script running on the wiki's address can
+// reach. A page is a program to SilverBullet (Lua in a page has the
+// browser's JavaScript), so text that got into a page must not be able to
+// send the notes anywhere or pull code in: requests, images, media, fonts,
+// frames and scripts all stay on the wiki's own address. An offline wiki
+// has no use for any other.
+const contentPolicy = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; " +
+	"connect-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:; " +
+	"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 
 // guard refuses the requests that must not reach SilverBullet.
 func guard(port int, next http.Handler) http.Handler {

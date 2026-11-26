@@ -255,7 +255,7 @@ func (w *Workspace) Rename(from, to string) error {
 		return err
 	}
 	if err := w.root.Rename(from, to); err != nil {
-		return describe(from, err)
+		return describeMove(from, err)
 	}
 	return nil
 }
@@ -280,7 +280,7 @@ func (w *Workspace) MoveTo(rel string, dest *Workspace, destRel string) error {
 		err = w.copyTo(rel, dest, destRel)
 	}
 	if err != nil {
-		return describe(rel, err)
+		return describeMove(rel, err)
 	}
 	return nil
 }
@@ -362,16 +362,21 @@ func describe(rel string, err error) error {
 	}
 }
 
-// pathErr drops the operation and host paths an *fs.PathError or, from a
-// rename, an *os.LinkError carries.
+// pathErr drops the operation and host path an *fs.PathError carries.
 func pathErr(err error) error {
 	var pathError *fs.PathError
 	if errors.As(err, &pathError) {
 		return pathError.Err
 	}
+	return err
+}
+
+// describeMove is describe for a failed rename, whose *os.LinkError carries
+// two host paths.
+func describeMove(rel string, err error) error {
 	var linkError *os.LinkError
 	if errors.As(err, &linkError) {
-		return linkError.Err
+		err = linkError.Err
 	}
-	return err
+	return describe(rel, err)
 }
