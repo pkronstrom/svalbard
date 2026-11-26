@@ -1,3 +1,4 @@
+#!/usr/bin/env py-docs
 """Make and read PowerPoint presentations (.pptx) with python-pptx. Run with
 py-docs:
 
@@ -23,8 +24,11 @@ import re
 import sys
 from pathlib import Path
 
-from pptx import Presentation
-from pptx.util import Emu, Inches, Pt
+try:
+    from pptx import Presentation
+    from pptx.util import Emu, Inches, Pt
+except ImportError:
+    sys.exit("This script needs the drive's document libraries: run it as py-docs " + sys.argv[0] + " ...")
 
 TITLE_LAYOUT, CONTENT_LAYOUT, TITLE_ONLY_LAYOUT = 0, 1, 5
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env py-docs
 """Make, read and fill Word documents (.docx) with python-docx. Run with py-docs:
 
   py-docs docx_tool.py create IN.md OUT.docx
@@ -21,9 +22,12 @@ import re
 import sys
 from pathlib import Path
 
-import docx
-from docx.enum.text import WD_BREAK
-from docx.shared import Inches
+try:
+    import docx
+    from docx.enum.text import WD_BREAK
+    from docx.shared import Inches
+except ImportError:
+    sys.exit("This script needs the drive's document libraries: run it as py-docs " + sys.argv[0] + " ...")
 
 PAGEBREAK = "<<<pagebreak>>>"
 INLINE = re.compile(r"(\*\*.+?\*\*|(?<![\w*])\*(?!\s).+?(?<!\s)\*(?![\w*]))")

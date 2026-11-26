@@ -1,3 +1,4 @@
+#!/usr/bin/env py-docs
 """Make and read .xlsx workbooks with openpyxl. Run with py-docs:
 
   py-docs xlsx_tool.py create DATA.csv|DATA.json OUT.xlsx [--sheet NAME] [--total [COLUMNS]]
@@ -21,9 +22,12 @@ import re
 import sys
 from pathlib import Path
 
-from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, PatternFill
-from openpyxl.utils import get_column_letter
+try:
+    from openpyxl import Workbook, load_workbook
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+except ImportError:
+    sys.exit("This script needs the drive's document libraries: run it as py-docs " + sys.argv[0] + " ...")
 
 
 NUMBER = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")

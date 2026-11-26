@@ -1,3 +1,4 @@
+#!/usr/bin/env py-docs
 """Make, combine, take apart, read and fill PDF files. Run with py-docs:
 
   py-docs pdf_tool.py create IN.md OUT.pdf [--size A4|letter]
@@ -22,8 +23,11 @@ import sys
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from pypdf import PdfReader, PdfWriter
-from pypdf.generic import NameObject, BooleanObject
+try:
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject, BooleanObject
+except ImportError:
+    sys.exit("This script needs the drive's document libraries: run it as py-docs " + sys.argv[0] + " ...")
 
 PAGEBREAK = "<<<pagebreak>>>"
 
