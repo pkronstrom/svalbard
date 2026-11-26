@@ -323,3 +323,27 @@ func TestGenerateWithoutSkillsRecipe(t *testing.T) {
 		t.Fatalf("another recipe's skill removed: %v", err)
 	}
 }
+
+func TestWriteSkillsLeavesHiddenFilesAlone(t *testing.T) {
+	root := t.TempDir()
+	entries := []manifest.RealizedEntry{skillsCoreEntry}
+	if _, err := writeSkills(root, entries, fixtureSkills()); err != nil {
+		t.Fatal(err)
+	}
+	skill := filepath.Join(root, "skills", "skills-core", "b")
+	for _, name := range []string{".DS_Store", "._SKILL.md", filepath.Join("references", "._notes.md")} {
+		if err := os.WriteFile(filepath.Join(skill, name), []byte("finder"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report, err := writeSkills(root, entries, fixtureSkills())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Restored) != 0 {
+		t.Fatalf("hidden files counted as local edits: %v", report.Restored)
+	}
+	if _, err := os.Stat(filepath.Join(skill, "._SKILL.md")); err != nil {
+		t.Fatalf("hidden file removed: %v", err)
+	}
+}

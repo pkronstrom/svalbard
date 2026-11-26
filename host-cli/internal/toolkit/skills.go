@@ -232,7 +232,22 @@ func syncSkillFolder(dest string, skills fs.FS, source string) ([]string, error)
 			if err != nil {
 				return err
 			}
-			if p == dest || d.IsDir() {
+			if p == dest {
+				return nil
+			}
+			if strings.HasPrefix(d.Name(), ".svalbard-tmp-") {
+				return os.Remove(p) // left by an interrupted write
+			}
+			// Hidden files are the system's (.DS_Store, the ._ files macOS
+			// writes on exFAT) or Svalbard's record: never a local edit, and
+			// the index skips them. Embedded skills have none.
+			if strings.HasPrefix(d.Name(), ".") {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if d.IsDir() {
 				return nil
 			}
 			rel, err := filepath.Rel(dest, p)
@@ -240,12 +255,6 @@ func syncSkillFolder(dest string, skills fs.FS, source string) ([]string, error)
 				return err
 			}
 			rel = filepath.ToSlash(rel)
-			if rel == skillRecordFile {
-				return nil
-			}
-			if strings.HasPrefix(d.Name(), ".svalbard-tmp-") {
-				return os.Remove(p) // left by an interrupted write
-			}
 			if _, ok := want[rel]; !ok {
 				// A file an older version wrote is dropped quietly; any
 				// other is the user's.
@@ -354,7 +363,9 @@ func ensureSkillMode(target, rel string) error {
 		return err
 	}
 	if want := skillFileMode(rel); info.Mode().Perm() != want {
-		return os.Chmod(target, want)
+		// exFAT and FAT report fixed modes and may refuse chmod; the
+		// scripts run through sh and py-docs either way.
+		_ = os.Chmod(target, want)
 	}
 	return nil
 }
@@ -372,7 +383,8 @@ func writeFileAtomic(target string, data []byte, mode os.FileMode) error {
 	name := tmp.Name()
 	_, werr := tmp.Write(data)
 	cerr := tmp.Close()
-	if err := errors.Join(werr, cerr, os.Chmod(name, mode)); err != nil {
+	_ = os.Chmod(name, mode) // see ensureSkillMode
+	if err := errors.Join(werr, cerr); err != nil {
 		os.Remove(name)
 		return err
 	}
