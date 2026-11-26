@@ -147,7 +147,8 @@ type GenerateOpts struct {
 	PlatformIOPlatforms []string
 
 	// Recipes holds catalog metadata for realized entries, written to
-	// .svalbard/recipes.json for the MCP server.
+	// .svalbard/recipes.json for the MCP server; the settings they declare go
+	// to .svalbard/settings.schema.json.
 	Recipes map[string]catalog.Item
 }
 
@@ -188,6 +189,9 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	if err := writeRecipesMetadata(root, entries, recipes); err != nil {
 		return err
 	}
+	if err := writeSettingsSchema(root, entries, recipes); err != nil {
+		return err
+	}
 	if err := installRuntimeBinaries(root); err != nil {
 		return err
 	}
@@ -222,6 +226,8 @@ var groupRegistry = map[string]groupInfo{
 	"local-ai": {Label: "Local AI", Description: "Chat with local models and launch AI clients.", Order: 400},
 	"apps":     {Label: "Apps", Description: "Interactive offline applications.", Order: 450},
 	"tools":    {Label: "Tools", Description: "Inspect the drive and launch bundled utilities.", Order: 500},
+	// Last: a group the registry does not know gets order 999.
+	"settings": {Label: "Settings", Description: "Choices saved on this drive.", Order: 1000, AutoActivate: true},
 }
 
 type typeDefault struct {
@@ -298,6 +304,9 @@ var builtinCapabilities = []builtinCapability{
 	{ID: "verify-checksums", Group: "tools", Subheader: "Drive", Label: "Verify Checksums",
 		Description: "Verify file integrity using checksums.", Order: 510, ActionID: "verify",
 		Condition: func(s driveState) bool { return s.HasChecksums }},
+	// Settings. A screen of the menu itself; `./run settings` is the command.
+	{ID: "settings", Group: "settings", Label: "Settings",
+		Description: "Change the choices saved on this drive.", Order: 100, ActionID: "settings"},
 }
 
 // ---------------------------------------------------------------------------

@@ -55,7 +55,7 @@ Unit tests (`make verify`, 55 tested packages, and `make build`):
 
 Real run on this Mac (64 GB, internal SSD), CLI and runtime built from the branch, scratch vault with `llama-server`, `open-webui`, `qwen-4b` and `qwen-0.8b`:
 
-- `svalbard apply` built the tree with the real Docker builder: 177 packages, 582 MB, no PyTorch, ChromaDB or onnxruntime, and the wheel's `LICENSE`, `LICENSE_HISTORY` and `LICENSE_NOTICE` under `open_webui-0.13.5.dist-info/licenses/`.
+- `svalbard apply` built the tree with the real Docker builder, run with `DOCKER_DEFAULT_PLATFORM=linux/amd64` because the published tools image has no arm64 manifest (see "Found on the way"): 177 packages, 582 MB, no PyTorch, ChromaDB or onnxruntime, and the wheel's `LICENSE`, `LICENSE_HISTORY` and `LICENSE_NOTICE` under `open_webui-0.13.5.dist-info/licenses/`.
 - `./run __native-open-webui Qwen_Qwen3.5-4B-Q4_K_M.gguf` in tmux: context picker shown and used (32K), ready 19 s after the choice on the first start, URL printed, browser opened.
 - `GET /health` returned `{"status":true}`; sign-in with empty credentials returned `admin@localhost`; `/api/models` listed `Qwen_Qwen3.5-4B-Q4_K_M` with the default metadata; the tool server listed the drive's 8 tools; a chat turn through `/api/chat/completions` answered.
 - In a clean browser profile the page opened on the chat screen with no sign-in and the model selected. One message ("Call the vault stats tool…") produced an MCP call to `svalbard_vault_stats`, its JSON result, and an answer that quoted it, with no tool selected by hand. That turn was two requests to `llama-server` and no title or tag request; the first prompt was 1,504 tokens.
@@ -70,7 +70,7 @@ Real run on this Mac (64 GB, internal SSD), CLI and runtime built from the branc
 - Linux x86_64, Linux arm64 and macOS x86_64: resolved, never installed or started. Linux cannot be run on this machine.
 - A physical USB stick: cold start time, exFAT, pulling the stick mid-run.
 - A packet capture. Offline behaviour rests on the log, the process's sockets and the page's request list.
-- Larger models and multi-step tool chains. One tool call with Qwen3.5 4B worked; the 0.8B model also emitted a correct call.
+- Larger models. Multi-step tool chains with two small models are in the comparison below.
 - File attachments, Notes, and upgrading over an existing data directory.
 
 ## Found on the way
@@ -78,6 +78,62 @@ Real run on this Mac (64 GB, internal SSD), CLI and runtime built from the branc
 - The published tools image `ghcr.io/pkronstrom/svalbard-tools:0.5.0` has a linux/amd64 manifest only. On an Apple Silicon host every Docker-built recipe fails with "no matching manifest for linux/arm64/v8". The real run used `DOCKER_DEFAULT_PLATFORM=linux/amd64` (the build took 57 s under emulation). Not fixed here.
 - `svalbard add <id>` does not add a recipe's dependencies; the wizard does.
 - MCP tools that find nothing (`vault_sources`, `vault_databases`, `vault_maps` on an empty vault) return an empty string, and a small model calls them again.
+
+## Tool use: Granite 4.2 3B and Qwen3.5 4B
+
+A comparison of how two small models call the drive's MCP tools and combine what comes back, through Open WebUI. No code change comes from it. **Nine runs per model is a small sample**: it shows what kind of failure each model has, not a rate.
+
+Setup:
+
+- Scratch vault with `wikem` (WikEM, 49 MB) and `nhs-medicines` (NHS medicines A to Z, 15 MB), `index_strategy: keyword`, a 65 MB search index. The action was started once per model with a 32K context.
+- `granite-4.2-3b-Q4_K_M.gguf` (2.24 GB) was placed in the vault's `models/` by hand; there is no recipe. The pinned `llama-server` (b12359) loads it, and its chat template reports tool-call support and produced native tool calls in every run.
+- Sampling: Qwen used the flags `llamaserve` sets for the family (temperature 0.6, top-k 20, top-p 0.95). Granite has no entry there, so its card's `temperature=1.0`, `top_p=0.95` went in each request and were confirmed on the server's slot; top-k 40 and min-p 0.05 were `llama-server` defaults.
+- No browser tab was opened for these runs. The runtime has no switch to skip opening the browser, so a no-op `open` was put first on PATH for the action; the earlier acceptance runs each opened a tab in the host's default browser.
+- Each run replays the request Open WebUI's own page sends to `POST /api/chat/completions` for a new chat, with the tool server attached, and reads the saved chat when the reply is done. The plain OpenAI-style call without a chat returns tool calls to the caller instead of running them. Open WebUI's defaults were used: no system prompt, thinking on.
+- Questions, each asked three times in a new chat:
+  1. One article answers: one dose, the gap between doses and the 24-hour maximum for 500 mg paracetamol tablets. On the drive: 1 or 2 tablets, at least 4 hours, 8 tablets (NHS "Paracetamol for adults").
+  2. Two sources combined: (a) the single prophylactic doxycycline dose after a tick bite in the emergency medicine wiki, (b) what the NHS content says about alcohol with doxycycline. On the drive: 200 mg once (WikEM "Lyme disease"); best avoided, alcohol can affect it (NHS "Antibiotics, interactions").
+  3. Not on the drive: tyre pressure for a 2019 Toyota Corolla. The right answer is to say so.
+
+Tool calls in order: V `vault_sources`, S `search`, R `search_read`, D `vault_databases`, T `vault_stats`, M `vault_maps`. Every call from both models had parsable arguments that fit the schema; "rejected" counts calls the tool answered with an error. Prompt tokens are summed over the run's requests, most of them served from the prompt cache.
+
+| Model | Q | Run | Calls | Rejected | Read after search | Answer | Requests | Prompt tok | Output tok | Wall s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Qwen3.5 4B | 1 | 1 | VSSR | 0 | the right article | correct | 5 | 14,068 | 938 | 14 |
+| Qwen3.5 4B | 1 | 2 | VSSSRSSRRRRRSSR | 4 | neighbouring articles | partly: gap given as "4 to 6 hours" | 18 | 127,996 | 2,593 | 84 |
+| Qwen3.5 4B | 1 | 3 | SRR | 0 | neighbouring articles | correct values | 3 | 7,853 | 972 | 22 |
+| Qwen3.5 4B | 2 | 1 | VSSRSR | 0 | one of the two | wrong: (a) gave the treatment course | 5 | 13,876 | 1,348 | 32 |
+| Qwen3.5 4B | 2 | 2 | VSSRRSR | 0 | both | correct | 8 | 29,004 | 1,767 | 40 |
+| Qwen3.5 4B | 2 | 3 | VSSSRRR | 0 | both | correct | 5 | 15,456 | 1,344 | 30 |
+| Qwen3.5 4B | 3 | 1 | VSSSRDSRSRS | 1 | main pages only | correct: not on the drive | 12 | 34,871 | 1,705 | 34 |
+| Qwen3.5 4B | 3 | 2 | VSSSSRTVDM | 0 | main page only | correct: not on the drive | 11 | 28,077 | 1,282 | 23 |
+| Qwen3.5 4B | 3 | 3 | VSSSSSRSRSS | 0 | main pages only | correct: not on the drive | 12 | 55,186 | 1,682 | 41 |
+| Granite 4.2 3B | 1 | 1 | VSR | 0 | a neighbouring article | partly: gap given as "4 to 6 hours" | 4 | 12,493 | 5,146 | 66 |
+| Granite 4.2 3B | 1 | 2 | VSR | 0 | the WikEM article | wrong: "1.3 tablets" | 4 | 11,118 | 6,144 | 79 |
+| Granite 4.2 3B | 1 | 3 | VSR | 0 | the right article | correct | 4 | 11,428 | 2,199 | 28 |
+| Granite 4.2 3B | 2 | 1 | VSRS | 0 | main page only | wrong: (a) "not on the drive", (b) from a snippet | 5 | 19,141 | 6,457 | 84 |
+| Granite 4.2 3B | 2 | 2 | VSRS | 0 | main page only | wrong: same | 5 | 16,493 | 4,611 | 58 |
+| Granite 4.2 3B | 2 | 3 | VSRS | 0 | main page only | wrong: same | 5 | 17,405 | 4,537 | 56 |
+| Granite 4.2 3B | 3 | 1 | VSSD | 0 | nothing to read | correct: not on the drive | 5 | 14,629 | 3,129 | 34 |
+| Granite 4.2 3B | 3 | 2 | VSD | 0 | nothing to read | correct: not on the drive | 4 | 8,920 | 1,985 | 24 |
+| Granite 4.2 3B | 3 | 3 | VDSS | 0 | nothing to read | correct: not on the drive | 5 | 12,852 | 2,609 | 29 |
+
+What the runs show:
+
+- **Correct answers: Qwen3.5 4B 7 of 9, Granite 4.2 3B 4 of 9.** Both said "not on the drive" all three times. The difference is in the questions that have an answer.
+- **Qwen searches again; Granite stops after one search.** Qwen averaged 8 tool calls a run and Granite under 4. On question 2 Granite sent one long query ("doxycycline prophylactic dose Lyme disease adult tick bite"), got no result, read the archive's main page and concluded the fact was missing, then answered part (b) from a search snippet without reading the article. Qwen used two- and three-word queries and read the articles.
+- **Qwen's persistence costs requests.** It took 11 or 12 requests to conclude that tyre pressures are not on a medical drive, and one single-lookup run took 18 requests and 128K prompt tokens after four reads were rejected.
+- **Granite reads the first plausible hit.** Twice on question 1 it read a neighbouring article (co-codamol, WikEM's acetaminophen page) and answered from that.
+- **Granite is slower per run despite fewer requests**: about 4,100 output tokens a run against 1,500, most of it thinking, and 51 s against 35 s on average.
+- Neither model produced a malformed call. Small-model tool calling through Open WebUI's native mode held up; choosing what to read is where they fail.
+
+What the tools contributed to the failures (existing behaviour, not changed here):
+
+- `search` returns nothing unless every word matches, with no hint to shorten the query.
+- `search_read` rejects a path without its trailing slash ("article not found"); all four of Qwen's rejected reads in one run were this.
+- `search_read` returned about 3,000 characters of an article with no links, the index's partial body, although `kiwix-serve` had started. Why the full page was not used was not investigated.
+- `search_read` without a path returns the main page, which Granite took for the article it wanted.
+- Every search result ends with "Hybrid unavailable, fell back to keyword", which Granite quoted as a finding.
 
 ## Follow-ups
 
@@ -95,6 +151,9 @@ Real run on this Mac (64 GB, internal SSD), CLI and runtime built from the branc
 | Prune source maps (87 MB per platform) | S | M if the builder needs a general prune field with its own stamp rules |
 | `svalbard add` resolves dependencies like the wizard | S | M if removal must also drop automatic dependencies |
 | Empty MCP results say "none" instead of nothing | S | — |
+| A way to start the browser actions without opening the browser (a `--no-open` style switch), for tests and headless hosts | S | M if it should cover every action that opens a browser and be reachable from the menu |
+| MCP search and read for small models: hint on zero hits, accept a path without its trailing slash, full article bodies, drop the hybrid notice | M | L if full bodies need paging to fit small contexts |
+| Repeat the tool-use comparison with more runs and with the larger shipped models | S | M if a default system prompt is added and has to be tuned per family |
 | Upgrade routine for each Open WebUI pin bump | S per bump | M when a release changes config keys |
 
 ## File tools for the workspace

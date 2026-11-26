@@ -65,6 +65,9 @@ type Model struct {
 	paletteActive bool
 	paletteModel  tui.PaletteModel
 
+	settingsActive bool
+	settings       settingsScreen
+
 	searchActive       bool
 	searchToken        int
 	searchSession      searchSession
@@ -109,6 +112,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.settingsActive {
+			m.scrollSettings()
+		}
 		return m, nil
 	case tui.PaletteCloseMsg:
 		m.paletteActive = false
@@ -200,6 +206,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.searchActive {
 			return m.updateSearch(msg)
+		}
+		if m.settingsActive {
+			return m.updateSettings(msg)
 		}
 		if m.showingOutput {
 			switch msg.String() {
@@ -470,6 +479,9 @@ func (m Model) activateItem(item config.MenuItem) (tea.Model, tea.Cmd) {
 				m.lastErr = err
 				m.status = "Action failed"
 			}
+			return m, nil
+		} else if err == nil && builtin.Name == settingsAction {
+			m.openSettings()
 			return m, nil
 		}
 	}

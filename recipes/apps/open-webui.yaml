@@ -16,6 +16,12 @@ requirements_from: requirements-slim.txt
 entry_points:
 - open-webui
 description: Open WebUI browser front end for the drive's local models and vault tools (slim install)
+settings:
+- name: open_browser
+  type: bool
+  default: true
+  label: Open browser on start
+  description: Open the browser when Open WebUI is ready.
 license:
   id: LicenseRef-Open-WebUI
   attribution: Open WebUI Inc. (Timothy Jaeryang Baek); Open WebUI License, BSD-3-Clause terms plus a branding clause
