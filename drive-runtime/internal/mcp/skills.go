@@ -59,6 +59,9 @@ const (
 // connects to a drive with skills.
 const skillServerInstructions = "Procedures for building things on this drive (apps, dashboards, maps, documents, firmware) are found with skill_search and read with skill_read. Read the skill before starting."
 
+// skillFolderNote comes with the folder of a skill's files.
+const skillFolderNote = "Copy from the folder; save what you make in your working folder, not there."
+
 // noSkillIndex answers both tools on a drive without a search index.
 const noSkillIndex = "This vault has no search index, so its skills and library quickstarts cannot be searched or read with this tool. They are files on the drive under skills/ and lib/js/. The computer that manages the drive builds the index with 'svalbard index'."
 
@@ -94,20 +97,20 @@ func (c *SkillCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "search",
-			Desc: "Find a procedure (a skill) or a JS library's quickstart on this drive, for building something: an app, dashboard, map, document, firmware. Say what you want to make in a few words. Each result is one skill or library; pass its id to skill_read and follow what it says. Not for facts: use search.",
+			Desc: "Find a procedure (a skill) or a JS library quickstart on this drive, for building something: an app, dashboard, map, document, firmware. Pass a result's id to skill_read and follow what it says. Not for facts: use search.",
 			Params: []ParamDef{
-				{Name: "query", Type: "string", Required: true, Desc: "What to build or do, for example: chart from a CSV file"},
-				{Name: "kind", Type: "string", Desc: "Only skills (procedures) or only libraries", Enum: []string{skillKind, libraryKind}},
+				{Name: "query", Type: "string", Required: true, Desc: "What to build, for example: chart from a CSV file"},
+				{Name: "kind", Type: "string", Desc: "Only skills or only libraries", Enum: []string{skillKind, libraryKind}},
 				{Name: "limit", Type: "integer", Desc: "Maximum results, 1 to 20", Default: defaultSkillLimit},
 			},
 		},
 		{
 			Name: "read",
-			Desc: "Read a skill or a library quickstart found with skill_search. A long one comes in parts: when the result has \"continues\", call again with the offset it names. \"files\" lists the skill's other files: pass a markdown one as file to read it; templates and scripts are files on the drive below the skill's id.",
+			Desc: "Read a skill or library quickstart by the id skill_search gave. A long one comes in parts: when the result has \"continues\", call again with the offset it names. \"files\" are the skill's other files, in \"folder\" on this computer: pass a markdown one as file to read it here, open the others there.",
 			Params: []ParamDef{
 				{Name: "id", Type: "string", Required: true, Desc: "The id from skill_search"},
-				{Name: "file", Type: "string", Desc: "A markdown file of the skill, as listed in \"files\""},
-				{Name: "section", Type: "string", Desc: "Only one section, by its heading or number"},
+				{Name: "file", Type: "string", Desc: "A markdown file from \"files\""},
+				{Name: "section", Type: "string", Desc: "One section only, by heading or number"},
 				{Name: "offset", Type: "integer", Desc: "Character to start from, for the next part", Default: 0},
 			},
 		},
@@ -295,9 +298,13 @@ type SkillReadResult struct {
 	NextOffset int `json:"-"`
 	// Sections names the headings of a file that did not fit in one part.
 	Sections []string `json:"sections,omitempty"`
-	// Files are the skill's other files, relative to its folder.
-	Files []string `json:"files,omitempty"`
-	Note  string   `json:"note,omitempty"`
+	// Files are the skill's other files, relative to Folder: where the skill
+	// is on this computer, for a client that opens a template or runs a
+	// script. A model given only a path within the drive looks for it in its
+	// working folder.
+	Files  []string `json:"files,omitempty"`
+	Folder string   `json:"folder,omitempty"`
+	Note   string   `json:"note,omitempty"`
 }
 
 func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any) (ActionResult, error) {
@@ -356,9 +363,13 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 	}
 	if offset == 0 && file == entry.File && entry.Folder != "" && !text.oneSection {
 		var more int
-		result.Files, more = c.otherFiles(entry)
+		if result.Files, more = c.otherFiles(entry); len(result.Files) > 0 {
+			result.Folder = filepath.Join(c.driveRoot, filepath.FromSlash(entry.Folder))
+			// Given the folder, a small model saved its own page into it.
+			result.Note = skillFolderNote
+		}
 		if more > 0 {
-			result.Note = fmt.Sprintf("%d more files are not listed; they are on the drive below %s.", more, entry.Folder)
+			result.Note += fmt.Sprintf(" %d more files are not listed; they are in the same folder.", more)
 		}
 	}
 	return ActionResult{Data: result}, nil
@@ -367,7 +378,7 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 // notIndexedError explains a file of a skill that skill_read cannot return.
 func (c *SkillCapability) notIndexedError(entry skillEntry, target string) error {
 	if info, err := os.Stat(filepath.Join(c.driveRoot, filepath.FromSlash(target))); err == nil && !info.IsDir() {
-		return fmt.Errorf("%s is not markdown, so skill_read does not hold it. It is a file on the drive: %s", path.Base(target), target)
+		return fmt.Errorf("%s is not markdown, so skill_read does not hold it. It is a file on this computer: %s", path.Base(target), filepath.Join(c.driveRoot, filepath.FromSlash(target)))
 	}
 	files, _ := c.otherFiles(entry)
 	if len(files) == 0 {

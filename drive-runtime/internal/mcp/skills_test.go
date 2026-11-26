@@ -415,6 +415,16 @@ func TestSkillReadListsFiles(t *testing.T) {
 	if want := []string{"references/r.md", "scripts/run.py", "templates/page.html"}; !slices.Equal(result.Files, want) {
 		t.Errorf("files = %v, want %v", result.Files, want)
 	}
+	// Where they are on this computer: a model told only a path within the
+	// drive looks for it in its working folder, then all over the disk.
+	if want := filepath.Join(f.root, "skills", "skills-core", "data-dashboard"); result.Folder != want {
+		t.Errorf("folder = %q, want %q", result.Folder, want)
+	}
+	// And not where its own work goes: given the folder alone, a 4B model
+	// saved its page into the skill.
+	if !strings.Contains(result.Note, "working folder") {
+		t.Errorf("note = %q", result.Note)
+	}
 	if !strings.HasPrefix(result.Body, "Charts and tables from CSV or JSON in one HTML file") || !strings.HasSuffix(result.Body, "Open the page and look at the chart.") ||
 		!strings.Contains(result.Body, "## Steps\n\n1. Load the CSV.") || result.Continues != "" || result.Sections != nil {
 		t.Errorf("body = %q (continues %q, sections %v)", result.Body, result.Continues, result.Sections)
@@ -422,7 +432,7 @@ func TestSkillReadListsFiles(t *testing.T) {
 
 	// A markdown file beside SKILL.md is read by naming it.
 	reference, err := f.read(map[string]any{"id": "skills/skills-core/data-dashboard", "file": "references/r.md"})
-	if err != nil || reference.File != "references/r.md" || !strings.Contains(reference.Body, "Logarithmic axis options") || reference.Files != nil {
+	if err != nil || reference.File != "references/r.md" || !strings.Contains(reference.Body, "Logarithmic axis options") || reference.Files != nil || reference.Folder != "" || reference.Note != "" {
 		t.Fatalf("reference = %+v, %v", reference, err)
 	}
 	// Another kind of file is not in the index; the error says where it is.
@@ -441,7 +451,7 @@ func TestSkillReadListsFiles(t *testing.T) {
 	// A quickstart is read by its path or its library's name; it has no folder.
 	for _, id := range []string{"lib/js/js-core/docs/chartjs.md", "chartjs", "Chart.js"} {
 		result, err := f.read(map[string]any{"id": id})
-		if err != nil || result.ID != "lib/js/js-core/docs/chartjs.md" || !strings.Contains(result.Body, "Import chart.js/auto") || result.Files != nil {
+		if err != nil || result.ID != "lib/js/js-core/docs/chartjs.md" || !strings.Contains(result.Body, "Import chart.js/auto") || result.Files != nil || result.Folder != "" {
 			t.Errorf("id %q = %+v, %v", id, result, err)
 		}
 	}
@@ -449,7 +459,7 @@ func TestSkillReadListsFiles(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(f.root, "skills", "skills-core", "data-dashboard")); err != nil {
 		t.Fatal(err)
 	}
-	if result, err := f.read(map[string]any{"id": "skills/skills-core/data-dashboard"}); err != nil || result.Files != nil || result.Body == "" {
+	if result, err := f.read(map[string]any{"id": "skills/skills-core/data-dashboard"}); err != nil || result.Files != nil || result.Folder != "" || result.Body == "" {
 		t.Errorf("without its folder = %+v, %v", result, err)
 	}
 }

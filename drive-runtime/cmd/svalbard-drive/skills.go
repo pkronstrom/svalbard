@@ -84,7 +84,7 @@ func runSkills(stdout, stderr io.Writer, driveRoot string, args []string) error 
 	case mcp.SkillReadResult:
 		fmt.Fprintln(stdout, data.Body)
 		if len(data.Files) > 0 {
-			fmt.Fprintf(stdout, "\nfiles in %s:\n", data.ID)
+			fmt.Fprintf(stdout, "\nfiles in %s:\n", data.Folder)
 			for _, file := range data.Files {
 				fmt.Fprintf(stdout, "  %s\n", file)
 			}

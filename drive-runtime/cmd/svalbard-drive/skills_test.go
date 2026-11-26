@@ -146,7 +146,7 @@ func TestSkillsReadPrintsContinuation(t *testing.T) {
 
 	// A skill that fits is printed whole, with the files it brings.
 	out, _, err = skills(t, root, "read", "data-dashboard")
-	want := "Charts from CSV in one HTML file\n\n## Steps\n\nDraw the chart.\n\n## Check\n\nLook at the chart.\n\nfiles in skills/skills-core/data-dashboard:\n  scripts/run.py\n"
+	want := "Charts from CSV in one HTML file\n\n## Steps\n\nDraw the chart.\n\n## Check\n\nLook at the chart.\n\nfiles in " + filepath.Join(root, "skills", "skills-core", "data-dashboard") + ":\n  scripts/run.py\nCopy from the folder; save what you make in your working folder, not there.\n"
 	if err != nil || out != want {
 		t.Fatalf("whole skill = %q, %v; want %q", out, err, want)
 	}
