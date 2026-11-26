@@ -173,6 +173,16 @@ Example:
 svalbard preset copy default-128 ../tmp/default-128.yaml
 ```
 
+### `svalbard skill print` / `svalbard skill install --agent <agent>`
+
+Teach a coding agent to create and manage vaults with the commands above. The skill is a short `SKILL.md` built into the binary; nothing installs it for you.
+
+- `print`: write the skill to standard output
+- `install --agent claude|codex|opencode|pi`: write it to that agent's skills directory in your home folder
+- `install --dir <path>`: write it to `<path>/svalbard/SKILL.md` instead
+
+Installing again replaces the previous copy, which is how you pick up a newer version after upgrading `svalbard`.
+
 ### `svalbard index --vault <path> [--type keyword|semantic|full]`
 
 Build the SQLite search index from realized ZIM files under the vault: the keyword index by default, `semantic` for embeddings (needs an embedding model on the vault), `full` for both.

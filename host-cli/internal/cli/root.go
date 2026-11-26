@@ -279,6 +279,7 @@ func NewRootCommand() *cobra.Command {
 		newPresetCommand(),
 		newCatalogCommand(),
 		newUpdateCommand(),
+		newSkillCommand(),
 		indexCmd,
 	)
 
