@@ -920,3 +920,192 @@ func TestWikiReportsADriveThatCannotHoldTheWiki(t *testing.T) {
 		t.Errorf("list error = %v, want a sentence without the host path", err)
 	}
 }
+
+// SilverBullet runs space-lua blocks on pages under Library/ for the whole
+// wiki, with the browser's reach. Text a model read in the vault must not
+// get there.
+func TestWikiToolsDoNotWriteTheWikisOwnScripts(t *testing.T) {
+	cap, root := newWiki(t)
+	writePage(t, root, "Library/Config", "```space-lua\nconfig.set(\"x\", 1)\n```\n")
+	writePage(t, root, "Garden", "beans\n")
+	script := "```space-lua\njs.window.fetch(\"/.fs/index.md\", {method = \"DELETE\"})\n```"
+
+	for name, call := range map[string]struct {
+		action string
+		params map[string]any
+	}{
+		"create":            {"create", map[string]any{"page": "Library/Helper", "content": script}},
+		"create, lower":     {"create", map[string]any{"page": "library/Helper", "content": script}},
+		"create, nested":    {"create", map[string]any{"page": "Library/Std/Override", "content": "x"}},
+		"append":            {"append", map[string]any{"page": "Library/Config", "content": script}},
+		"append, new":       {"append", map[string]any{"page": "LIBRARY/New", "content": script}},
+		"edit":              {"edit", map[string]any{"page": "Library/Config", "old_text": "1", "new_text": "2"}},
+		"delete":            {"delete", map[string]any{"page": "Library/Config"}},
+		"move in":           {"move", map[string]any{"page": "Garden", "new_name": "Library/Garden"}},
+		"move out":          {"move", map[string]any{"page": "Library/Config", "new_name": "Config"}},
+		"move in, by case":  {"move", map[string]any{"page": "Garden", "new_name": "library/Garden"}},
+		"file name of page": {"create", map[string]any{"page": "Library/Helper.md", "content": script}},
+	} {
+		out, err := callWiki(t, cap, call.action, call.params)
+		if err == nil || !strings.Contains(err.Error(), "under Library/") || !strings.Contains(err.Error(), "do not change those pages") {
+			t.Errorf("%s: wiki_%s = %q, %v; want the Library refusal", name, call.action, out, err)
+		}
+	}
+	if got := readPageFile(t, root, "Library/Config"); got != "```space-lua\nconfig.set(\"x\", 1)\n```\n" {
+		t.Errorf("the library page changed: %q", got)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(wiki.Dir(root), "Library")); len(entries) != 1 {
+		t.Errorf("Library holds %v, want only Config.md", entries)
+	}
+	if got := readPageFile(t, root, "Garden"); got != "beans\n" {
+		t.Errorf("the page changed: %q", got)
+	}
+
+	// Reading them is harmless, and a page that only has the word is a page.
+	if out := mustCallWiki(t, cap, "read", map[string]any{"page": "Library/Config"}); !strings.Contains(out, "config.set") {
+		t.Errorf("read = %s", out)
+	}
+	mustCallWiki(t, cap, "create", map[string]any{"page": "Library", "content": "Books I own."})
+	mustCallWiki(t, cap, "create", map[string]any{"page": "Books/Library", "content": "x"})
+	mustCallWiki(t, cap, "create", map[string]any{"page": "Librarything/Notes", "content": "x"})
+}
+
+// SilverBullet evaluates ${...} as Lua when a page is shown, and Lua there
+// reaches the browser's JavaScript.
+func TestWikiToolsAddNoLuaExpressions(t *testing.T) {
+	cap, root := newWiki(t)
+	attack := `Dose: ${js.window.fetch("/.fs/index.md", {method = "DELETE"})}`
+
+	wantWikiError(t, cap, "create", map[string]any{"page": "Dosing", "content": attack}, `"${" outside a code block`, "inside backticks")
+	if _, err := os.Stat(filepath.Join(wiki.Dir(root), "Dosing.md")); err == nil {
+		t.Error("the refused page was written")
+	}
+	writePage(t, root, "Dosing", "Paracetamol.\n\n$\n")
+	wantWikiError(t, cap, "append", map[string]any{"page": "Dosing", "content": attack}, `"${" outside a code block`)
+	// An edit that completes one from pieces already on the page.
+	wantWikiError(t, cap, "edit", map[string]any{"page": "Dosing", "old_text": "$\n", "new_text": "${os.exit()}\n"}, `"${" outside a code block`)
+	writePage(t, root, "Split", "Total: $\n{1 + 1}\n")
+	wantWikiError(t, cap, "edit", map[string]any{"page": "Split", "old_text": "$\n{", "new_text": "${"}, `"${" outside a code block`)
+	if got := readPageFile(t, root, "Split"); got != "Total: $\n{1 + 1}\n" {
+		t.Errorf("a refused edit changed the page: %q", got)
+	}
+
+	// Code that is shown, not run: a fenced block and a code span.
+	fenced := "Set the variable:\n\n```sh\necho ${HOME}\n```\n\nor `${HOME}` inline, or ``a ` ${b}``.\n\n~~~\n${also.shown}\n~~~\n"
+	mustCallWiki(t, cap, "create", map[string]any{"page": "Shell", "content": fenced})
+	mustCallWiki(t, cap, "append", map[string]any{"page": "Shell", "content": "Costs $5 {roughly} and $ {this}."})
+	// A span that never closes, or a fence that closed, hides nothing.
+	for _, content := range []string{"`open ${x}", "```\ncode\n```\n${x}", "    ${indented}", "text ``two` ${x}"} {
+		wantWikiError(t, cap, "create", map[string]any{"page": "Tricks", "content": content}, `"${" outside a code block`)
+	}
+
+	// What the user wrote stays, and a tool may edit around it.
+	writePage(t, root, "Queries", "Pages: ${query[[from index.tag \"page\"]]}\n\nNotes: none\n")
+	mustCallWiki(t, cap, "edit", map[string]any{"page": "Queries", "old_text": "Notes: none", "new_text": "Notes: checked"})
+	mustCallWiki(t, cap, "append", map[string]any{"page": "Queries", "content": "More notes."})
+	if got := readPageFile(t, root, "Queries"); !strings.Contains(got, `${query[[from index.tag "page"]]}`) || !strings.Contains(got, "Notes: checked") {
+		t.Errorf("page = %q, want the user's expression kept and the edit made", got)
+	}
+	wantWikiError(t, cap, "append", map[string]any{"page": "Queries", "content": "${1}"}, `"${" outside a code block`)
+}
+
+func TestWikiAppendsSentTogetherAllArrive(t *testing.T) {
+	cap, root := newWiki(t)
+	const writers = 20
+	errs := make(chan error, writers)
+	for i := range writers {
+		go func() {
+			_, err := cap.Handle(context.Background(), "append", map[string]any{"page": "Log", "content": fmt.Sprintf("entry %02d", i)})
+			errs <- err
+		}()
+	}
+	for range writers {
+		if err := <-errs; err != nil {
+			t.Errorf("append error = %v", err)
+		}
+	}
+	page := readPageFile(t, root, "Log")
+	for i := range writers {
+		if !strings.Contains(page, fmt.Sprintf("entry %02d\n", i)) {
+			t.Errorf("entry %02d was lost:\n%s", i, page)
+		}
+	}
+
+	// Of several creates of one page, one wins and the rest are told.
+	created := make(chan error, writers)
+	for i := range writers {
+		go func() {
+			_, err := cap.Handle(context.Background(), "create", map[string]any{"page": "Once", "content": fmt.Sprintf("version %02d", i)})
+			created <- err
+		}()
+	}
+	won := 0
+	for range writers {
+		if err := <-created; err == nil {
+			won++
+		} else if !strings.Contains(err.Error(), "already exists") {
+			t.Errorf("create error = %v", err)
+		}
+	}
+	if won != 1 {
+		t.Errorf("%d creates of one page succeeded, want 1", won)
+	}
+}
+
+// A page the user named in a way the tools would not: found by search, so it
+// must be readable and changeable under that name.
+func TestWikiToolsWorkOnPagesTheUserNamedFreely(t *testing.T) {
+	cap, root := newWiki(t)
+	for _, name := range []string{"Recipe: bread", "Version 1.2", "notes.txt", "Q&A #1"} {
+		writePage(t, root, name, "flour and water\n")
+	}
+
+	out := mustCallWiki(t, cap, "search", map[string]any{"query": "flour"})
+	if !strings.Contains(out, `"page":"Recipe: bread"`) || !strings.Contains(out, `"page":"Version 1.2"`) {
+		t.Fatalf("search = %s, want the pages under their own names", out)
+	}
+	for _, name := range []string{"Recipe: bread", "Version 1.2", "notes.txt", "Q&A #1", "recipe: BREAD"} {
+		if out := mustCallWiki(t, cap, "read", map[string]any{"page": name}); !strings.Contains(out, "flour and water") {
+			t.Errorf("read(%q) = %s", name, out)
+		}
+	}
+	mustCallWiki(t, cap, "append", map[string]any{"page": "Recipe: bread", "content": "and salt"})
+	mustCallWiki(t, cap, "edit", map[string]any{"page": "Recipe: bread", "old_text": "flour", "new_text": "rye flour"})
+	if got := readPageFile(t, root, "Recipe: bread"); got != "rye flour and water\n\nand salt\n" {
+		t.Errorf("page = %q", got)
+	}
+	// Moving it gives it a name the tools would give.
+	wantWikiError(t, cap, "move", map[string]any{"page": "Version 1.2", "new_name": "Version 1.3"}, "reads as a file type")
+	if out := mustCallWiki(t, cap, "move", map[string]any{"page": "Version 1.2", "new_name": "Version 1-2"}); !strings.Contains(out, `"from":"Version 1.2"`) {
+		t.Errorf("move = %s", out)
+	}
+	if out := mustCallWiki(t, cap, "delete", map[string]any{"page": "Q&A #1"}); !strings.Contains(out, `wiki-trash/Q&A #1.20261126-185503.md`) {
+		t.Errorf("delete = %s", out)
+	}
+
+	// The rules still hold for a page that is not there, and for names
+	// that would leave the wiki.
+	wantWikiError(t, cap, "read", map[string]any{"page": "Recipe: cake"}, `contains ":"`)
+	wantWikiError(t, cap, "append", map[string]any{"page": "Recipe: cake", "content": "x"}, `contains ":"`)
+	wantWikiError(t, cap, "create", map[string]any{"page": "Recipe: bread", "content": "x"}, `page "Recipe: bread" already exists`)
+	wantWikiError(t, cap, "read", map[string]any{"page": "../Recipe: bread"}, `contains ".."`)
+}
+
+func TestWikiMoveCanChangeOnlyTheLetterCase(t *testing.T) {
+	cap, root := newWiki(t)
+	writePage(t, root, "Projects/garden plan", "beans\n")
+
+	out := mustCallWiki(t, cap, "move", map[string]any{"page": "Projects/garden plan", "new_name": "projects/Garden Plan"})
+	if !strings.HasPrefix(out, `{"page":"Projects/Garden Plan"`) || !strings.Contains(out, `"from":"Projects/garden plan"`) {
+		t.Errorf("move = %s, want the page renamed in its existing folder", out)
+	}
+	entries, err := os.ReadDir(filepath.Join(wiki.Dir(root), "Projects"))
+	if err != nil || len(entries) != 1 || entries[0].Name() != "Garden Plan.md" {
+		t.Errorf("folder = %v (%v), want only Garden Plan.md", entries, err)
+	}
+	if entries, _ := os.ReadDir(wiki.Dir(root)); len(entries) != 1 {
+		t.Errorf("wiki = %v, want only the Projects folder", entries)
+	}
+	// The same name again is still nothing to do.
+	wantWikiError(t, cap, "move", map[string]any{"page": "Projects/Garden Plan", "new_name": "projects/Garden Plan"}, "nothing would move")
+}

@@ -57,6 +57,12 @@ type WikiCapability struct {
 	pages *workspace.Workspace
 	trash *workspace.Workspace
 
+	// writing makes each change one step: a model that sends several
+	// appends to one page in a turn has them handled at the same time, and
+	// each reads the page before it writes. Another process (the browser, a
+	// second MCP server) is not held back; there the last write wins.
+	writing sync.Mutex
+
 	// running returns the address of the wiki when its launcher is up, for
 	// the link a write returns. now stamps a deleted page's name in the
 	// trash. Both are fields so tests can set them.
@@ -242,6 +248,17 @@ func unwrapPath(err error) error {
 // SilverBullet cannot address would be written and never shown. The errors
 // are written for the model: each says what to send instead.
 func pageName(param, raw string) (string, error) {
+	return checkedPageName(param, raw, true)
+}
+
+// existingPageName is pageName for a page that is already there. The user
+// may have named it in a way the tools would not ("Recipe: bread" on a disk
+// that allows it); only the rules that keep a name inside the wiki apply.
+func existingPageName(param, raw string) (string, error) {
+	return checkedPageName(param, raw, false)
+}
+
+func checkedPageName(param, raw string, creating bool) (string, error) {
 	name := strings.TrimSpace(raw)
 	if name == "" {
 		return "", fmt.Errorf("missing required parameter: %s, for example: %s", param, pageExample)
@@ -274,12 +291,16 @@ func pageName(param, raw string) (string, error) {
 			return "", fmt.Errorf(`page name %q contains ".."; name the page from the top of the wiki, for example: %s`, raw, pageExample)
 		case strings.HasPrefix(segment, "."):
 			return "", fmt.Errorf("page name %q has a part starting with a dot; choose a name without the leading dot", raw)
+		case !creating:
 		case strings.HasPrefix(segment, "^"):
 			return "", fmt.Errorf(`page name %q has a part starting with "^"; choose a name without it`, raw)
 		case segment != strings.TrimSpace(segment):
 			return "", fmt.Errorf("page name %q has a space next to a \"/\"; send it without: %s", raw, trimSegments(segments))
 		case strings.HasSuffix(segment, "."):
 			return "", fmt.Errorf("page name %q has a part ending in a dot; send it without: %s", raw, strings.TrimRight(segment, "."))
+		}
+		if !creating {
+			continue
 		}
 		if bad := strings.IndexFunc(segment, unusableInPageName); bad >= 0 {
 			char, _ := utf8.DecodeRuneInString(segment[bad:])
@@ -293,7 +314,7 @@ func pageName(param, raw string) (string, error) {
 	// SilverBullet reads a name that ends like a file type ("Version 1.2",
 	// "notes.txt") as a file, not a page, and would never list this one.
 	last := segments[len(segments)-1]
-	if dot := strings.LastIndex(last, "."); dot >= 0 && strings.IndexFunc(last[dot+1:], notASCIIAlphanumeric) < 0 {
+	if dot := strings.LastIndex(last, "."); creating && dot >= 0 && strings.IndexFunc(last[dot+1:], notASCIIAlphanumeric) < 0 {
 		return "", fmt.Errorf("page name %q ends in %q, which the wiki reads as a file type; send it without the dot, for example: %s",
 			raw, last[dot:], replaceSegment(segments, len(segments)-1, last[:dot]+"-"+last[dot+1:]))
 	}
@@ -338,11 +359,25 @@ type page struct {
 }
 
 // resolvePage checks the page name in params[param] against the name rules
-// and the page folder's confinement.
+// and the page folder's confinement. A name the rules for new pages refuse
+// is still accepted when the page exists.
 func (c *WikiCapability) resolvePage(ws *workspace.Workspace, params map[string]any, param string) (page, error) {
-	name, err := pageName(param, getString(params, param))
-	if err != nil {
-		return page{}, err
+	raw := getString(params, param)
+	name, nameErr := pageName(param, raw)
+	if nameErr != nil {
+		existing, err := existingPageName(param, raw)
+		if err != nil {
+			return page{}, nameErr
+		}
+		existing = diskSpelling(ws, existing)
+		rel, err := ws.Resolve(existing + ".md")
+		if err != nil {
+			return page{}, nameErr
+		}
+		if info, err := ws.Stat(rel); err != nil || info.IsDir() {
+			return page{}, nameErr
+		}
+		return page{name: existing, rel: rel}, nil
 	}
 	name = diskSpelling(ws, name)
 	rel, err := ws.Resolve(name + ".md")
@@ -350,6 +385,88 @@ func (c *WikiCapability) resolvePage(ws *workspace.Workspace, params map[string]
 		return page{}, err
 	}
 	return page{name: name, rel: rel}, nil
+}
+
+// libraryFolder is where SilverBullet runs what a page holds: a space-lua
+// block on a page under it is code for the whole wiki, loaded when the wiki
+// is opened, with the browser's full reach on the wiki's address.
+const libraryFolder = "Library"
+
+// writable refuses a page the tools must not change. A model acts on text it
+// read from the vault, and that text must not become code in the user's
+// browser.
+func writable(p page) error {
+	if first, _, nested := strings.Cut(p.name, "/"); nested && strings.EqualFold(first, libraryFolder) {
+		return fmt.Errorf("page %q is under %s/, where the wiki keeps its own scripts and settings; the wiki tools do not change those pages. Choose a name outside %s/.", p.name, libraryFolder, libraryFolder)
+	}
+	return nil
+}
+
+// luaExpressions counts the "${" in text that SilverBullet would evaluate as
+// Lua when the page is shown: every one outside a fenced code block and
+// outside a code span. Lua there reaches the browser's JavaScript.
+func luaExpressions(text string) int {
+	count := 0
+	var fence string // the marker that opened the current fenced block
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimLeft(line, " ")
+		if len(line)-len(trimmed) <= 3 {
+			for _, marker := range []string{"```", "~~~"} {
+				if !strings.HasPrefix(trimmed, marker) {
+					continue
+				}
+				run := trimmed[:len(trimmed)-len(strings.TrimLeft(trimmed, marker[:1]))]
+				switch {
+				case fence == "":
+					fence = run
+				case strings.HasPrefix(run, fence) && strings.TrimSpace(trimmed[len(run):]) == "":
+					fence = ""
+				}
+				trimmed = ""
+			}
+		}
+		if fence != "" || trimmed == "" {
+			continue
+		}
+		for i := 0; i < len(line); i++ {
+			switch {
+			case line[i] == '`':
+				// A code span ends at the next run of as many backticks.
+				run := len(line[i:]) - len(strings.TrimLeft(line[i:], "`"))
+				rest := line[i+run:]
+				end := -1
+				for at := 0; at < len(rest); {
+					next := strings.IndexByte(rest[at:], '`')
+					if next < 0 {
+						break
+					}
+					closing := len(rest[at+next:]) - len(strings.TrimLeft(rest[at+next:], "`"))
+					if closing == run {
+						end = at + next + closing
+						break
+					}
+					at += next + closing
+				}
+				if end < 0 {
+					i += run - 1
+					continue
+				}
+				i += run + end - 1
+			case line[i] == '$' && i+1 < len(line) && line[i+1] == '{':
+				count++
+			}
+		}
+	}
+	return count
+}
+
+// noNewCode refuses a write that would add a Lua expression to a page. What
+// the user wrote there stays; the tools add none.
+func noNewCode(before, after string) error {
+	if luaExpressions(after) > luaExpressions(before) {
+		return fmt.Errorf("the text has \"${\" outside a code block, which the wiki would run as code when the page is opened. Write it inside backticks or a fenced code block, or leave it out.")
+	}
+	return nil
 }
 
 // diskSpelling returns name with the letter case its folders and its page
@@ -917,6 +1034,14 @@ func (c *WikiCapability) handleCreate(params map[string]any) (ActionResult, erro
 	if err != nil {
 		return ActionResult{}, err
 	}
+	if err := writable(p); err != nil {
+		return ActionResult{}, err
+	}
+	if err := noNewCode("", content); err != nil {
+		return ActionResult{}, err
+	}
+	c.writing.Lock()
+	defer c.writing.Unlock()
 	if _, err := ws.Stat(p.rel); err == nil {
 		return ActionResult{}, fmt.Errorf("page %q already exists. Add to it with wiki_append, change it with wiki_edit, or choose another name.", p.name)
 	}
@@ -941,6 +1066,11 @@ func (c *WikiCapability) handleAppend(params map[string]any) (ActionResult, erro
 	if err != nil {
 		return ActionResult{}, err
 	}
+	if err := writable(p); err != nil {
+		return ActionResult{}, err
+	}
+	c.writing.Lock()
+	defer c.writing.Unlock()
 	existing := ""
 	if _, statErr := ws.Stat(p.rel); !errors.Is(statErr, fs.ErrNotExist) {
 		if existing, err = c.readPage(ws, p); err != nil {
@@ -950,6 +1080,9 @@ func (c *WikiCapability) handleAppend(params map[string]any) (ActionResult, erro
 	updated := endWithNewline(content)
 	if before := strings.TrimRight(existing, "\n"); before != "" {
 		updated = before + "\n\n" + updated
+	}
+	if err := noNewCode(existing, updated); err != nil {
+		return ActionResult{}, err
 	}
 	if err := c.writePage(ws, p, updated); err != nil {
 		return ActionResult{}, err
@@ -971,6 +1104,11 @@ func (c *WikiCapability) handleEdit(params map[string]any) (ActionResult, error)
 	if err != nil {
 		return ActionResult{}, err
 	}
+	if err := writable(p); err != nil {
+		return ActionResult{}, err
+	}
+	c.writing.Lock()
+	defer c.writing.Unlock()
 	content, err := c.readPage(ws, p)
 	if err != nil {
 		return ActionResult{}, err
@@ -992,6 +1130,9 @@ func (c *WikiCapability) handleEdit(params map[string]any) (ActionResult, error)
 		return ActionResult{}, fmt.Errorf("old_text occurs %d times in page %q. Add more of the surrounding text so it matches once.", count, p.name)
 	}
 	updated := strings.Replace(content, oldText, newText, 1)
+	if err := noNewCode(content, updated); err != nil {
+		return ActionResult{}, err
+	}
 	if err := c.writePage(ws, p, updated); err != nil {
 		return ActionResult{}, err
 	}
@@ -1008,13 +1149,33 @@ func (c *WikiCapability) handleMove(params map[string]any) (ActionResult, error)
 	if err != nil {
 		return ActionResult{}, err
 	}
+	// The new name is one the tools would give, whatever the old one is.
+	typed, err := pageName("new_name", getString(params, "new_name"))
+	if err != nil {
+		return ActionResult{}, err
+	}
 	to, err := c.resolvePage(ws, params, "new_name")
 	if err != nil {
 		return ActionResult{}, err
 	}
+	if from.rel == to.rel && path.Base(typed) != path.Base(from.name) {
+		// Only the letter case of the page's own name changes. The name on
+		// the drive is the old spelling, which is what was just resolved.
+		to.name = path.Join(path.Dir(to.name), path.Base(typed))
+		if to.rel, err = ws.Resolve(to.name + ".md"); err != nil {
+			return ActionResult{}, err
+		}
+	}
 	if from.rel == to.rel {
 		return ActionResult{}, fmt.Errorf("page and new_name are the same, so nothing would move")
 	}
+	for _, p := range []page{from, to} {
+		if err := writable(p); err != nil {
+			return ActionResult{}, err
+		}
+	}
+	c.writing.Lock()
+	defer c.writing.Unlock()
 	switch err := ws.Rename(from.rel, to.rel); {
 	case errors.Is(err, fs.ErrExist):
 		return ActionResult{}, fmt.Errorf("page %q already exists, and a move does not replace a page. Choose another new_name, or delete that page first with wiki_delete.", to.name)
@@ -1068,6 +1229,11 @@ func (c *WikiCapability) handleDelete(params map[string]any) (ActionResult, erro
 	if err != nil {
 		return ActionResult{}, err
 	}
+	if err := writable(p); err != nil {
+		return ActionResult{}, err
+	}
+	c.writing.Lock()
+	defer c.writing.Unlock()
 	if _, err := ws.Stat(p.rel); err != nil {
 		return ActionResult{}, c.pageError(ws, p, err)
 	}
