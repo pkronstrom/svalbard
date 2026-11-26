@@ -355,7 +355,7 @@ func (m *appModel) defaultWizardConfig() WizardConfig {
 				newDeps := rebuildForVault(vaultPath)
 				return newDeps.RunApply(ctx, func(ev ApplyEvent) {
 					onProgress(wizard.ApplyEvent{
-						ID: ev.ID, Status: ev.Status, Step: ev.Step,
+						ID: ev.ID, Status: ev.Status, Step: ev.Step, Message: ev.Message,
 						Downloaded: ev.Downloaded, Total: ev.Total,
 						Error: ev.Error,
 					})

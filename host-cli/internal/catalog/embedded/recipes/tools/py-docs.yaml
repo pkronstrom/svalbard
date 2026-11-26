@@ -1,0 +1,22 @@
+id: py-docs
+type: python-package
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.046
+venv: svalbard-python
+deps: [svalbard-python]
+packages:
+- openpyxl==3.1.5
+- pypdf==7.2.0
+- reportlab==5.1.2
+- python-docx==1.2.0
+- python-pptx==1.0.2
+# Skills run their scripts through bin/<platform>/py-docs, the drive's Python
+# with these packages importable. It installs on every platform or fails.
+python_launcher: py-docs
+description: Python libraries for spreadsheet, PDF, Word and PowerPoint files, used by the document skills
+license:
+  id: MIT AND BSD-3-Clause
+  attribution: openpyxl (MIT), pypdf (BSD-3-Clause), ReportLab (BSD-3-Clause), python-docx and python-pptx (MIT), lxml (BSD-3-Clause), Pillow (MIT-CMU)

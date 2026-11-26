@@ -1,0 +1,9 @@
+{
+  "title": "Winter readiness",
+  "subtitle": "Village meeting, December",
+  "slides": [
+    {"title": "Heating", "bullets": ["Wood for 14 weeks is stacked", "Check the chimney before the first fire", ["Sweep it", "Test the damper"]]},
+    {"title": "Water", "bullets": ["Insulate the outdoor taps", "Keep 20 litres per person"], "image": "tank.png", "notes": "Mention the tank level chart."},
+    {"title": "Questions"}
+  ]
+}

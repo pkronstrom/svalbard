@@ -745,3 +745,109 @@ func TestPlatformBinariesAreKeptApartPerPlatform(t *testing.T) {
 		t.Errorf("realized paths = %v", paths)
 	}
 }
+
+// skills-core through apply: the build family routes, the skills whose
+// requirements are installed are written, a local edit is put back and
+// reported, and removing the recipe removes its skills but not skills/.
+func TestApplyWritesAndRemovesEmbeddedSkills(t *testing.T) {
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"skills-core.yaml": {Data: []byte("id: skills-core\ntype: skills\nstrategy: build\nbuild: {family: embedded}\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	m := manifest.New("test")
+	m.Desired.Items = []string{"skills-core"}
+	if err := Run(context.Background(), root, &m, planner.Plan{ToDownload: []string{"skills-core"}}, cat); err != nil {
+		t.Fatal(err)
+	}
+	skill := filepath.Join(root, "skills", "skills-core", "vault-research", "SKILL.md")
+	if _, err := os.Stat(skill); err != nil {
+		t.Fatalf("vault-research (requires nothing) not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "skills", "skills-core", "spreadsheet-file")); !os.IsNotExist(err) {
+		t.Fatalf("spreadsheet-file written without py-docs: %v", err)
+	}
+	if !realizedID(m.Realized.Entries, "skills-core") {
+		t.Fatalf("skills-core not realized: %+v", m.Realized.Entries)
+	}
+	recipes, err := os.ReadFile(filepath.Join(root, ".svalbard", "recipes.json"))
+	if err != nil || !strings.Contains(string(recipes), `"skills"`) {
+		t.Fatalf("recipes.json does not list the skills recipe: %v %s", err, recipes)
+	}
+
+	if err := os.WriteFile(skill, []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var notices []string
+	if err := Run(context.Background(), root, &m, planner.Plan{}, cat, func(ev ProgressEvent) {
+		if ev.Message != "" {
+			notices = append(notices, ev.ID+": "+ev.Message)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(notices, []string{"svalbard: restored svalbard skill vault-research (local edits replaced)"}) {
+		t.Fatalf("notices = %q", notices)
+	}
+	if got, _ := os.ReadFile(skill); string(got) == "mine\n" {
+		t.Fatal("local edit kept")
+	}
+
+	m.Desired.Items = nil
+	if err := Run(context.Background(), root, &m, planner.Plan{ToRemove: []string{"skills-core"}}, cat); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "skills", "skills-core")); !os.IsNotExist(err) {
+		t.Fatalf("skills/skills-core kept: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "skills")); err != nil || !info.IsDir() {
+		t.Fatalf("skills/ removed: %v", err)
+	}
+	recipes, _ = os.ReadFile(filepath.Join(root, ".svalbard", "recipes.json"))
+	if strings.Contains(string(recipes), `"skills"`) {
+		t.Fatalf("recipes.json still lists a skills recipe: %s", recipes)
+	}
+}
+
+func TestApplyRemovesPythonLauncherWithPackage(t *testing.T) {
+	cat, err := catalog.LoadFromFS(fstest.MapFS{
+		"python.yaml": {Data: []byte("id: svalbard-python\ntype: python-venv\npython: \"3.12\"\nstrategy: build\nbuild: {family: python-venv}\n")},
+		"docs.yaml":   {Data: []byte("id: py-docs\ntype: python-package\nvenv: svalbard-python\npackages: [docpkg==1.0]\nentry_points: [docs-cli]\npython_launcher: py-docs\n")},
+	}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	m := manifest.New("test")
+	for _, platform := range []string{"macos-arm64", "linux-arm64"} {
+		tree := filepath.Join("runtime", "python", platform, "tools", "py-docs")
+		if err := os.MkdirAll(filepath.Join(root, tree), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"py-docs", "docs-cli", "other-tool"} {
+			path := filepath.Join(root, "bin", platform, name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		m.Realized.Entries = append(m.Realized.Entries, manifest.RealizedEntry{ID: "py-docs", Type: "python-package", Filename: "py-docs", RelativePath: tree})
+	}
+	if err := Run(context.Background(), root, &m, planner.Plan{ToRemove: []string{"py-docs"}}, cat); err != nil {
+		t.Fatal(err)
+	}
+	for _, platform := range []string{"macos-arm64", "linux-arm64"} {
+		for _, name := range []string{"py-docs", "docs-cli"} {
+			if _, err := os.Stat(filepath.Join(root, "bin", platform, name)); !os.IsNotExist(err) {
+				t.Errorf("bin/%s/%s kept after its package was removed: %v", platform, name, err)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(root, "bin", platform, "other-tool")); err != nil {
+			t.Errorf("another tool's command removed: %v", err)
+		}
+	}
+}

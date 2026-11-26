@@ -37,6 +37,7 @@ var supportOnlyTypes = map[string]string{
 	"gguf-embed":  "embedding model: Search uses it for semantic results",
 	"gguf-mtp":    "draft model: speeds up the chat model it is paired with",
 	"python-venv": "the Python environment that Python packages run in",
+	"skills":      "procedures for the AI clients, which find them with skill_search",
 	"dataset":     noEntryYet, // word lists and templates for the command-line tools
 	"gpkg":        noEntryYet, // GeoPackage map data, for a desktop GIS
 	"sqlite":      noEntryYet, // gets a row only when the SQLiteViz app is installed too, and nothing installs it for it
@@ -49,6 +50,7 @@ var supportOnlyRecipes = map[string][]string{
 	"server that the Local AI entries start":               {"llama-server"},
 	"builds the Python environment during apply":           {"uv"},
 	"PlatformIO itself: the Embedded Dev Shell runs it":    {"platformio-core", "espidf-python"},
+	"Python libraries the AI clients' document skills run": {"py-docs"},
 	"dependency of the map viewer, which has its own rows": {"go-pmtiles", "dufs"},
 	// Command-line tools: launching them from the menu is a later phase.
 	noEntryYet: {

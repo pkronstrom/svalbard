@@ -57,6 +57,9 @@ func applyLines(w io.Writer) apply.ProgressFunc {
 			}
 		case tui.StatusDone:
 			line = "done"
+			if ev.Message != "" {
+				line = ev.Message
+			}
 		case tui.StatusFailed:
 			line = "failed: " + ev.Error
 		default:

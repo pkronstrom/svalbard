@@ -72,6 +72,8 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 		return buildRasterSheets, true
 	case "osm-extract":
 		return buildOSMExtract, true
+	case "embedded":
+		return buildEmbedded, true
 	}
 	// 3. App bundles use the shared Go download/extract pipeline.
 	if recipe.Build.Family == "app-bundle" {

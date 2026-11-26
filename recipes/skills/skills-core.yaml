@@ -1,0 +1,17 @@
+id: skills-core
+type: skills
+display_group: tools
+tags:
+- computing
+depth: reference-only
+size_gb: 0.0002
+strategy: build
+# The skills ship inside host-cli (host-cli/internal/toolkit/skills/skills-core);
+# apply writes those whose requires: are installed into skills/skills-core/.
+build:
+  family: embedded
+deps: [py-docs]
+description: Svalbard's procedures for the AI clients (spreadsheets, PDFs, Word, slides, research, local models, ESP32 firmware), found with skill_search
+license:
+  id: GPL-3.0-only
+  attribution: Svalbard contributors

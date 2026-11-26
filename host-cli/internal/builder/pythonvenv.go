@@ -44,7 +44,8 @@ var pythonTargets = map[string]pythonTarget{
 //
 // A package that cannot be installed for a platform (no compatible wheels) is
 // skipped for that platform with a warning; it fails the build only when no
-// platform could install it.
+// platform could install it, or when it has a python_launcher (scripts call
+// that on every platform).
 func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
 	ctx := opts.Ctx
 	if ctx == nil {
@@ -194,6 +195,11 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 					if isPlatformIOPythonPackage(pkg) {
 						return nil, fmt.Errorf("PlatformIO Python package %s could not be installed for required target %s: %w", pkg.ID, platform, err)
 					}
+					if pkg.PythonLauncher != "" {
+						// Skills call the launcher on whichever platform the
+						// drive runs; a gap would leave them broken there.
+						return nil, fmt.Errorf("python package %s has no compatible wheels for %s: %w", pkg.ID, platform, err)
+					}
 					slog.Warn("python package unavailable for platform, skipping", "package", pkg.ID, "platform", platform, "err", truncate(err.Error(), 300))
 					emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventLog, Message: fmt.Sprintf("skipping %s for %s: no compatible wheels", pkg.ID, platform)})
 					for _, ep := range pkg.EntryPoints {
@@ -223,6 +229,20 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				)
 				if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 					return nil, fmt.Errorf("writing wrapper for %s: %w", ep, err)
+				}
+			}
+			if pkg.PythonLauncher != "" {
+				launcher := filepath.Join(binDir, pkg.PythonLauncher)
+				script := fmt.Sprintf(
+					"#!/bin/sh\nunset PYTHONHOME\nDRIVE=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/../..\" && pwd)\"\nPY=\"$DRIVE/runtime/python/%s\"\nPYTHONPATH=\"$PY/tools/%s\" PYTHONNOUSERSITE=1 exec \"$PY/%s\" \"$@\"\n",
+					platform, pkg.ID, filepath.ToSlash(pythonRel),
+				)
+				if err := os.WriteFile(launcher, []byte(script), 0o755); err != nil {
+					return nil, fmt.Errorf("writing launcher %s: %w", pkg.PythonLauncher, err)
+				}
+				// WriteFile keeps the mode of an existing file.
+				if err := os.Chmod(launcher, 0o755); err != nil {
+					return nil, err
 				}
 			}
 

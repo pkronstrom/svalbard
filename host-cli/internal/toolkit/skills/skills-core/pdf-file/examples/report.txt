@@ -1,0 +1,26 @@
+# Water supply report
+
+Prepared offline on the Svalbard drive.
+
+## Wells
+
+The north well gave 1,240 litres a day in October.
+
+| Well | Litres per day | Status |
+|---|---|---|
+| North | 1240 | good |
+| East | 860 | check pump |
+
+<<<pagebreak>>>
+
+## Tasks
+
+- Clean the east pump filter
+- Test the north well water
+- Order spare seals
+
+<<<pagebreak>>>
+
+## Notes
+
+Readings are taken every Monday at 08:00.

@@ -30,6 +30,7 @@ type acquisitionFields struct {
 	Venv           string            `json:"venv,omitempty"`
 	Packages       []string          `json:"packages,omitempty"`
 	EntryPoints    []string          `json:"entry_points,omitempty"`
+	PythonLauncher string            `json:"python_launcher,omitempty"`
 }
 
 // acquisitionBuild is BuildSpec without its size estimates.
@@ -70,6 +71,7 @@ func (it Item) AcquisitionHash() string {
 		Venv:           it.Venv,
 		Packages:       it.Packages,
 		EntryPoints:    it.EntryPoints,
+		PythonLauncher: it.PythonLauncher,
 	}
 	if b := it.Build; b != nil {
 		fields.Build = &acquisitionBuild{
