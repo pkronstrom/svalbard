@@ -560,3 +560,22 @@ func TestPathFieldTakesLettersThatAreKeysElsewhere(t *testing.T) {
 		t.Fatalf("stage = %d, want the path stage", m.stage)
 	}
 }
+
+func TestWizardPackEscGoesBackAsTheFooterSays(t *testing.T) {
+	m := sizedModel(testConfig())
+	m = advancePastPath(t, m)
+	m = advancePastPlatforms(t, m)
+	m = advancePastPreset(t, m)
+
+	if footer := stripAnsi(m.View()); !strings.Contains(footer, "a: review") || !strings.Contains(footer, "q/Esc: back") {
+		t.Fatalf("pack picker footer does not name the keys that work:\n%s", footer)
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("Esc did nothing in the pack picker")
+	}
+	updated, _ := m.Update(cmd())
+	if m = updated.(Model); m.stage != stagePreset {
+		t.Errorf("expected stagePreset after Esc, got %d", m.stage)
+	}
+}

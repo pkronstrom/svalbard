@@ -78,6 +78,8 @@ func (m Model) View() string {
 	case stagePlatforms:
 		footer = tui.FooterHints(
 			tui.KeyBinding{Key: " ", Label: "Space: toggle"},
+			tui.KeyBinding{Key: "h", Label: "h: this computer"},
+			tui.KeyBinding{Key: "a", Label: "a: all"},
 			tui.KeyBinding{Key: "enter", Label: "Enter: next"},
 			tui.KeyBinding{Key: "esc", Label: "q/Esc: back"},
 		)
@@ -91,18 +93,18 @@ func (m Model) View() string {
 		footer = tui.FooterHints(
 			m.keys.MoveUp,
 			tui.KeyBinding{Key: " ", Label: "Space: toggle"},
-			tui.KeyBinding{Key: "enter", Label: "Enter: review"},
-			tui.KeyBinding{Key: "esc", Label: "Esc: back"},
+			tui.KeyBinding{Key: "enter", Label: "Enter: open/close"},
+			tui.KeyBinding{Key: "a", Label: "a: review"},
+			tui.KeyBinding{Key: "esc", Label: "q/Esc: back"},
 		)
 	case stageReview:
 		footer = tui.FooterHints(
+			m.keys.MoveUp,
 			tui.KeyBinding{Key: "enter", Label: "Enter: confirm"},
 			tui.KeyBinding{Key: "esc", Label: "Esc: back"},
 		)
 	case stageApply, stageIndex:
-		footer = tui.FooterHints(
-			tui.KeyBinding{Key: "enter", Label: "Enter: continue"},
-		)
+		// These steps show their own keys, which change as they run.
 	default:
 		footer = tui.FooterHints(m.keys.Enter, m.keys.Back)
 	}

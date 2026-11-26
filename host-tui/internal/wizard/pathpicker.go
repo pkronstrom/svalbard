@@ -33,10 +33,12 @@ type pathPickerModel struct {
 	cursor  int
 	input   textinput.Model // editable path text input
 	errMsg  string          // validation error
-	width   int
-	height  int
-	theme   tui.Theme
-	keys    tui.KeyMap
+	// freeSpace measures a typed path; nil leaves it unmeasured.
+	freeSpace func(path string) float64
+	width     int
+	height    int
+	theme     tui.Theme
+	keys      tui.KeyMap
 }
 
 // newPathPicker creates a pathPickerModel from detected volumes and a home
@@ -159,6 +161,8 @@ func (m pathPickerModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		freeGB := 0.0
 		if m.cursor >= 0 && m.cursor < len(m.options) {
 			freeGB = m.options[m.cursor].freeGB
+		} else if m.freeSpace != nil {
+			freeGB = m.freeSpace(path)
 		}
 		return m, func() tea.Msg {
 			return pathDoneMsg{path: path, freeGB: freeGB}
@@ -217,9 +221,6 @@ func (m pathPickerModel) View() string {
 		b.WriteString(m.theme.Error.Render("  " + m.errMsg))
 		b.WriteString("\n")
 	}
-
-	b.WriteString("\n")
-	b.WriteString(m.theme.Help.Render("  Enter: confirm  ↑/↓: quick select  Esc: back"))
 
 	return b.String()
 }

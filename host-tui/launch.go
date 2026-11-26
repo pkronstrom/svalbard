@@ -458,6 +458,7 @@ func (m *appModel) newPlan() plan.Model {
 			cfg.BuildDownloadGB = summary.BuildDownloadGB
 			cfg.BuildWorkGB = summary.BuildWorkGB
 			cfg.ToolsRequired = summary.ToolsRequired
+			cfg.FreeGB = summary.FreeGB
 			cfg.FreeAfterGB = summary.FreeAfterGB
 			for _, item := range summary.ToDownload {
 				cfg.Items = append(cfg.Items, plan.PlanItem{

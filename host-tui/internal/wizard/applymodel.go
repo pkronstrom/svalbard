@@ -247,6 +247,8 @@ func (m wizardApplyModel) View() string {
 		b.WriteString(m.theme.Warning.Render("Stopping… saving progress"))
 	} else {
 		b.WriteString(pv.RenderSummary())
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Help.Render("  Esc: stop and keep what is downloaded"))
 	}
 
 	return b.String()

@@ -732,6 +732,7 @@ func buildWizardConfig(prefillPath string, warn io.Writer) (hosttui.WizardConfig
 		Regions:     cat.Regions(),
 		PackGroups:  packGroups,
 		PrefillPath: prefillPath,
+		FreeSpace:   volumes.FreeSpaceGB,
 		ResolveDeps: func(selectedIDs map[string]bool) (map[string]bool, []string) {
 			return cat.ResolveDepsChecked(selectedIDs, depDefaults)
 		},
@@ -898,6 +899,10 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			RealizedCount: realized,
 			PendingCount:  len(m.Desired.Items) - realized,
 			LastApplied:   m.Realized.AppliedAt,
+			DiskFreeGB:    volumes.FreeSpaceGB(root),
+		}
+		for _, e := range m.Realized.Entries {
+			status.DiskUsedGB += float64(e.SizeBytes) / (1 << 30)
 		}
 		if cat, err := catalog.LoadCatalog(); err == nil {
 			report := commands.BuildStatus(cat, m)
@@ -999,6 +1004,8 @@ func buildDashboardDeps(vaultFlag string, wizConfig *hosttui.WizardConfig) *host
 			BuildDownloadGB: detail.BuildDownloadGB, BuildWorkGB: detail.BuildWorkGB,
 			ToolsRequired: detail.ToolsRequired,
 		}
+		summary.FreeGB = volumes.FreeSpaceGB(root)
+		summary.FreeAfterGB = summary.FreeGB - detail.DownloadGB + detail.RemoveGB
 		return summary, nil
 	}
 

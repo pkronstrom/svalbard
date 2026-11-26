@@ -243,8 +243,7 @@ func (m presetPickerModel) View() string {
 	} else {
 		b.WriteString(m.theme.Muted.Render("  Browse the full content catalog and pick individual items."))
 	}
-	b.WriteString("\n\n")
-	b.WriteString(m.theme.Help.Render("  j/k navigate  enter select  esc back"))
+	b.WriteString("\n")
 
 	return b.String()
 }

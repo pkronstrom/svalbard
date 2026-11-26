@@ -203,9 +203,7 @@ func (m reviewModel) View() string {
 			b.WriteString(m.theme.Muted.Render("  " + item.Description))
 		}
 	}
-	b.WriteString("\n\n")
-	// Footer
-	b.WriteString(m.theme.Help.Render("  j/k scroll  enter confirm  esc back"))
+	b.WriteString("\n")
 
 	return b.String()
 }

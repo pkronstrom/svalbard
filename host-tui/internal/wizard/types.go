@@ -61,6 +61,9 @@ type WizardConfig struct {
 	Regions     []string       // available regions
 	PackGroups  []PackGroup    // all packs grouped
 	PrefillPath string
+	// FreeSpace measures the free space in GB at a path the user typed, or
+	// at its nearest existing parent; nil leaves a typed path unmeasured.
+	FreeSpace   func(path string) float64
 	StartAtStep int
 	InitVault   InitFunc                    // called after review confirm
 	ResolveDeps DepResolver                 // nil = no dep resolution

@@ -82,6 +82,7 @@ func New(config WizardConfig) Model {
 
 	// Always start at path picker — every wizard run needs a vault path
 	m.pathPicker = newPathPicker(config.Volumes, config.HomeVolume, config.PrefillPath)
+	m.pathPicker.freeSpace = config.FreeSpace
 
 	return m
 }
@@ -219,6 +220,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.stage == stagePlatforms && (m.keys.Back.Matches(msg) || m.keys.Quit.Matches(msg)) {
 			m.stage = stagePath
 			m.pathPicker = newPathPicker(m.config.Volumes, m.config.HomeVolume, m.vaultPath)
+			m.pathPicker.freeSpace = m.config.FreeSpace
 			return m.sizeActiveModel()
 		}
 	}

@@ -22,9 +22,14 @@ func TestImportShowsInput(t *testing.T) {
 	m := sizedModel(Config{})
 	out := stripAnsi(m.View())
 
-	// The view says "Enter a local path, URL, or YouTube link to import."
-	if !strings.Contains(out, "path") && !strings.Contains(out, "Path") && !strings.Contains(out, "URL") {
-		t.Errorf("View() should contain 'Path or URL' related text, got:\n%s", out)
+	// Import takes local files only; the website crawl is a command.
+	for _, claim := range []string{"YouTube", "HTTP", "install-deps"} {
+		if strings.Contains(out, claim) {
+			t.Errorf("View() offers %q, which import cannot do:\n%s", claim, out)
+		}
+	}
+	if !strings.Contains(out, "svalbard zim <url>") {
+		t.Errorf("View() should name the crawl command, got:\n%s", out)
 	}
 
 	if !strings.Contains(out, "Source:") {

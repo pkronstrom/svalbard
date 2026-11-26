@@ -428,3 +428,19 @@ func TestEmptyPlanHintsMatchEnterAndBrowseActions(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanShowsFreeSpaceBeforeAndAfter(t *testing.T) {
+	cfg := Config{Items: []PlanItem{{ID: "a", Action: "download", SizeGB: 4}}, DownloadGB: 4, FreeGB: 10, FreeAfterGB: 6}
+	m := New(cfg)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	out := tui.StripAnsi(updated.(Model).View())
+	if !strings.Contains(out, "Free: 10") || !strings.Contains(out, "After: 6") {
+		t.Fatalf("plan does not show free space before and after:\n%s", out)
+	}
+
+	cfg.FreeGB, cfg.FreeAfterGB = 3, -1
+	updated, _ = New(cfg).Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if out := tui.StripAnsi(updated.(Model).View()); !strings.Contains(out, "Not enough space") {
+		t.Fatalf("plan does not warn when the download does not fit:\n%s", out)
+	}
+}

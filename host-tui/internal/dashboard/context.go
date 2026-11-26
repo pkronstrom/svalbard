@@ -36,12 +36,12 @@ func contextForDestination(id string, m Model) tui.DetailPane {
 			}
 			if s.DiskUsedGB > 0 {
 				base.Fields = append(base.Fields,
-					tui.DetailField{Label: "Vault size", Value: fmt.Sprintf("%.1f GB", s.DiskUsedGB)},
+					tui.DetailField{Label: "Vault size", Value: tui.FormatSize(s.DiskUsedGB)},
 				)
 			}
 			if s.DiskFreeGB > 0 {
 				base.Fields = append(base.Fields,
-					tui.DetailField{Label: "Disk free", Value: fmt.Sprintf("%.1f GB", s.DiskFreeGB)},
+					tui.DetailField{Label: "Disk free", Value: tui.FormatSize(s.DiskFreeGB)},
 				)
 			}
 			if s.LastApplied != "" {
@@ -70,7 +70,7 @@ func contextForDestination(id string, m Model) tui.DetailPane {
 
 	case destImport:
 		base.Title = "Import"
-		base.Body = "Import local files, URLs, or YouTube content into the\nvault and add them to the desired state."
+		base.Body = "Copy a file from this computer into the vault's library\nand select it. Plan then installs it."
 
 	case destIndex:
 		base.Title = "Index"

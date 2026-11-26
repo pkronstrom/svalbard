@@ -217,3 +217,15 @@ func TestPathPickerRejectsEmptyPath(t *testing.T) {
 		t.Error("expected error for empty path")
 	}
 }
+
+func TestTypedPathIsMeasuredForFreeSpace(t *testing.T) {
+	m := newPathPicker(sampleVolumes(), sampleHome(), t.TempDir())
+	m.freeSpace = func(string) float64 { return 42 }
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected the path to be accepted")
+	}
+	if done := cmd().(pathDoneMsg); done.freeGB != 42 {
+		t.Fatalf("free space for a typed path = %v, want the measured 42", done.freeGB)
+	}
+}

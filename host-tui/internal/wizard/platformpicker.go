@@ -141,9 +141,7 @@ func (m platformPickerModel) View() string {
 	estimate := float64(count) * 0.5 // rough ~0.5 GB per platform for all tools
 	b.WriteString("\n")
 	b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  Binaries: ~%.1f GB for %d platform(s)", estimate, count)))
-	b.WriteString("\n\n")
-
-	b.WriteString(m.theme.Help.Render("  space toggle  h this host  a all  enter continue  esc back"))
+	b.WriteString("\n")
 
 	return b.String()
 }

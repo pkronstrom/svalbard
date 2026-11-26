@@ -1,7 +1,6 @@
 package wizard
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -109,7 +108,7 @@ func (m packPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return done }
 
 		// Cancel.
-		case m.picker.Keys.Quit.Matches(msg):
+		case m.picker.Keys.Quit.Matches(msg), m.picker.Keys.Back.Matches(msg):
 			cancel := m.cancelMsg()
 			return m, func() tea.Msg { return cancel }
 
@@ -181,10 +180,6 @@ func (m packPickerModel) View() string {
 	b.WriteString(m.picker.RenderTree())
 	b.WriteString("\n")
 	b.WriteString(m.picker.RenderSizeSummary())
-	b.WriteString("\n")
-
-	b.WriteString(m.picker.Theme.Help.Render(fmt.Sprintf("  %s/%s navigate  %s toggle  %s expand/collapse  a apply  q cancel",
-		m.picker.Keys.MoveUp.Key, m.picker.Keys.MoveDown.Key, m.picker.Keys.Toggle.Key, m.picker.Keys.Enter.Key)))
 	b.WriteString("\n")
 
 	return b.String()

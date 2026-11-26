@@ -164,15 +164,13 @@ func (m Model) View() string {
 
 	body.WriteString(m.theme.Section.Render("Import"))
 	body.WriteString("\n\n")
-	body.WriteString(m.theme.Muted.Render("Import content into your vault. Supported sources:"))
+	body.WriteString(m.theme.Muted.Render("Copy a file from this computer into the vault's library and select it:"))
 	body.WriteString("\n")
-	body.WriteString(m.theme.Muted.Render("  - Local files     /path/to/file.zim, /path/to/archive.tar"))
-	body.WriteString("\n")
-	body.WriteString(m.theme.Muted.Render("  - HTTP/HTTPS URLs  https://example.com/content.zim"))
-	body.WriteString("\n")
-	body.WriteString(m.theme.Muted.Render("  - YouTube links    https://youtube.com/watch?v=..."))
+	body.WriteString(m.theme.Muted.Render("  /path/to/manual.pdf, /path/to/archive.zim"))
 	body.WriteString("\n\n")
-	body.WriteString(m.theme.Warning.Render("  Note: URL and YouTube imports require Docker (svalbard install-deps)."))
+	body.WriteString(m.theme.Muted.Render("To save a website instead, run this in a terminal (needs Docker):"))
+	body.WriteString("\n")
+	body.WriteString(m.theme.Muted.Render("  svalbard zim <url>"))
 	body.WriteString("\n\n")
 
 	// Input line.
@@ -196,13 +194,18 @@ func (m Model) View() string {
 	// Import history.
 	if len(m.results) > 0 {
 		body.WriteString("\n")
-		body.WriteString(m.theme.Section.Render("  History"))
+		body.WriteString(m.theme.Section.Render("  Imported"))
 		body.WriteString("\n")
 		for _, entry := range m.results {
-			line := fmt.Sprintf("    %s  %.2f GB", entry.id, entry.sizeGB)
+			line := "    " + entry.id
+			if entry.sizeGB > 0 {
+				line += fmt.Sprintf("  %.2f GB", entry.sizeGB)
+			}
 			body.WriteString(m.theme.Success.Render(line))
 			body.WriteString("\n")
 		}
+		body.WriteString(m.theme.Muted.Render("  Open Plan to install what you imported."))
+		body.WriteString("\n")
 	}
 
 	// Footer.

@@ -67,6 +67,7 @@ type PlanSummary struct {
 	BuildDownloadGB float64
 	BuildWorkGB     float64
 	ToolsRequired   bool
+	FreeGB          float64 // free on the vault's disk now; 0 = not measured
 	FreeAfterGB     float64
 }
 

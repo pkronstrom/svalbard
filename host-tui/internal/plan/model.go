@@ -49,8 +49,11 @@ type Config struct {
 	BuildDownloadGB float64
 	BuildWorkGB     float64
 	ToolsRequired   bool
-	FreeAfterGB     float64
-	RunApply        func(ctx context.Context, onProgress func(ApplyEvent)) error
+	// FreeGB is the space free on the vault's disk now, and FreeAfterGB the
+	// estimate once the plan is applied; FreeGB 0 means not measured.
+	FreeGB      float64
+	FreeAfterGB float64
+	RunApply    func(ctx context.Context, onProgress func(ApplyEvent)) error
 	// Title and EmptyText replace the plan screen's wording when it lists
 	// something other than pending changes, such as available updates.
 	Title     string
@@ -106,6 +109,7 @@ type Model struct {
 	buildDownloadGB float64
 	buildWorkGB     float64
 	toolsRequired   bool
+	freeGB          float64
 	freeAfterGB     float64
 	runApply        func(ctx context.Context, onProgress func(ApplyEvent)) error
 	title           string
@@ -146,6 +150,7 @@ func New(cfg Config) Model {
 		buildDownloadGB: cfg.BuildDownloadGB,
 		buildWorkGB:     cfg.BuildWorkGB,
 		toolsRequired:   cfg.ToolsRequired,
+		freeGB:          cfg.FreeGB,
 		freeAfterGB:     cfg.FreeAfterGB,
 		runApply:        cfg.RunApply,
 		theme:           tui.DefaultTheme(),
@@ -507,6 +512,17 @@ func (m Model) viewPlan() string {
 		"  Download: %s  |  Remove: %s",
 		tui.FormatSize(m.downloadGB), tui.FormatSize(m.removeGB),
 	)))
+	if m.freeGB > 0 && m.freeAfterGB < 0 {
+		b.WriteString("\n")
+		b.WriteString(m.theme.Warning.Render(fmt.Sprintf(
+			"  Not enough space: %s free, %s short", tui.FormatSize(m.freeGB), tui.FormatSize(-m.freeAfterGB),
+		)))
+	} else if m.freeGB > 0 {
+		b.WriteString("\n")
+		b.WriteString(m.theme.Muted.Render(fmt.Sprintf(
+			"  Free: %s  |  After: %s", tui.FormatSize(m.freeGB), tui.FormatSize(m.freeAfterGB),
+		)))
+	}
 	if m.buildDownloadGB > 0 || m.buildWorkGB > 0 || m.toolsRequired {
 		tools := "no tools image"
 		if m.toolsRequired {
@@ -589,7 +605,7 @@ func (m Model) viewApply() string {
 				active++
 			}
 		}
-		footer = fmt.Sprintf("downloading %d/%d ...", done+active, len(pv.Steps))
+		footer = fmt.Sprintf("downloading %d/%d ...  |  Esc: stop and keep what is downloaded", done+active, len(pv.Steps))
 	}
 
 	shell := tui.ShellLayout{
