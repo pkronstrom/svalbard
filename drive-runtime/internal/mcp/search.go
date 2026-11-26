@@ -181,7 +181,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	var advisory []string
 	// A drive indexed for keywords only has nothing to fall back from.
 	if !semanticComplete && semanticRecorded(db) {
-		advisory = append(advisory, "Hybrid unavailable, fell back to keyword")
+		advisory = append(advisory, "Hybrid unavailable, fell back to keyword.")
 	}
 	if semanticComplete {
 		queryVec, embedErr := c.embedBackend.Embed(ctx, contract, query)
@@ -199,7 +199,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			}
 		}
 		if embedErr != nil || results == nil {
-			advisory = append(advisory, "Hybrid unavailable, fell back to keyword")
+			advisory = append(advisory, "Hybrid unavailable, fell back to keyword.")
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -236,6 +236,9 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		if note := keywordAdvisory(matches, scope); note != "" {
 			advisory = append(advisory, note)
 		}
+		if len(results) == 0 {
+			advisory = append(advisory, c.holdings(ctx))
+		}
 	}
 
 	items := make([]searchResultItem, 0, len(results))
@@ -265,15 +268,15 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			// Try reading from search.db first (fast, no kiwix needed)
 			if hybridUsed {
 				// HybridSnapshot captured this body in its verified read snapshot.
-				item.Body = opening(r.Body, fullDetailChars)
+				item.Body = articleOpening(r.Body)
 			} else if r.Body != "" {
-				item.Body = opening(r.Body, fullDetailChars)
+				item.Body = articleOpening(r.Body)
 			} else if body, err := eng.ReadArticle(r.Filename, r.Path); err == nil && body != "" {
-				item.Body = opening(body, fullDetailChars)
+				item.Body = articleOpening(body)
 			} else {
 				// Fallback to kiwix for full HTML content
 				if page, _, fetchErr := c.fetchPage(ctx, sourceName(r.Filename), strings.TrimLeft(r.Path, "/")); fetchErr == nil {
-					item.Body = opening(page.Body, fullDetailChars)
+					item.Body = articleOpening(page.Body)
 				} else {
 					item.Snippet = html.UnescapeString(r.Snippet) // last resort
 				}
@@ -283,7 +286,38 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		items = append(items, item)
 	}
 
-	return ActionResult{Data: items, Text: strings.Join(advisory, ". ")}, nil
+	return ActionResult{Data: items, Text: strings.Join(advisory, " ")}, nil
+}
+
+// holdingsListed caps the sources an empty search names.
+const holdingsListed = 12
+
+// holdings says what the drive does hold, for a search that found nothing. A
+// model that knows the drive is two medical references stops looking for
+// tyre pressures sooner than one told only that its words were not found.
+func (c *SearchCapability) holdings(ctx context.Context) string {
+	_, eng, err := c.getDB()
+	if err != nil {
+		return ""
+	}
+	filenames, err := eng.SourceFilenames(ctx)
+	if err != nil || len(filenames) == 0 {
+		return ""
+	}
+	listed := make([]string, 0, holdingsListed)
+	for _, filename := range filenames[:min(len(filenames), holdingsListed)] {
+		entry := sourceName(filename)
+		if recipe, ok := c.meta.RecipeForFile(filename); ok && recipe.Description != "" {
+			topic, _, _ := strings.Cut(recipe.Description, " (")
+			entry += " (" + opening(topic, 90) + ")"
+		}
+		listed = append(listed, entry)
+	}
+	more := ""
+	if extra := len(filenames) - len(listed); extra > 0 {
+		more = fmt.Sprintf("; and %d more, listed by vault_sources", extra)
+	}
+	return "The drive holds: " + strings.Join(listed, "; ") + more + ". A subject outside these is not on the drive."
 }
 
 // keywordAdvisory says, for the model reading the results, how far they are
@@ -313,6 +347,18 @@ func keywordAdvisory(matches engine.KeywordMatches, scope string) string {
 func semanticRecorded(db *sql.DB) bool {
 	var state string
 	return db.QueryRow("SELECT value FROM meta WHERE key='semantic_state'").Scan(&state) == nil
+}
+
+// articleOpening is an article's body in a full-detail result. A model takes
+// a bare "..." for the end of the article, so a cut body says where the rest
+// is.
+func articleOpening(body string) string {
+	body = html.UnescapeString(body)
+	runes := []rune(body)
+	if len(runes) <= fullDetailChars {
+		return body
+	}
+	return strings.TrimSpace(string(runes[:fullDetailChars])) + "... [opening only: search_read has the whole article]"
 }
 
 // opening returns the start of an indexed text, cut at a character boundary.

@@ -346,11 +346,18 @@ func TestSearchFallsBackToPartialMatchesAndSaysSo(t *testing.T) {
 	}
 
 	raw, advisory = call(map[string]any{"query": "tyre pressure"})
-	if raw != "[]" || advisory != "Nothing found. No article on the drive mentions: tyre, pressure." {
-		t.Errorf("results = %s, advisory = %q, want an empty list and the absent words", raw, advisory)
+	// An empty search names the absent words and what the drive does hold.
+	f.cap.meta = DriveMetadata{
+		Recipes:     map[string]RecipeMeta{"survival-wiki": {Description: "Survival wiki — water, fire and shelter (2026 snapshot)"}},
+		FileRecipes: map[string]string{"wiki.zim": "survival-wiki"},
+	}
+	holds := " The drive holds: wiki (Survival wiki — water, fire and shelter). A subject outside these is not on the drive."
+	raw, advisory = call(map[string]any{"query": "tyre pressure"})
+	if raw != "[]" || advisory != "Nothing found. No article on the drive mentions: tyre, pressure."+holds {
+		t.Errorf("results = %s, advisory = %q, want an empty list, the absent words and the drive's holdings", raw, advisory)
 	}
 	// Both words exist, in different articles.
-	if raw, advisory = call(map[string]any{"query": "salt degrees", "source": "wiki"}); raw != "[]" || advisory != "Nothing found: no article in wiki has these words together." {
+	if raw, advisory = call(map[string]any{"query": "salt degrees", "source": "wiki"}); raw != "[]" || advisory != "Nothing found: no article in wiki has these words together."+holds {
 		t.Errorf("results = %s, advisory = %q", raw, advisory)
 	}
 
@@ -393,6 +400,21 @@ func TestDefaultResponsesStayWithinASmallContext(t *testing.T) {
 	if n := size("search", map[string]any{"query": "water treatment", "detail": "full"}); n > 9500 {
 		t.Errorf("full-detail search response is %d characters, want at most 9500", n)
 	}
+	// A cut body says it is cut; a whole one is left alone.
+	full, err := f.cap.Handle(context.Background(), "search", map[string]any{"query": "water", "detail": "full", "limit": float64(50)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := full.Data.([]searchResultItem)
+	if len(items) != 5 {
+		t.Fatalf("full-detail results = %d, want the cap of 5", len(items))
+	}
+	for _, item := range items {
+		cut := strings.HasSuffix(item.Body, "[opening only: search_read has the whole article]")
+		if long := item.Path != "/Water"; cut != long {
+			t.Errorf("%s: body ends %q", item.Path, item.Body[max(0, len(item.Body)-60):])
+		}
+	}
 	if n := size("read", map[string]any{"source": "wiki", "path": "/www.example.org/a/rather/long/path/to/Water_treatment_00/"}); n > 9000 {
 		t.Errorf("default read response is %d characters, want at most 9000", n)
 	}
@@ -434,5 +456,16 @@ func TestPageSlice(t *testing.T) {
 	}
 	if piece, next, total := pageSlice("short", 9, 100); piece != "" || next != 5 || total != 5 {
 		t.Fatalf("past the end: %q, %d, %d", piece, next, total)
+	}
+}
+
+func TestArticleOpeningMarksOnlyCutBodies(t *testing.T) {
+	short := "It&#x27;s short..."
+	if got := articleOpening(short); got != "It's short..." {
+		t.Errorf("short body = %q, want it whole and unmarked", got)
+	}
+	long := strings.Repeat("ä", fullDetailChars+1)
+	if got := articleOpening(long); got != strings.Repeat("ä", fullDetailChars)+"... [opening only: search_read has the whole article]" {
+		t.Errorf("long body ends %q", got[len(got)-70:])
 	}
 }
