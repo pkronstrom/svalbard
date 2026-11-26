@@ -22,3 +22,7 @@ sources:
 #
 # ── TODO: Offline infrastructure ──
 # pre-built-search-index # SQLite FTS5, varies by content
+# ── Reference ──
+- wikipedia-en-top-mini
+- wikipedia-en-simple
+- wikivoyage-en

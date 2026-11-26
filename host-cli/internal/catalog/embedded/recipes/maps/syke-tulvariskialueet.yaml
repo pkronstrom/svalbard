@@ -1,0 +1,32 @@
+id: syke-tulvariskialueet
+type: pmtiles
+display_group: maps
+tags: [water, weather]
+depth: overview
+size_gb: 0.001
+description: Finnish significant flood-risk areas (SYKE)
+strategy: build
+
+build:
+  family: vector-static
+  source_url: https://wwwd3.ymparisto.fi/d3/gis_data/spesific/tulvariskialueet.zip
+  source_format: shapefile
+  source_srs: "EPSG:3067"
+  layer_name: tulvariskialueet
+  max_zoom: 12
+
+viewer:
+  name: Flood-Risk Areas
+  name_fi: Merkittävät tulvariskialueet
+  category: water
+  style:
+    polygons:
+      fill-color: "#e67e22"
+      fill-opacity: 0.25
+      line-color: "#d35400"
+      line-width: 1
+
+license:
+  id: CC-BY-4.0
+  attribution: Finnish Environment Institute (SYKE)
+  url: https://www.syke.fi

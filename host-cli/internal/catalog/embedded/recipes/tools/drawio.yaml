@@ -1,0 +1,27 @@
+id: drawio
+type: app
+display_group: tools
+tags: [engineering, electronics]
+depth: reference-only
+size_gb: 0.053
+description: draw.io — diagram editor for flowcharts, circuits, floor plans and network maps, running in the browser
+menu:
+  group: tools
+  subheader: Apps
+  label: draw.io
+  description: Draw diagrams, flowcharts and floor plans in the browser
+  aliases: [diagrams]
+  order: 220
+strategy: build
+
+build:
+  family: app-bundle
+  # draw.war is a zip of the static webapp with index.html at its root.
+  # svalbard replaces js/PreConfig.js (host-cli/internal/toolkit/apppages/drawio)
+  # to start the editor in offline, stealth mode.
+  source_url: https://github.com/jgraph/drawio/releases/download/v32.7.7/draw.war
+
+license:
+  id: Apache-2.0
+  attribution: JGraph Ltd and draw.io contributors
+  url: https://github.com/jgraph/drawio

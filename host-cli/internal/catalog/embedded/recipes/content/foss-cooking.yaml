@@ -1,0 +1,14 @@
+id: foss-cooking
+type: zim
+display_group: practical
+tags:
+- food
+- cooking
+depth: overview
+size_gb: 0.029
+url_pattern: https://download.kiwix.org/zim/zimit/foss.cooking_en_all_{date}.zim
+description: foss.cooking — community cookbook of simple, ad-free recipes
+license:
+  id: Unlicense
+  attribution: foss.cooking contributors
+  url: https://github.com/Rushmore75/foss.cooking

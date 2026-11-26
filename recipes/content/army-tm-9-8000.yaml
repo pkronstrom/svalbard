@@ -1,0 +1,15 @@
+id: army-tm-9-8000
+type: pdf
+display_group: practical
+tags:
+- mechanical
+- repair
+depth: comprehensive
+size_gb: 0.018
+url: https://archive.org/download/tm-9-8000-principles-of-automotive-vehicles-1985/TM9-8000_Principles_of_automotive_vehicles_1985.pdf
+filename: TM_9-8000_Principles_of_Automotive_Vehicles_1985.pdf
+description: US Army TM 9-8000 Principles of Automotive Vehicles (1985) — engines, fuel, cooling, electrics, drivetrain, brakes, steering and suspension explained generically
+license:
+  id: US-PD
+  attribution: Headquarters, Department of the Army
+  url: https://archive.org/details/tm-9-8000-principles-of-automotive-vehicles-1985

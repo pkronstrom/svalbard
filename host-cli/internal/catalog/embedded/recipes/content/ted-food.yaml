@@ -1,0 +1,13 @@
+id: ted-food
+type: zim
+display_group: video
+tags:
+- food
+- agriculture
+depth: overview
+size_gb: 2.2
+url_pattern: https://download.kiwix.org/zim/ted/ted_mul_food_{date}.zim
+description: TED talks on food
+license:
+  id: CC-BY-NC-ND-4.0
+  attribution: TED Conferences LLC

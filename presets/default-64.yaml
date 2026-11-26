@@ -24,3 +24,40 @@ sources:
 - stackexchange-crafts
 # ── Books (moved up from 32) ──
 - wikibooks-en
+# ── Reference & learning ──
+- wikipedia-en-simple
+- wikivoyage-en
+- phet-en
+- zimi-almanac
+# ── Programming docs ──
+- devdocs-python
+- devdocs-rust
+- devdocs-go
+- devdocs-javascript
+- devdocs-c
+- devdocs-cpp
+- devdocs-bash
+- devdocs-fish
+- devdocs-git
+- devdocs-jq
+- devdocs-gcc
+- devdocs-cmake
+- devdocs-docker
+- devdocs-nginx
+- devdocs-kubernetes
+- devdocs-nix
+- devdocs-postgresql
+- devdocs-sqlite
+- devdocs-redis
+- devdocs-lua
+- devdocs-zig
+- devdocs-typescript
+- devdocs-node
+- devdocs-html
+- devdocs-css
+- devdocs-http
+- devdocs-markdown
+# ── Making apps ──
+- drawio
+- minipaint
+- jscad-web

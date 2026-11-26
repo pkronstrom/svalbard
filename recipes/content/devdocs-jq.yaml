@@ -1,0 +1,13 @@
+id: devdocs-jq
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.001
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_jq_{date}.zim
+description: DevDocs jq reference
+license:
+  id: CC-BY-3.0
+  attribution: jq contributors via DevDocs

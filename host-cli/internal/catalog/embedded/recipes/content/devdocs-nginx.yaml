@@ -1,0 +1,13 @@
+id: devdocs-nginx
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.001
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_nginx_{date}.zim
+description: DevDocs Nginx reference
+license:
+  id: BSD-2-Clause
+  attribution: NGINX Inc. via DevDocs

@@ -1,0 +1,13 @@
+id: devdocs-http
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.002
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_http_{date}.zim
+description: DevDocs HTTP reference
+license:
+  id: CC-BY-SA-2.5
+  attribution: Mozilla Contributors via DevDocs

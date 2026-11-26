@@ -1,0 +1,13 @@
+id: devdocs-git
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.002
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_git_{date}.zim
+description: DevDocs Git reference
+license:
+  id: GPL-2.0
+  attribution: Git contributors via DevDocs

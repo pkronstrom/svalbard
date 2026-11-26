@@ -1,0 +1,14 @@
+id: mdn
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: comprehensive
+size_gb: 0.56
+url_pattern: https://download.kiwix.org/zim/zimit/developer.mozilla.org_en_all_{date}.zim
+description: MDN Web Docs — reference for HTML, CSS, JavaScript and web APIs
+license:
+  id: CC-BY-SA-2.5
+  attribution: Mozilla Contributors
+  url: https://developer.mozilla.org/en-US/docs/MDN/Writing_guidelines/Attrib_copyright_license

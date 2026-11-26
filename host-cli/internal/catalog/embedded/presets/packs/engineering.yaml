@@ -52,3 +52,12 @@ sources:
 - libretexts-workforce
 - stackexchange-iot
 - gutenberg-en-lcc-t
+# ── Additions ──
+- last-codex
+# ── Vehicles ──
+- army-tm-9-8000
+- army-tm-9-2700
+# ── Making apps ──
+- drawio
+- minipaint
+- jscad-web

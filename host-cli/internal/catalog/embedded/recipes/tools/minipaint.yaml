@@ -1,0 +1,24 @@
+id: minipaint
+type: app
+display_group: tools
+tags: [fabrication]
+depth: reference-only
+size_gb: 0.008
+description: miniPaint — layered image editor in the browser (crop, resize, layers, filters, text)
+menu:
+  group: tools
+  subheader: Apps
+  label: miniPaint
+  description: Edit images and photos in the browser
+  aliases: [paint]
+  order: 230
+
+bundle:
+  - url: https://github.com/viliusle/miniPaint/archive/refs/tags/v4.14.3.tar.gz
+    sha256: 549e726d3dd3d9f1c4b20825631de5300ab545acbb4e23fd30bd4c443f64e83f
+    strip: miniPaint-4.14.3
+
+license:
+  id: MIT
+  attribution: ViliusL and miniPaint contributors
+  url: https://github.com/viliusle/miniPaint

@@ -52,3 +52,27 @@ sources:
 # ── Added 2026-09-30 catalog audit ──
 - devhints
 - openwrt-wiki
+# ── Additions ──
+- devdocs-bash
+- devdocs-fish
+- devdocs-git
+- devdocs-jq
+- devdocs-gcc
+- devdocs-cmake
+- devdocs-docker
+- devdocs-nginx
+- devdocs-kubernetes
+- devdocs-nix
+- devdocs-postgresql
+- devdocs-sqlite
+- devdocs-redis
+- devdocs-lua
+- devdocs-zig
+- devdocs-typescript
+- devdocs-node
+- devdocs-html
+- devdocs-css
+- devdocs-http
+- devdocs-markdown
+- mdn
+- learn-ai-anywhere

@@ -1,0 +1,13 @@
+id: wikiversity-fi
+type: zim
+display_group: education
+tags:
+- education
+- language
+depth: overview
+size_gb: 0.02
+url_pattern: https://download.kiwix.org/zim/wikiversity/wikiversity_fi_all_maxi_{date}.zim
+description: Wikiopisto (Finnish Wikiversity) — open learning materials in Finnish
+license:
+  id: CC-BY-SA-4.0
+  attribution: Wikiversity contributors

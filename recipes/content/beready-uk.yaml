@@ -1,0 +1,15 @@
+id: beready-uk
+type: zim
+display_group: practical
+tags:
+- emergency-medicine
+- water
+- fire-shelter
+depth: overview
+size_gb: 0.158
+url_pattern: https://download.kiwix.org/zim/zimit/beready.campaign.gov.uk_en_all_{date}.zim
+description: Be Ready UK — UK government preparedness guidance (power cuts, flooding, severe weather, emergency kits, household plans)
+license:
+  id: OGL-UK-3.0
+  attribution: Crown copyright, UK Cabinet Office
+  url: https://beready.campaign.gov.uk/

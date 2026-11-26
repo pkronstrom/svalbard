@@ -1,0 +1,14 @@
+id: public-domain-recipes
+type: zim
+display_group: practical
+tags:
+- food
+- cooking
+depth: overview
+size_gb: 0.016
+url_pattern: https://download.kiwix.org/zim/zimit/publicdomainrecipes.com_en_all_{date}.zim
+description: Public Domain Recipes — community cookbook released into the public domain
+license:
+  id: Unlicense
+  attribution: Public Domain Recipes contributors
+  url: https://publicdomainrecipes.com/

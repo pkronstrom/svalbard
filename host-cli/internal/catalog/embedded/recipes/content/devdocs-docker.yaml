@@ -1,0 +1,13 @@
+id: devdocs-docker
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.002
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_docker_{date}.zim
+description: DevDocs Docker reference
+license:
+  id: Apache-2.0
+  attribution: Docker Inc. via DevDocs

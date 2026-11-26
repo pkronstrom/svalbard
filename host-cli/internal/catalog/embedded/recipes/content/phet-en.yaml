@@ -1,0 +1,15 @@
+id: phet-en
+type: zim
+display_group: education
+tags:
+- physics
+- chemistry
+- mathematics
+- biology
+depth: comprehensive
+size_gb: 0.11
+url_pattern: https://download.kiwix.org/zim/phet/phet_en_all_{date}.zim
+description: PhET interactive science and math simulations (English)
+license:
+  id: CC-BY-4.0
+  attribution: PhET Interactive Simulations, University of Colorado Boulder

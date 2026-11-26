@@ -1,0 +1,13 @@
+id: learn-ai-anywhere
+type: zim
+display_group: education
+tags:
+- education
+- computing
+depth: overview
+size_gb: 0.096
+url_pattern: https://download.kiwix.org/zim/community/learnaianywhere_en_all_{date}.zim
+description: Learn AI Anywhere — offline course on how AI and LLMs work, their limits and safe use
+license:
+  id: CC-BY-NC-SA-4.0
+  attribution: Learn AI Anywhere authors

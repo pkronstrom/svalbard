@@ -1,0 +1,13 @@
+id: devdocs-sqlite
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.004
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_sqlite_{date}.zim
+description: DevDocs SQLite reference
+license:
+  id: public-domain
+  attribution: SQLite authors via DevDocs

@@ -1,0 +1,13 @@
+id: wikivoyage-en
+type: zim
+display_group: reference
+tags:
+- navigation
+- general-reference
+depth: comprehensive
+size_gb: 0.26
+url_pattern: https://download.kiwix.org/zim/wikivoyage/wikivoyage_en_all_nopic_{date}.zim
+description: 'Wikivoyage (English) — travel guide: places, transport, phrasebooks, safety; no pictures'
+license:
+  id: CC-BY-SA-4.0
+  attribution: Wikivoyage contributors

@@ -1,0 +1,15 @@
+id: attack-enterprise
+type: dataset
+display_group: tools
+tags:
+- cybersec
+depth: comprehensive
+size_gb: 0.055
+description: MITRE ATT&CK Enterprise v20.1 — adversary tactics and techniques knowledge base (STIX 2.1 JSON)
+filename: enterprise-attack-20.1.json
+url: https://github.com/mitre-attack/attack-stix-data/releases/download/v20.1/enterprise-attack.json
+license:
+  id: LicenseRef-MITRE-ATTACK-ToU
+  attribution: The MITRE Corporation
+  url: https://attack.mitre.org/resources/legal-and-branding/terms-of-use/
+  note: Royalty-free use and redistribution with the MITRE copyright notice.

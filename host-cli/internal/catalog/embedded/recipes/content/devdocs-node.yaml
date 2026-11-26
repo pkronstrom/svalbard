@@ -1,0 +1,13 @@
+id: devdocs-node
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.002
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_node_{date}.zim
+description: DevDocs Node.js reference
+license:
+  id: MIT
+  attribution: Node.js contributors via DevDocs

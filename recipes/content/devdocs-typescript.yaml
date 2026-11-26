@@ -1,0 +1,13 @@
+id: devdocs-typescript
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.001
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_typescript_{date}.zim
+description: DevDocs TypeScript reference
+license:
+  id: Apache-2.0
+  attribution: Microsoft via DevDocs

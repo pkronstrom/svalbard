@@ -1,0 +1,13 @@
+id: devdocs-postgresql
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.003
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_postgresql_{date}.zim
+description: DevDocs PostgreSQL reference
+license:
+  id: PostgreSQL
+  attribution: PostgreSQL Global Development Group via DevDocs

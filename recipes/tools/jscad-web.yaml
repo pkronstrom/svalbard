@@ -1,0 +1,26 @@
+id: jscad-web
+type: app
+display_group: tools
+tags: [fabrication, manufacturing]
+depth: reference-only
+size_gb: 0.004
+description: JSCAD — parametric 3D CAD in the browser using JavaScript; exports STL for 3D printing
+menu:
+  group: tools
+  subheader: Apps
+  label: JSCAD
+  description: Model parts as code and export STL for 3D printing
+  aliases: [cad, openjscad]
+  order: 240
+
+# @jscad/web ships its editor as demo.html; svalbard adds it as index.html from
+# host-cli/internal/toolkit/apppages/jscad-web, since examples resolve against the directory.
+bundle:
+  - url: https://registry.npmjs.org/@jscad/web/-/web-2.6.13.tgz
+    sha256: 9ed53c6aefa537e84e36b90a55ca451c3eef50eda6c0916e1f95a42abf5a810f
+    strip: package
+
+license:
+  id: MIT
+  attribution: JSCAD Organization
+  url: https://github.com/jscad/OpenJSCAD.org

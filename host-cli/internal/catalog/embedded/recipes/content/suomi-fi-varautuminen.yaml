@@ -1,0 +1,17 @@
+id: suomi-fi-varautuminen
+type: pdf
+display_group: regional
+tags:
+- emergency-medicine
+- water
+- fire-shelter
+depth: overview
+size_gb: 0.0012
+url: https://cdn.verkkopalvelu.suomi.fi/files/varautunut-parjaa-paremmin_SM_suomi-e093f829ad4179e1b727c8f283a3e113.pdf
+filename: Varautunut_parjaa_paremmin.pdf
+description: Varautunut pärjää paremmin — sisäministeriön tiivistelmä kotivarautumisesta (sähkö-, vesi- ja lämpökatkot, säteily, väestönsuojelu)
+license:
+  id: unknown
+  attribution: Sisäministeriö / suomi.fi
+  url: https://www.suomi.fi/oppaat/varautuminen/tulostettavat-ja-viittomakieliset-varautumisohjeet/varautumisohjeiden-tulostettavat-tiivistelmat
+  note: No licence stated; public guidance fetched by the user for personal use.

@@ -1,0 +1,32 @@
+id: hsy-vesipostit
+type: pmtiles
+display_group: maps
+tags: [water]
+depth: comprehensive
+size_gb: 0.001
+description: Helsinki region public water posts (HSY) — emergency water points during a mains outage
+strategy: build
+
+build:
+  family: vector-static
+  source_url: https://avoidatastr.blob.core.windows.net/avoindata/AvoinData/1_Vesi_ja_viemarit/Vesipostit/Shp/HSY_Vesipostit_shp.zip
+  source_format: shapefile
+  source_srs: "EPSG:3879"
+  layer_name: vesipostit
+  max_zoom: 14
+
+viewer:
+  name: Public Water Posts (Helsinki region)
+  name_fi: Vesipostit (HSY)
+  category: water
+  style:
+    points:
+      circle-color: "#1f78b4"
+      circle-radius: 5
+      circle-stroke-color: "#ffffff"
+      circle-stroke-width: 1
+
+license:
+  id: CC-BY-4.0
+  attribution: Helsinki Region Environmental Services (HSY)
+  url: https://www.hsy.fi/avoindata

@@ -1,0 +1,13 @@
+id: devdocs-zig
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.001
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_zig_{date}.zim
+description: DevDocs Zig reference
+license:
+  id: MIT
+  attribution: Zig contributors via DevDocs

@@ -1,0 +1,13 @@
+id: devdocs-gcc
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.002
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_gcc_{date}.zim
+description: DevDocs GCC reference
+license:
+  id: GFDL-1.3
+  attribution: Free Software Foundation via DevDocs

@@ -12,3 +12,6 @@ sources:
 - gutenberg-fi
 # ── Drop editions superseded by the default tier ──
 - -wikipedia-en-top-nopic
+# ── Finnish reference ──
+- wikiversity-fi
+- wikiquote-fi

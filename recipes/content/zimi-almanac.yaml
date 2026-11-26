@@ -1,0 +1,14 @@
+id: zimi-almanac
+type: zim
+display_group: education
+tags:
+- sciences
+- navigation
+depth: overview
+size_gb: 0.011
+url_pattern: https://download.kiwix.org/zim/community/zimi_mul_almanac_mini_{date}.zim
+description: Zimi Almanac (mini) — astronomy almanac with the Yale Bright Star Catalogue and NASA imagery
+license:
+  id: GPL-3.0
+  attribution: Zimi Almanac authors
+  note: Bundles NASA imagery and catalogue data under their own licences.

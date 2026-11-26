@@ -1,0 +1,13 @@
+id: devdocs-cmake
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.003
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_cmake_{date}.zim
+description: DevDocs CMake reference
+license:
+  id: BSD-3-Clause
+  attribution: Kitware via DevDocs

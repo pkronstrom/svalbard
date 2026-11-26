@@ -1,0 +1,16 @@
+id: last-codex
+type: zim
+display_group: practical
+tags:
+- engineering
+- manufacturing
+- energy-power
+- chemistry
+depth: comprehensive
+size_gb: 0.264
+url_pattern: https://download.kiwix.org/zim/community/lastcodex.org_en_all_{date}.zim
+description: The Last Codex — illustrated codex of human inventions and how to rebuild them, ordered by what depends on what
+license:
+  id: CC-BY-NC-ND-4.0
+  attribution: The Last Codex
+  url: https://lastcodex.org/

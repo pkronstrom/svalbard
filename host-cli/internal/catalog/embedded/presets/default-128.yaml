@@ -17,3 +17,5 @@ sources:
 - stackexchange-iot
 # ── Dictionary ──
 - wiktionary-en
+# ── Programming docs ──
+- mdn

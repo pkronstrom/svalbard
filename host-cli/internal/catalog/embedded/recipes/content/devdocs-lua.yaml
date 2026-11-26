@@ -1,0 +1,13 @@
+id: devdocs-lua
+type: zim
+display_group: reference
+tags:
+- computing
+- coding
+depth: reference-only
+size_gb: 0.001
+url_pattern: https://download.kiwix.org/zim/devdocs/devdocs_en_lua_{date}.zim
+description: DevDocs Lua reference
+license:
+  id: MIT
+  attribution: Lua.org, PUC-Rio via DevDocs

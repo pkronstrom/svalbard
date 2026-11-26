@@ -24,3 +24,7 @@ sources:
 - osm-uusimaa
 # ── Added 2026-09-30 catalog audit ──
 - openstreetmap-wiki
+# ── Water and flood layers ──
+- syke-uomaverkosto
+- syke-tulvariskialueet
+- hsy-vesipostit
