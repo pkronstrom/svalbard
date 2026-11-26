@@ -22,13 +22,16 @@ type MenuGroup struct {
 }
 
 type MenuItem struct {
-	ID          string     `json:"id"`
-	Label       string     `json:"label"`
-	Description string     `json:"description"`
-	Subheader   string     `json:"subheader,omitempty"`
-	Aliases     []string   `json:"aliases,omitempty"`
-	Order       int        `json:"order"`
-	Action      ActionSpec `json:"action"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Subheader   string `json:"subheader,omitempty"`
+	// Note is a few words shown beside the label on the item's row, such as
+	// "5 documents".
+	Note    string     `json:"note,omitempty"`
+	Aliases []string   `json:"aliases,omitempty"`
+	Order   int        `json:"order"`
+	Action  ActionSpec `json:"action"`
 }
 
 type ActionSpec struct {
