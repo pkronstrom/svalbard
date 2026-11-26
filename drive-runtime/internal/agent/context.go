@@ -38,8 +38,9 @@ type ContextOptions struct {
 	Wiki, LivePages bool
 	// Skills: a skills recipe is installed.
 	Skills bool
-	// NoIndex: the drive has no search index, so the skill tools find
-	// nothing and the skills are read as files.
+	// NoIndex: the skills are not in a search index (the vault's strategy
+	// is "none", or it was never built), so the skill tools find nothing and
+	// the skills are read as files.
 	NoIndex bool
 }
 
@@ -128,15 +129,8 @@ func driveContextFor(driveRoot, toolPrefix string, ctxSize int) string {
 		Wiki:       hasWiki,
 		LivePages:  hasWiki && wiki.LivePages(driveRoot),
 		Skills:     mcp.SkillsInstalled(driveRoot),
-		NoIndex:    !searchIndexed(driveRoot),
+		NoIndex:    !mcp.SkillsIndexed(driveRoot),
 	})
-}
-
-// searchIndexed reports whether the drive has a search index. A vault applied
-// with the index strategy "none" has none.
-func searchIndexed(driveRoot string) bool {
-	_, err := os.Stat(filepath.Join(driveRoot, "data", "search.db"))
-	return err == nil
 }
 
 // drivePathEnv puts the drive's tools first on a harness's PATH, so that what

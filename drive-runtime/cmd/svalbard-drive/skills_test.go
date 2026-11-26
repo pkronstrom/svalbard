@@ -58,6 +58,13 @@ func newSkillsDrive(t *testing.T) string {
 		"## Two\n\nThe very end.")
 	add("lib/js/js-core/docs/chartjs.md", "Chart.js", "Canvas charts. Import chart.js/auto.")
 
+	if err := os.MkdirAll(filepath.Join(root, ".svalbard"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".svalbard", "recipes.json"), []byte(`{"skills-core": {"id": "skills-core", "type": "skills"}, "js-core": {"id": "js-core", "type": "js-lib"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	skill := filepath.Join(root, "skills", "skills-core", "data-dashboard")
 	if err := os.MkdirAll(filepath.Join(skill, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
@@ -248,5 +255,33 @@ func TestSkillsProgramFollowsHowTheBinaryWasRun(t *testing.T) {
 		if out, err := runAs(t, argv0, "skills"); err != nil || !strings.Contains(out, want) {
 			t.Errorf("run as %s: %q, %v; want %q", argv0, out, err, want)
 		}
+	}
+}
+
+// Alone, the command claims only what the drive has: no skills when none are
+// installed, and no commands that cannot find anything when the skills are
+// not in the index (strategy "none" keeps an old search.db).
+func TestSkillsAloneSaysWhatTheDriveHas(t *testing.T) {
+	root := newSkillsDrive(t)
+	out, _, err := skills(t, root)
+	if err != nil || !strings.Contains(out, "Its skills are procedures") || !strings.Contains(out, "skills find <words...>") {
+		t.Errorf("with skills: %q, %v", out, err)
+	}
+
+	manifest := "version: 2\ndesired:\n    options:\n        index_strategy: \"none\"\n"
+	if err := os.WriteFile(filepath.Join(root, "manifest.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = skills(t, root)
+	if err != nil || !strings.Contains(out, "not in a search index") || !strings.Contains(out, filepath.Join(root, "skills")+"/") || strings.Contains(out, "skills find") {
+		t.Errorf("strategy none: %q, %v", out, err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, ".svalbard", "recipes.json"), []byte(`{"silverbullet": {"id": "silverbullet", "type": "binary"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = skills(t, root)
+	if err != nil || !strings.Contains(out, "Svalbard offline drive") || strings.Contains(out, "Its skills") || !strings.Contains(out, "no skills or JS libraries") {
+		t.Errorf("without skills: %q, %v", out, err)
 	}
 }

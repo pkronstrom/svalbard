@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,12 +28,29 @@ func installRecipes(t *testing.T, driveRoot string, recipes ...[2]string) {
 		t.Fatal(err)
 	}
 	// A drive that was applied has a search index unless its strategy is
-	// "none"; removeIndex takes it away again.
-	if err := os.MkdirAll(filepath.Join(driveRoot, "data"), 0o755); err != nil {
+	// "none", and its skills and quickstarts are in it; removeIndex takes it
+	// away again.
+	path := filepath.Join(driveRoot, "data", "search.db")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(driveRoot, "data", "search.db"), nil, 0o644); err != nil {
+	_ = os.Remove(path)
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
 		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE sources (id INTEGER PRIMARY KEY, filename TEXT NOT NULL, title TEXT NOT NULL DEFAULT '')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, recipe := range recipes {
+		filename := map[string]string{"skills": "skills/" + recipe[0] + "/data-dashboard/SKILL.md", "js-lib": "lib/js/" + recipe[0] + "/docs/chartjs.md"}[recipe[1]]
+		if filename == "" {
+			continue
+		}
+		if _, err := db.Exec(`INSERT INTO sources (filename, title) VALUES (?, ?)`, filename, recipe[0]); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -153,6 +171,44 @@ func TestDriveContextSaysWhenThereIsNoIndex(t *testing.T) {
 	installRecipes(t, driveRoot, skillsRecipe)
 	if pi = readFile(t, filepath.Join(prepare(t, driveRoot, "pi").Env["PI_CODING_AGENT_DIR"], "AGENTS.md")); !strings.Contains(pi, "`mcp__svalbard__skill_search`") {
 		t.Errorf("pi after the index came back:\n%s", pi)
+	}
+
+	// The file search.db does not decide it. A vault switched to the
+	// strategy "none" keeps its old index, and an index built before the
+	// skills were installed holds none of them.
+	noIndex := func(driveRoot string) bool {
+		text := readFile(t, filepath.Join(prepare(t, driveRoot, "pi").Env["PI_CODING_AGENT_DIR"], "AGENTS.md"))
+		return strings.Contains(text, "no search index") && !strings.Contains(text, "skill_search")
+	}
+	switched := t.TempDir()
+	installRecipes(t, switched, skillsRecipe)
+	manifest := "version: 2\ndesired:\n    options:\n        index_strategy: none\n"
+	if err := os.WriteFile(filepath.Join(switched, "manifest.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !noIndex(switched) {
+		t.Error("a vault switched to the strategy none is sent to skill_search")
+	}
+	before := t.TempDir()
+	installRecipes(t, before, wikiRecipe)
+	installRecipesKeepingIndex(t, before, skillsRecipe, wikiRecipe)
+	if !noIndex(before) {
+		t.Error("skills that are not in the index are sent to skill_search")
+	}
+}
+
+// installRecipesKeepingIndex changes the installed recipes and leaves the
+// index as it is, as when an apply did not index.
+func installRecipesKeepingIndex(t *testing.T, driveRoot string, recipes ...[2]string) {
+	t.Helper()
+	index := filepath.Join(driveRoot, "data", "search.db")
+	kept, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installRecipes(t, driveRoot, recipes...)
+	if err := os.WriteFile(index, kept, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

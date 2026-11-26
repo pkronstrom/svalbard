@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
@@ -169,6 +172,39 @@ const (
 func SkillsInstalled(driveRoot string) bool {
 	meta, _ := LoadMetadata(driveRoot)
 	return recipeTypeInstalled(meta, skillsRecipeType)
+}
+
+// SkillsIndexed reports whether the skill tools have something to search on
+// the drive: its index strategy is not "none", and its search index holds a
+// skill file or a library quickstart. Whether search.db exists says neither:
+// a vault switched to "none" keeps its old index, and skills installed after
+// that are never in it.
+func SkillsIndexed(driveRoot string) bool {
+	if indexStrategy(driveRoot) == "none" {
+		return false
+	}
+	db, err := openSearchDB(driveRoot)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	sources, err := engine.New(db).SkillSources(context.Background())
+	return err == nil && len(sources) > 0
+}
+
+// indexStrategy is the vault's chosen index strategy as its manifest records
+// it (desired.options.index_strategy), "" for the default.
+func indexStrategy(driveRoot string) string {
+	data, err := os.ReadFile(filepath.Join(driveRoot, "manifest.yaml"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if value, ok := strings.CutPrefix(strings.TrimSpace(line), "index_strategy:"); ok {
+			return strings.ToLower(strings.Trim(strings.TrimSpace(value), `"'`))
+		}
+	}
+	return ""
 }
 
 // LibrariesInstalled reports whether the drive has JS libraries installed.

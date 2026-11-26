@@ -5,26 +5,45 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 )
 
-// skillsUsage is what "skills" alone prints. For an agent that was not
-// started from the drive's menu it is the orientation: what this is and how
-// to find a procedure. %[1]s is the program as it was run.
-const skillsUsage = `This is a Svalbard offline drive: reference archives, databases, maps and
-tools that work without a network. Its skills are procedures for building
-things with what is on it (apps, dashboards, documents, firmware).
-
-  %[1]s skills find <words...> [--kind skill|library] [--limit N]
+// skillsUsage is the commands, which a mistake in one prints. %[1]s is the
+// program as it was run.
+const skillsUsage = `  %[1]s skills find <words...> [--kind skill|library] [--limit N]
   %[1]s skills read <id> [--file F] [--section S] [--offset N]
 
 find lists the skills and JS library quickstarts that match the words, one per
 line: id, name and description. read prints one by its id; a long one ends
 with the command for its next part. Read a skill before building.
 `
+
+// skillsOrientation is what "skills" alone prints. For an agent that was not
+// started from the drive's menu it is the orientation: what this is, what the
+// drive has to build with, and how to find a procedure. It claims only what
+// is installed, and names the commands only when they can find something.
+func skillsOrientation(driveRoot string) string {
+	const drive = "This is a Svalbard offline drive: reference archives, databases, maps and\ntools that work without a network."
+	folder := filepath.Join(driveRoot, "skills") + string(filepath.Separator)
+	var text string
+	switch {
+	case mcp.SkillsInstalled(driveRoot):
+		text = drive + " Its skills are procedures for building\nthings with what is on it (apps, dashboards, documents, firmware).\n"
+	case mcp.LibrariesInstalled(driveRoot):
+		text = drive + " Its JS libraries come with quickstarts\nthat say how to build with them.\n"
+		folder = filepath.Join(driveRoot, "lib", "js") + string(filepath.Separator)
+	default:
+		return drive + " It has no skills or JS libraries\ninstalled, so this command has nothing to find.\n"
+	}
+	if !mcp.SkillsIndexed(driveRoot) {
+		return text + "They are not in a search index here, so find and read cannot reach\nthem: list " + folder + " and read the fitting file.\n"
+	}
+	return text + "\n" + fmt.Sprintf(skillsUsage, shellWord(skillsProgram))
+}
 
 // skillsProgram is how the command is spelled in the usage and in a
 // continuation line: the bare name when it was found on PATH, as in a
@@ -41,7 +60,7 @@ func runSkills(stdout, stderr io.Writer, driveRoot string, args []string) error 
 		return errors.New(problem)
 	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintf(stdout, skillsUsage, shellWord(skillsProgram))
+		fmt.Fprint(stdout, skillsOrientation(driveRoot))
 		return nil
 	}
 	words, flags, err := splitSkillArgs(args[1:])
