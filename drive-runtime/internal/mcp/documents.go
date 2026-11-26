@@ -150,7 +150,11 @@ func documentFolder(name string, filenames []string) (string, int) {
 	name = strings.Trim(strings.TrimSpace(name), "/")
 	for _, root := range []string{engine.SkillsDir, engine.LibraryDocsDir} {
 		if strings.EqualFold(name, root) || len(name) > len(root) && strings.EqualFold(name[:len(root)+1], root+"/") {
-			return folderScope(name+"/", filenames, engine.IsSkillSource)
+			// With nothing there, the name may still be a document
+			// collection's: one called "skills" is books/skills/.
+			if folder, count := folderScope(name+"/", filenames, engine.IsSkillSource); count > 0 {
+				return folder, count
+			}
 		}
 	}
 	name = strings.TrimPrefix(name, engine.DocumentsDir+"/")

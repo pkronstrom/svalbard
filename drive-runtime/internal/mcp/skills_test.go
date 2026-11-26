@@ -623,3 +623,135 @@ func TestSkillSearchReturnsTheNearestSkillForLooseWords(t *testing.T) {
 		t.Fatalf("one word of two = %+v", items)
 	}
 }
+
+// A skill with several long files has more matching sections than any window
+// of results: the skills behind it must still be reached.
+func TestSkillSearchManyLongFilesDoNotCrowdOutOthers(t *testing.T) {
+	f := newSkillFixture(t)
+	for _, file := range []string{"SKILL.md", "references/a.md", "references/b.md", "references/c.md", "references/d.md"} {
+		var sections [][2]string
+		for i := 1; i <= 60; i++ {
+			sections = append(sections, [2]string{fmt.Sprintf("Part %d", i), "Firmware firmware firmware flashing."})
+		}
+		indexSkillFile(t, f.db, "skills/skills-core/firmware/"+file, "firmware", sections...)
+	}
+	for _, name := range []string{"esp32", "arduino", "pico"} {
+		indexSkillFile(t, f.db, "skills/skills-core/"+name+"/SKILL.md", name, [2]string{"Overview", "Flash firmware to the board."})
+	}
+	items, _ := f.search(map[string]any{"query": "firmware"})
+	if ids := skillIDs(items); len(ids) != 4 || ids[0] != "skills/skills-core/firmware" {
+		t.Fatalf("results = %v, want the long skill once and the three others", ids)
+	}
+}
+
+func TestSkillReadSectionEdges(t *testing.T) {
+	f := newSkillFixture(t)
+	// A section too long for one article continues in the next under the
+	// same heading. Asked for by number it is still the whole section.
+	indexSkillFile(t, f.db, "skills/skills-core/split/SKILL.md", "split",
+		[2]string{"Overview", "Intro."},
+		[2]string{"Steps", "## Steps\n\n```python\ndef f():\n    first = 1"},
+		[2]string{"Steps (cont.)", "    second = 2"},
+		[2]string{"Steps (cont.)", "    return first + second\n```"},
+		[2]string{"Check", "## Check\n\nDone."})
+	want := "## Steps\n\n```python\ndef f():\n    first = 1\n    second = 2\n    return first + second\n```"
+	for _, section := range []any{"Steps", float64(2), "section/2"} {
+		result, err := f.read(map[string]any{"id": "skills/skills-core/split", "section": section})
+		if err != nil || result.Body != want {
+			t.Errorf("section %v = %q, %v; want the three pieces as one", section, result.Body, err)
+		}
+	}
+	// The whole file joins the pieces the same way, and names the heading once.
+	whole, err := f.read(map[string]any{"id": "skills/skills-core/split"})
+	if err != nil || whole.Body != "Intro.\n\n"+want+"\n\n## Check\n\nDone." {
+		t.Errorf("whole file = %q, %v", whole.Body, err)
+	}
+	// search_read by path gets the whole section too.
+	cap := NewSearchCapability(f.root, DriveMetadata{})
+	defer cap.Close()
+	result, err := cap.Handle(context.Background(), "read", map[string]any{"source": "skills/skills-core/split/SKILL.md", "path": "section/2"})
+	if err != nil || result.Data.(readResult).Body != want {
+		t.Errorf("search_read of a split section = %+v, %v", result.Data, err)
+	}
+
+	// A file whose own title holds ", " keeps its headings whole.
+	indexSkillFile(t, f.db, "lib/js/js-core/docs/tables.md", "Charts, tables and maps",
+		[2]string{"Overview", strings.Repeat("Intro line of forty characters or so. \n", 120)},
+		[2]string{"Steps, in order", "## Steps, in order\n\n" + strings.Repeat("A step line of forty characters or so.\n", 80)})
+	long, err := f.read(map[string]any{"id": "lib/js/js-core/docs/tables.md"})
+	if err != nil || !slices.Equal(long.Sections, []string{"Overview", "Steps, in order"}) || long.Title != "Charts, tables and maps" {
+		t.Errorf("sections = %v (title %q), %v", long.Sections, long.Title, err)
+	}
+	if one, err := f.read(map[string]any{"id": "lib/js/js-core/docs/tables.md", "section": "Steps, in order"}); err != nil || !strings.HasPrefix(one.Body, "## Steps, in order") {
+		t.Errorf("section by a heading with a comma = %.40q, %v", one.Body, err)
+	}
+}
+
+func TestSkillReadFilesListAndCase(t *testing.T) {
+	f := newSkillFixture(t)
+	// Markdown files come first: they are the ones skill_read can return.
+	for i := 0; i < 60; i++ {
+		f.file(fmt.Sprintf("skills/skills-core/data-dashboard/assets/img%02d.png", i), "x")
+	}
+	result, err := f.read(map[string]any{"id": "skills/skills-core/data-dashboard"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Files) != skillFilesListed || result.Files[0] != "references/r.md" || !strings.Contains(result.Note, "23 more files") {
+		t.Errorf("files = %v\nnote = %q; want the markdown file first and 23 more counted", result.Files, result.Note)
+	}
+
+	// A file named in another letter case is the same file on the file
+	// systems sticks use.
+	reference, err := f.read(map[string]any{"id": "skills/skills-core/data-dashboard", "file": "References/R.md"})
+	if err != nil || reference.File != "references/r.md" || !strings.Contains(reference.Body, "Logarithmic axis options") {
+		t.Errorf("file in another case = %+v, %v", reference, err)
+	}
+	// A path that climbs out is refused as such, before anything is looked up.
+	for _, file := range []string{"../../../manifest.yaml", "../vault-research/SKILL.md", "/etc/passwd"} {
+		_, err := f.read(map[string]any{"id": "skills/skills-core/data-dashboard", "file": file})
+		if err == nil || !strings.Contains(err.Error(), "is not a file of skills/skills-core/data-dashboard") {
+			t.Errorf("file %q: err = %v, want it refused as outside the skill", file, err)
+		}
+	}
+	for _, id := range []string{"zim/../books/x", "skills/../manifest.yaml"} {
+		if _, err := f.read(map[string]any{"id": id}); err == nil || !strings.Contains(err.Error(), "skill_read needs the id") {
+			t.Errorf("id %q: err = %v, want it refused as no id", id, err)
+		}
+	}
+}
+
+// The command line finds skills by keyword alone: starting an embedding
+// server for one command costs seconds each time.
+func TestSkillCapabilityKeywordOnlyStartsNoEmbeddingServer(t *testing.T) {
+	root, db, queryLog := hybridFixtureDrive(t)
+	for _, statement := range []string{
+		`ALTER TABLE sources ADD COLUMN title TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE articles ADD COLUMN sections TEXT`,
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	indexSkillFile(t, db, "skills/skills-core/data-dashboard/SKILL.md", "data-dashboard", [2]string{"Overview", "Charts and tables from CSV."})
+	cap := NewSkillCapability(root, DriveMetadata{})
+	cap.KeywordOnly = true
+	defer cap.Close()
+	result, err := cap.Handle(context.Background(), "search", map[string]any{"query": "charts from csv"})
+	if err != nil || len(result.Data.([]SkillResult)) != 1 {
+		t.Fatalf("keyword-only search = %+v, %v", result, err)
+	}
+	if _, err := os.Stat(queryLog); !os.IsNotExist(err) {
+		t.Errorf("a query was embedded: %v", err)
+	}
+}
+
+func TestNoSkillIndexMessageNamesTheDrive(t *testing.T) {
+	root := t.TempDir()
+	cap := NewSkillCapability(root, DriveMetadata{})
+	defer cap.Close()
+	result, err := cap.Handle(context.Background(), "search", map[string]any{"query": "chart"})
+	if err != nil || !strings.Contains(result.Text, root) {
+		t.Fatalf("message = %q, %v; want the folder that was looked in", result.Text, err)
+	}
+}

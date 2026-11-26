@@ -158,3 +158,26 @@ func TestVaultSourcesHidesSkills(t *testing.T) {
 		}
 	}
 }
+
+// A document collection may be called "skills". Its short name keeps meaning
+// the collection on a drive that has no skill files.
+func TestCollectionNamedSkillsStillResolves(t *testing.T) {
+	f := newDocumentFixture(t)
+	guide := f.document("books/skills/knots.pdf", "Knots", "")
+	f.page(guide, 1, "Knots, p. 1", "Tie a bowline around the coolant hose")
+	items, _ := f.search(map[string]any{"query": "bowline", "source": "skills"})
+	if got := sources(items); len(got) != 1 || got[0] != "books/skills/knots.pdf page/1" {
+		t.Fatalf("source skills on a drive without skill files = %v", got)
+	}
+	// With skill files on the drive the bare name is the skills; the
+	// collection is named with its folder.
+	indexSkillFile(t, f.db, "skills/skills-core/ropes/SKILL.md", "ropes", [2]string{"Overview", "Splice a rope; a bowline is a knot."})
+	items, _ = f.search(map[string]any{"query": "bowline", "source": "skills"})
+	if got := sources(items); len(got) != 1 || got[0] != "skills/skills-core/ropes/SKILL.md section/1" {
+		t.Fatalf("source skills with skill files = %v", got)
+	}
+	items, _ = f.search(map[string]any{"query": "bowline", "source": "books/skills"})
+	if got := sources(items); len(got) != 1 || got[0] != "books/skills/knots.pdf page/1" {
+		t.Fatalf("source books/skills = %v", got)
+	}
+}

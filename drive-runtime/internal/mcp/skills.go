@@ -62,8 +62,12 @@ const skillServerInstructions = "Procedures for building things on this drive (a
 // skillFolderNote comes with the folder of a skill's files.
 const skillFolderNote = "Copy from the folder; save what you make in your working folder, not there."
 
-// noSkillIndex answers both tools on a drive without a search index.
-const noSkillIndex = "This vault has no search index, so its skills and library quickstarts cannot be searched or read with this tool. They are files on the drive under skills/ and lib/js/. The computer that manages the drive builds the index with 'svalbard index'."
+// noSkillIndex answers both tools on a drive without a search index. It
+// names the folder that was looked in: run from the wrong place, the command
+// line would otherwise report a drive that has an index as having none.
+func noSkillIndex(driveRoot string) string {
+	return "This vault (" + driveRoot + ") has no search index, so its skills and library quickstarts cannot be searched or read with this tool. They are files on the drive under skills/ and lib/js/. The computer that manages the drive builds the index with 'svalbard index'."
+}
 
 // SkillCapability exposes the skill tools: skill_search and skill_read.
 type SkillCapability struct {
@@ -78,6 +82,11 @@ type SkillCapability struct {
 	// shares the search tool's, so one embedding model is loaded, not two.
 	embedBackend *search.SemanticBackend
 	ownsBackend  bool
+
+	// KeywordOnly keeps skill_search to keyword search on an index that has
+	// vectors too. The command line sets it: embedding one query means
+	// hashing the model and starting a server, for every command.
+	KeywordOnly bool
 }
 
 // NewSkillCapability creates the skill tools for the given drive.
@@ -200,7 +209,7 @@ func (c *SkillCapability) handleSearch(ctx context.Context, params map[string]an
 
 	db, eng, err := c.getDB()
 	if err != nil {
-		return ActionResult{Text: noSkillIndex}, nil
+		return ActionResult{Text: noSkillIndex(c.driveRoot)}, nil
 	}
 	catalog, err := loadSkillCatalog(ctx, eng)
 	if err != nil {
@@ -238,7 +247,7 @@ func (c *SkillCapability) handleSearch(ctx context.Context, params map[string]an
 // matchingSections ranks the sections in scope: by hybrid search when the
 // index was built for it and the query can be embedded, by keyword otherwise.
 func (c *SkillCapability) matchingSections(ctx context.Context, db *sql.DB, eng *engine.Engine, query, scope string) ([]engine.Result, error) {
-	if contract, complete := search.LoadCompleteContract(db); complete {
+	if contract, complete := search.LoadCompleteContract(db); complete && !c.KeywordOnly {
 		if vector, err := c.embedBackend.Embed(ctx, contract, query); err == nil {
 			results, usable, err := search.HybridSnapshot(ctx, db, contract, query, vector, skillCandidates, scope)
 			if err == nil && usable && len(results) > 0 {
@@ -314,7 +323,7 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 	}
 	_, eng, err := c.getDB()
 	if err != nil {
-		return ActionResult{Text: noSkillIndex}, nil
+		return ActionResult{Text: noSkillIndex(c.driveRoot)}, nil
 	}
 	catalog, err := loadSkillCatalog(ctx, eng)
 	if err != nil {
@@ -335,17 +344,20 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 		if entry.Folder == "" {
 			return ActionResult{}, fmt.Errorf("%s is one file and has no others", entry.ID)
 		}
-		if target := entry.Folder + "/" + rel; target != entry.File {
-			title, indexed := catalog.titles[target]
-			if !indexed {
-				return ActionResult{}, c.notIndexedError(entry, target)
-			}
-			file, result.File, result.Title = target, rel, firstNonEmpty(title, path.Base(target))
+		// Letter case is not held against the name: the file systems sticks
+		// use do not tell "References/R.md" from "references/r.md" either.
+		target, indexed := catalog.filename(entry.Folder + "/" + rel)
+		if !indexed {
+			return ActionResult{}, c.notIndexedError(entry, entry.Folder+"/"+rel)
+		}
+		if target != entry.File {
+			file, result.File = target, strings.TrimPrefix(target, entry.Folder+"/")
+			result.Title = firstNonEmpty(catalog.titles[target], path.Base(target))
 		}
 	}
 
 	offset := max(intParam(params, "offset", 0), 0)
-	text, err := readMarkdownSource(ctx, eng, file, params["section"])
+	text, err := readMarkdownSource(ctx, eng, file, catalog.titles[file], params["section"])
 	if err != nil {
 		return ActionResult{}, err
 	}
@@ -362,14 +374,14 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 		}
 	}
 	if offset == 0 && file == entry.File && entry.Folder != "" && !text.oneSection {
-		var more int
+		var more string
 		if result.Files, more = c.otherFiles(entry); len(result.Files) > 0 {
 			result.Folder = filepath.Join(c.driveRoot, filepath.FromSlash(entry.Folder))
 			// Given the folder, a small model saved its own page into it.
 			result.Note = skillFolderNote
 		}
-		if more > 0 {
-			result.Note += fmt.Sprintf(" %d more files are not listed; they are in the same folder.", more)
+		if more != "" {
+			result.Note += " " + more + " more files are not listed; they are in the same folder."
 		}
 	}
 	return ActionResult{Data: result}, nil
@@ -388,16 +400,19 @@ func (c *SkillCapability) notIndexedError(entry skillEntry, target string) error
 }
 
 // otherFiles lists the files of a skill's folder beside its entry file, as
-// they are on the drive, and how many more there are than it lists. A folder
-// that is gone has none.
-func (c *SkillCapability) otherFiles(entry skillEntry) (files []string, more int) {
+// they are on the drive: the markdown files first, which skill_read can
+// return, then the rest. more says how many it left out ("23", or "at least
+// 1960" when the folder was too large to walk to the end), "" for none. A
+// folder that is gone has no files.
+func (c *SkillCapability) otherFiles(entry skillEntry) (files []string, more string) {
 	base := filepath.Join(c.driveRoot, filepath.FromSlash(entry.Folder))
-	walked := 0
+	walked, cut := 0, false
 	_ = filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if walked++; walked > skillFilesWalked {
+			cut = true
 			return filepath.SkipAll
 		}
 		if p != base && strings.HasPrefix(d.Name(), ".") {
@@ -418,9 +433,18 @@ func (c *SkillCapability) otherFiles(entry skillEntry) (files []string, more int
 		}
 		return nil
 	})
-	sort.Strings(files)
-	if len(files) > skillFilesListed {
-		files, more = files[:skillFilesListed], len(files)-skillFilesListed
+	isMarkdown := func(name string) bool { return strings.EqualFold(path.Ext(name), ".md") }
+	sort.Slice(files, func(i, j int) bool {
+		if a, b := isMarkdown(files[i]), isMarkdown(files[j]); a != b {
+			return a
+		}
+		return files[i] < files[j]
+	})
+	if extra := len(files) - skillFilesListed; extra > 0 || cut {
+		files = files[:min(len(files), skillFilesListed)]
+		if more = strconv.Itoa(max(extra, 0)); cut {
+			more = "at least " + more
+		}
 	}
 	return files, more
 }
@@ -463,6 +487,20 @@ type skillCatalog struct {
 	folders map[string]int
 	// titles maps every indexed skill file to the title it gives itself.
 	titles map[string]string
+}
+
+// filename finds an indexed skill file by its path without regard to letter
+// case, and returns the path as the index spells it.
+func (c *skillCatalog) filename(given string) (string, bool) {
+	if _, ok := c.titles[given]; ok {
+		return given, true
+	}
+	for filename := range c.titles {
+		if strings.EqualFold(filename, given) {
+			return filename, true
+		}
+	}
+	return "", false
 }
 
 func loadSkillCatalog(ctx context.Context, eng *engine.Engine) (*skillCatalog, error) {
@@ -579,52 +617,62 @@ type markdownText struct {
 }
 
 // readMarkdownSource puts an indexed skill file back together from its
-// sections. section narrows it to one: a number, "section/N", or a heading.
-func readMarkdownSource(ctx context.Context, eng *engine.Engine, filename string, section any) (markdownText, error) {
-	sections, err := eng.Sections(ctx, filename)
+// articles. sourceTitle is the file's title, which every article title
+// starts with. section narrows the text to one section: a number,
+// "section/N", or a heading. A section too long for one article was indexed
+// as several, the later ones marked " (cont.)"; they are one section here,
+// whichever way it is asked for.
+func readMarkdownSource(ctx context.Context, eng *engine.Engine, filename, sourceTitle string, section any) (markdownText, error) {
+	articles, err := eng.Sections(ctx, filename)
 	if err != nil {
 		return markdownText{}, err
 	}
-	if len(sections) == 0 {
+	if len(articles) == 0 {
 		return markdownText{}, fmt.Errorf("%s has no text in the search index", filename)
 	}
-	// A section's title is the file's title and its heading: "name, Steps".
-	// A long section continues under the same heading, marked.
+	// An article's title is the file's title and its heading: "name, Steps".
+	// Either may hold ", " itself.
 	headingOf := func(title string) string {
-		if _, heading, ok := strings.Cut(title, ", "); ok {
+		if heading, ok := strings.CutPrefix(title, sourceTitle+", "); ok && sourceTitle != "" {
 			return heading
+		}
+		if cut := strings.LastIndex(title, ", "); cut >= 0 {
+			return title[cut+2:]
 		}
 		return title
 	}
+	type part struct {
+		heading, title string
+		first, last    int // article numbers
+		pieces         []string
+	}
+	var parts []part
 	var text markdownText
-	for _, part := range sections {
-		if heading := headingOf(part.Title); !strings.HasSuffix(heading, " (cont.)") {
-			text.headings = append(text.headings, heading)
+	for _, article := range articles {
+		heading := headingOf(article.Title)
+		if base, continued := strings.CutSuffix(heading, " (cont.)"); continued && len(parts) > 0 && parts[len(parts)-1].heading == base {
+			last := &parts[len(parts)-1]
+			last.pieces, last.last = append(last.pieces, article.Text), article.Number
+			continue
 		}
+		parts = append(parts, part{heading: heading, title: article.Title, first: article.Number, last: article.Number, pieces: []string{article.Text}})
+		text.headings = append(text.headings, heading)
 	}
 
 	wanted, isNumber := sectionNumber(section)
 	name, _ := section.(string)
 	name = strings.TrimSpace(name)
-	if !isNumber && name == "" {
-		bodies := make([]string, len(sections))
-		for i, part := range sections {
-			bodies[i] = part.Text
-		}
-		text.body = strings.Join(bodies, "\n\n")
-		return text, nil
-	}
-
-	text.oneSection = true
+	text.oneSection = isNumber || name != ""
 	var bodies []string
-	for _, part := range sections {
-		heading := headingOf(part.Title)
-		if isNumber && part.Number == wanted || !isNumber && strings.EqualFold(strings.TrimSuffix(heading, " (cont.)"), name) {
-			if len(bodies) == 0 {
-				text.title, text.number = part.Title, part.Number
-			}
-			bodies = append(bodies, part.Text)
+	for _, part := range parts {
+		if text.oneSection && !(isNumber && part.first <= wanted && wanted <= part.last) && !(!isNumber && strings.EqualFold(part.heading, name)) {
+			continue
 		}
+		if text.oneSection && len(bodies) == 0 {
+			text.title, text.number = part.title, part.first
+		}
+		// The host cut the pieces at line breaks.
+		bodies = append(bodies, strings.Join(part.pieces, "\n"))
 	}
 	if len(bodies) == 0 {
 		return markdownText{}, fmt.Errorf("%s has no section %q. Its sections: %s", filename, fmt.Sprint(section), strings.Join(text.headings, ", "))
@@ -663,7 +711,15 @@ func (c *SearchCapability) readSkillSource(ctx context.Context, source, rawPath 
 		}
 		section = rawPath
 	}
-	text, err := readMarkdownSource(ctx, eng, source, section)
+	sourceTitle := ""
+	if sources, err := eng.SkillSources(ctx); err == nil {
+		for _, indexed := range sources {
+			if indexed.Filename == source {
+				sourceTitle = indexed.Title
+			}
+		}
+	}
+	text, err := readMarkdownSource(ctx, eng, source, sourceTitle, section)
 	if err != nil {
 		return ActionResult{}, err
 	}
@@ -675,12 +731,7 @@ func (c *SearchCapability) readSkillSource(ctx context.Context, source, rawPath 
 	if text.oneSection {
 		result.Path = engine.SectionPath(text.number)
 	} else {
-		sources, _ := eng.SkillSources(ctx)
-		for _, indexed := range sources {
-			if indexed.Filename == source {
-				result.Title = indexed.Title
-			}
-		}
+		result.Title = sourceTitle
 	}
 	if next < total {
 		result.Continues = fmt.Sprintf("Characters %d to %d of %d. Call search_read with the same source and path and offset %d for the next part.", offset, next, total, next)
