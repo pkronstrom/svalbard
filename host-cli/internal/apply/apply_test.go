@@ -304,7 +304,7 @@ func TestRunJobBatchDoesNotStartJobAfterCancellation(t *testing.T) {
 	if !ok {
 		t.Fatal("missing test recipe")
 	}
-	for result := range runJobBatch(ctx, t.TempDir(), []downloadJob{{id: "cancelled", recipe: recipe}}, cat, nil, map[string]bool{"cancelled": true}, func(ProgressEvent) {}) {
+	for result := range runJobBatch(ctx, t.TempDir(), []downloadJob{{id: "cancelled", recipe: recipe}}, cat, nil, map[string]bool{"cancelled": true}, updateSwap{}, func(ProgressEvent) {}) {
 		close(result.ack)
 	}
 	if requests != 0 {

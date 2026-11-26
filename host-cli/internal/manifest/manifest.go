@@ -51,6 +51,10 @@ type RealizedEntry struct {
 	SizeBytes      int64  `yaml:"size_bytes"`
 	ChecksumSHA256 string `yaml:"checksum_sha256"`
 	SourceStrategy string `yaml:"source_strategy"`
+	// AcquisitionHash is the recipe's catalog.AcquisitionHash when this entry
+	// was installed. Empty for entries installed before it was recorded and
+	// for local imports.
+	AcquisitionHash string `yaml:"acquisition_hash,omitempty"`
 }
 
 // New creates a v2 manifest with initialized slices and CreatedAt set to now.

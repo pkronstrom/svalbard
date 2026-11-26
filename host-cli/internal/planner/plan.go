@@ -8,6 +8,12 @@ type Plan struct {
 	ToDownload []string
 	ToRemove   []string
 	Unmanaged  []string
+	// ToUpdate lists installed items to acquire again. Build never fills it:
+	// updating is always an explicit request.
+	ToUpdate []string
+	// Replace deletes an item's installed files before updating it, instead
+	// of keeping them until the new copy is in place.
+	Replace bool
 }
 
 // Build computes a reconciliation plan by comparing the desired items

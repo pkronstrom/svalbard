@@ -97,6 +97,19 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 		return nil
 	}
 
+	recoverAsides(root, m.Realized.Entries)
+	acquire := slices.Concat(plan.ToDownload, plan.ToUpdate)
+	// The installed entries of each item being updated, to set aside while
+	// its job runs.
+	previous := make(map[string][]manifest.RealizedEntry, len(plan.ToUpdate))
+	for _, id := range plan.ToUpdate {
+		for _, e := range m.Realized.Entries {
+			if e.ID == id {
+				previous[id] = append(previous[id], e)
+			}
+		}
+	}
+
 	var applyErrors []error
 
 	// Process removals first (free up space), checkpointing before completion.
@@ -143,7 +156,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	var buildJobs []downloadJob
 	buildQueued := make(map[string]bool)
 
-	for _, id := range plan.ToDownload {
+	for _, id := range acquire {
 		recipe, ok := cat.RecipeByID(id)
 		if !ok {
 			err := fmt.Errorf("recipe %q not found", id)
@@ -198,7 +211,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 
 	for _, level := range levels {
 		levelFailed := false
-		for res := range runJobBatch(applyCtx, root, level, cat, m.Desired.Options.HostPlatforms, desiredIDs, progress) {
+		for res := range runJobBatch(applyCtx, root, level, cat, m.Desired.Options.HostPlatforms, desiredIDs, updateSwap{previous: previous, replace: plan.Replace}, progress) {
 			func() {
 				defer close(res.ack)
 				if res.err != nil {
@@ -206,7 +219,22 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 					slog.Warn("job failed", "id", res.id, "error", res.err)
 					applyErrors = append(applyErrors, fmt.Errorf("%s: %w", res.id, res.err))
 					levelFailed = true
+					if plan.Replace && len(previous[res.id]) > 0 {
+						// Its files were deleted before the failed attempt.
+						snapshot := *m
+						snapshot.Realized.Entries = slices.DeleteFunc(slices.Clone(snapshot.Realized.Entries), func(e manifest.RealizedEntry) bool {
+							return e.ID == res.id
+						})
+						if err := checkpointManifest(snapshot); err != nil {
+							applyErrors = append(applyErrors, fmt.Errorf("%s: checkpointing: %w", res.id, err))
+						}
+					}
 					return
+				}
+				for i := range res.entries {
+					if recipe, ok := cat.RecipeByID(res.entries[i].ID); ok {
+						res.entries[i].AcquisitionHash = recipe.AcquisitionHash()
+					}
 				}
 				snapshot := *m
 				snapshot.Realized.Entries = replaceEntries(snapshot.Realized.Entries, res.entries)
@@ -216,7 +244,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 					levelFailed = true
 					return
 				}
-				for _, id := range plannedIDsCoveredBy(res.entries, plan.ToDownload) {
+				for _, id := range plannedIDsCoveredBy(res.entries, acquire) {
 					progress(ProgressEvent{ID: id, Status: tui.StatusDone})
 				}
 			}()
@@ -228,7 +256,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	if err := applyCtx.Err(); err != nil {
 		applyErrors = append(applyErrors, err)
 	}
-	for _, id := range plan.ToDownload {
+	for _, id := range acquire {
 		if !realizedID(m.Realized.Entries, id) {
 			applyErrors = append(applyErrors, fmt.Errorf("incomplete apply: %s was not realized", id))
 		}
@@ -308,6 +336,7 @@ func runJobBatch(
 	cat *catalog.Catalog,
 	platforms []string,
 	desiredIDs map[string]bool,
+	swap updateSwap,
 	progress ProgressFunc,
 ) <-chan downloadResult {
 	results := make(chan downloadResult)
@@ -324,7 +353,9 @@ func runJobBatch(
 				case <-ctx.Done():
 					result = downloadResult{id: job.id, err: ctx.Err()}
 				default:
-					result = executeJob(ctx, root, job, cat, platforms, desiredIDs, progress)
+					result = swap.run(root, job.id, func() downloadResult {
+						return executeJob(ctx, root, job, cat, platforms, desiredIDs, progress)
+					})
 				}
 				result.ack = make(chan struct{})
 				results <- result
@@ -347,6 +378,66 @@ func runJobBatch(
 		close(results)
 	}()
 	return results
+}
+
+// asideSuffix marks an installed file or directory moved out of the way while
+// its item is updated.
+const asideSuffix = ".svalbard-old"
+
+// updateSwap keeps the installed copy of an item until its update succeeds.
+type updateSwap struct {
+	previous map[string][]manifest.RealizedEntry // installed entries by item id
+	replace  bool                                // delete them up front instead
+}
+
+// run executes job for item id. If the item is being updated, its installed
+// files are first moved aside, so the job cannot reuse them, and afterwards
+// deleted on success or moved back on failure.
+func (s updateSwap) run(root, id string, job func() downloadResult) downloadResult {
+	old := s.previous[id]
+	for _, e := range old {
+		path := filepath.Join(root, e.RelativePath)
+		var err error
+		if s.replace {
+			err = os.RemoveAll(path)
+		} else if err = os.Rename(path, path+asideSuffix); os.IsNotExist(err) {
+			err = nil // already missing; nothing to keep
+		}
+		if err != nil {
+			recoverAsides(root, old)
+			return downloadResult{id: id, err: fmt.Errorf("setting aside the installed copy: %w", err)}
+		}
+	}
+	result := job()
+	if result.err != nil {
+		recoverAsides(root, old)
+		return result
+	}
+	for _, e := range old {
+		if err := os.RemoveAll(filepath.Join(root, e.RelativePath) + asideSuffix); err != nil {
+			slog.Warn("removing the previous copy", "id", id, "error", err)
+		}
+	}
+	return result
+}
+
+// recoverAsides moves back every entry's set-aside copy. The manifest still
+// describes that copy, so it replaces whatever an unfinished update left in
+// its place. Apply runs it over the whole vault first, which repairs an
+// update that was interrupted.
+func recoverAsides(root string, entries []manifest.RealizedEntry) {
+	for _, e := range entries {
+		path := filepath.Join(root, e.RelativePath)
+		if _, err := os.Lstat(path + asideSuffix); err != nil {
+			continue
+		}
+		if err := os.RemoveAll(path); err == nil {
+			err = os.Rename(path+asideSuffix, path)
+			if err != nil {
+				slog.Warn("restoring the previous copy", "id", e.ID, "error", err)
+			}
+		}
+	}
 }
 
 func replaceEntries(existing, additions []manifest.RealizedEntry) []manifest.RealizedEntry {
@@ -490,6 +581,9 @@ func pmtilesLayers(entries []manifest.RealizedEntry) []mapview.Layer {
 	}
 	return layers
 }
+
+// HostPlatform names the platform this process runs on, e.g. "macos-arm64".
+func HostPlatform() string { return hostPlatform() }
 
 func hostPlatform() string {
 	os := runtime.GOOS
