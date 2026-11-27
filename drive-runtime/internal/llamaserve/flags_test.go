@@ -144,8 +144,8 @@ func TestContextForHostTiers(t *testing.T) {
 		{"16GB", 16, CtxBalanced},
 		{"24GB", 24, CtxBalanced},
 		{"32GB", 32, CtxBalanced},
-		{"64GB", 64, CtxMax},
-		{"128GB", 128, CtxMax},
+		{"64GB", 64, Ctx64K},
+		{"128GB", 128, Ctx64K},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

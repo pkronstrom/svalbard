@@ -254,7 +254,7 @@ func TestSetRejectsBadValuesNamingWhatIsValid(t *testing.T) {
 	root := newDrive(t, testSchema)
 	store := mustOpen(t, root)
 	for _, tc := range []struct{ key, value, want string }{
-		{KeyContext, "huge", `ai.context: "huge" is not one of ask, auto, fast, balanced, max`},
+		{KeyContext, "huge", `ai.context: "huge" is not one of ask, auto, fast, 16k, balanced, 64k, max, 256k, 512k, model-max`},
 		{KeyDefaultModel, "llama-99", "is not one of ask, Qwen3.8-27B-UD-IQ4_XS, gemma-4-12B-it-qat"},
 		{"open-webui.open_browser", "maybe", `"maybe" is not on or off`},
 		{"radio-tool.band", "hf", "is not one of vhf, uhf"},
@@ -308,7 +308,7 @@ func TestBadSavedValuesAreIgnoredAndReported(t *testing.T) {
 
 	problems := strings.Join(store.Problems(), "\n")
 	for _, want := range []string{
-		`ai.context: saved value "huge" is not one of ask, auto, fast, balanced, max; using ask`,
+		`ai.context: saved value "huge" is not one of ask, auto, fast, 16k, balanced, 64k, max, 256k, 512k, model-max; using ask`,
 		`open-webui.open_browser: saved value "no" is not true or false; using on`,
 		`radio-tool.gain: saved value 99 is outside 1 to 10; using 5`,
 		`radio-tool.band: saved value 3 is not one of vhf, uhf; using vhf`,
@@ -500,7 +500,9 @@ func TestContextSizeFollowsTheSetting(t *testing.T) {
 	root := newDrive(t, "")
 	const auto = 16384
 	for value, want := range map[string]int{
-		"auto": auto, "fast": llamaserve.CtxFast, "balanced": llamaserve.CtxBalanced, "max": llamaserve.CtxMax,
+		"auto": auto, "fast": llamaserve.CtxFast, "16k": llamaserve.Ctx16K, "balanced": llamaserve.CtxBalanced,
+		"64k": llamaserve.Ctx64K, "max": llamaserve.CtxMax, "256k": llamaserve.Ctx256K,
+		"512k": llamaserve.Ctx512K, "model-max": llamaserve.CtxModelMax,
 	} {
 		writeValues(t, root, `{"ai": {"context": "`+value+`"}}`)
 		asked := false

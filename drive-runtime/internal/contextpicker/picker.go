@@ -25,8 +25,13 @@ func choicesFor(autoCtx int) []choice {
 	return []choice{
 		{fmt.Sprintf("Auto — %s  (recommended)", fmtTokens(autoCtx)), autoCtx},
 		{fmt.Sprintf("Fast — %s  (snappier, less memory)", fmtTokens(llamaserve.CtxFast)), llamaserve.CtxFast},
+		{"16K", llamaserve.Ctx16K},
 		{fmt.Sprintf("Balanced — %s", fmtTokens(llamaserve.CtxBalanced)), llamaserve.CtxBalanced},
-		{fmt.Sprintf("Max — %s  (may be slow / high memory)", fmtTokens(llamaserve.CtxMax)), llamaserve.CtxMax},
+		{"64K", llamaserve.Ctx64K},
+		{"128K", llamaserve.CtxMax},
+		{"256K  (high memory)", llamaserve.Ctx256K},
+		{"512K  (high memory)", llamaserve.Ctx512K},
+		{"Max  (model limit, highest memory)", llamaserve.CtxModelMax},
 	}
 }
 

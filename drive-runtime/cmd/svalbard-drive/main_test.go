@@ -314,7 +314,7 @@ func TestSettingsSubcommandNeedsNoActionsFile(t *testing.T) {
 	}
 
 	if out, err := runSubcommand(t, "settings", "ai.context", "huge"); err == nil || out != "" ||
-		!strings.Contains(err.Error(), "is not one of ask, auto, fast, balanced, max") {
+		!strings.Contains(err.Error(), "is not one of ask, auto, fast, 16k, balanced, 64k, max, 256k, 512k, model-max") {
 		t.Fatalf("bad value: %q, %v", out, err)
 	}
 	// Everything else still needs the generated menu.

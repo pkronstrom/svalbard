@@ -646,7 +646,7 @@ func resolveLaunch(stdout io.Writer, driveRoot, clientName, selectedModel string
 	if err != nil {
 		return "", 0, err
 	}
-	ctxSize = prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
+	ctxSize = llamaserve.ContextForModel(model, prefs.ContextSize(llamaserve.ContextForHost(), pickContext))
 	if err := checkClientContext(clientName, ctxSize); err != nil {
 		if saved := prefs.String(settings.KeyContext); saved != settings.Ask {
 			// Nothing was picked at this launch, so say where the size came from.

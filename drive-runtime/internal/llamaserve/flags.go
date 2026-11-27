@@ -24,9 +24,14 @@ var qwen38ChatTemplate string
 
 // Context presets offered by the launch-time picker (in tokens).
 const (
-	CtxFast     = 8192   // snappier, less memory
-	CtxBalanced = 32768  // middle ground
-	CtxMax      = 131072 // host ceiling; may be slow / high memory
+	CtxFast     = 8192 // snappier, less memory
+	Ctx16K      = 16384
+	CtxBalanced = 32768 // middle ground
+	Ctx64K      = 65536
+	CtxMax      = 131072 // legacy 128K setting
+	Ctx256K     = 262144
+	Ctx512K     = 524288
+	CtxModelMax = -1 // resolve to the model's declared context before launch
 )
 
 // ExtraFlags returns the llama-server flags implied by a model's filename for

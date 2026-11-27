@@ -247,7 +247,8 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return err
 	}
 
-	ctxSize := prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
+	requestedContext := prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
+	ctxSize := llamaserve.ContextForModel(model, requestedContext)
 	var modelPreset string
 	var models []string
 	if selected == "" {
@@ -256,9 +257,14 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 			return err
 		}
 		if len(models) > 1 {
-			modelPreset, err = llamaserve.WriteRouterPresets(filepath.Join(runtimeRoot, "tmp"), filepath.Join(driveRoot, "models"), models, ctxSize)
+			var minimumContext int
+			modelPreset, minimumContext, err = llamaserve.WriteRouterPresets(filepath.Join(runtimeRoot, "tmp"), filepath.Join(driveRoot, "models"), models, requestedContext)
 			if err != nil {
 				fmt.Fprintf(stdout, "Model switching unavailable, starting the default model: %v\n", err)
+			} else {
+				// WebUI's default compaction threshold and the shared tools
+				// also have to work with the smallest model window.
+				ctxSize = minimumContext
 			}
 		}
 	}
@@ -326,7 +332,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 
 	llamaArgs := []string{"--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", llamaPort)}
 	if modelPreset != "" {
-		fmt.Fprintf(stdout, "Starting llama-server with %d switchable models (context %d)\n", len(models), ctxSize)
+		fmt.Fprintf(stdout, "Starting llama-server with %d switchable models (shared context floor %d)\n", len(models), ctxSize)
 		llamaArgs = append(llamaArgs, "--models-preset", modelPreset, "--models-max", "1")
 	} else {
 		fmt.Fprintf(stdout, "Starting llama-server with %s (context %d)\n", modelName, ctxSize)

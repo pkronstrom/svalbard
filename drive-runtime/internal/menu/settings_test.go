@@ -231,8 +231,13 @@ slower and needs more memory.
   ask every time
   Auto — sized for this computer's memory
 ▸ Fast — 8K, snappier, less memory
+  16K
   Balanced — 32K
-  Max — 128K, may be slow, high memory
+  64K
+  128K
+  256K — high memory
+  512K — high memory
+  Max — model limit, highest memory
 
 ↑/↓ select · enter confirm · esc keeps Fast`
 	if got := m.View(); got != want {
@@ -244,7 +249,7 @@ slower and needs more memory.
 		t.Fatalf("esc changed the value: %v", savedSettings(t, root))
 	}
 
-	m = press(m, "down", "enter")
+	m = press(m, "down", "down", "enter")
 	if got := savedSettings(t, root)["ai"]["context"]; got != "balanced" {
 		t.Fatalf("saved ai.context = %v, want balanced", got)
 	}
