@@ -69,6 +69,20 @@ func TestUnscopedSearchSharesCloseMatchesAcrossArchives(t *testing.T) {
 	}
 }
 
+func TestExcludedArchiveAndItsDocumentsDoNotFillResultSlots(t *testing.T) {
+	db := setupTestDB(t)
+	wiki := insertSource(t, db, "wikipedia.zim")
+	embedded := insertSource(t, db, "wikipedia.zim/guide.pdf")
+	local := insertSource(t, db, "books/manual.pdf")
+	insertArticle(t, db, wiki, "/wiki", "Growing potatoes", "Growing potatoes")
+	insertArticle(t, db, embedded, "page/1", "Growing potatoes", "Growing potatoes")
+	insertArticle(t, db, local, "page/1", "A manual", "Growing potatoes")
+	matches := search(t, db, "growing potatoes", KeywordOptions{Limit: 1, ExcludedArchives: []string{"wikipedia.zim"}})
+	if len(matches.Results) != 1 || matches.Results[0].Filename != "books/manual.pdf" {
+		t.Fatalf("filtered search returned %+v", matches.Results)
+	}
+}
+
 func TestUnscopedSearchDoesNotFillSlotsWithWeakMatches(t *testing.T) {
 	db := setupTestDB(t)
 	wiki := insertSource(t, db, "wikipedia.zim")

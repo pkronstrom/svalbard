@@ -30,7 +30,7 @@ type actionOutputMsg struct {
 
 type searchSession interface {
 	Info() search.SessionInfo
-	Search(ctx context.Context, mode search.Mode, query string, limit int) (search.SearchResponse, error)
+	Search(ctx context.Context, mode search.Mode, query string, limit int, excluded ...string) (search.SearchResponse, error)
 	OpenResult(result search.Result) error
 	Close() error
 }
@@ -86,6 +86,10 @@ type Model struct {
 	searchLoading      bool
 	searchStatus       string
 	searchErr          error
+	archiveFilterOpen  bool
+	searchArchives     []search.Archive
+	excludedArchives   []string
+	archiveCursor      int
 }
 
 func NewModel(cfg config.RuntimeConfig, driveRoot string, workDir ...string) Model {
@@ -291,9 +295,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if msg.Type == tea.KeyCtrlC {
 		return m, tea.Quit
+	}
+	if m.archiveFilterOpen {
+		return m.updateArchiveFilter(msg), nil
+	}
+	switch msg.String() {
+	case "ctrl+f":
+		if !m.searchLoading {
+			m.openArchiveFilter()
+		}
+		return m, nil
 	case "tab":
 		if m.searchInfo.HybridEnabled {
 			if m.searchMode == search.ModeHybrid {
@@ -353,6 +366,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		token := m.searchToken
 		mode := m.searchMode
 		session := m.searchSession
+		excluded := m.excludedArchives
 		m.searchLoading = true
 		m.searchErr = nil
 		if mode == search.ModeHybrid {
@@ -361,7 +375,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.searchStatus = "Searching..."
 		}
 		return m, func() tea.Msg {
-			response, err := session.Search(context.Background(), mode, query, 20)
+			response, err := session.Search(context.Background(), mode, query, 20, excluded...)
 			return searchResultMsg{token: token, query: query, response: response, err: err}
 		}
 	case "esc":
@@ -436,6 +450,9 @@ func (m *Model) closeSearchSession() {
 	}
 	m.searchSession = nil
 	m.searchActive = false
+	m.archiveFilterOpen = false
+	m.searchArchives = nil
+	m.excludedArchives = nil
 	m.searchToken++
 	m.searchQuery.SetValue("")
 	m.searchQuery.Blur()
@@ -451,10 +468,10 @@ func (m *Model) closeSearchSession() {
 }
 
 // searchMaxVisible returns how many result rows fit on screen.
-// The search view uses ~7 lines for header/input/footer chrome plus ~5 for the
+// The search view uses ~8 lines for header/input/footer chrome plus ~5 for the
 // selected-result detail block at the bottom.
 func (m Model) searchMaxVisible() int {
-	const chrome = 12 // header, status, input, blank, section header, detail block, footer
+	const chrome = 13 // header, status, input, archive shortcut, section header, detail block, footer
 	avail := m.height - chrome
 	if avail < 3 {
 		return 3

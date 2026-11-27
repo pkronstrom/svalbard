@@ -58,4 +58,8 @@ func TestMergeZIMKeywordsUsesBothLanguagesAndSQLite(t *testing.T) {
 	if !slices.ContainsFunc(got, func(r Result) bool { return r.Snippet == "Organic carbon in soil" }) {
 		t.Errorf("escaped HTML snippet was not rendered as plain text: %+v", got)
 	}
+	groups, err := engine.New(db).NativeZIMGroups(context.Background(), "", "north.zim")
+	if err != nil || !reflect.DeepEqual(groups, [][]string{{"south"}, {"suomi"}}) {
+		t.Errorf("native search with an excluded archive uses %v, error %v", groups, err)
+	}
 }

@@ -302,8 +302,8 @@ func embedQuery(ctx context.Context, query string, port int) ([]float32, error) 
 // HybridSnapshot scores vectors only when the same complete contract remains
 // visible in one read transaction after query embedding. scope is a search
 // scope as engine.InScope reads it.
-func HybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, query string, vector []float32, limit int, scope string) ([]Result, bool, error) {
-	return hybridSnapshot(ctx, db, contract, query, vector, limit, limit, scope, false)
+func HybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, query string, vector []float32, limit int, scope string, excluded ...string) ([]Result, bool, error) {
+	return hybridSnapshot(ctx, db, contract, query, vector, limit, limit, scope, false, excluded...)
 }
 
 // HybridSnapshotFull captures complete bodies only after hybrid ranking, source
@@ -313,7 +313,7 @@ func HybridSnapshotFull(ctx context.Context, db *sql.DB, contract SemanticContra
 	return hybridSnapshot(ctx, db, contract, query, vector, limit, limit, source, true)
 }
 
-func hybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, query string, vector []float32, candidateLimit, finalLimit int, source string, fullBodies bool) ([]Result, bool, error) {
+func hybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, query string, vector []float32, candidateLimit, finalLimit int, source string, fullBodies bool, excluded ...string) ([]Result, bool, error) {
 	if !contract.valid() || len(vector) != contract.Dimensions {
 		return nil, false, fmt.Errorf("semantic query is incompatible with completed contract")
 	}
@@ -331,7 +331,7 @@ func hybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, 
 	if !ok || snapshot != contract {
 		return nil, false, nil
 	}
-	results, err := engine.New(tx).HybridContext(ctx, query, vector, candidateLimit, source)
+	results, err := engine.New(tx).HybridContext(ctx, query, vector, candidateLimit, source, excluded...)
 	if err != nil {
 		return nil, false, err
 	}

@@ -21,6 +21,9 @@ func renderView(m Model) string {
 		return m.paletteModel.View()
 	}
 	if m.searchActive {
+		if m.archiveFilterOpen {
+			return m.renderArchiveFilter()
+		}
 		return renderSearchView(m)
 	}
 	if m.settingsActive {
@@ -90,6 +93,12 @@ func renderSearchView(m Model) string {
 
 	b.WriteString("> ")
 	b.WriteString(m.searchQuery.View())
+	b.WriteString("\n")
+	filterHelp := "Ctrl+F archives"
+	if count := len(m.excludedArchives); count > 0 {
+		filterHelp += fmt.Sprintf(" (%d excluded)", count)
+	}
+	b.WriteString(m.theme.Help.Render(filterHelp))
 	b.WriteString("\n\n")
 
 	shown := len(m.searchResults)

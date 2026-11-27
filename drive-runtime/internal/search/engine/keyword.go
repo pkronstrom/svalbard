@@ -53,6 +53,8 @@ type KeywordOptions struct {
 	// knowledge source.
 	Source string
 	Limit  int
+	// ExcludedArchives omits these ZIM filenames and their embedded documents.
+	ExcludedArchives []string
 	// AnyWord also returns articles that have only one or a few of the
 	// words, after those with more. Knowledge search leaves them out as
 	// being about something else; among a drive's few skills the nearest one
@@ -67,19 +69,28 @@ const skillRoots = `(src.filename GLOB '` + SkillsDir + `/*' OR src.filename GLO
 
 // scopeClause is the SQL condition for a search scope on the sources table
 // joined as src, with its arguments. It reads a scope as InScope does.
-func scopeClause(scope string) (string, []any) {
+func scopeClause(scope string, excluded ...string) (string, []any) {
+	var clause string
+	var args []any
 	switch {
 	case scope == "":
-		return ` AND NOT ` + skillRoots, nil
+		clause = ` AND NOT ` + skillRoots
 	case scope == SkillScope:
-		return ` AND ` + skillRoots, nil
+		clause = ` AND ` + skillRoots
 	case strings.HasSuffix(scope, "/"):
 		// substr, not LIKE: a folder name may hold "%" or "_".
-		return ` AND substr(src.filename, 1, length(?)) = ?`, []any{scope, scope}
+		clause, args = ` AND substr(src.filename, 1, length(?)) = ?`, []any{scope, scope}
 	case isArchiveName(scope):
-		return ` AND (src.filename = ? OR substr(src.filename, 1, length(?)) = ?)`, []any{scope, scope + "/", scope + "/"}
+		clause, args = ` AND (src.filename = ? OR substr(src.filename, 1, length(?)) = ?)`, []any{scope, scope + "/", scope + "/"}
+	default:
+		clause, args = ` AND src.filename = ?`, []any{scope}
 	}
-	return ` AND src.filename = ?`, []any{scope}
+	for _, archive := range excluded {
+		prefix := archive + "/"
+		clause += ` AND src.filename <> ? AND substr(src.filename, 1, length(?)) <> ?`
+		args = append(args, archive, prefix, prefix)
+	}
+	return clause, args
 }
 
 // KeywordMatches is the outcome of Search.
@@ -166,7 +177,7 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 		// Bound the extra work for popular terms in very large archives.
 		candidateLimit = max(opts.Limit, min(rankedScan, max(128, 8*min(opts.Limit, rankedScan))))
 	}
-	exact, more, err := e.ranked(ctx, ftsTerms(matches.Words, " AND "), opts.Source, candidateLimit)
+	exact, more, err := e.ranked(ctx, ftsTerms(matches.Words, " AND "), opts.Source, candidateLimit, opts.ExcludedArchives...)
 	if err != nil {
 		return matches, err
 	}
@@ -179,7 +190,7 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	if len(exact) >= opts.Limit {
 		return matches, ctx.Err()
 	}
-	if matches.Missing, err = e.missingWords(ctx, matches.Words, opts.Source); err != nil {
+	if matches.Missing, err = e.missingWords(ctx, matches.Words, opts.Source, opts.ExcludedArchives...); err != nil {
 		return matches, err
 	}
 	// Two words have no "most": an article with one of them is a search for
@@ -193,7 +204,7 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 
 	// More candidates than are returned, so that an article with many of the
 	// words can overtake one that repeats a single rare word.
-	candidates, _, err := e.ranked(ctx, ftsTerms(matches.Words, " OR "), opts.Source, max(3*opts.Limit, 30))
+	candidates, _, err := e.ranked(ctx, ftsTerms(matches.Words, " OR "), opts.Source, max(3*opts.Limit, 30), opts.ExcludedArchives...)
 	if err != nil {
 		return matches, err
 	}
@@ -282,14 +293,14 @@ func diversifyKeyword(results []Result, words []string, limit int, sources map[s
 // scope is a single document or skill, it keeps at most pagesPerDocument
 // pages of any one document and sectionsPerSkill sections of any one skill,
 // and returns those that had more, as scopes that show the rest.
-func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int) ([]Result, []string, error) {
+func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int, excluded ...string) ([]Result, []string, error) {
 	statement := `SELECT a.id, src.filename, a.path, a.title, -rank,
                 snippet(articles_fts, 1, '»', '«', '...', 12)
          FROM articles_fts
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id
          WHERE articles_fts MATCH ? AND rank MATCH '` + keywordRank + `'`
-	clause, scopeArgs := scopeClause(source)
+	clause, scopeArgs := scopeClause(source, excluded...)
 	statement += clause
 	args := append([]any{ftsQuery}, scopeArgs...)
 	// FTS5 hands the rows out in rank order, so reading stops as soon as the
@@ -338,8 +349,8 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
 
 // missingWords returns the words that no article of the searched sources
 // contains, so a caller can tell "not on this drive" from "not together".
-func (e *Engine) missingWords(ctx context.Context, words []string, source string) ([]string, error) {
-	clause, scopeArgs := scopeClause(source)
+func (e *Engine) missingWords(ctx context.Context, words []string, source string, excluded ...string) ([]string, error) {
+	clause, scopeArgs := scopeClause(source, excluded...)
 	statement := `SELECT 1 FROM articles_fts
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id

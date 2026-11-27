@@ -92,10 +92,11 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 
 	reader := bufio.NewReader(stdin)
 	const pageSize = 20
+	var excluded []string
 	query := initialQuery
 	for {
 		if query == "" {
-			fmt.Fprintf(stdout, "\n  [%s] Search (/fts /hybrid q): ", mode)
+			fmt.Fprintf(stdout, "\n  [%s] Search (/fts /hybrid /wikis q): ", mode)
 			line, err := reader.ReadString('\n')
 			if err != nil && line == "" {
 				return err
@@ -106,6 +107,19 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 			return nil
 		}
 		switch query {
+		case "/wikis":
+			archives, err := ListArchives(session.driveRoot)
+			if err != nil {
+				return err
+			}
+			excluded = ToggleWikiArchives(excluded, archives)
+			if len(excluded) > 0 {
+				fmt.Fprintf(stdout, "  Wikipedia and Wiktionary excluded (%d archives)\n", len(excluded))
+			} else {
+				fmt.Fprintln(stdout, "  Wikipedia and Wiktionary included")
+			}
+			query = ""
+			continue
 		case "/fts", "/keyword":
 			mode = ModeKeyword
 			fmt.Fprintln(stdout, "  Switched to keyword search")
@@ -123,7 +137,7 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 
 		fmt.Fprintf(stdout, "Searching (%s): %s\n", mode, query)
 		limit := pageSize
-		response, err := session.Search(ctx, mode, query, limit)
+		response, err := session.Search(ctx, mode, query, limit, excluded...)
 		if err != nil {
 			return err
 		}
@@ -161,7 +175,7 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 				continue
 			}
 			limit += pageSize
-			response, err = session.Search(ctx, mode, query, limit)
+			response, err = session.Search(ctx, mode, query, limit, excluded...)
 			if err != nil {
 				return err
 			}

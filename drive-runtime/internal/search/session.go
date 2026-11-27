@@ -121,7 +121,7 @@ func (s *Session) Info() SessionInfo {
 	return s.info
 }
 
-func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int) (SearchResponse, error) {
+func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int, excluded ...string) (SearchResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -147,7 +147,7 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 			status = "Hybrid unavailable, fell back to keyword"
 		} else {
 			var usable bool
-			results, usable, embedErr = HybridSnapshot(ctx, s.db, contract, query, queryVec, limit, "")
+			results, usable, embedErr = HybridSnapshot(ctx, s.db, contract, query, queryVec, limit, "", excluded...)
 			if !usable {
 				effectiveMode = ModeKeyword
 				status = "Hybrid unavailable, fell back to keyword"
@@ -166,7 +166,7 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 
 	var matches engine.KeywordMatches
 	if effectiveMode == ModeKeyword {
-		matches, err = s.eng.Search(ctx, query, engine.KeywordOptions{Limit: limit})
+		matches, err = s.eng.Search(ctx, query, engine.KeywordOptions{Limit: limit, ExcludedArchives: excluded})
 		if err != nil {
 			return SearchResponse{}, err
 		}
@@ -180,7 +180,7 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 		err := s.ensureKiwix(ctx)
 		return s.kiwixPort, err
 	}
-	results, native, nativeErr := MergeZIMKeywords(ctx, s.eng, nativePort, query, "", limit, results)
+	results, native, nativeErr := MergeZIMKeywords(ctx, s.eng, nativePort, query, "", limit, results, excluded...)
 	if err := ctx.Err(); err != nil {
 		return SearchResponse{}, err
 	}

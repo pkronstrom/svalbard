@@ -10,13 +10,16 @@ import (
 
 // NativeZIMGroups lists the registered native sources in Kiwix-compatible
 // language groups. Pre-migration databases have no native_language column.
-func (e *Engine) NativeZIMGroups(ctx context.Context, scope string) ([][]string, error) {
+func (e *Engine) NativeZIMGroups(ctx context.Context, scope string, excluded ...string) ([][]string, error) {
 	if scope != "" && (!strings.EqualFold(filepath.Ext(scope), ".zim") || filepath.Base(scope) != scope) {
 		return nil, nil
 	}
 	languages, err := e.nativeZIMLanguages(ctx, scope)
 	if err != nil {
 		return nil, err
+	}
+	for _, filename := range excluded {
+		delete(languages, strings.TrimSuffix(filename, filepath.Ext(filename)))
 	}
 	var groups [][]string
 	byLanguage := map[string]int{}

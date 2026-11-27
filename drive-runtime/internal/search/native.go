@@ -21,12 +21,12 @@ var escapedKiwixHighlights = strings.NewReplacer("&lt;b&gt;", "<b>", "&lt;/b&gt;
 // MergeZIMKeywords adds native full-text hits to the SQLite result list.
 // covered indicates that this scope has native sources, even if Kiwix fails.
 // The caller can still use the returned SQLite hits with a coverage warning.
-func MergeZIMKeywords(ctx context.Context, eng *engine.Engine, start func(context.Context) (int, error), query, scope string, limit int, local []Result) (results []Result, covered bool, err error) {
+func MergeZIMKeywords(ctx context.Context, eng *engine.Engine, start func(context.Context) (int, error), query, scope string, limit int, local []Result, excluded ...string) (results []Result, covered bool, err error) {
 	words := engine.QueryWords(query)
 	if limit <= 0 || len(words) == 0 {
 		return local, false, nil
 	}
-	groups, err := eng.NativeZIMGroups(ctx, scope)
+	groups, err := eng.NativeZIMGroups(ctx, scope, excluded...)
 	if err != nil || len(groups) == 0 {
 		return local, false, err
 	}

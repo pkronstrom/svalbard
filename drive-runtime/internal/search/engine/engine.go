@@ -55,9 +55,9 @@ func (e *Engine) Keyword(query string, limit int) ([]Result, error) {
 // returns at most sectionsPerSkill sections unless the scope is that skill,
 // so that hybrid search, whose candidates these are, reaches the skills
 // behind a long one.
-func (e *Engine) KeywordContext(ctx context.Context, query string, limit int, scope string) ([]Result, error) {
+func (e *Engine) KeywordContext(ctx context.Context, query string, limit int, scope string, excluded ...string) ([]Result, error) {
 	ftsQuery := BuildFTSQuery(query)
-	clause, scopeArgs := scopeClause(scope)
+	clause, scopeArgs := scopeClause(scope, excluded...)
 	skills := e.newSkillBound(ctx, scope)
 	scan := limit
 	if skills != nil {
@@ -109,9 +109,9 @@ func (e *Engine) Hybrid(query string, queryVec []float32, limit int) ([]Result, 
 
 // HybridContext is Hybrid within a search scope, as InScope reads it. Both
 // halves keep to the scope: the keyword candidates and the vectors scored.
-func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []float32, limit int, scope string) ([]Result, error) {
+func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []float32, limit int, scope string, excluded ...string) ([]Result, error) {
 	// Step 1: Run FTS5 first to get candidate article IDs for vector pre-filter.
-	ftsResults, ftsErr := e.KeywordContext(ctx, query, 200, scope)
+	ftsResults, ftsErr := e.KeywordContext(ctx, query, 200, scope, excluded...)
 
 	// Step 2: Run vector search filtered to FTS candidate articles.
 	// This avoids loading ALL embeddings into memory.
@@ -129,7 +129,7 @@ func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []flo
 		vecChunks, vecErr = e.vectorSearchFiltered(queryVec, candidateIDs, 100)
 	} else {
 		// No FTS hits — fall back to full scan (small corpus or unusual query)
-		vecChunks, vecErr = e.vectorSearch(ctx, queryVec, 100, scope)
+		vecChunks, vecErr = e.vectorSearch(ctx, queryVec, 100, scope, excluded...)
 	}
 	if vecErr != nil {
 		return nil, vecErr
@@ -197,8 +197,8 @@ func (e *Engine) vectorSearchFiltered(queryVec []float32, articleIDs []int, limi
 
 // vectorSearch fetches every embedding in the scope and computes dot product
 // with queryVec. Used as fallback when FTS5 returns no candidates.
-func (e *Engine) vectorSearch(ctx context.Context, queryVec []float32, limit int, scope string) ([]scoredChunk, error) {
-	clause, scopeArgs := scopeClause(scope)
+func (e *Engine) vectorSearch(ctx context.Context, queryVec []float32, limit int, scope string, excluded ...string) ([]scoredChunk, error) {
+	clause, scopeArgs := scopeClause(scope, excluded...)
 	skills := e.newSkillBound(ctx, scope)
 	rows, err := e.db.Query(
 		`SELECT e.article_id, e.chunk_header, e.vector, src.filename
