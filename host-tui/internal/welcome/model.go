@@ -67,12 +67,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.keys.MoveDown.Matches(msg):
 			if m.selected < len(welcomeDestinations)-1 {
 				m.selected++
-				}
+			}
 			return m, nil
 		case m.keys.MoveUp.Matches(msg):
 			if m.selected > 0 {
 				m.selected--
-				}
+			}
 			return m, nil
 		case m.keys.Enter.Matches(msg):
 			dest := welcomeDestinations[m.selected]

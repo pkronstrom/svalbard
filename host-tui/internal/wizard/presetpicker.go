@@ -247,4 +247,3 @@ func (m presetPickerModel) View() string {
 
 	return b.String()
 }
-
