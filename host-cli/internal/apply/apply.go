@@ -133,8 +133,10 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 		if _, ok := removeSet[e.ID]; ok {
 			path := filepath.Join(root, e.RelativePath)
 			// A binary archive's tree, unpacked here or on first use.
-			if err := binarytree.RemoveTrees(path); err != nil {
-				slog.Warn("removing an unpacked tree", "id", e.ID, "error", err)
+			if e.Type == "binary" {
+				if err := binarytree.RemoveTrees(path); err != nil {
+					slog.Warn("removing an unpacked tree", "id", e.ID, "error", err)
+				}
 			}
 			os.RemoveAll(path)
 			// The downloader's record of where the file came from.
@@ -501,8 +503,10 @@ func (s updateSwap) run(root, id string, job func() downloadResult) downloadResu
 		path := filepath.Join(root, e.RelativePath)
 		// The old release's unpacked tree would be found before the new
 		// archive is unpacked; it is made again from whichever archive stays.
-		if err := binarytree.RemoveTrees(path); err != nil {
-			slog.Warn("removing the previous unpacked tree", "id", id, "error", err)
+		if e.Type == "binary" {
+			if err := binarytree.RemoveTrees(path); err != nil {
+				slog.Warn("removing the previous unpacked tree", "id", id, "error", err)
+			}
 		}
 		var err error
 		if s.replace {

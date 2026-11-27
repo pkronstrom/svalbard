@@ -255,3 +255,30 @@ func TestUnpackRemovesAppleDoubleCompanions(t *testing.T) {
 		t.Fatalf("._lonely removed: %v", err)
 	}
 }
+
+// Only bin/'s own platform directories are skipped: an archive may keep its
+// programs in a directory of its own named after a platform, and the tree
+// is readable by others, as an extracted tree was.
+func TestResolveFindsBinaryUnderPlatformNamedDirInsideArchive(t *testing.T) {
+	driveRoot := t.TempDir()
+	binDir := filepath.Join(driveRoot, "bin", currentPlatform(t))
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(binDir, "tool.tar.gz")
+	if err := os.WriteFile(archive, buildTarGz(t, map[string]string{
+		"dist/linux-arm64/tool": "#!/bin/sh\nexit 0\n",
+	}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := binary.Resolve("tool", driveRoot)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if want := filepath.Join(archive+".unpacked", "dist", "linux-arm64", "tool"); got != want {
+		t.Fatalf("Resolve() = %q, want %q", got, want)
+	}
+	if info, err := os.Stat(archive + ".unpacked"); err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("unpacked dir = %v, %v; want mode 0755", info, err)
+	}
+}

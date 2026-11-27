@@ -136,6 +136,9 @@ func unpackArchive(archivePath string) error {
 		return err
 	}
 	defer os.RemoveAll(tmp)
+	if err := os.Chmod(tmp, 0o755); err != nil { // MkdirTemp makes it 0700
+		return err
+	}
 
 	var links []archiveLink
 	if strings.HasSuffix(base, ".zip") {
@@ -452,9 +455,12 @@ func findMatchingBinary(dir, name string) (string, error) {
 	var nested string
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
+			if path != dir && d != nil && d.IsDir() {
+				return filepath.SkipDir // one unreadable tree hides no other tool
+			}
 			return err
 		}
-		if d.IsDir() && path != dir && (platformDirs[d.Name()] || strings.Contains(d.Name(), partialMarker)) {
+		if d.IsDir() && filepath.Dir(path) == dir && (platformDirs[d.Name()] || strings.Contains(d.Name(), partialMarker)) {
 			return filepath.SkipDir
 		}
 		if d.IsDir() || filepath.Base(path) != name || !isExecutable(path) {

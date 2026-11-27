@@ -61,9 +61,11 @@ func Prepare(archive string) ([]string, error) {
 	return unpack(archive)
 }
 
-// RemoveTrees removes what was unpacked from an archive before the archive
-// goes: its .unpacked directory, and the top-level directories a drive
-// runtime from before that directory unpacked beside the archive. Otherwise
+// RemoveTrees removes what was unpacked from a binary archive in
+// bin/<platform>/ before the archive goes: its .unpacked directory, and the
+// top-level directories a drive runtime from before that directory unpacked
+// beside the archive. It is for binary recipes only: datasets and toolchains
+// are archives too, and nothing unpacks them there. Otherwise
 // the old release would still be found after an update. Top-level files are
 // left: two archives may both hold a LICENSE there.
 func RemoveTrees(archive string) error {
@@ -72,6 +74,13 @@ func RemoveTrees(archive string) error {
 	}
 	if err := os.RemoveAll(UnpackedDir(archive)); err != nil {
 		return err
+	}
+	// What an unpack that was stopped left.
+	partials, _ := filepath.Glob(archive + partialMarker + "*")
+	for _, partial := range partials {
+		if err := os.RemoveAll(partial); err != nil {
+			return err
+		}
 	}
 	// The first component of each path, if it is a directory.
 	tops := map[string]bool{}
@@ -225,6 +234,9 @@ func unpack(archive string) ([]string, error) {
 		return nil, err
 	}
 	defer os.RemoveAll(tmp)
+	if err := os.Chmod(tmp, 0o755); err != nil { // MkdirTemp makes it 0700
+		return nil, err
+	}
 
 	var files []string
 	links, err := walkArchive(archive, func(name string, r io.Reader, mode os.FileMode) error {
@@ -311,6 +323,9 @@ func resolveLinks(root string, links []archiveLink, loaded map[string]bool) ([]s
 		}
 		rel, _ := filepath.Rel(root, source)
 		if base := filepath.Base(source); sharedLibrary(base) && len(loaded) > 0 && !loaded[base] {
+			if err := os.MkdirAll(filepath.Dir(dests[0]), 0o755); err != nil {
+				return nil, err
+			}
 			if err := os.Rename(source, dests[0]); err != nil {
 				return nil, err
 			}

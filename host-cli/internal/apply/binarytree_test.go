@@ -131,3 +131,28 @@ func TestUpdateUnderTheSameNameReplacesTheTree(t *testing.T) {
 		t.Fatalf("llama-server after update = %q, want b2", got)
 	}
 }
+
+// A dataset is an archive too, but nothing unpacks it beside itself, so its
+// removal leaves the directories beside it alone.
+func TestRemovingANonBinaryArchiveLeavesItsNeighbours(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	neighbour := filepath.Join(dataDir, "llama", "notes.txt")
+	if err := os.MkdirAll(filepath.Dir(neighbour), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(neighbour, []byte("mine"), 0o644)
+	os.WriteFile(filepath.Join(dataDir, "set.tar.gz"), []byte(llamaArchive(t, "llama", "x")), 0o644)
+	m := manifest.New("test")
+	m.Realized.Entries = []manifest.RealizedEntry{{ID: "set", Type: "dataset", Filename: "set.tar.gz", RelativePath: "data/set.tar.gz"}}
+	cat, err := catalog.LoadFromFS(fstest.MapFS{}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), root, &m, planner.Plan{ToRemove: []string{"set"}}, cat); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, neighbour); got != "mine" {
+		t.Fatalf("neighbour removed with the dataset")
+	}
+}

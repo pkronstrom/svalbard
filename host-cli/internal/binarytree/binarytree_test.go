@@ -202,3 +202,33 @@ func TestRemoveTreesTakesTheArchivesDirectoriesOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestPrepareMakesATreeOthersCanRead(t *testing.T) {
+	stubImports(t, nil)
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "tool.tar.gz")
+	writeTarGz(t, archive, []entry{
+		{name: "bin/tool-1", body: "x"},
+		{name: "bin/tool", link: "tool-1", flag: tar.TypeSymlink},
+	})
+	if _, err := Prepare(archive); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(UnpackedDir(archive)); err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("unpacked dir = %v, %v; want mode 0755", info, err)
+	}
+}
+
+func TestRemoveTreesTakesStoppedUnpacks(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "tool.tar.gz")
+	writeTarGz(t, archive, []entry{{name: "tool", body: "x"}})
+	partial := archive + partialMarker + "123"
+	if err := os.MkdirAll(filepath.Join(partial, "half"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveTrees(archive); err != nil {
+		t.Fatal(err)
+	}
+	assertMissing(t, partial)
+}
