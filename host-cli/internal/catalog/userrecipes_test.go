@@ -69,6 +69,52 @@ documents:
 	}
 }
 
+// A personal mirror or a source the public catalog cannot ship is an
+// ordinary recipe in the user's config dir; a vault keeps its copy like a
+// collection's, so another computer can plan and apply it.
+func TestLoadUserRecipesAddsOrdinaryRecipes(t *testing.T) {
+	cat := NewTestCatalog(t)
+	dir := t.TempDir()
+	writeUserRecipe(t, dir, "erg.yaml", `
+id: erg-2024
+type: pdf
+size_gb: 0.01
+url: https://web.archive.org/web/2026id_/https://example.test/erg.pdf
+description: Emergency Response Guidebook
+`)
+	writeUserRecipe(t, dir, "mirror.yaml", "type: zim\nurl_pattern: https://mirror.example/wiki_{date}.zim\n")
+	if skipped := cat.LoadUserRecipes(dir); len(skipped) > 0 {
+		t.Fatalf("LoadUserRecipes skipped %v", skipped)
+	}
+	for id, file := range map[string]string{"erg-2024": "erg.yaml", "mirror": "mirror.yaml"} {
+		item, ok := cat.RecipeByID(id)
+		if !ok || item.Path != filepath.Join(dir, file) || item.IsCollection() {
+			t.Errorf("%s not loaded as an ordinary user recipe: %+v", id, item)
+		}
+	}
+	if builtin, _ := cat.RecipeByID("ifixit"); builtin.Path != "" {
+		t.Error("built-in recipe reported as user recipe")
+	}
+
+	other := NewTestCatalog(t)
+	if got := other.LoadVaultRecipes(dir); len(got) != 2 {
+		t.Fatalf("LoadVaultRecipes = %v, want both copies", got)
+	}
+	if item, _ := other.RecipeByID("mirror"); !item.VaultCopy || item.Type != "zim" {
+		t.Errorf("vault copy = %+v, want a zim recipe marked VaultCopy", item)
+	}
+}
+
+// Test binaries must not read the repo's gitignored local/ folders, or a
+// developer's own recipes and presets would change test results.
+func TestUserDirsSkipRepoLocalInTests(t *testing.T) {
+	for _, dir := range append(UserRecipeDirs(), UserPresetDirs()...) {
+		if strings.Contains(filepath.ToSlash(dir), "/local/") {
+			t.Errorf("test binary reads %s", dir)
+		}
+	}
+}
+
 func TestLoadUserRecipesSkipsInvalid(t *testing.T) {
 	cases := map[string]struct {
 		file, body, wantReason string
@@ -78,7 +124,13 @@ func TestLoadUserRecipesSkipsInvalid(t *testing.T) {
 		"neither":             {"c.yaml", "documents:\n  - title: nothing\n", "needs a url or a path"},
 		"non-http url":        {"c.yaml", "documents:\n  - url: ftp://example.org/a.pdf\n", "must start with http:// or https://"},
 		"duplicate filenames": {"c.yaml", "documents:\n  - url: https://a.example/x/Manual.pdf\n  - url: https://b.example/y/manual.pdf\n", "set filename:"},
-		"missing documents":   {"c.yaml", "description: empty\n", "missing documents"},
+		"no type":             {"c.yaml", "description: empty\n", "no type"},
+		"untyped download":    {"c.yaml", "url: https://example.org/a.zim\n", "no type"},
+		"nothing to download": {"c.yaml", "type: zim\nstrategy: local\npath: generated/x.zim\n", "nothing to download"},
+		"shadows by download": {"ifixit.yaml", "type: zim\nurl: https://example.org/a.zim\n", "shadows a built-in recipe"},
+		"local: prefix":       {"c.yaml", "id: 'local:watch'\ntype: zim\nurl: https://example.org/a.zim\n", "reserved for imported files"},
+		"unknown draft_for":   {"c.yaml", "type: gguf\nurl: https://example.org/a.gguf\ndraft_for: [nope]\n", "draft_for target"},
+		"reserved setting id": {"ai.yaml", "type: zim\nurl: https://example.org/a.zim\n", "reserved for built-in settings"},
 		"other acquisition":   {"c.yaml", "url: https://example.org/a.zim\ndocuments:\n  - url: https://example.org/a.pdf\n", "documents only"},
 		"other type":          {"c.yaml", "type: zim\ndocuments:\n  - url: https://example.org/a.pdf\n", "use type: pdf"},
 		"nameless url":        {"c.yaml", "documents:\n  - url: https://example.org/download?id=5\n", "set filename:"},
@@ -109,7 +161,7 @@ func TestLoadUserRecipesSkipsInvalid(t *testing.T) {
 			if _, ok := cat.RecipeByID("c"); ok {
 				t.Error("invalid recipe was added to the catalog")
 			}
-			if tc.file == "c.yaml" && tc.wantReason != "may only hold" {
+			if tc.file == "c.yaml" && tc.wantReason != "may only hold" && tc.wantReason != "reserved for imported files" {
 				if s, ok := cat.SkippedUserRecipe("c"); !ok || s.Err() == nil {
 					t.Error("SkippedUserRecipe does not explain the skip")
 				}

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"testing"
 
 	"gopkg.in/yaml.v3"
 )
@@ -74,7 +75,9 @@ func UserRecipeDirs() []string {
 	if dir, err := UserRecipeDir(); err == nil {
 		dirs = append(dirs, dir)
 	}
-	if root, err := devRepoRoot(); err == nil {
+	// Test binaries skip the repo's local/recipes, so a developer's own files
+	// cannot change test results.
+	if root, err := devRepoRoot(); err == nil && !testing.Testing() {
 		dirs = append(dirs, filepath.Join(root, "local", "recipes"))
 	}
 	return dirs
@@ -89,9 +92,11 @@ func VaultRecipeDir(vaultRoot string) string {
 
 // LoadUserRecipes adds the *.yaml recipes found in dirs (missing dirs are
 // ignored) to the catalog. A user recipe is a document collection, which
-// lists documents, or a js-lib recipe of pinned packages; its id may not shadow a built-in recipe or another user
-// recipe, also not by letter case, since both would share one folder on the
-// vault. A recipe that fails is skipped rather than failing the load; the
+// lists documents, a js-lib recipe of pinned packages, or any other recipe
+// type with something to download, such as a personal mirror or a source the
+// public catalog cannot ship. Its id may not shadow a built-in recipe or
+// another user recipe, also not by letter case, since both would share one
+// folder on the vault. A recipe that fails is skipped rather than failing the load; the
 // skipped files are returned and kept for SkippedUserRecipes. Local document
 // paths are made absolute: "~" is the home directory and a relative path
 // starts at the recipe file's directory.
@@ -171,7 +176,7 @@ func (c *Catalog) loadRecipeDir(dir string, vaultCopy bool) (added []string, ski
 			skip(item.ID, path, reason)
 			continue
 		}
-		if err := ValidateLibraries(append(c.AllRecipes(), item)); err != nil {
+		if err := c.validateUserRecipe(item); err != nil {
 			skip(item.ID, path, err.Error())
 			continue
 		}
@@ -200,6 +205,9 @@ func (c *Catalog) recipeByFoldedID(id string) (Item, bool) {
 // local paths absolute against baseDir. It returns why the recipe cannot be
 // used, or "".
 func prepareUserRecipe(item *Item, baseDir string, resolve bool) string {
+	if strings.HasPrefix(item.ID, "local:") {
+		return fmt.Sprintf("id %q uses the local: prefix reserved for imported files", item.ID)
+	}
 	if !userRecipeIDRe.MatchString(item.ID) {
 		return fmt.Sprintf("id %q may only hold letters, digits, '.', '_' and '-'", item.ID)
 	}
@@ -207,7 +215,7 @@ func prepareUserRecipe(item *Item, baseDir string, resolve bool) string {
 		return prepareUserLibraries(item)
 	}
 	if len(item.Documents) == 0 {
-		return "missing documents: a user recipe lists the documents of a collection, or is of type js-lib"
+		return prepareUserDownload(item)
 	}
 	if item.URL != "" || item.URLPattern != "" || len(item.Platforms) > 0 || len(item.Bundle) > 0 || item.Build != nil {
 		return "a user recipe takes documents only, not url, url_pattern, platforms, bundle or build"
@@ -271,6 +279,32 @@ func prepareUserRecipe(item *Item, baseDir string, resolve bool) string {
 		names[key] = true
 	}
 	return ""
+}
+
+// prepareUserDownload validates any other user recipe: it needs a type and
+// something to download, and is otherwise checked like a built-in one.
+func prepareUserDownload(item *Item) string {
+	if item.Type == "" {
+		return "no type: set type, or list documents for a collection"
+	}
+	if item.URL == "" && item.URLPattern == "" && len(item.Platforms) == 0 &&
+		len(item.Bundle) == 0 && item.Build == nil && len(item.Packages) == 0 {
+		return "nothing to download: set url, url_pattern, platforms, bundle, build or packages"
+	}
+	return ""
+}
+
+// validateUserRecipe runs the catalog checks a built-in recipe passes at load.
+func (c *Catalog) validateUserRecipe(item Item) error {
+	if err := validateRecipeSettings(item.ID, item); err != nil {
+		return err
+	}
+	for _, target := range item.DraftFor {
+		if _, ok := c.recipes[target]; !ok {
+			return fmt.Errorf("draft_for target %q not found", target)
+		}
+	}
+	return ValidateLibraries(append(c.AllRecipes(), item))
 }
 
 // prepareUserLibraries validates a user js-lib recipe: pinned npm-style

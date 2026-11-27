@@ -43,21 +43,29 @@ func (c *Catalog) validateSettings() error {
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
-		if slices.Contains(ReservedSettingOwners, id) {
-			return fmt.Errorf("recipe %s: the id is reserved for built-in settings", id)
+		if err := validateRecipeSettings(id, c.recipes[id]); err != nil {
+			return err
 		}
-		seen := make(map[string]bool)
-		for _, setting := range c.recipes[id].Settings {
-			if !settingNamePattern.MatchString(setting.Name) {
-				return fmt.Errorf("recipe %s: setting name %q must match [a-z][a-z0-9_]*", id, setting.Name)
-			}
-			if seen[setting.Name] {
-				return fmt.Errorf("recipe %s: setting %q is declared twice", id, setting.Name)
-			}
-			seen[setting.Name] = true
-			if err := setting.validate(); err != nil {
-				return fmt.Errorf("recipe %s: setting %q: %w", id, setting.Name, err)
-			}
+	}
+	return nil
+}
+
+// validateRecipeSettings is validateSettings for one recipe.
+func validateRecipeSettings(id string, item Item) error {
+	if slices.Contains(ReservedSettingOwners, id) {
+		return fmt.Errorf("recipe %s: the id is reserved for built-in settings", id)
+	}
+	seen := make(map[string]bool)
+	for _, setting := range item.Settings {
+		if !settingNamePattern.MatchString(setting.Name) {
+			return fmt.Errorf("recipe %s: setting name %q must match [a-z][a-z0-9_]*", id, setting.Name)
+		}
+		if seen[setting.Name] {
+			return fmt.Errorf("recipe %s: setting %q is declared twice", id, setting.Name)
+		}
+		seen[setting.Name] = true
+		if err := setting.validate(); err != nil {
+			return fmt.Errorf("recipe %s: setting %q: %w", id, setting.Name, err)
 		}
 	}
 	return nil

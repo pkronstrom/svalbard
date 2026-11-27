@@ -83,7 +83,7 @@ func syncRecipeCopies(root string, m *manifest.Manifest, cat *catalog.Catalog) e
 	}
 	for id := range keep {
 		// Built-in recipes have no Path and are skipped by saveRecipeCopy.
-		if recipe, ok := cat.RecipeByID(id); ok && (recipe.IsCollection() || recipe.Type == catalog.LibraryType) {
+		if recipe, ok := cat.RecipeByID(id); ok {
 			if err := saveRecipeCopy(root, recipe); err != nil {
 				return fmt.Errorf("%s: %w", id, err)
 			}

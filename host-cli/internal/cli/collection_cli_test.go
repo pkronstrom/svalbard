@@ -56,10 +56,10 @@ func TestUserCollectionCLIFlow(t *testing.T) {
 	if !strings.Contains(out, "Added 1 item(s)") {
 		t.Errorf("add output = %q", out)
 	}
-	if want := "warning: skipped user recipe " + filepath.Join(recipes, "broken.yaml") + ": missing documents"; !strings.Contains(warnings, want) {
+	if want := "warning: skipped user recipe " + filepath.Join(recipes, "broken.yaml") + ": no type"; !strings.Contains(warnings, want) {
 		t.Errorf("warnings = %q, want %q", warnings, want)
 	}
-	if _, _, err := run("add", "broken"); err == nil || !strings.Contains(err.Error(), "missing documents") {
+	if _, _, err := run("add", "broken"); err == nil || !strings.Contains(err.Error(), "no type") {
 		t.Errorf("adding a skipped recipe: err = %v, want the reason", err)
 	}
 

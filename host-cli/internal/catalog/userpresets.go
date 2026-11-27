@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"testing"
 
 	"gopkg.in/yaml.v3"
 )
@@ -72,7 +73,9 @@ func UserPresetDirs() []string {
 	if dir, err := UserPresetDir(); err == nil {
 		dirs = append(dirs, dir)
 	}
-	if root, err := devRepoRoot(); err == nil {
+	// Test binaries skip the repo's local/presets, so a developer's own files
+	// cannot change test results.
+	if root, err := devRepoRoot(); err == nil && !testing.Testing() {
 		dirs = append(dirs, filepath.Join(root, "local", "presets"))
 	}
 	return dirs

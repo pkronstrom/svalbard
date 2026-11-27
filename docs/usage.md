@@ -337,6 +337,10 @@ menu:
 - **Documents from your disk are never taken from another computer.** With the vault's copy, `path:` entries are not read, even if the same path exists there; the installed files stay and are listed as `kept ...: local source, not refreshed from the vault's copy`. Their `url:` documents are fetched as usual.
 - **A folder or file that cannot be read keeps its documents.** If a `path:` is missing, on an unplugged disk, or a folder is empty because it has not synced, nothing is deleted; plan lists each document as `kept`. To remove them, take the entry out of the file.
 
+### Personal recipes
+
+The same folder takes any other recipe that does not belong in the public catalog, such as a personal mirror or a source that may not be redistributed: one recipe YAML per file, in the format of `recipes/`, with a `type` and something to download (`url`, `url_pattern`, `platforms`, `bundle`, `build` or `packages`). Development builds also read the repo's gitignored `local/recipes/`. `svalbard add <id>` and custom presets use them like built-ins, and the vault keeps a copy as it does for a collection. A file is skipped with a warning if its id matches a built-in or an earlier personal recipe, starts with `local:` (reserved for imports), or it has no `type` or nothing to download.
+
 ## The wiki
 
 A drive built from a default preset has a wiki: a place for your own notes, next to the reference library. Add it to another vault with `svalbard add silverbullet` and apply.

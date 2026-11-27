@@ -396,7 +396,7 @@ func TestExpandItemRefsExplainsSkippedUserRecipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	cat.LoadUserRecipes(dir)
-	if _, err := ExpandItemRefs(cat, []string{"manuals"}); err == nil || !strings.Contains(err.Error(), "missing documents") {
+	if _, err := ExpandItemRefs(cat, []string{"manuals"}); err == nil || !strings.Contains(err.Error(), "no type") {
 		t.Fatalf("err = %v, want the skip reason", err)
 	}
 }

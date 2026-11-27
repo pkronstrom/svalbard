@@ -198,3 +198,27 @@ func TestRecipeCopyOfAUserJSLib(t *testing.T) {
 		t.Errorf("vault copy = %q, %v", data, err)
 	}
 }
+
+// An ordinary user recipe, such as a personal mirror, travels with the vault
+// too, and its copy goes when the vault no longer holds it.
+func TestRecipeCopyOfAnOrdinaryUserRecipe(t *testing.T) {
+	config, root := t.TempDir(), t.TempDir()
+	body := "type: zim\nurl: https://mirror.example/wiki.zim\n"
+	writeFile(t, filepath.Join(config, "mirror.yaml"), body)
+	m := manifest.New("test")
+	m.Desired.Items = []string{"mirror"}
+	if err := syncRecipeCopies(root, &m, userCatalog(t, config, root)); err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(catalog.VaultRecipeDir(root), "mirror.yaml")
+	if data, err := os.ReadFile(copyPath); err != nil || string(data) != body {
+		t.Fatalf("vault copy = %q, %v", data, err)
+	}
+	m.Desired.Items = nil
+	if err := syncRecipeCopies(root, &m, userCatalog(t, config, root)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(copyPath); !os.IsNotExist(err) {
+		t.Fatalf("copy of a removed recipe left behind: %v", err)
+	}
+}
