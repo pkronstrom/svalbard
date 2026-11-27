@@ -59,6 +59,26 @@ const unpackedSuffix = ".unpacked"
 // partialMarker is in the name of a directory an unpack is still writing.
 const partialMarker = ".partial-"
 
+// isPartialDir reports whether name is a directory an unpack is still
+// writing, or left when stopped: <archive>.partial-<digits>.
+func isPartialDir(name string) bool {
+	at := strings.LastIndex(name, partialMarker)
+	if at <= 0 {
+		return false
+	}
+	digits := name[at+len(partialMarker):]
+	if digits == "" || strings.Trim(digits, "0123456789") != "" {
+		return false
+	}
+	archive := name[:at]
+	for _, suffix := range []string{".tar.gz", ".tgz", ".tar.bz2", ".zip"} {
+		if strings.HasSuffix(archive, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 func resolveFromDir(name, dir string) (string, error) {
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
@@ -290,25 +310,6 @@ func materializeLinks(dest string, links []archiveLink) error {
 	for _, link := range links {
 		byName[path.Clean(link.Name)] = link
 	}
-	resolve := func(link archiveLink) (string, bool) {
-		for range 40 {
-			var next string
-			if link.Hard {
-				next = path.Clean(link.Target)
-			} else {
-				if path.IsAbs(link.Target) {
-					return "", false
-				}
-				next = path.Join(path.Dir(path.Clean(link.Name)), link.Target)
-			}
-			further, isLink := byName[next]
-			if !isLink {
-				return next, true
-			}
-			link = further
-		}
-		return "", false
-	}
 	// Files first, so a directory copied afterwards holds its links' copies.
 	var dirs []archiveLink
 	for _, link := range links {
@@ -316,7 +317,7 @@ func materializeLinks(dest string, links []archiveLink) error {
 		if !ok {
 			continue
 		}
-		resolved, ok := resolve(link)
+		resolved, ok := resolve(link, byName)
 		if !ok {
 			continue
 		}
@@ -342,6 +343,42 @@ func materializeLinks(dest string, links []archiveLink) error {
 		}
 	}
 	return nil
+}
+
+// resolve follows a link, through links to links and through links to
+// directories on the way, to a path in the archive.
+func resolve(link archiveLink, byName map[string]archiveLink) (string, bool) {
+	return resolveLink(link, byName, 0)
+}
+
+func resolveLink(link archiveLink, byName map[string]archiveLink, depth int) (string, bool) {
+	if depth > 40 {
+		return "", false
+	}
+	var target string
+	if link.Hard {
+		target = path.Clean(link.Target)
+	} else {
+		if path.IsAbs(link.Target) {
+			return "", false
+		}
+		target = path.Join(path.Dir(path.Clean(link.Name)), link.Target)
+	}
+	current := ""
+	for _, part := range strings.Split(target, "/") {
+		current = path.Join(current, part)
+		if current == ".." || strings.HasPrefix(current, "../") {
+			return "", false
+		}
+		if further, isLink := byName[current]; isLink {
+			resolved, ok := resolveLink(further, byName, depth+1)
+			if !ok {
+				return "", false
+			}
+			current = resolved
+		}
+	}
+	return current, true
 }
 
 func copyFile(source, target string, mode os.FileMode) error {
@@ -460,7 +497,7 @@ func findMatchingBinary(dir, name string) (string, error) {
 			}
 			return err
 		}
-		if d.IsDir() && filepath.Dir(path) == dir && (platformDirs[d.Name()] || strings.Contains(d.Name(), partialMarker)) {
+		if d.IsDir() && filepath.Dir(path) == dir && (platformDirs[d.Name()] || isPartialDir(d.Name())) {
 			return filepath.SkipDir
 		}
 		if d.IsDir() || filepath.Base(path) != name || !isExecutable(path) {

@@ -178,7 +178,8 @@ func TestImportedLibrariesReadsMachO(t *testing.T) {
 }
 
 func TestRemoveTreesTakesTheArchivesDirectoriesOnly(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "bin", "linux-arm64")
+	os.MkdirAll(dir, 0o755)
 	archive := filepath.Join(dir, "ffuf_2.3.0_linux_arm64.tar.gz")
 	writeTarGz(t, archive, []entry{
 		{name: "./ffuf", body: "bin"},
@@ -231,4 +232,94 @@ func TestRemoveTreesTakesStoppedUnpacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertMissing(t, partial)
+}
+
+// Datasets, GeoPackages and PlatformIO toolchains are archives too, and the
+// directories beside them belong to others: only the .unpacked directory of
+// such an archive goes.
+func TestRemoveTreesOutsidePlatformBinLeavesNeighbours(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{
+		"natural-earth.zip",       // a GeoPackage zip at the vault root
+		"data/exploitdb-main.zip", // a dataset
+		"tools/platformio/packages/macos-arm64/toolchain.tar.gz", // a toolchain with bin/, lib/, share/
+		"bin/tool.tar.gz", // the old flat bin/
+	} {
+		archive := filepath.Join(root, rel)
+		os.MkdirAll(filepath.Dir(archive), 0o755)
+		writeTarGz(t, archive, []entry{{name: "bin/x", body: "x"}, {name: "packages/y", body: "y"}, {name: "exploitdb-main/z", body: "z"}})
+		for _, sibling := range []string{"bin", "packages", "exploitdb-main"} {
+			os.MkdirAll(filepath.Join(filepath.Dir(archive), sibling, "keep"), 0o755)
+		}
+		os.MkdirAll(filepath.Join(UnpackedDir(archive), "x"), 0o755)
+		if err := RemoveTrees(archive); err != nil {
+			t.Fatal(err)
+		}
+		assertMissing(t, UnpackedDir(archive))
+		for _, sibling := range []string{"bin", "packages", "exploitdb-main"} {
+			if _, err := os.Stat(filepath.Join(filepath.Dir(archive), sibling, "keep")); err != nil {
+				t.Errorf("%s: removing it took %s beside it: %v", rel, sibling, err)
+			}
+		}
+	}
+}
+
+// A drive runtime from before .unpacked unpacked llama-server flat beside its
+// archive; on exFAT the links became XSym text files on macOS, or the unpack
+// stopped at the first link on Linux. A plain apply converts it once.
+func TestRepairLegacyConvertsFlatTreesOnce(t *testing.T) {
+	stubImports(t, nil)
+	bin := filepath.Join(t.TempDir(), "bin", "linux-arm64")
+	os.MkdirAll(bin, 0o755)
+	llama := filepath.Join(bin, "llama-b1-bin-ubuntu-arm64.tar.gz")
+	writeTarGz(t, llama, []entry{
+		{name: "llama-b1/libllama.so.1", link: "libllama.so.1.0.0", flag: tar.TypeSymlink},
+		{name: "llama-b1/libllama.so.1.0.0", body: "lib"},
+		{name: "llama-b1/llama-server", body: "server"},
+	})
+	ripgrep := filepath.Join(bin, "ripgrep.tar.gz")
+	writeTarGz(t, ripgrep, []entry{{name: "ripgrep-15/rg", body: "rg"}})
+	fresh := filepath.Join(bin, "fzf.tar.gz") // never unpacked: nothing to repair
+	writeTarGz(t, fresh, []entry{{name: "fzf", body: "fzf"}})
+	// The flat trees: Linux stopped at the link, so llama-server is missing.
+	os.MkdirAll(filepath.Join(bin, "llama-b1"), 0o755)
+	os.WriteFile(filepath.Join(bin, "llama-b1", "libllama.so.1.0.0"), []byte("lib"), 0o755)
+	os.MkdirAll(filepath.Join(bin, "ripgrep-15"), 0o755)
+	os.WriteFile(filepath.Join(bin, "ripgrep-15", "rg"), []byte("rg"), 0o755)
+
+	converted, err := RepairLegacy([]string{llama, ripgrep, fresh})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(converted, ",") != strings.Join([]string{llama, ripgrep}, ",") {
+		t.Fatalf("converted = %v", converted)
+	}
+	assertFile(t, filepath.Join(UnpackedDir(llama), "llama-b1", "llama-server"), "server")
+	assertFile(t, filepath.Join(UnpackedDir(llama), "llama-b1", "libllama.so.1"), "lib")
+	assertFile(t, filepath.Join(UnpackedDir(ripgrep), "ripgrep-15", "rg"), "rg")
+	assertMissing(t, filepath.Join(bin, "llama-b1"))
+	assertMissing(t, filepath.Join(bin, "ripgrep-15"))
+	assertMissing(t, UnpackedDir(fresh))
+
+	if again, err := RepairLegacy([]string{llama, ripgrep, fresh}); err != nil || len(again) != 0 {
+		t.Fatalf("second repair = %v, %v; want nothing", again, err)
+	}
+}
+
+// A link whose path passes through a link to a directory (lib64 -> lib)
+// resolves to the file behind it.
+func TestPrepareResolvesLinksThroughDirectoryLinks(t *testing.T) {
+	stubImports(t, nil)
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "tool.tar.gz")
+	writeTarGz(t, archive, []entry{
+		{name: "lib64", link: "lib", flag: tar.TypeSymlink},
+		{name: "bin/libz.so.1", link: "../lib64/libz.so.1.2", flag: tar.TypeSymlink},
+		{name: "lib/libz.so.1.2", body: "z"},
+	})
+	if _, err := Prepare(archive); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, filepath.Join(UnpackedDir(archive), "bin", "libz.so.1"), "z")
+	assertFile(t, filepath.Join(UnpackedDir(archive), "lib64", "libz.so.1.2"), "z")
 }

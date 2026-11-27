@@ -282,3 +282,21 @@ func TestResolveFindsBinaryUnderPlatformNamedDirInsideArchive(t *testing.T) {
 		t.Fatalf("unpacked dir = %v, %v; want mode 0755", info, err)
 	}
 }
+
+// Only a directory named as an unpack names its work is skipped; a tool's
+// own directory may hold ".partial-" in its name.
+func TestResolveSkipsOnlyRealPartialDirs(t *testing.T) {
+	driveRoot := t.TempDir()
+	binDir := filepath.Join(driveRoot, "bin", currentPlatform(t))
+	own := filepath.Join(binDir, "tool.partial-build")
+	if err := os.MkdirAll(own, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(own, "tool"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := binary.ResolveOnDrive("tool", driveRoot)
+	if err != nil || got != filepath.Join(own, "tool") {
+		t.Fatalf("ResolveOnDrive() = %q, %v; want %s", got, err, filepath.Join(own, "tool"))
+	}
+}

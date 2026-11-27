@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -27,6 +28,26 @@ import (
 const UnpackedSuffix = ".unpacked"
 
 const partialMarker = ".partial-"
+
+// isPartialDir reports whether name is a directory an unpack is still
+// writing, or left when stopped: <archive>.partial-<digits>.
+func isPartialDir(name string) bool {
+	at := strings.LastIndex(name, partialMarker)
+	if at <= 0 {
+		return false
+	}
+	digits := name[at+len(partialMarker):]
+	if digits == "" || strings.Trim(digits, "0123456789") != "" {
+		return false
+	}
+	archive := name[:at]
+	for _, suffix := range []string{".tar.gz", ".tgz", ".tar.bz2", ".zip"} {
+		if strings.HasSuffix(archive, suffix) {
+			return true
+		}
+	}
+	return false
+}
 
 // UnpackedDir is the directory archive is unpacked into.
 func UnpackedDir(archive string) string { return archive + UnpackedSuffix }
@@ -51,7 +72,7 @@ func Prepare(archive string) ([]string, error) {
 	if !IsArchive(filepath.Base(archive)) {
 		return nil, nil
 	}
-	if err := os.RemoveAll(UnpackedDir(archive)); err != nil {
+	if err := RemoveUnpacked(archive); err != nil {
 		return nil, err
 	}
 	links, err := readLinks(archive)
@@ -61,32 +82,85 @@ func Prepare(archive string) ([]string, error) {
 	return unpack(archive)
 }
 
-// RemoveTrees removes what was unpacked from a binary archive in
-// bin/<platform>/ before the archive goes: its .unpacked directory, and the
-// top-level directories a drive runtime from before that directory unpacked
-// beside the archive. It is for binary recipes only: datasets and toolchains
-// are archives too, and nothing unpacks them there. Otherwise
-// the old release would still be found after an update. Top-level files are
-// left: two archives may both hold a LICENSE there.
-func RemoveTrees(archive string) error {
-	if !IsArchive(filepath.Base(archive)) {
-		return nil
-	}
+// platformDirs are the directories of bin/ that hold one platform's binaries.
+var platformDirs = map[string]bool{"macos-arm64": true, "macos-x86_64": true, "linux-arm64": true, "linux-x86_64": true}
+
+// InPlatformBin reports whether path is a file directly in bin/<platform>/,
+// where binary recipes keep their archives and nothing else is unpacked.
+func InPlatformBin(path string) bool {
+	dir := filepath.Dir(path)
+	return platformDirs[filepath.Base(dir)] && filepath.Base(filepath.Dir(dir)) == "bin"
+}
+
+// RemoveUnpacked removes the archive's .unpacked directory and what an
+// unpack of it that was stopped left. Both belong to the archive alone.
+func RemoveUnpacked(archive string) error {
 	if err := os.RemoveAll(UnpackedDir(archive)); err != nil {
 		return err
 	}
-	// What an unpack that was stopped left.
 	partials, _ := filepath.Glob(archive + partialMarker + "*")
 	for _, partial := range partials {
 		if err := os.RemoveAll(partial); err != nil {
 			return err
 		}
 	}
-	// The first component of each path, if it is a directory.
+	return nil
+}
+
+// RemoveTrees removes everything unpacked from a binary archive before the
+// archive goes: RemoveUnpacked, then RemoveLegacyTrees.
+func RemoveTrees(archive string) error {
+	if err := RemoveUnpacked(archive); err != nil {
+		return err
+	}
+	return RemoveLegacyTrees(archive, archive)
+}
+
+// RemoveLegacyTrees removes the top-level directories that a drive runtime
+// from before .unpacked unpacked beside archive, as listed in listFrom (the
+// archive, or its set-aside copy during an update). Otherwise the old release
+// would still be found after an update. It acts only on an archive in
+// bin/<platform>/: datasets, GeoPackages and toolchains are archives too, and
+// the directories beside them are not theirs. Top-level files are left: two
+// archives may both hold a LICENSE there.
+func RemoveLegacyTrees(archive, listFrom string) error {
+	if !IsArchive(filepath.Base(archive)) || !InPlatformBin(archive) {
+		return nil
+	}
+	tops, err := topDirs(listFrom)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	dir := filepath.Dir(archive)
+	for _, name := range tops {
+		if err := removeLegacyDir(dir, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func removeLegacyDir(dir, name string) error {
+	target, ok := entryPath(dir, name)
+	if !ok || platformDirs[name] || strings.HasSuffix(name, UnpackedSuffix) || isPartialDir(name) {
+		return nil
+	}
+	if info, err := os.Lstat(target); err == nil && info.IsDir() {
+		return os.RemoveAll(target)
+	}
+	return nil
+}
+
+// topDirs lists the first component of each path in the archive that is a
+// directory.
+func topDirs(archive string) ([]string, error) {
 	tops := map[string]bool{}
 	top := func(name string, isDir bool) {
 		first, _, nested := strings.Cut(strings.TrimPrefix(path.Clean(name), "./"), "/")
-		if nested || isDir {
+		if (nested || isDir) && first != "." && first != ".." {
 			tops[first] = true
 		}
 	}
@@ -98,27 +172,92 @@ func RemoveTrees(archive string) error {
 		return nil
 	})
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
+		return nil, err
 	}
 	for _, link := range links {
 		top(link.Name, false)
 	}
-	dir := filepath.Dir(archive)
+	names := make([]string, 0, len(tops))
 	for name := range tops {
-		target, ok := entryPath(dir, name)
-		if !ok || name == "." {
-			continue
-		}
-		if info, err := os.Lstat(target); err == nil && info.IsDir() {
-			if err := os.RemoveAll(target); err != nil {
-				return err
-			}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// RepairLegacy converts the trees a drive runtime from before .unpacked
+// unpacked flat beside binary archives in bin/<platform>/: on exFAT those of
+// an archive with links hold macOS's XSym files, which Linux reads as text,
+// or stop at the first link Linux could not create. Each archive with such a
+// tree is unpacked into <archive>.unpacked, links resolved, and the flat tree
+// removed, so an existing stick heals on its next apply without an update.
+// Archives are read only when their directory holds a directory that could
+// be such a tree, and each is converted once. It returns the archives
+// converted.
+func RepairLegacy(archives []string) ([]string, error) {
+	byDir := map[string][]string{}
+	for _, archive := range archives {
+		if IsArchive(filepath.Base(archive)) && InPlatformBin(archive) {
+			byDir[filepath.Dir(archive)] = append(byDir[filepath.Dir(archive)], archive)
 		}
 	}
-	return nil
+	var converted []string
+	for dir, list := range byDir {
+		candidates := legacyCandidates(dir)
+		if len(candidates) == 0 {
+			continue
+		}
+		sort.Strings(list)
+		for _, archive := range list {
+			if _, err := os.Stat(UnpackedDir(archive)); err == nil {
+				continue
+			}
+			tops, err := topDirs(archive)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return converted, err
+			}
+			var legacy []string
+			for _, name := range tops {
+				if candidates[name] {
+					legacy = append(legacy, name)
+				}
+			}
+			if len(legacy) == 0 {
+				continue
+			}
+			if _, err := unpack(archive); err != nil {
+				return converted, fmt.Errorf("%s: %w", filepath.Base(archive), err)
+			}
+			for _, name := range legacy {
+				if err := removeLegacyDir(dir, name); err != nil {
+					return converted, err
+				}
+			}
+			converted = append(converted, archive)
+		}
+	}
+	sort.Strings(converted)
+	return converted, nil
+}
+
+// legacyCandidates are the directories in dir that no current layout put
+// there.
+func legacyCandidates(dir string) map[string]bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	candidates := map[string]bool{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() && !strings.HasSuffix(name, UnpackedSuffix) && !isPartialDir(name) && !strings.HasPrefix(name, ".") {
+			candidates[name] = true
+		}
+	}
+	return candidates
 }
 
 // archiveLink is a symlink or hard link from an archive. Target is relative
@@ -355,25 +494,40 @@ func relTo(root, p string) string {
 	return filepath.ToSlash(rel)
 }
 
-// resolve follows a link, through links to links, to a path in the archive.
+// resolve follows a link, through links to links and through links to
+// directories on the way, to a path in the archive.
 func resolve(link archiveLink, byName map[string]archiveLink) (string, bool) {
-	for range 40 {
-		var next string
-		if link.Hard {
-			next = path.Clean(link.Target)
-		} else {
-			if path.IsAbs(link.Target) {
+	return resolveLink(link, byName, 0)
+}
+
+func resolveLink(link archiveLink, byName map[string]archiveLink, depth int) (string, bool) {
+	if depth > 40 {
+		return "", false
+	}
+	var target string
+	if link.Hard {
+		target = path.Clean(link.Target)
+	} else {
+		if path.IsAbs(link.Target) {
+			return "", false
+		}
+		target = path.Join(path.Dir(path.Clean(link.Name)), link.Target)
+	}
+	current := ""
+	for _, part := range strings.Split(target, "/") {
+		current = path.Join(current, part)
+		if current == ".." || strings.HasPrefix(current, "../") {
+			return "", false
+		}
+		if further, isLink := byName[current]; isLink {
+			resolved, ok := resolveLink(further, byName, depth+1)
+			if !ok {
 				return "", false
 			}
-			next = path.Join(path.Dir(path.Clean(link.Name)), link.Target)
+			current = resolved
 		}
-		further, isLink := byName[next]
-		if !isLink {
-			return next, true
-		}
-		link = further
 	}
-	return "", false
+	return current, true
 }
 
 func sharedLibrary(name string) bool {
