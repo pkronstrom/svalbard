@@ -126,6 +126,7 @@ func Open(path string) (*DB, error) {
 		{"source_mtime_ns", "INTEGER"},
 		{"note", "TEXT"},
 		{"reader_version", "INTEGER"},
+		{"native_language", "TEXT"},
 	} {
 		var present int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, tableForColumn(column.name), column.name).Scan(&present); err != nil {
@@ -248,12 +249,16 @@ type Source struct {
 	// is a cache key, not a checksum: a ZIM indexed by an older reader is
 	// read again.
 	ReaderVersion int
+	// ZIMSearchKnown records that this archive was checked for full-text
+	// search. NativeLanguage is empty when SQLite indexes its HTML.
+	ZIMSearchKnown bool
+	NativeLanguage string
 }
 
 // IndexedSources returns all currently indexed source identities. Legacy rows
 // without an identity are returned with an empty UUID and are never current.
 func (d *DB) IndexedSources() ([]Source, error) {
-	rows, err := d.db.Query(`SELECT filename, title, COALESCE(source_uuid, ''), COALESCE(source_size, 0), COALESCE(source_mtime_ns, 0), COALESCE(note, ''), COALESCE(reader_version, 0) FROM sources ORDER BY filename`)
+	rows, err := d.db.Query(`SELECT filename, title, COALESCE(source_uuid, ''), COALESCE(source_size, 0), COALESCE(source_mtime_ns, 0), COALESCE(note, ''), COALESCE(reader_version, 0), native_language FROM sources ORDER BY filename`)
 	if err != nil {
 		return nil, fmt.Errorf("searchdb: query sources: %w", err)
 	}
@@ -262,9 +267,11 @@ func (d *DB) IndexedSources() ([]Source, error) {
 	var sources []Source
 	for rows.Next() {
 		var source Source
-		if err := rows.Scan(&source.Filename, &source.Title, &source.UUID, &source.Size, &source.ModTimeNS, &source.Note, &source.ReaderVersion); err != nil {
+		var language sql.NullString
+		if err := rows.Scan(&source.Filename, &source.Title, &source.UUID, &source.Size, &source.ModTimeNS, &source.Note, &source.ReaderVersion, &language); err != nil {
 			return nil, fmt.Errorf("searchdb: scan source: %w", err)
 		}
+		source.ZIMSearchKnown, source.NativeLanguage = language.Valid, language.String
 		sources = append(sources, source)
 	}
 	return sources, rows.Err()
@@ -360,7 +367,7 @@ func (d *DB) ReplaceSourceStream(ctx context.Context, source Source, articles it
 		note = source.Note
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sources (filename, title, indexed_at, source_uuid, source_size, source_mtime_ns, note, reader_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(filename) DO UPDATE SET title=excluded.title, indexed_at=excluded.indexed_at, source_uuid=excluded.source_uuid, source_size=excluded.source_size, source_mtime_ns=excluded.source_mtime_ns, note=excluded.note, reader_version=excluded.reader_version`,
+		ON CONFLICT(filename) DO UPDATE SET title=excluded.title, indexed_at=excluded.indexed_at, source_uuid=excluded.source_uuid, source_size=excluded.source_size, source_mtime_ns=excluded.source_mtime_ns, note=excluded.note, reader_version=excluded.reader_version, native_language=NULL`,
 		source.Filename, source.Title, now, source.UUID, source.Size, source.ModTimeNS, note, source.ReaderVersion); err != nil {
 		return fmt.Errorf("searchdb: replace source: %w", err)
 	}

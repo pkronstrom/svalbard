@@ -73,6 +73,10 @@ func renderSearchView(m Model) string {
 	status := m.searchStatus
 	if status == "" {
 		status = fmt.Sprintf("%d sources • %d articles", m.searchInfo.SourceCount, m.searchInfo.ArticleCount)
+		if m.searchInfo.NativeZIMCount > 0 {
+			status = fmt.Sprintf("%d sources • %d embedded indexes • %d SQLite entries",
+				m.searchInfo.SourceCount, m.searchInfo.NativeZIMCount, m.searchInfo.ArticleCount)
+		}
 	}
 	if m.searchLoading {
 		status = "Working... " + status

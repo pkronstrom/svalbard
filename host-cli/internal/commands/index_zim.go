@@ -68,15 +68,33 @@ func (s *readerSet) Close() {
 	}
 }
 
+func planZIMSearch(ctx context.Context, root, filename string, stored searchdb.Source, force bool) (searchdb.Source, error) {
+	path := filepath.Join(root, "zim", filename)
+	identity, err := archiveSourceIdentity(ctx, path, filename)
+	if err != nil {
+		return searchdb.Source{}, err
+	}
+	if !force && stored.ZIMSearchKnown && stored.IdentityCurrent(identity) {
+		identity.NativeLanguage = stored.NativeLanguage
+		return identity, nil
+	}
+	archive, err := zimext.OpenIndexArchive(path)
+	if err != nil {
+		return searchdb.Source{}, err
+	}
+	defer archive.Close()
+	if archive.UUID() != identity.UUID {
+		return searchdb.Source{}, fmt.Errorf("archive changed while checking its search index")
+	}
+	identity.NativeLanguage = archive.FullTextLanguage()
+	return identity, nil
+}
+
 // indexZIM brings one ZIM's sources up to date and returns the names of all
 // of them, the ZIM's own and its documents', for the caller's prune.
-func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool, indexed map[string]searchdb.Source, readers *readerSet, w io.Writer, notify func(IndexProgress)) ([]string, error) {
+func indexZIM(ctx context.Context, db *searchdb.DB, root string, identity searchdb.Source, force bool, indexed map[string]searchdb.Source, readers *readerSet, w io.Writer, notify func(IndexProgress)) ([]string, error) {
+	zf := identity.Filename
 	path := filepath.Join(root, "zim", zf)
-	identity, err := archiveSourceIdentity(ctx, path, zf)
-	if err != nil {
-		notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
-		return nil, fmt.Errorf("reading identity for %s: %w", zf, err)
-	}
 	present := []string{zf}
 	stored, known := indexed[zf]
 	identityCurrent := known && stored.IdentityCurrent(identity)
@@ -86,8 +104,26 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 				present = append(present, name)
 			}
 		}
-		notify(IndexProgress{File: zf, Status: "skip", Detail: "already indexed"})
-		return present, nil
+		if identity.NativeLanguage != "" {
+			if !stored.ZIMSearchKnown || stored.NativeLanguage != identity.NativeLanguage {
+				identity.Title, identity.ReaderVersion = stored.Title, stored.ReaderVersion
+				if err := db.SetNativeZIM(ctx, identity); err != nil {
+					return nil, err
+				}
+			}
+			notify(IndexProgress{File: zf, Status: "skip", Detail: "using embedded full-text index"})
+			return present, nil
+		}
+		if stored.NativeLanguage == "" {
+			if !stored.ZIMSearchKnown {
+				if err := db.MarkSQLiteZIM(ctx, zf); err != nil {
+					return nil, err
+				}
+			}
+			notify(IndexProgress{File: zf, Status: "skip", Detail: "already indexed"})
+			return present, nil
+		}
+		present = present[:1]
 	}
 
 	archive, err := zimext.OpenIndexArchive(path)
@@ -97,8 +133,9 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 	}
 	defer archive.Close()
 
-	htmlStale := force || !identityCurrent
-	if !htmlStale && archive.HoldsDocuments() {
+	native := identity.NativeLanguage != ""
+	htmlStale := force || !identityCurrent || stored.NativeLanguage != ""
+	if !native && !htmlStale && archive.HoldsDocuments() {
 		// Indexed by an older reader: its pages need extracting again only
 		// if it kept files the HTML pass now leaves out. That web app is
 		// what an archive of documents wraps them in; an archive without
@@ -120,7 +157,7 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 			return nil, err
 		}
 	}
-	if htmlStale {
+	if !native && htmlStale {
 		if err := indexZIMPages(ctx, db, archive, path, zf, identity, notify); err != nil {
 			return nil, err
 		}
@@ -135,7 +172,25 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if native {
+		current, err := archiveSourceIdentity(ctx, path, zf)
+		if err != nil || current.UUID != archive.UUID() || !identity.IdentityCurrent(current) {
+			return nil, fmt.Errorf("source %s changed during indexing; retry indexing", zf)
+		}
+		identity.Title, identity.ReaderVersion = archive.Title(), zimReaderVersion
+		if identity.Title == "" {
+			identity.Title = strings.TrimSuffix(zf, filepath.Ext(zf))
+		}
+		if err := db.SetNativeZIM(ctx, identity); err != nil {
+			return nil, err
+		}
+		notify(IndexProgress{File: zf, Status: "done", Detail: "using embedded full-text index"})
+		return present, nil
+	}
 	if err := db.SetSourceReaderVersion(ctx, zf, zimReaderVersion); err != nil {
+		return nil, err
+	}
+	if err := db.MarkSQLiteZIM(ctx, zf); err != nil {
 		return nil, err
 	}
 	return present, nil

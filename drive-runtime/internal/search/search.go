@@ -79,7 +79,11 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 	mode := info.BestMode
 
 	fmt.Fprintln(stdout)
-	fmt.Fprintf(stdout, "Search (%d sources, %d articles, %s)\n", info.SourceCount, info.ArticleCount, mode)
+	if info.NativeZIMCount > 0 {
+		fmt.Fprintf(stdout, "Search (%d sources, %d embedded ZIM indexes, %d SQLite articles or pages, %s)\n", info.SourceCount, info.NativeZIMCount, info.ArticleCount, mode)
+	} else {
+		fmt.Fprintf(stdout, "Search (%d sources, %d articles, %s)\n", info.SourceCount, info.ArticleCount, mode)
+	}
 	fmt.Fprintln(stdout, "────────────────────────────────")
 
 	reader := bufio.NewReader(stdin)

@@ -76,11 +76,15 @@ func StartKiwix(ctx context.Context, kiwixBin string, zims []string, port int) (
 	if len(zims) == 0 {
 		return nil, fmt.Errorf("no ZIM files found")
 	}
+	return startKiwix(ctx, kiwixBin, zims, port)
+}
+
+func startKiwix(ctx context.Context, kiwixBin string, inputs []string, port int) (*exec.Cmd, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	args := []string{"--port", fmt.Sprintf("%d", port), "--address", "127.0.0.1"}
-	args = append(args, zims...)
+	args = append(args, inputs...)
 	cmd := exec.Command(kiwixBin, args...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard

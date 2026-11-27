@@ -20,6 +20,7 @@ type Result struct {
 	ChunkHeader string
 	Score       float64
 	Body        string
+	Native      bool // result retrieved from an embedded ZIM index
 	// Partial marks a keyword result that lacks some of the query words;
 	// Matched lists the ones it has.
 	Partial bool

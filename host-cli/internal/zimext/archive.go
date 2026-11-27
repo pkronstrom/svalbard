@@ -84,6 +84,22 @@ func (a *Archive) Title() string {
 	return strings.TrimSpace(title)
 }
 
+// FullTextLanguage reports the language of the embedded full-text index.
+// The title-only index at X/title/xapian is insufficient for keyword search.
+func (a *Archive) FullTextLanguage() string {
+	for _, path := range []string{"X/fulltext/xapian", "Z//fulltextIndex/xapian"} {
+		entry, err := a.zim.EntryByPath(path)
+		if err == nil && !entry.IsRedirect() {
+			language, _ := a.zim.Metadata("Language")
+			if language = strings.TrimSpace(language); language != "" {
+				return language
+			}
+			return "und"
+		}
+	}
+	return ""
+}
+
 // HoldsDocuments reports, from the archive header alone, whether any entry
 // is a PDF or an EPUB.
 func (a *Archive) HoldsDocuments() bool {

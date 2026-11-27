@@ -19,8 +19,8 @@ import (
 
 // SearchCapability exposes search and read functionality via the MCP "search" tool.
 // Uses ncruces/go-sqlite3 directly for FTS5 queries (no sqlite3 binary needed).
-// Uses kiwix-serve for archive pages and for scoped searches of unindexed ZIMs;
-// documents (PDFs under books/) are read from the index alone.
+// Uses kiwix-serve for native full-text search and for reading archive pages.
+// Document pages and fallback archive search use SQLite.
 type SearchCapability struct {
 	driveRoot string
 	meta      DriveMetadata
@@ -206,6 +206,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 	contract, semanticComplete := search.LoadCompleteContract(db)
 	// Try hybrid search if a completed semantic contract is available.
 	var results []engine.Result
+	var matches engine.KeywordMatches
 	hybridUsed := false
 	var advisory []string
 	// A drive indexed for keywords only has nothing to fall back from.
@@ -243,7 +244,7 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		}
 	} else {
 		// Fallback to keyword search.
-		matches, err := eng.Search(ctx, query, engine.KeywordOptions{Source: source, Limit: limit})
+		matches, err = eng.Search(ctx, query, engine.KeywordOptions{Source: source, Limit: limit})
 		if err != nil {
 			return ActionResult{}, fmt.Errorf("search failed: %w", err)
 		}
@@ -251,6 +252,23 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			return ActionResult{}, err
 		}
 		results = matches.Results
+	}
+
+	nativePort := func(ctx context.Context) (int, error) {
+		key := ""
+		if strings.EqualFold(filepath.Ext(source), ".zim") {
+			key = sourceName(source)
+		}
+		return c.startKiwix(ctx, key)
+	}
+	results, native, nativeErr := search.MergeZIMKeywords(ctx, eng, nativePort, query, source, limit, results)
+	if err := ctx.Err(); err != nil {
+		return ActionResult{}, err
+	}
+	if nativeErr != nil {
+		advisory = append(advisory, "Some embedded ZIM indexes were unavailable: "+nativeErr.Error()+".")
+	}
+	if !hybridUsed && !native {
 		scope := "on the drive"
 		if sourceFilter != "" {
 			scope = "in " + sourceFilter
@@ -258,12 +276,15 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 		if note := keywordAdvisory(matches, scope); note != "" {
 			advisory = append(advisory, note)
 		}
-		if len(matches.MorePages) > 0 {
-			advisory = append(advisory, "Only the best pages of each document are listed. More pages match in: "+strings.Join(matches.MorePages, ", ")+". Search with one of them as source to see them.")
+	}
+	if len(matches.MorePages) > 0 {
+		advisory = append(advisory, "Only the best pages of each document are listed. More pages match in: "+strings.Join(matches.MorePages, ", ")+". Search with one of them as source to see them.")
+	}
+	if len(results) == 0 {
+		if native && nativeErr == nil {
+			advisory = append(advisory, "No matches in the searched archives or documents.")
 		}
-		if len(results) == 0 {
-			advisory = append(advisory, c.holdings(ctx))
-		}
+		advisory = append(advisory, c.holdings(ctx))
 	}
 
 	items := make([]searchResultItem, 0, len(results))
@@ -294,7 +315,13 @@ func (c *SearchCapability) handleSearch(ctx context.Context, params map[string]a
 			}
 		case "full":
 			// Try reading from search.db first (fast, no kiwix needed)
-			if hybridUsed {
+			if r.Native {
+				if page, _, fetchErr := c.fetchPage(ctx, sourceName(r.Filename), strings.TrimLeft(r.Path, "/")); fetchErr == nil {
+					item.Body = articleOpening(page.Body, c.read.Opening)
+				} else {
+					item.Snippet = r.Snippet
+				}
+			} else if hybridUsed {
 				// HybridSnapshot captured this body in its verified read snapshot.
 				item.Body = articleOpening(r.Body, c.read.Opening)
 			} else if r.Body != "" {
@@ -455,9 +482,18 @@ var kiwixBasePort = 8080
 // ensureKiwix opens just the requested archive. Keep each listener for the
 // tool session so links already given to the user can still be opened.
 func (c *SearchCapability) ensureKiwix(book string) (int, error) {
+	return c.startKiwix(context.Background(), book)
+}
+
+// startKiwix keeps a shared listener for global native search. A scoped
+// search can use it too, or start just one archive when it is the first call.
+func (c *SearchCapability) startKiwix(ctx context.Context, book string) (int, error) {
 	c.kiwixMu.Lock()
 	defer c.kiwixMu.Unlock()
 	if archive, ok := c.kiwix[book]; ok {
+		return archive.port, nil
+	}
+	if archive, ok := c.kiwix[""]; ok {
 		return archive.port, nil
 	}
 	kiwixBin, err := binary.Resolve("kiwix-serve", c.driveRoot)
@@ -468,8 +504,21 @@ func (c *SearchCapability) ensureKiwix(book string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	archivePath := filepath.Join(c.driveRoot, "zim", book+".zim")
-	cmd, err := searchserver.StartKiwix(context.Background(), kiwixBin, []string{archivePath}, port)
+	archives := []string{filepath.Join(c.driveRoot, "zim", book+".zim")}
+	if book == "" {
+		archives, err = searchserver.ZIMFiles(c.driveRoot)
+		if err != nil {
+			return 0, err
+		}
+	}
+	var languages map[string]string
+	if _, eng, dbErr := c.getDB(); dbErr == nil {
+		languages, err = eng.NativeZIMLanguages(ctx)
+		if err != nil {
+			return 0, err
+		}
+	}
+	cmd, err := searchserver.StartKiwixForSearch(ctx, kiwixBin, archives, port, languages)
 	if err != nil {
 		return 0, err
 	}
