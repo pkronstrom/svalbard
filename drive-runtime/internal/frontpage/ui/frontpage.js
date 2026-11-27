@@ -131,19 +131,21 @@ function itemPreview(item, css) {
   return preview;
 }
 
-function overviewRow(item, grouped) {
+function overviewRow(item) {
   const row = node("li", "overview-row");
   const type = overviewType(item);
   row.classList.toggle("compact", type === "Tools" || type === "Settings");
   const content = node("div", "overview-copy");
   const link = node("a", "overview-name", item.label);
   link.href = "#" + item.route;
-  content.append(link);
+  const title = node("h2");
+  title.append(link);
+  content.append(title);
   const summary = item.summary || item.description;
   if (summary && summary !== item.label) content.append(node("p", "overview-summary", summary));
-  const meta = [grouped ? "" : type, ...((item.tags || []).slice(0, 3)), item.note].filter(Boolean);
+  const meta = [...((item.tags || []).slice(0, 3)), item.note].filter(Boolean);
   if (meta.length) content.append(node("p", "overview-meta", meta.join(" · ")));
-  row.append(itemPreview(item, "overview-preview"), content);
+  row.append(node("p", "overview-type", type), itemPreview(item, "overview-preview"), content);
 
   if (item.service && readerKinds.has(item.icon)) {
     const launch = node("a", "button overview-launch", overviewLaunchLabel(item.service));
@@ -226,23 +228,15 @@ function renderHome() {
     resultCount ? resultCount + " of " + count + " items" : "No matching items."
   ) : "");
 
-  if (byId("overview-order").value === "name") {
-    const list = node("ul", "overview-rows");
-    list.append(...visible.map(item => overviewRow(item, false)));
-    output.append(list);
-    return;
+  if (byId("overview-order").value === "grouped") {
+    const ranks = new Map(Array.from(byId("overview-type").options, (option, index) => [option.value, index]));
+    visible.sort((a, b) => ranks.get(overviewType(a)) - ranks.get(overviewType(b)));
   }
-
-  const groups = new Map(Array.from(byId("overview-type").options)
-    .slice(1).map(option => [option.value, []]));
-  for (const row of visible) groups.get(overviewType(row)).push(row);
-  for (const [type, rows] of groups) {
-    if (!rows.length) continue;
-    const section = node("section", "overview-group");
+  if (visible.length) {
     const list = node("ul", "overview-rows");
-    list.append(...rows.map(item => overviewRow(item, true)));
-    section.append(node("h2", "overview-group-title", type), list);
-    output.append(section);
+    list.setAttribute("role", "list");
+    list.append(...visible.map(overviewRow));
+    output.append(list);
   }
 }
 

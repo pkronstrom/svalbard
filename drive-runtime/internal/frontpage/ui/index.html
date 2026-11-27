@@ -56,56 +56,50 @@
           <h1 id="home-title">Drive catalog</h1>
           <p id="inventory-summary" class="quiet" role="status">Loading drive contents…</p>
         </header>
-        <div class="folio-spread">
-          <div class="work-margin">
-            <form id="home-search" class="search-form" hidden>
-              <label for="home-query">Search articles and documents</label>
-              <div class="search-controls">
-                <input id="home-query" type="search" maxlength="500" placeholder="Search the vault" required>
-                <button class="button primary" type="submit">Search</button>
-              </div>
-            </form>
-            <div id="home-content" hidden>
-              <div class="catalog-controls" role="group" aria-label="Catalog filters">
-                <label class="catalog-filter" for="overview-filter">
-                  Filter items
-                  <input id="overview-filter" type="search" placeholder="Name, description, or tag">
-                </label>
-                <label for="overview-type">
-                  Type
-                  <select id="overview-type"><option value="">All types</option></select>
-                </label>
-                <label for="overview-order">
-                  View
-                  <select id="overview-order">
-                    <option value="grouped">Grouped by type</option>
-                    <option value="name">A–Z</option>
-                  </select>
-                </label>
-              </div>
-              <p id="overview-results" class="quiet catalog-count" role="status"></p>
+        <div class="catalog-toolbar">
+          <form id="home-search" class="search-form" hidden>
+            <label for="home-query">Search articles and documents</label>
+            <div class="search-controls">
+              <input id="home-query" type="search" maxlength="500" placeholder="Search the vault" required>
+              <button class="button primary" type="submit">Search</button>
             </div>
+          </form>
+          <div id="home-content" class="catalog-controls" role="group" aria-label="Catalog filters" hidden>
+            <label class="catalog-filter" for="overview-filter">
+              Filter items
+              <input id="overview-filter" type="search" placeholder="Name, description, or tag">
+            </label>
+            <label for="overview-type">
+              Type
+              <select id="overview-type"><option value="">All types</option></select>
+            </label>
+            <label for="overview-order">
+              View
+              <select id="overview-order">
+                <option value="grouped">Grouped by type</option>
+                <option value="name">A–Z</option>
+              </select>
+            </label>
           </div>
-          <div id="home-links" class="overview-list"></div>
         </div>
+        <p id="overview-results" class="quiet catalog-count" role="status" hidden></p>
+        <div id="home-links" class="overview-list"></div>
         <noscript><p>Enable JavaScript to browse this dashboard, or open <code>./run</code> in a terminal.</p></noscript>
       </section>
 
       <section id="search-panel" class="page" aria-labelledby="search-title" hidden>
         <header class="folio-heading"><h1 id="search-title">Search the vault</h1></header>
-        <div class="folio-spread">
-          <div class="work-margin">
-            <form id="search-form" class="search-form">
-              <label for="query">Indexed articles and documents</label>
-              <div class="search-controls">
-                <input id="query" type="search" maxlength="500" placeholder="Search the vault" required>
-                <button class="button primary" type="submit">Search</button>
-              </div>
-            </form>
-            <p id="search-status" class="quiet catalog-count" role="status" hidden></p>
-          </div>
-          <ol id="search-results" class="results" hidden></ol>
+        <div class="search-toolbar">
+          <form id="search-form" class="search-form">
+            <label for="query">Indexed articles and documents</label>
+            <div class="search-controls">
+              <input id="query" type="search" maxlength="500" placeholder="Search the vault" required>
+              <button class="button primary" type="submit">Search</button>
+            </div>
+          </form>
+          <p id="search-status" class="quiet catalog-count" role="status" hidden></p>
         </div>
+        <ol id="search-results" class="results" hidden></ol>
       </section>
 
       <section id="details" class="page detail-page" aria-labelledby="item-title" hidden>
@@ -121,8 +115,8 @@
         <div id="item-controls"></div>
         <p id="item-status" role="status" hidden></p>
         <pre id="item-output" hidden></pre>
-        <section id="terminal-panel" class="terminal folio-spread" aria-label="Drive terminal" hidden>
-          <div class="work-margin">
+        <section id="terminal-panel" class="terminal" aria-label="Drive terminal" hidden>
+          <div class="terminal-toolbar">
             <div class="terminal-actions">
               <code id="terminal-command" hidden></code>
               <button id="terminal-start" class="button primary" type="button">Start terminal</button>
