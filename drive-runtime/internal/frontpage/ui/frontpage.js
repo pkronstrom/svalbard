@@ -6,15 +6,12 @@ const collections = [
   {name:"Atlas", types:["Maps"], description:"Maps, geography & the natural world"},
   {name:"Instruments", types:["Apps", "Saved apps"], description:"Applications & saved work"},
   {name:"Intelligence", types:["Local AI", "Skills"], description:"Local models, skills & procedures"},
-  {name:"Libraries", types:["Libraries"], description:"Software, source & documentation"},
+  {name:"Libraries", types:["Libraries","Datasets"], description:"Software, source & documentation"},
   {name:"Tools", types:["Tools"], description:"Utilities & shell access"},
   {name:"Settings", types:["Settings"], description:"Drive configuration"}
 ];
 const legacyRoutes = new Map();
-const chapterArt = {
-  "Reading room":"books", Atlas:"compass", Instruments:"telescope", Intelligence:"brain",
-  Libraries:"crystals", Tools:"cog", Settings:"cog"
-};
+let indexCollapsed;
 function collectionFilter(collection) {
   return collection.types.length > 1 ? "collection:" + collection.name : collection.types[0];
 }
@@ -41,6 +38,8 @@ let model = "";
 let route = "";
 let polling = false;
 let searchRead = 0;
+let articleService = "";
+let articleOpen = false;
 let searchRequest = 0;
 let shownQuery = "";
 let queuedLaunch;
@@ -94,21 +93,6 @@ function itemSearchText(item) {
     .filter(Boolean).join(" ").toLowerCase();
 }
 
-function navLink(item) {
-  const link = node("a", "nav-link");
-  link.href = "#" + item.route;
-  link.title = item.label;
-  link.dataset.match = itemSearchText(item);
-  link.append(node("span", "nav-text", item.label));
-  if (item.service) {
-    link.dataset.service = item.service;
-    const indicator = node("span", "nav-dot");
-    indicator.hidden = true;
-    link.append(indicator);
-  }
-  return link;
-}
-
 function overviewType(item) {
   if (item.group === "Saved apps" || item.icon === "workspace") return "Saved apps";
   if (item.group === "Local AI") return "Local AI";
@@ -144,48 +128,47 @@ function itemPreview(item, css) {
   return preview;
 }
 
+const formats = {browse:"ZIM", documents:"Document", apps:"HTML", workspace:"HTML", maps:"Map", wiki:"Wiki", chat:"Model", library:"Library", skill:"Skill", terminal:"CLI", settings:"Action", share:"Service"};
+function formatOf(item) { return item.format || formats[item.icon] || overviewType(item); }
+function sizeOf(item) {
+  if (!item.bytes) return "—";
+  const power = Math.min(3, Math.floor(Math.log(item.bytes) / Math.log(1024)));
+  return new Intl.NumberFormat(undefined, {maximumFractionDigits:1}).format(item.bytes / 1024 ** power) + " " + ["B","KiB","MiB","GiB"][power];
+}
 function overviewRow(item, grouped) {
   const row = node("li", "overview-row");
-  const type = overviewType(item);
-  row.classList.toggle("compact", type === "Tools" || type === "Settings");
-  const content = node("div", "overview-copy");
-  const link = node("a", "overview-name", item.label);
+  const link = node("a", "register-link");
   link.href = "#" + item.route;
-  const title = node(grouped ? "h3" : "h2");
-  title.append(link);
-  content.append(title);
+  const accession = item.id || item.savedPath || "—";
+  const id = node("span", "register-id", accession);
+  id.title = accession;
+  const content = node("div", "overview-copy");
+  const copy = node("div");
+  const title = node(grouped ? "h3" : "h2", "overview-name", item.label);
+  copy.append(title);
   const summary = item.summary || item.description;
-  if (summary && summary !== item.label) content.append(node("p", "overview-summary", summary));
-  const size = item.bytes ? new Intl.NumberFormat(undefined, {maximumFractionDigits: 1}).format(item.bytes / 1048576) + " MiB" : "";
-  const meta = [item.id || item.savedPath, size, ...((item.tags || []).slice(0, 3)), item.note].filter(Boolean);
-  if (meta.length) content.append(node("p", "overview-meta", meta.join(" · ")));
-  if (!grouped) content.prepend(node("p", "overview-type", type));
-  row.append(itemPreview(item, "overview-preview"), content);
-
-  if (item.service && readerKinds.has(item.icon)) {
-    const launch = node("a", "button overview-launch", overviewLaunchLabel(item.service));
-    launch.href = link.href;
-    launch.dataset.service = item.service;
-    launch.dataset.label = item.label;
-    launch.setAttribute("aria-label", launch.textContent + " " + item.label);
-    launch.addEventListener("click", event => {
-      if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-      event.preventDefault();
-      history.pushState(null, "", launch.hash);
-      renderRoute();
-      window.scrollTo(0, 0);
-      byId("item-title").focus({preventScroll: true});
+  if (summary && summary !== item.label) copy.append(node("p", "overview-summary", summary));
+  if(item.missing) copy.append(node("p","error","File missing from drive"));
+  content.append(copy);
+  if (previewURL(item)) content.append(itemPreview(item,"register-image"));
+  link.setAttribute("aria-label", "Open " + item.label);
+  link.append(id, content, node("span","register-format",formatOf(item)), node("span","register-size",sizeOf(item)));
+  link.addEventListener("click", event => {
+    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    history.replaceState({...history.state, selected:item.route, scroll:window.scrollY}, "");
+    history.pushState(null, "", link.hash);
+    renderRoute();
+    window.scrollTo(0,0);
+    byId("item-title").focus({preventScroll:true});
+    if (!item.missing && !["EPUB","MD"].includes(item.format) && item.service && readerKinds.has(item.icon)) {
       const state = states.get(item.service)?.status;
       if (state === "stopping") queuedLaunch = item;
-      else if (state !== "starting" && state !== "running") act(item);
-    });
-    row.append(launch);
-  }
+      else if (state !== "running" && state !== "starting") act(item);
+    }
+  });
+  row.append(link);
   return row;
-}
-
-function overviewLaunchLabel(key) {
-  return states.get(key)?.status === "running" ? "Open" : "Serve & open";
 }
 
 function buildNavigation(data) {
@@ -196,26 +179,27 @@ function buildNavigation(data) {
   data.groups.forEach((group, index) => {
     const items = group.items.filter(item => item.kind !== "search");
     if (!items.length) return;
-    const section = node("details", "group");
-    section.open = true;
-    section.append(node("summary", "", group.label));
     items.forEach((item, position) => {
       const legacy = "item-" + index + "-" + position;
       const stable = item.id ? "resource/" + encodeURIComponent(group.id || group.label) + "/" + encodeURIComponent(item.id) : legacy;
-      const entry = {...item, group: group.label, route: entries.has(stable) ? legacy : stable};
+      const entry = {...item, group: group.label, route: entries.has(stable) ? legacy : stable,
+        terminal: item.terminal || (item.kind === "terminal" && Boolean(item.command))};
       legacyRoutes.set(legacy, entry.route);
       entries.set(entry.route, entry);
-      section.append(navLink(entry));
     });
-    byId("groups").append(section);
   });
-  byId("filter").disabled = false;
   syncOverviewTypes();
   renderHome();
 }
 
 function syncOverviewTypes() {
-  renderCollections(Array.from(entries.values()));
+  const items = Array.from(entries.values());
+  renderCollections(items);
+  for (const [id,label,values] of [["overview-subject","All subjects",items.flatMap(item=>item.tags || [])], ["overview-format","All formats",items.map(formatOf)]]) {
+    const select = byId(id), previous = select.value;
+    select.replaceChildren(new Option(label,""), ...Array.from(new Set(values)).sort(nameOrder.compare).map(value=>new Option(value,value)));
+    if (values.includes(previous)) select.value = previous;
+  }
   const control = byId("overview-type");
   const selected = control.value;
   const available = new Set(Array.from(entries.values(), overviewType));
@@ -253,6 +237,16 @@ function renderCollections(items) {
     line.append(link);
     return line;
   }));
+  byId("margin-collections").replaceChildren(...available.map(collection => {
+    const line = node("li");
+    const link = node("a");
+    link.href = collectionURL(collection);
+    link.dataset.collection = collectionFilter(collection);
+    const count = collection.types.reduce((sum,type) => sum + (counts.get(type) || 0),0);
+    link.append(node("span","",collection.name),node("small","",String(count).padStart(2,"0")));
+    line.append(link);
+    return line;
+  }));
   byId("cover-total").textContent = items.length + (items.length === 1 ? " entry" : " entries") + " in the catalogue";
 }
 
@@ -270,6 +264,8 @@ function renderHome() {
   const collection = collections.find(group => selected === "collection:" + group.name);
   const visible = items.filter(item => {
     if (selected && !(collection ? collection.types.includes(overviewType(item)) : overviewType(item) === selected)) return false;
+    if (byId("overview-subject").value && !item.tags?.includes(byId("overview-subject").value)) return false;
+    if (byId("overview-format").value && formatOf(item) !== byId("overview-format").value) return false;
     const description = itemSearchText(item);
     return terms.every(term => description.includes(term));
   });
@@ -278,15 +274,11 @@ function renderHome() {
   output.replaceChildren();
   const resultCount = visible.length;
   const chapter = collections.find(group => collectionFilter(group) === selected);
-  const parent = chapter || collections.find(group => group.types.includes(selected));
   byId("home-title").textContent = chapter?.name || selected || "Catalogue";
   note(byId("collection-description"), chapter?.description || "");
-  byId("collection-plate").src = parent ? "/engraving-" + chapterArt[parent.name] + ".webp" : "/survey.svg";
-  note(byId("inventory-summary"), query ? "" : (count ? resultCount + (resultCount === 1 ? " entry" : " entries") : "No items are installed on this drive yet."));
-  const filtered = query;
-  note(byId("overview-results"), filtered ? (
-    resultCount ? resultCount + " of " + count + " items" : "No matching items."
-  ) : "");
+  note(byId("inventory-summary"), count ? resultCount + (resultCount === 1 ? " entry" : " entries") : "Empty catalogue");
+  const filtered = query || byId("overview-format").value || byId("overview-subject").value;
+  note(byId("overview-results"), filtered && !resultCount ? "No matches. Try another term or clear a filter." : "");
 
   const grouped = byId("overview-order").value === "grouped";
   const types = grouped ? Array.from(byId("overview-type").options, option => option.value).filter(type => type && !type.startsWith("collection:")) : [""];
@@ -306,61 +298,31 @@ function renderHome() {
   }
 }
 
-function filterNavigation() {
-  const terms = byId("filter").value.trim().toLowerCase().split(/\s+/);
-  for (const link of byId("nav").querySelectorAll("[data-match]")) {
-    link.hidden = !terms.every(term => link.dataset.match.includes(term));
-  }
-  for (const group of byId("nav").querySelectorAll(".group")) {
-    if (!group.querySelector("[data-match]")) continue;
-    group.hidden = !group.querySelector("[data-match]:not([hidden])");
-    if (terms[0] && group instanceof HTMLDetailsElement) group.open = true;
-  }
-  note(byId("filter-status"), terms[0] && !byId("nav").querySelector("[data-match]:not([hidden])") ? "No matching items." : "");
-}
-
 function markSelection() {
-  for (const link of byId("nav").querySelectorAll("a")) {
-    if (link.hash === "#" + route) link.setAttribute("aria-current", "page");
+  const type = selection ? overviewType(selection) : byId("overview-type").value;
+  const current = collections.find(c => collectionFilter(c) === type || c.types.includes(type));
+  for (const link of byId("margin-collections").querySelectorAll("a")) {
+    if ((selection || route === "overview") && link.dataset.collection === (current ? collectionFilter(current) : type)) link.setAttribute("aria-current","location");
     else link.removeAttribute("aria-current");
   }
-  const view = route === "search-result" ? "search" : selection && route !== "terminal" ? "overview" : route;
+  const view = articleOpen ? "search" : selection && route !== "terminal" ? "overview" : route;
   for (const link of byId("work-nav").querySelectorAll("a")) {
     if (link.hash === "#" + view) link.setAttribute("aria-current", route === view ? "page" : "location");
     else link.removeAttribute("aria-current");
   }
 }
 
-function renderNavStatus(key) {
-  const status = states.get(key)?.status;
-  for (const link of byId("nav").querySelectorAll("[data-service]")) {
-    if (link.dataset.service !== key) continue;
-    const dot = link.querySelector(".nav-dot");
-    dot.hidden = !serviceStatus[status];
-    dot.dataset.state = status || "";
-    const label = link.querySelector(".nav-text").textContent;
-    if (serviceStatus[status]) link.setAttribute("aria-label", label + ", " + serviceStatus[status]);
-    else link.removeAttribute("aria-label");
-  }
-  for (const launch of byId("home-links").querySelectorAll(".overview-launch")) {
-    if (launch.dataset.service !== key) continue;
-    launch.textContent = overviewLaunchLabel(key);
-    launch.setAttribute("aria-label", launch.textContent + " " + launch.dataset.label);
-  }
-}
-
 function showState(key, state) {
   if (JSON.stringify(states.get(key)) === JSON.stringify(state)) return;
   states.set(key, state);
-  renderNavStatus(key);
-  if (selection?.service === key) renderItem();
+  if (selection?.service === key && !articleOpen) renderItem();
   if (state.status === "stopped" && queuedLaunch?.service === key) {
     const item = queuedLaunch;
     queuedLaunch = undefined;
     if (selection === item) act(item);
   }
-  if (route === "search-result" && history.state?.reader?.service === key && unavailableReader(state)) {
-    renderRoute();
+  if (articleOpen && articleService === key && unavailableReader(state)) {
+    leaveArticle();
   }
 }
 
@@ -466,25 +428,79 @@ function highlightSource(body, text) {
   body.replaceChildren(fragments);
 }
 
-async function renderSource(item, active = item.parts[0]) {
+function sourceSection(part) {
+  if (part.label.startsWith("Examples/")) return "Examples";
+  if (part.label.startsWith("references/")) return "References";
+  if (part.label.startsWith("scripts/") || part.label === "Source") return "Files";
+  return part.label;
+}
+async function renderSource(item, section, selectedPart) {
   const panel = byId("source-view");
+  const sections = [...new Set([...(item.icon === "library" ? ["Overview"] : []), ...item.parts.map(sourceSection)])];
+  section ??= sections[0];
+  const parts = item.parts.filter(part=>sourceSection(part)===section);
+  const active = selectedPart || parts[0];
   const tabs = node("nav", "source-tabs");
   tabs.setAttribute("aria-label", "Resource views");
-  for (const part of item.parts) {
-    const tab = button(part.label, "secondary", () => renderSource(item, part));
-    tab.setAttribute("aria-pressed", String(part === active));
+  for (const name of sections) {
+    const tab = button(name, "secondary", () => renderSource(item,name));
+    tab.setAttribute("aria-pressed", String(name === section));
     tabs.append(tab);
   }
+  panel.hidden=false;
+  panel.replaceChildren(tabs);
+  if (!active) {
+    const overview=node("article","prose");
+    overview.append(node("h2","",item.label),node("p","",item.description || item.note));
+    panel.append(overview);
+    return;
+  }
+  if(parts.length>1) {
+    const picker=node("select");picker.setAttribute("aria-label","File");
+    parts.forEach((part,i)=>picker.add(new Option(part.path,String(i))));
+    picker.selectedIndex=parts.indexOf(active);
+    picker.onchange=()=>renderSource(item,section,parts[picker.selectedIndex]);
+    panel.append(picker);
+  }
   const file = node("p", "item-recipe", active.path);
-  const body = node("pre", "source-text", "Loading…");
-  panel.hidden = false;
-  panel.replaceChildren(tabs, file, body);
+  const isMarkdown=/\.md$/i.test(active.path);
+  const body = node(isMarkdown ? "article" : "pre", isMarkdown ? "prose" : "source-text", "Loading…");
+  panel.append(file,body);
   try {
     const data = await request("/api/source?" + new URLSearchParams({id:item.id, view:active.label}));
     if (!body.isConnected) return;
     body.tabIndex = 0;
     if (/\.(m?js|json|cjs)$/.test(active.path)) highlightSource(body, data.text);
-    else body.textContent = data.text;
+    else if (isMarkdown) {
+      const {prose}=await import("/views.js");
+      const fragment=prose(data.text);
+      const base=new URL("/"+active.path,"https://source.invalid");
+      for(const link of fragment.querySelectorAll("a[href]")) {
+        const address=new URL(link.getAttribute("href"),base);
+        if(address.origin!==base.origin)continue;
+        const path=decodeURIComponent(address.pathname.slice(1));
+        const part=item.parts.find(part=>part.path===path);
+        link.removeAttribute("target");
+        if(part){
+          link.href="#"+item.route;
+          link.onclick=event=>{event.preventDefault();if(part===active && address.hash) body.querySelector("#"+CSS.escape(decodeURIComponent(address.hash.slice(1))))?.scrollIntoView();else renderSource(item,sourceSection(part),part);};
+        }else link.removeAttribute("href");
+      }
+      body.replaceChildren(fragment);
+      const raw=button("Original text","quiet-button",()=>{body.replaceChildren(node("pre","source-text",data.text));raw.remove();});
+      tabs.append(raw);
+      const example=[...body.querySelectorAll("h2,h3")].find(heading=>/^examples?$/i.test(heading.textContent.trim()));
+      if(example && !sections.includes("Examples")) tabs.append(button("Examples","secondary",()=>{example.tabIndex=-1;example.focus();}));
+    } else body.textContent = data.text;
+    if (section==="Examples" && /\.html?$/i.test(active.path) && !data.truncated) {
+      const preview=button("Preview markup","secondary",()=>{
+        const frame=node("iframe","example-frame");
+        frame.setAttribute("sandbox","");frame.title=active.path;
+        frame.srcdoc='<meta http-equiv="Content-Security-Policy" content="default-src &apos;none&apos;; style-src &apos;unsafe-inline&apos;">'+data.text;
+        body.after(frame);preview.remove();
+      });
+      tabs.append(preview);
+    }
     if (data.truncated) file.append(" · First 256 KiB");
     const copy = button("Copy text", "quiet-button", async () => {
       try { await navigator.clipboard.writeText(data.text); copy.textContent = "Copied"; }
@@ -576,6 +592,12 @@ function renderItem() {
   controls.replaceChildren();
   note(status, "");
   note(output, "");
+  if (item.missing) { note(status,"The installed file is missing. Restore it from the host, then reopen the drive.",true);return; }
+  if (item.icon === "library" || item.kind === "dataset" || ["EPUB","MD"].includes(item.format)) {
+    const original=node("a","button secondary", item.icon === "library" ? "Download library archive" : "Download original");
+    original.href="/api/download?"+new URLSearchParams({id:item.id});original.download="";controls.append(original);
+  }
+  if (["EPUB","MD"].includes(item.format)) return;
   if (!item.service) {
     if (item.terminal) {
       renderTerminal();
@@ -613,7 +635,7 @@ function renderItem() {
       }
       const address = item.savedPath ? savedAddress(item, link.url) : link.url;
       if (!reading && readerKinds.has(item.icon)) reading = showReader(item.label, address, item.icon);
-      const label = reading ? "Open in new tab" : link.label;
+      const label = reading ? "Open original" : link.label;
       controls.append(externalLink(label, address));
     }
   }
@@ -622,7 +644,11 @@ function renderItem() {
   if (active) {
     const stop = button(reading ? "Stop serving" : "Stop", "quiet-button", () => act(item, true));
     stop.disabled = state.status === "stopping";
-    controls.append(stop);
+    const inspector=node("details","service-inspector");
+    inspector.append(node("summary","","Inspector"),node("p","item-recipe","Service · "+serviceStatus[state.status]),stop);
+    controls.append(inspector);
+    if(reading && document.fullscreenEnabled) controls.append(button("Focus view","quiet-button",()=>byId("viewport").requestFullscreen().catch(error=>note(status,error.message,true))));
+
     if (!reading) note(status, serviceStatus[state.status]);
   }
   if (state.status === "failed") note(status, state.text, true);
@@ -631,6 +657,10 @@ function renderItem() {
 }
 
 function toggleSidebar(open) {
+  byId("viewport").inert=open;
+  byId("crumbs").inert=open;
+  document.querySelector(".skip").inert=open;
+  byId("mobile-search").hidden=open;
   document.body.classList.toggle("sidebar-open", open);
   byId("menu").setAttribute("aria-expanded", String(open));
   byId("menu").setAttribute("aria-label", open ? "Close drive index" : "Open drive index");
@@ -644,38 +674,41 @@ function updateRail(collapsed) {
   toggle.setAttribute("aria-label", toggle.title);
 }
 byId("rail-toggle").addEventListener("click", () => {
-  updateRail(!document.body.classList.contains("rail"));
+  if (matchMedia("(max-width:740px)").matches) { toggleSidebar(!document.body.classList.contains("sidebar-open")); return; }
+  indexCollapsed = !document.body.classList.contains("rail");
+  updateRail(indexCollapsed);
 });
 function syncCatalogueURL() {
   const params = new URLSearchParams();
   if (byId("overview-filter").value) params.set("q", byId("overview-filter").value);
   if (byId("overview-type").value) params.set("type", byId("overview-type").value);
   if (byId("overview-order").value === "name") params.set("order", "name");
-  history.replaceState(history.state, "", "#overview" + (params.size ? "?" + params : ""));
+  for (const field of ["subject","format"]) if (byId("overview-"+field).value) params.set(field,byId("overview-"+field).value);
+  history.replaceState(null, "", "#overview" + (params.size ? "?" + params : ""));
   renderHome();
+  markSelection();
 }
 
 function renderRoute() {
   if (!inventory) return;
-  const returningFromResult = route === "search-result";
+  const returningFromResult = articleOpen;
+  articleOpen=false;articleService="";
   const navigation = history.state;
   const [hashRoute, options] = location.hash.slice(1).split("?");
   route = legacyRoutes.get(hashRoute) || hashRoute || "cover";
   const params = new URLSearchParams(options);
   if (route === "overview") {
+    for (const field of ["subject","format"]) byId("overview-"+field).value = params.get(field) || "";
     byId("overview-filter").value = params.get("q") || "";
     byId("overview-type").value = params.get("type") || "";
     byId("overview-order").value = params.get("order") === "name" ? "name" : "grouped";
     renderHome();
   }
-  const result = route === "search-result" && inventory.hasSearch && navigation?.reader;
-  if (route === "search-result" && !result) {
-    route = "search";
-    history.replaceState(null, "", "#search");
-  }
   selection = route === "terminal" ? shellItem : entries.get(route);
-  const inSearch = inventory.hasSearch && (route === "search" || Boolean(result));
+  articleOpen = Boolean(inventory.hasSearch && params.has("source") && params.has("path") && (route==="read" || (selection?.source===params.get("source") || (selection?.source?.endsWith(".zim") && params.get("source").startsWith(selection.source+"/")))));
+  const inSearch = inventory.hasSearch && (route === "search" || articleOpen);
   if (!selection && !inSearch && route !== "overview") route = "cover";
+  updateRail(route === "cover" || (indexCollapsed ?? false));
   byId("cover").hidden = route !== "cover";
   byId("crumbs").hidden = route === "cover";
   const parent = selection && collections.find(group => group.types.includes(overviewType(selection)));
@@ -683,6 +716,7 @@ function renderRoute() {
   crumb.hidden = !parent && !inSearch;
   crumb.textContent = parent?.name || (inSearch ? "Search" : "");
   crumb.href = parent ? collectionURL(parent) : "#search";
+  byId("source-view").classList.remove("error");
   byId("source-view").hidden = true;
 
   ++searchRead;
@@ -690,30 +724,22 @@ function renderRoute() {
   if (queuedLaunch !== selection) queuedLaunch = undefined;
   closeReader();
   const details = byId("details");
-  details.hidden = !selection;
+  details.hidden = !selection || articleOpen;
   details.classList.toggle("terminal-page", Boolean(selection?.terminal));
   byId("overview").hidden = route !== "overview";
   byId("search-panel").hidden = route !== "search";
-  note(byId("location"), selection && route !== "terminal" ? selection.group : "");
+  note(byId("location"), parent?.name || "");
   markSelection();
   toggleSidebar(false);
 
-  if (result) {
-    if (unavailableReader(states.get(result.service)) || !showReader(result.label, result.address, result.kind, true)) {
-      history.replaceState({query: navigation.query, position: navigation.position}, "", "#search");
-      renderRoute();
-    } else {
-      const stop = byId("stop-search-reader");
-      stop.hidden = !result.service;
-      stop.disabled = false;
-    }
+  if (articleOpen) {
+    openArticle(params,searchRead);
     return;
   }
-
   if (route === "search") {
     const focusResult = () => {
       if (returningFromResult && route === "search") {
-        byId("search-results").querySelectorAll("button")[navigation?.position]?.focus();
+        byId("search-results").querySelectorAll("a")[navigation?.position]?.focus();
       }
     };
     const searchQuery = params.get("q") ?? navigation?.query;
@@ -730,14 +756,26 @@ function renderRoute() {
 
   if (selection) {
     byId("item-title").textContent = selection.label;
-    byId("item-kind").textContent = [selection.subheader, selection.note].filter(Boolean).join(" · ");
+    byId("item-kind").textContent = [...new Set([selection.id,selection.format,selection.subheader,selection.note,selection.bytes && sizeOf(selection)].filter(Boolean))].join(" · ");
     byId("item-description").textContent = selection.summary || selection.description || "";
     note(byId("item-recipe"), selection.recipeId ? "Recipe · " + selection.recipeId : "");
     const preview = byId("item-preview");
-    preview.hidden = Boolean(selection.terminal);
+    preview.hidden = !previewURL(selection);
     if (!preview.hidden) preview.replaceChildren(itemPreview(selection, "detail-preview"));
     renderItem();
-    if (selection.parts?.length) renderSource(selection);
+    const item = selection;
+    const panel=byId("source-view");
+    if (item.parts?.length) renderSource(item);
+    else {
+      const adapter = item.format === "EPUB" ? "ebook" : item.kind === "dataset" ? "dataset" : item.command === "./run settings" ? "preferences" : "";
+      if (adapter) {
+        panel.hidden=false;panel.replaceChildren();
+        import("/views.js").then(views => {
+          if (selection!==item) return;
+          return adapter==="preferences" ? views.preferences(item,panel,terminalKey) : views[adapter](item,panel);
+        }).catch(error=>{if(selection===item)note(panel,error.message,true);});
+      }
+    }
   }
 }
 
@@ -748,20 +786,18 @@ async function refreshPages() {
   try {
     const pages = await request("/api/workspace");
     for (const [route, entry] of entries) if (entry.savedPath) entries.delete(route);
-    byId("saved-links").replaceChildren(...pages.map(page => {
+    for (const page of pages) {
       const entry = {
         route: "saved/" + encodeURIComponent(page.path), label: page.name, note: page.path,
         group: "Saved apps", icon: "workspace", kind: "launch", service: inventory.workspace,
         savedPath: page.path
       };
       entries.set(entry.route, entry);
-      return navLink(entry);
-    }));
+    }
     note(status, pages.length ? "" : "No saved HTML apps yet.");
     syncOverviewTypes();
     renderHome();
-    renderNavStatus(inventory.workspace);
-    filterNavigation();
+    if (route === "overview") renderRoute();
     if (location.hash.startsWith("#saved/") && (!selection || !entries.has(route))) renderRoute();
     else markSelection();
   } catch (error) {
@@ -773,41 +809,49 @@ async function refreshPages() {
 
 function searchResult(item, position) {
   const row = node("li");
-  const title = node("button", "result-link", item.title || item.label);
-  title.type = "button";
-  const status = node("p", "quiet");
-  status.setAttribute("role", "status");
-  title.addEventListener("click", async () => {
-    const read = ++searchRead;
-    title.disabled = true;
-    note(status, "Opening…");
-    try {
-      const link = await request("/api/read", {source: item.source, path: item.path});
-      if (read !== searchRead) return;
-      const address = readerURL(link.url);
-      if (!address) throw new Error("The result has no local reader address.");
-      const kind = item.source.startsWith("books/") ? "documents" : "browse";
-      // The read endpoint has acquired this archive; an earlier poll may still describe the previous lease.
-      if (link.service && unavailableReader(states.get(link.service))) states.delete(link.service);
-      const searchState = {query: shownQuery, position};
-      history.replaceState(searchState, "", "#search");
-      history.pushState({
-        ...searchState,
-        reader: {label: title.textContent, address: address.href, kind, service: link.service}
-      }, "", "#search-result");
-      note(status, "");
-      renderRoute();
-      byId("back-to-search").focus();
-    } catch (error) {
-      note(status, error.message, true);
-    } finally {
-      title.disabled = false;
-    }
-  });
+  const title = node("a", "result-link", item.title || item.label);
+  const owner = [...entries.values()].find(entry=>entry.source===item.source || (entry.source?.endsWith(".zim") && item.source.startsWith(entry.source+"/")));
+  const params = new URLSearchParams({source:item.source,path:item.path,label:item.title || item.label});
+  title.href = "#" + (owner?.route || "read") + "?" + params;
+  title.onclick = event => {
+    if(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;
+    event.preventDefault();
+    history.replaceState({query:shownQuery,position,scroll:scrollY},"","#search?"+new URLSearchParams({q:shownQuery}));
+    history.pushState({query:shownQuery,position,fromSearch:true},"",title.hash);
+    window.scrollTo(0,0);renderRoute();
+  };
   row.append(title, node("p", "quiet", item.label));
   if (item.snippet) row.append(node("p", "", item.snippet));
-  row.append(status);
   return row;
+}
+
+async function openArticle(params,revision) {
+  const label=params.get("label") || params.get("source");
+  byId("reader").hidden=false;
+  byId("reader-bar").hidden=false;
+  byId("reader-title").textContent=label;
+  byId("reader-title").focus({preventScroll:true});
+  byId("reader-link").hidden=true;
+  byId("back-to-search").textContent=history.state?.fromSearch ? "← Results" : "← Catalogue";
+  byId("search-inspector").hidden=true;
+  note(byId("reader-status"),"Opening original…");
+  try {
+    const source=params.get("source");
+    const link=await request("/api/read",{source,path:params.get("path")});
+    if(revision!==searchRead)return;
+    if(!showReader(label,link.url,source.startsWith("books/")?"documents":"browse",true))throw Error("The result has no local reader address.");
+    articleService=link.service;
+    if (link.service && unavailableReader(states.get(link.service))) states.delete(link.service);
+    byId("reader-link").hidden=false;
+    byId("search-inspector").hidden=!link.service;
+    byId("stop-search-reader").hidden=!link.service;
+    byId("stop-search-reader").disabled=false;
+    note(byId("reader-status"),"");
+  } catch(error) { if(revision===searchRead)note(byId("reader-status"),error.message,true); }
+}
+function leaveArticle() {
+  if(history.state?.fromSearch) history.back();
+  else location.hash=selection?.route || "overview";
 }
 
 function unavailableReader(state) {
@@ -815,7 +859,7 @@ function unavailableReader(state) {
 }
 
 async function stopSearchReader() {
-  const service = history.state?.reader?.service;
+  const service = articleService;
   if (!service) return;
   const stop = byId("stop-search-reader");
   stop.disabled = true;
@@ -823,7 +867,7 @@ async function stopSearchReader() {
     const state = await request("/api/services/" + service + "/stop", {});
     showState(service, state);
   } catch (error) {
-    if (history.state?.reader?.service === service) note(byId("reader-status"), error.message, true);
+    if (articleService === service) note(byId("reader-status"), error.message, true);
   } finally {
     stop.disabled = false;
   }
@@ -891,6 +935,8 @@ function openGlobalSearch() {
   }
   byId(target === "search" ? "query" : "overview-filter").focus();
 }
+byId("mobile-search").addEventListener("click",openGlobalSearch);
+matchMedia("(max-width:740px)").addEventListener("change",()=>toggleSidebar(false));
 byId("search-shortcut").textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl K";
 byId("cover-search").addEventListener("submit", event => {
   event.preventDefault();
@@ -902,6 +948,12 @@ document.addEventListener("keydown", event => {
     event.preventDefault();
     openGlobalSearch();
   }
+  if(event.key==="Tab" && document.body.classList.contains("sidebar-open")) {
+    const controls=[byId("menu"), ...document.querySelectorAll(".spine a, #sidebar a, #sidebar button:not(:disabled)")].filter(el=>el.getClientRects().length && !el.hidden);
+    const index=controls.indexOf(document.activeElement);
+    event.preventDefault();
+    controls[(index+(event.shiftKey?-1:1)+controls.length)%controls.length].focus();
+  }
   if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
     toggleSidebar(false);
     byId("menu").focus();
@@ -911,7 +963,7 @@ document.querySelector(".skip").addEventListener("click", event => {
   event.preventDefault();
   byId("main").focus();
 });
-byId("filter").addEventListener("input", filterNavigation);
+for (const field of ["subject","format"]) byId("overview-"+field).addEventListener("change",syncCatalogueURL);
 byId("overview-filter").addEventListener("input", syncCatalogueURL);
 byId("overview-type").addEventListener("change", syncCatalogueURL);
 byId("overview-order").addEventListener("change", syncCatalogueURL);
@@ -923,20 +975,22 @@ window.addEventListener("pagehide", () => {
 });
 byId("stop-search-reader").addEventListener("click", stopSearchReader);
 byId("refresh").addEventListener("click", refreshPages);
-byId("back-to-search").addEventListener("click", () => {
-  const {query, position} = history.state || {};
-  history.pushState({query, position}, "", "#search");
-  renderRoute();
-});
+byId("back-to-search").addEventListener("click",leaveArticle);
 byId("search-form").addEventListener("submit", event => {
   event.preventDefault();
   runSearch();
 });
 window.addEventListener("hashchange", () => {
   renderRoute();
-  if (route === "overview") byId("home-title").focus({preventScroll:true});
+  if (articleOpen) return;
+  if (route === "overview") {
+    const previous = history.state?.selected;
+    const link = previous && [...byId("home-links").querySelectorAll("a")].find(a => a.hash.slice(1) === previous);
+    (link || byId("home-title")).focus({preventScroll:true});
+    if (link) window.scrollTo(0,history.state.scroll || 0);
+  }
   else if (selection) byId("item-title").focus({preventScroll:true});
-  else if (route === "search") byId("query").focus({preventScroll:true});
+  else if (route === "search" && history.state?.position == null) byId("query").focus({preventScroll:true});
 });
 
 request("/api/inventory")

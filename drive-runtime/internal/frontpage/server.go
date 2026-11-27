@@ -39,6 +39,7 @@ type dashboard struct {
 	jobs        map[string]*job
 	workers     sync.WaitGroup
 	wiki        wikiService
+	settingsMu  sync.Mutex
 	terminalKey string
 	searchMu    sync.Mutex
 	search      *search.Session
@@ -137,6 +138,11 @@ func (d *dashboard) handler(host string) http.Handler {
 		}
 		writeJSON(w, pages)
 	})
+	mux.HandleFunc("GET /api/preferences", d.preferences)
+	mux.HandleFunc("POST /api/preferences", d.preferences)
+	mux.HandleFunc("GET /api/ebook", d.ebook)
+	mux.HandleFunc("GET /api/dataset", d.dataset)
+	mux.HandleFunc("GET /api/download", d.download)
 	mux.HandleFunc("GET /api/source", d.serveSource)
 	mux.HandleFunc("GET /api/previews/{file}", d.servePreview)
 	mux.HandleFunc("GET /api/services", d.states)

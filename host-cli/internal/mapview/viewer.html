@@ -9,15 +9,17 @@
 <script src="{{.PMTilesJSPath}}"></script>
 <style>
 * { box-sizing: border-box }
-body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #203328 }
-#map { width: 100%; height: 100vh; height: 100dvh }
-aside { position: absolute; top: 12px; left: 12px; max-width: min(310px, 70vw);
-  max-height: 70vh; overflow: auto; background: #fff; border-radius: 6px;
-  box-shadow: 0 1px 7px #1a302744; padding: 10px 14px }
-summary { cursor: pointer; font-weight: 650 }
-label { display: block; margin-top: 7px; cursor: pointer }
-input { accent-color: #286243 }
-#errors { margin: 4px 0 0; font-size: 12px; color: #893c21; overflow-wrap: anywhere }
+body { margin:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(164px,21%); background:#f7f7f2; color:#171b1c; font:15px/1.4 Georgia,serif; }
+#map { width:100%; height:100vh; height:100dvh; }
+aside { overflow:auto; padding:12px; border-left:1px solid #77827e; max-height:100dvh; }
+summary { cursor:pointer; font:12px/1.6 monospace; text-transform:uppercase; letter-spacing:.08em; }
+label { display:block; padding:8px 0; border-bottom:1px solid #c1c9c3; }
+input { accent-color:#35585e; }
+#fit-layer { margin-top:8px; padding:5px 8px; color:#294449; border:1px solid #77827e; background:transparent; cursor:pointer; }
+#basemap-note { font:italic 14px/1.3 Georgia,serif; }
+#coordinates { display:block; margin-top:16px; font:12px/1.6 monospace; }
+#errors { color:#883e34; overflow-wrap:anywhere; }
+@media(max-width:580px){body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto;height:100dvh}#map{height:100%}aside{max-height:28dvh;border-left:0;border-top:1px solid #77827e;padding:6px 12px}#coordinates{margin:4px 0}}
 </style>
 </head>
 <body>
@@ -27,6 +29,9 @@ input { accent-color: #286243 }
 {{range $i, $l := .Layers}}<label><input id="layer-{{$i}}" type="{{if eq $l.Category "basemap"}}radio{{else}}checkbox{{end}}" {{if eq $l.Category "basemap"}}name="basemap"{{end}} disabled> {{$l.Name}}</label>
 {{end}}
 </details>
+<p id="basemap-note" hidden>No basemap installed.</p>
+<button id="fit-layer" type="button" disabled>Fit visible layers</button>
+<output id="coordinates" aria-label="Map center"></output>
 <div id="errors" role="status"></div>
 </aside>
 <script>
@@ -142,29 +147,58 @@ async function start() {
   }));
   const loaded = archives.filter(Boolean);
   if (!loaded.length) throw Error('No readable map archives.');
-  const base = loaded.find(a => a.config.Category === 'basemap');
+  const stateKey = "svalbard-map:" + JSON.stringify(installed.map(layer => layer.Filename));
+  let saved;
+  try { saved=JSON.parse(sessionStorage.getItem(stateKey)) } catch {}
+  const enabled = Array.isArray(saved?.enabled) ? new Set(saved.enabled) : null;
+  const base = (enabled && loaded.find(a=>a.config.Category === 'basemap' && enabled.has(a.config.Filename))) || loaded.find(a => a.config.Category === 'basemap');
   const ordered = loaded.slice().sort((a,b) => Number(b.config.Category === 'basemap') - Number(a.config.Category === 'basemap'));
   const sources = {};
   const layers = [{id:'paper',type:'background',paint:{'background-color':'#f4f1e7'}}];
   for (const a of ordered) {
     sources[a.source] = a.definition;
-    a.input.checked = a.config.Category !== 'basemap' || a === base;
+    a.input.checked = a.config.Category === 'basemap' ? a === base : !enabled || enabled.has(a.config.Filename);
     for (const layer of a.layers) {
       layer.layout = {...layer.layout, visibility:a.input.checked ? 'visible' : 'none'};
       layers.push(layer);
     }
   }
-  const h = (base || loaded[0]).header;
+  document.querySelector('#basemap-note').hidden=Boolean(base);
+  const fit=document.querySelector('#fit-layer');
+  function fitVisible() {
+    const selected=loaded.filter(a=>a.input.checked);
+    const overlays=selected.filter(a=>a.config.Category!=='basemap');
+    const target=overlays.length ? overlays : selected;
+    if(!target.length) return;
+    const bounds=new maplibregl.LngLatBounds();
+    for(const {header:h} of target) {bounds.extend([h.minLon,h.minLat]);bounds.extend([h.maxLon,h.maxLat]);}
+    map.fitBounds(bounds,{padding:24,maxZoom:15,duration:0});
+  }
+  const h = (base || loaded.find(a=>a.input.checked) || loaded[0]).header;
   const map = new maplibregl.Map({container:'map', style:{version:8,sources,layers},
     bounds:[[h.minLon,h.minLat],[h.maxLon,h.maxLat]], fitBoundsOptions:{padding:32,maxZoom:15},
     attributionControl:{compact:false}});
+  if (Array.isArray(saved?.center) && saved.center.length===2 && saved.center.every(Number.isFinite) && Number.isFinite(saved.zoom)) {
+    map.jumpTo({center:saved.center,zoom:saved.zoom,bearing:saved.bearing || 0,pitch:saved.pitch || 0});
+  }
+  const remember=()=>{
+    const c=map.getCenter();
+    document.querySelector('#coordinates').textContent=c.lat.toFixed(4)+'°, '+c.lng.toFixed(4)+'°';
+    try {sessionStorage.setItem(stateKey,JSON.stringify({center:[c.lng,c.lat],zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch(),enabled:loaded.filter(a=>a.input.checked).map(a=>a.config.Filename)}))} catch {}
+  };
+  map.on('moveend',remember);
+  remember();
   map.on('error', event => report(event.error.message));
   map.addControl(new maplibregl.NavigationControl());
   map.addControl(new maplibregl.ScaleControl({unit:'metric'}), 'bottom-left');
   map.on('load', () => {
+    fit.disabled=!loaded.some(a=>a.input.checked);
+    fit.onclick=fitVisible;
     for (const a of loaded) {
       a.input.disabled = false;
       a.input.addEventListener('change', () => {
+        remember();
+        fit.disabled=!loaded.some(a=>a.input.checked);
         for (const item of loaded) {
           for (const layer of item.layers) map.setLayoutProperty(layer.id,'visibility',item.input.checked ? 'visible' : 'none');
         }

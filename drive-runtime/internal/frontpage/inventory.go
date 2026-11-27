@@ -33,6 +33,9 @@ type group struct {
 
 type entry struct {
 	ID           string        `json:"id,omitempty"`
+	Source       string        `json:"source,omitempty"`
+	Download     string        `json:"-"`
+	Missing      bool          `json:"missing,omitempty"`
 	Parts        []sourcePart  `json:"parts,omitempty"`
 	Format       string        `json:"format,omitempty"`
 	Bytes        int64         `json:"bytes,omitempty"`
@@ -130,9 +133,19 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 				view.Service = keyFor(spec)
 				dir := map[string]string{"browse": "zim", "documents": "books"}[spec.name]
 				if dir != "" && spec.target != "" && filepath.IsLocal(spec.target) {
+					view.Source = spec.target
+					if dir == "books" {
+						view.Source = path.Join(dir, spec.target)
+						view.Download = view.Source
+						if strings.EqualFold(filepath.Ext(spec.target), ".md") {
+							view.Parts = []sourcePart{{Label: "Document", Path: view.Source}}
+						}
+					}
 					if info, err := os.Stat(filepath.Join(root, dir, spec.target)); err == nil && info.Mode().IsRegular() {
 						view.Format = strings.ToUpper(strings.TrimPrefix(filepath.Ext(spec.target), "."))
 						view.Bytes = info.Size()
+					} else if os.IsNotExist(err) {
+						view.Missing = true
 					}
 				}
 			}
@@ -156,6 +169,9 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 		}
 	}
 	inv.Groups = append(inv.Groups, sourceGroups(root)...)
+	if datasets := datasetGroup(root, metadata); len(datasets.Items) > 0 {
+		inv.Groups = append(inv.Groups, datasets)
+	}
 	return inv, services
 }
 

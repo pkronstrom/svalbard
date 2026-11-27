@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -101,7 +102,21 @@ func sourceGroups(folder string) []group {
 			continue
 		}
 		f.Close()
-		skills.Items = append(skills.Items, entry{ID: name, Label: path.Base(path.Dir(name)), Kind: "source", Icon: "skill", Note: path.Dir(name), Parts: []sourcePart{{Label: "Procedure", Path: name}}})
+		e := entry{ID: name, Label: path.Base(path.Dir(name)), Kind: "source", Icon: "skill", Note: path.Dir(name), Parts: []sourcePart{{Label: "Procedure", Path: name}}}
+		base := path.Dir(name)
+		for _, sub := range []string{"references", "scripts"} {
+			siblings, _ := fs.Glob(root.FS(), base+"/"+sub+"/*")
+			for _, file := range siblings {
+				switch strings.ToLower(path.Ext(file)) {
+				case ".md", ".txt", ".py", ".sh", ".js", ".json", ".yaml", ".yml":
+					if f, err := openSourceFile(root, file); err == nil {
+						f.Close()
+						e.Parts = append(e.Parts, sourcePart{Label: strings.TrimPrefix(file, base+"/"), Path: file})
+					}
+				}
+			}
+		}
+		skills.Items = append(skills.Items, e)
 	}
 	var groups []group
 	for _, g := range []group{libraries, skills} {
@@ -133,7 +148,7 @@ func libraryEntries(archive *zip.Reader, filename string, root *os.Root) []entry
 		if _, err := fs.Stat(archive, source); err != nil {
 			continue
 		}
-		e := entry{ID: filename + "/" + module, Label: module, Kind: "source", Icon: "library", Note: path.Base(filename)}
+		e := entry{ID: filename + "/" + module, Label: module, Kind: "source", Icon: "library", Note: path.Base(filename), Download: filename}
 		doc := strings.TrimSuffix(filename, ".zip") + "/docs/" + strings.ReplaceAll(module, "/", "__")
 		for _, view := range []sourcePart{{Label: "Overview", Path: doc + ".md"}, {Label: "API", Path: doc + ".reference.md"}} {
 			f, err := openSourceFile(root, view.Path)
@@ -144,8 +159,38 @@ func libraryEntries(archive *zip.Reader, filename string, root *os.Root) []entry
 		}
 		e.Parts = append(e.Parts, sourcePart{Label: "Source", Path: source, Archive: filename})
 		manifest := path.Join(pkg, "package.json")
+		if f, err := archive.Open(manifest); err == nil {
+			var meta struct {
+				Version     string
+				License     string
+				Description string
+			}
+			if json.NewDecoder(io.LimitReader(f, 256<<10)).Decode(&meta) == nil {
+				e.Description = meta.Description
+				e.Subheader = strings.Trim(strings.Join([]string{meta.Version, meta.License}, " · "), " ·")
+			}
+			f.Close()
+		}
+		for _, name := range []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"} {
+			file := path.Join(pkg, name)
+			if _, err := fs.Stat(archive, file); err == nil {
+				e.Parts = append(e.Parts, sourcePart{Label: "License", Path: file, Archive: filename})
+				break
+			}
+		}
 		if _, err := fs.Stat(archive, manifest); err == nil {
 			e.Parts = append(e.Parts, sourcePart{Label: "Manifest", Path: manifest, Archive: filename})
+		}
+		// Include real package examples when the installed archive ships them.
+		for _, file := range archive.File {
+			rel, ok := strings.CutPrefix(file.Name, pkg+"/examples/")
+			if !ok || !fs.ValidPath(rel) || len(e.Parts) >= 64 {
+				continue
+			}
+			switch strings.ToLower(path.Ext(rel)) {
+			case ".js", ".html", ".css", ".md", ".json":
+				e.Parts = append(e.Parts, sourcePart{Label: "Examples/" + rel, Path: file.Name, Archive: filename})
+			}
 		}
 		items = append(items, e)
 	}
@@ -219,4 +264,34 @@ func readSource(folder string, p sourcePart) (string, bool, error) {
 		return "", false, errors.New("not text")
 	}
 	return string(data), truncated, nil
+}
+
+func (d *dashboard) download(w http.ResponseWriter, r *http.Request) {
+	for _, g := range d.inv.Groups {
+		for _, entry := range g.Items {
+			if entry.ID != r.URL.Query().Get("id") || entry.Download == "" {
+				continue
+			}
+			root, err := os.OpenRoot(d.root)
+			if err != nil {
+				break
+			}
+			defer root.Close()
+			f, err := openSourceFile(root, entry.Download)
+			if err != nil {
+				break
+			}
+			defer f.Close()
+			info, err := f.Stat()
+			if err != nil {
+				break
+			}
+			name := path.Base(entry.Download)
+			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+			w.Header().Set("Content-Type", "application/octet-stream")
+			http.ServeContent(w, r, name, info.ModTime(), f)
+			return
+		}
+	}
+	http.NotFound(w, r)
 }
