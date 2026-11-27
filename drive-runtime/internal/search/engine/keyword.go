@@ -160,9 +160,19 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 		return matches, ctx.Err()
 	}
 
-	exact, more, err := e.ranked(ctx, ftsTerms(matches.Words, " AND "), opts.Source, opts.Limit)
+	candidateLimit := opts.Limit
+	if opts.Source == "" {
+		// Diversification can only promote a source if it is in the pool.
+		// Bound the extra work for popular terms in very large archives.
+		candidateLimit = max(opts.Limit, min(rankedScan, max(128, 8*min(opts.Limit, rankedScan))))
+	}
+	exact, more, err := e.ranked(ctx, ftsTerms(matches.Words, " AND "), opts.Source, candidateLimit)
 	if err != nil {
 		return matches, err
+	}
+	sources := map[string]int{}
+	if opts.Source == "" {
+		exact = diversifyKeyword(exact, matches.Words, opts.Limit, sources)
 	}
 	matches.MorePages = more
 	matches.Results, matches.Exact = exact, len(exact)
@@ -209,6 +219,19 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	}
 	partial = enough
 	sort.SliceStable(partial, func(i, j int) bool { return len(partial[i].Matched) > len(partial[j].Matched) })
+	if opts.Source == "" {
+		// The number of matched words still outranks source variety.
+		var ranked []Result
+		for first := 0; first < len(partial) && len(exact)+len(ranked) < opts.Limit; {
+			last := first + 1
+			for last < len(partial) && len(partial[last].Matched) == len(partial[first].Matched) {
+				last++
+			}
+			ranked = append(ranked, diversifyKeyword(partial[first:last], nil, opts.Limit-len(exact)-len(ranked), sources)...)
+			first = last
+		}
+		partial = ranked
+	}
 	if room := opts.Limit - len(exact); len(partial) > room {
 		partial = partial[:room]
 	}
@@ -216,12 +239,51 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	return matches, ctx.Err()
 }
 
+// diversifyKeyword protects the best exact title. After two results from
+// one source, a bounded penalty lets close matches from elsewhere surface
+// while keeping clearly stronger hits.
+func diversifyKeyword(results []Result, words []string, limit int, sources map[string]int) []Result {
+	limit = min(limit, len(results))
+	first := 0
+	if limit > 0 && len(words) > 0 {
+		query := strings.Join(words, " ")
+		for i, r := range results {
+			if strings.EqualFold(query, strings.Join(QueryWords(r.Title), " ")) {
+				copy(results[1:i+1], results[:i])
+				results[0] = r
+				sources[r.Filename]++
+				first = 1
+				break
+			}
+		}
+	}
+	weight := func(r Result) float64 {
+		repeats := min(max(sources[r.Filename]-1, 0), 3)
+		return r.Score / (1 + 0.15*float64(repeats))
+	}
+	for i := first; i < limit; i++ {
+		best := i
+		for j := i + 1; j < len(results); j++ {
+			if weight(results[j]) > weight(results[best]) {
+				best = j
+			}
+		}
+		if best != i {
+			result := results[best]
+			copy(results[i+1:best+1], results[i:best])
+			results[i] = result
+		}
+		sources[results[i].Filename]++
+	}
+	return results[:limit]
+}
+
 // ranked runs one FTS5 query ordered by the title-weighted rank. Unless the
 // scope is a single document or skill, it keeps at most pagesPerDocument
 // pages of any one document and sectionsPerSkill sections of any one skill,
 // and returns those that had more, as scopes that show the rest.
 func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int) ([]Result, []string, error) {
-	statement := `SELECT a.id, src.filename, a.path, a.title,
+	statement := `SELECT a.id, src.filename, a.path, a.title, -rank,
                 snippet(articles_fts, 1, '»', '«', '...', 12)
          FROM articles_fts
          JOIN articles a ON a.id = articles_fts.rowid
@@ -250,7 +312,7 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
 	for len(results) < limit && rows.Next() {
 		var r Result
 		var snippet sql.NullString
-		if err := rows.Scan(&r.ArticleID, &r.Filename, &r.Path, &r.Title, &snippet); err != nil {
+		if err := rows.Scan(&r.ArticleID, &r.Filename, &r.Path, &r.Title, &r.Score, &snippet); err != nil {
 			return nil, nil, err
 		}
 		if capped && IsDocumentSource(r.Filename) {
