@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#f0f3ee">
   <title>Svalbard Drive</title>
   <link rel="icon" href="/favicon.png" type="image/png">
+  <link rel="stylesheet" href="/vendor/xterminal/xterminal.css">
   <link rel="stylesheet" href="/style.css">
   <script src="/frontpage.js" defer></script>
 </head>
@@ -113,13 +114,8 @@
         <p id="item-status" role="status" hidden></p>
         <pre id="item-output" hidden></pre>
         <section id="terminal" class="terminal" aria-label="Drive terminal" hidden>
-          <div id="terminal-log" class="terminal-log" role="log" aria-label="Command output" hidden></div>
-          <form id="terminal-form" class="terminal-form">
-            <span class="terminal-prompt" aria-hidden="true">$</span>
-            <input id="terminal-command" type="text" aria-label="Drive command" autocomplete="off" spellcheck="false"
-              autocapitalize="none" maxlength="2048" required>
-            <button class="button secondary" type="submit">Run</button>
-          </form>
+          <div id="terminal-screen" class="terminal-screen"></div>
+          <button id="terminal-run" class="button secondary" type="button" disabled>Run</button>
         </section>
       </section>
 

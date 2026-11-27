@@ -28,6 +28,7 @@ let searchRead = 0;
 let searchRequest = 0;
 let shownQuery = "";
 let queuedLaunch;
+let settingsTerminal;
 
 function node(tag, css, text) {
   const element = document.createElement(tag);
@@ -389,44 +390,95 @@ function savedAddress(item, base) {
   return new URL(path, base).href;
 }
 
-function terminalLine(text, css) {
-  const log = byId("terminal-log");
-  log.append(node("pre", css, text));
-  while (log.childElementCount > 40) log.firstElementChild.remove();
-  log.hidden = false;
-  log.scrollTop = log.scrollHeight;
+async function openSettingsTerminal(item) {
+  try {
+    settingsTerminal ??= import("/vendor/xterminal/xterminal.esm.js").then(({default: XTerminal}) =>
+      createSettingsTerminal(XTerminal, item.command));
+    const terminal = await settingsTerminal;
+    if (selection === item) terminal.focus();
+  } catch (error) {
+    settingsTerminal = undefined;
+    if (selection === item) note(byId("item-status"), error.message, true);
+  }
 }
 
-async function runSettings(event) {
-  event.preventDefault();
-  const command = byId("terminal-command");
-  if (command.readOnly) return;
-  const parts = command.value.trim().match(/^\.\/run\s+settings(?:\s+(\S+)(?:\s+(.+))?)?$/);
-  if (!parts) {
-    terminalLine("Enter ./run settings or ./run settings --help.", "error");
-    return;
+function createSettingsTerminal(XTerminal, prefill) {
+  const screen = byId("terminal-screen");
+  const terminal = new XTerminal({target: screen});
+  const run = byId("terminal-run");
+  const input = screen.querySelector(".xt-stdin input");
+  const log = screen.querySelector(".xt-stdout > span");
+  screen.querySelector(".xt").tabIndex = -1;
+  input.setAttribute("aria-label", "Drive command");
+  input.enterKeyHint = "go";
+  input.maxLength = 2048;
+  log.setAttribute("role", "log");
+  log.setAttribute("aria-label", "Command output");
+
+  function prompt() {
+    terminal.write("$ ");
+    terminal.resume();
+    terminal.setInput(prefill);
+    run.disabled = false;
   }
+
+  async function submit() {
+    if (run.disabled) return;
+    const line = input.value.trim();
+    run.disabled = true;
+    input.readOnly = true;
+    terminal.clearLast();
+    terminal.clearInput();
+    terminal.pause();
+    try {
+      const output = await settingsOutput(terminal, line);
+      // Escape text before XTerminal adds markup for line breaks and spaces.
+      terminal.writeln(XTerminal.escapeHTML(output));
+      while (log.childElementCount > 40) log.firstElementChild.remove();
+    } finally {
+      input.readOnly = false;
+      prompt();
+      if (selection?.terminal) terminal.focus();
+    }
+  }
+
+  input.addEventListener("keydown", event => {
+    // Keep native tab navigation. Submit here so settings values do not enter
+    // XTerminal's automatic echo or command history.
+    if (event.key === "Tab" || event.key === "Enter") event.stopImmediatePropagation();
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    submit();
+  }, {capture: true});
+  screen.addEventListener("click", () => {
+    if (window.getSelection()?.isCollapsed) terminal.focus();
+  });
+  run.addEventListener("click", submit);
+  prompt();
+  return terminal;
+}
+
+async function settingsOutput(terminal, line) {
+  const parts = line.match(/^\.\/run\s+settings(?:\s+(\S+)(?:\s+(.+))?)?$/);
+  if (!parts) return "Enter ./run settings or ./run settings --help.";
+
   const [, key, value] = parts;
   const args = key ? [key] : [];
   if (value !== undefined) {
     const quoted = value.length >= 2 && ["'", '"'].includes(value[0]) && value.at(-1) === value[0];
     args.push(quoted ? value.slice(1, -1) : value);
   }
-  // Print the command and key without retaining a possible secret value.
-  terminalLine("$ ./run settings" + (key ? " " + key : ""), "terminal-echo");
-  const run = event.currentTarget.querySelector("button");
-  command.readOnly = true;
-  command.value = "./run settings";
-  run.disabled = true;
+  if (value === undefined || key === "--reset") {
+    const history = terminal.history.slice(-39);
+    terminal.clearHistory();
+    terminal.history = [...history, line];
+  }
+  const echo = "$ ./run settings" + (key ? " " + key : "");
   try {
     const data = await request("/api/terminal/settings", {args});
-    terminalLine(data.output.trimEnd(), data.failed ? "error" : "");
+    return echo + "\n" + data.output.trimEnd();
   } catch (error) {
-    terminalLine(error.message, "error");
-  } finally {
-    command.readOnly = false;
-    run.disabled = false;
-    if (selection?.terminal) command.focus();
+    return echo + "\n" + error.message;
   }
 }
 
@@ -442,10 +494,7 @@ function renderItem() {
   note(output, "");
   if (!item.service) {
     if (item.terminal) {
-      const command = byId("terminal-command");
-      command.value = item.command;
-      command.focus({preventScroll: true});
-      command.setSelectionRange(command.value.length, command.value.length);
+      openSettingsTerminal(item);
     } else if (item.command) {
       note(status, "Run this action from the drive’s terminal.");
       note(output, item.command);
@@ -700,7 +749,6 @@ byId("filter").addEventListener("input", filterNavigation);
 byId("overview-filter").addEventListener("input", renderHome);
 byId("overview-type").addEventListener("change", renderHome);
 byId("overview-order").addEventListener("change", renderHome);
-byId("terminal-form").addEventListener("submit", runSettings);
 byId("stop-search-reader").addEventListener("click", stopSearchReader);
 byId("refresh").addEventListener("click", refreshPages);
 byId("back-to-search").addEventListener("click", () => {
