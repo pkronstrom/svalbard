@@ -22,8 +22,8 @@ import (
 
 // Volume represents a mounted filesystem that could host a Svalbard vault.
 type Volume struct {
-	Path    string  // e.g. "/Volumes/KINGSTON/svalbard"
-	Name    string  // e.g. "KINGSTON"
+	Path    string // e.g. "/Volumes/KINGSTON/svalbard"
+	Name    string // e.g. "KINGSTON"
 	TotalGB float64
 	FreeGB  float64
 	Network bool
@@ -31,13 +31,13 @@ type Volume struct {
 
 // networkFSTypes lists filesystem types that indicate a network mount.
 var networkFSTypes = map[string]bool{
-	"smbfs":       true,
-	"nfs":         true,
-	"nfs4":        true,
-	"afpfs":       true,
-	"cifs":        true,
-	"9p":          true,
-	"fuse.sshfs":  true,
+	"smbfs":      true,
+	"nfs":        true,
+	"nfs4":       true,
+	"afpfs":      true,
+	"cifs":       true,
+	"9p":         true,
+	"fuse.sshfs": true,
 }
 
 // skipNames lists volume names to exclude on macOS.
