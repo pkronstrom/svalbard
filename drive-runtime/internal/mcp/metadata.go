@@ -18,6 +18,19 @@ type RecipeMeta struct {
 	Tags        []string       `json:"tags"`
 	Viewer      map[string]any `json:"viewer,omitempty"`
 	Build       map[string]any `json:"build,omitempty"`
+	Preview     *RecipePreview `json:"preview,omitempty"`
+}
+
+// RecipePreview describes the display metadata an apply publishes with a
+// realized recipe. Image.File is a basename in .svalbard/previews.
+type RecipePreview struct {
+	Summary string              `json:"summary,omitempty"`
+	Image   *RecipePreviewImage `json:"image,omitempty"`
+}
+
+type RecipePreviewImage struct {
+	File string `json:"file"`
+	Alt  string `json:"alt,omitempty"`
 }
 
 // DriveMetadata aggregates drive-level metadata from manifest.yaml and recipes.json.

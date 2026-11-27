@@ -41,6 +41,7 @@ type Item struct {
 	License        *LicenseSpec      `yaml:"license,omitempty"`
 	Tags           []string          `yaml:"tags,omitempty"`
 	Menu           *MenuSpec         `yaml:"menu,omitempty"`
+	Preview        *PreviewSpec      `yaml:"preview,omitempty"`
 	Env            map[string]string `yaml:"env,omitempty"`
 
 	// Settings are the choices the recipe lets the user make on the drive,
@@ -158,6 +159,19 @@ type MenuSpec struct {
 	Description string   `yaml:"description"`
 	Aliases     []string `yaml:"aliases,omitempty"`
 	Order       int      `yaml:"order"`
+}
+
+// PreviewSpec supplies optional presentation for the drive's browser overview.
+type PreviewSpec struct {
+	Summary string        `yaml:"summary,omitempty"`
+	Image   *PreviewImage `yaml:"image,omitempty"`
+}
+
+// PreviewImage is fetched and normalized during apply. The drive serves the
+// resulting thumbnail locally.
+type PreviewImage struct {
+	URL string `yaml:"url"`
+	Alt string `yaml:"alt,omitempty"`
 }
 
 // Preset represents a named collection of source references.

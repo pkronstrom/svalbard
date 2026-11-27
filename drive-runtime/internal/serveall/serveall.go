@@ -2,6 +2,7 @@ package serveall
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/browse"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	searchserver "github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
@@ -44,17 +46,19 @@ func PlanServices(driveRoot string, binaries map[string]string) []Service {
 	return plan
 }
 
+type OpenLocalService func(context.Context) (url string, exited <-chan struct{}, release func(), err error)
+
 func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
-	return run(ctx, stdout, driveRoot, bind, nil, nil)
+	return run(ctx, stdout, driveRoot, bind, nil, nil, nil)
 }
 
 // RunForBrowser starts the same services on loopback. It reports child
-// servers once they answer and lets the dashboard share a single wiki.
-func RunForBrowser(ctx context.Context, driveRoot string, ready func(string, string), openWiki func(context.Context) (string, <-chan struct{}, func(), error)) error {
-	return run(ctx, io.Discard, driveRoot, "127.0.0.1", ready, openWiki)
+// servers once they answer and can use the dashboard's Kiwix and wiki.
+func RunForBrowser(ctx context.Context, driveRoot string, ready func(string, string), openKiwix, openWiki OpenLocalService) error {
+	return run(ctx, io.Discard, driveRoot, "127.0.0.1", ready, openKiwix, openWiki)
 }
 
-func run(ctx context.Context, stdout io.Writer, driveRoot, bind string, ready func(string, string), openWiki func(context.Context) (string, <-chan struct{}, func(), error)) error {
+func run(ctx context.Context, stdout io.Writer, driveRoot, bind string, ready func(string, string), openKiwix, openWiki OpenLocalService) error {
 	if bind == "" {
 		bind = "127.0.0.1"
 	}
@@ -102,7 +106,25 @@ func run(ctx context.Context, stdout io.Writer, driveRoot, bind string, ready fu
 		return nil
 	}
 
-	if binaries["kiwix-serve"] != "" && hasMatchingFiles(filepath.Join(driveRoot, "zim"), ".zim") {
+	if containsService(plan, "kiwix") && openKiwix != nil {
+		address, exited, release, err := openKiwix(ctx)
+		if err == nil {
+			defer release()
+			publish("Kiwix", address)
+			children.Go(func() {
+				select {
+				case <-exited:
+					failures <- fmt.Errorf("Kiwix stopped serving")
+				case <-ctx.Done():
+				}
+			})
+		} else if errors.Is(err, browse.ErrLibraryUnavailable) {
+			openKiwix = nil
+		} else {
+			return err
+		}
+	}
+	if containsService(plan, "kiwix") && openKiwix == nil {
 		port, release, err := childPort(8080)
 		if err != nil {
 			return err

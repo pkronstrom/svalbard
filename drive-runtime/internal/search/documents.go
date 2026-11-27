@@ -54,12 +54,17 @@ func DocumentFile(filename string, page int) string {
 // of the entry path is escaped: nautilus files are named like
 // "Emergency Preparedness (10).pdf".
 func embeddedURL(base, filename string, page int) string {
-	archive, entry, _ := engine.EmbeddedArchive(filename)
+	archive, _, _ := engine.EmbeddedArchive(filename)
+	return embeddedBookURL(base, strings.TrimSuffix(archive, path.Ext(archive)), filename, page)
+}
+
+func embeddedBookURL(base, book, filename string, page int) string {
+	_, entry, _ := engine.EmbeddedArchive(filename)
 	segments := strings.Split(entry, "/")
 	for i, segment := range segments {
 		segments[i] = url.PathEscape(segment)
 	}
-	address := base + "/content/" + url.PathEscape(strings.TrimSuffix(archive, ".zim")) + "/" + strings.Join(segments, "/")
+	address := base + "/content/" + url.PathEscape(book) + "/" + strings.Join(segments, "/")
 	if page > 0 && strings.EqualFold(path.Ext(entry), ".pdf") {
 		address += fmt.Sprintf("#page=%d", page)
 	}

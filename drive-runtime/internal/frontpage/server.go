@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/browse"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
 )
@@ -30,6 +31,9 @@ type dashboard struct {
 	port     int
 	inv      inventory
 	specs    map[string]serviceSpec
+	previews map[string]bool
+	archives map[string]string // installed ZIM filename to its dashboard service key
+	kiwix    *browse.Library
 	mu       sync.Mutex
 	jobs     map[string]*job
 	workers  sync.WaitGroup
@@ -52,6 +56,8 @@ type state struct {
 type job struct {
 	state
 	cancel context.CancelFunc
+	ready  chan struct{}
+	done   chan struct{}
 }
 
 func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConfig, open func(string) error) error {
@@ -70,7 +76,13 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 	inv, specs := buildInventory(root, cfg)
 	d := &dashboard{
 		ctx: ctx, root: root, port: listener.Addr().(*net.TCPAddr).Port,
-		inv: inv, specs: specs, jobs: make(map[string]*job),
+		inv: inv, specs: specs, previews: installedPreviewFiles(inv), jobs: make(map[string]*job),
+		archives: make(map[string]string), kiwix: browse.NewLibrary(root),
+	}
+	for key, spec := range specs {
+		if spec.name == "browse" && spec.target != "" {
+			d.archives[spec.target] = key
+		}
 	}
 	host := listener.Addr().String()
 	server := &http.Server{
@@ -96,6 +108,7 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 	if shutdownErr := server.Shutdown(shutdown); shutdownErr != nil {
 		_ = server.Close()
 	}
+	d.kiwix.Close()
 	d.mu.Lock()
 	d.mu.Unlock() // Synchronize with any launch already entering its critical section.
 	d.workers.Wait()
@@ -122,6 +135,7 @@ func (d *dashboard) handler(host string) http.Handler {
 		}
 		writeJSON(w, pages)
 	})
+	mux.HandleFunc("GET /api/previews/{file}", d.servePreview)
 	mux.HandleFunc("GET /api/services", d.states)
 	mux.HandleFunc("POST /api/services/{key}", d.start)
 	mux.HandleFunc("POST /api/services/{key}/stop", d.stop)
@@ -191,21 +205,39 @@ func (d *dashboard) start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "The dashboard is stopping", http.StatusServiceUnavailable)
 		return
 	}
-	j := d.jobs[key]
-	if j == nil || j.Status == "stopped" || j.Status == "failed" || j.Status == "done" {
-		ctx, cancel := context.WithCancel(d.ctx)
-		j = &job{state: state{Status: "starting"}, cancel: cancel}
-		d.jobs[key] = j
-		d.workers.Add(1)
-		go d.runJob(ctx, j, spec, input.Model)
-	}
-	snapshot := j.state
+	snapshot := d.launchLocked(key, spec, input.Model).state
 	d.mu.Unlock()
 	writeJSON(w, snapshot)
 }
 
+func (d *dashboard) launchLocked(key string, spec serviceSpec, model string) *job {
+	j := d.jobs[key]
+	if j == nil || j.Status == "stopped" || j.Status == "failed" || j.Status == "done" {
+		ctx, cancel := context.WithCancel(d.ctx)
+		j = &job{
+			state: state{Status: "starting"}, cancel: cancel,
+			ready: make(chan struct{}), done: make(chan struct{}),
+		}
+		d.jobs[key] = j
+		d.workers.Add(1)
+		go d.runJob(ctx, j, spec, model)
+	}
+	return j
+}
+
+// signalReady is called under d.mu when a job has published a link or reached
+// a terminal state. Search requests waiting for the same job can then read it.
+func (j *job) signalReady() {
+	select {
+	case <-j.ready:
+	default:
+		close(j.ready)
+	}
+}
+
 func (d *dashboard) runJob(ctx context.Context, j *job, spec serviceSpec, model string) {
 	defer d.workers.Done()
+	defer close(j.done)
 	defer j.cancel()
 	report := func(label, url string) {
 		d.mu.Lock()
@@ -219,6 +251,7 @@ func (d *dashboard) runJob(ctx context.Context, j *job, spec serviceSpec, model 
 			} else {
 				j.Links = append(links, link{Label: label, URL: url})
 				j.Status = "running"
+				j.signalReady()
 			}
 		}
 	}
@@ -235,6 +268,7 @@ func (d *dashboard) runJob(ctx context.Context, j *job, spec serviceSpec, model 
 	default:
 		j.state = state{Status: "done", Text: message}
 	}
+	j.signalReady()
 }
 
 func (d *dashboard) stop(w http.ResponseWriter, r *http.Request) {
@@ -318,11 +352,22 @@ func (d *dashboard) readResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.withSearch(w, r, func(s *search.Session) error {
-		address, err := s.ResultURL(r.Context(), search.Result{Filename: input.Source, Path: input.Path})
+		result := search.Result{Filename: input.Source, Path: input.Path}
+		service := d.archives[search.ArchiveSource(input.Source)]
+		var address string
+		var err error
+		if service == "" {
+			address, err = s.ResultURL(r.Context(), result)
+		} else {
+			address, err = d.archiveResultURL(r.Context(), service, result)
+		}
 		if err != nil {
 			return err
 		}
-		writeJSON(w, link{Label: "Open result", URL: address})
+		writeJSON(w, struct {
+			link
+			Service string `json:"service,omitempty"`
+		}{link{Label: "Open result", URL: address}, service})
 		return nil
 	})
 }

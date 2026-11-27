@@ -1,6 +1,7 @@
 package toolkit
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -161,6 +162,9 @@ type GenerateOpts struct {
 	// to .svalbard/settings.schema.json.
 	Recipes map[string]catalog.Item
 
+	// PreviewContext controls thumbnail fetching during apply.
+	PreviewContext context.Context
+
 	// Notice receives what the user should hear about once, such as local
 	// edits to a Svalbard skill that were replaced.
 	Notice func(string)
@@ -181,7 +185,13 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	var recipes map[string]catalog.Item
 	var platformIORecipes map[string]catalog.Item
 	var platformIOPlatforms []string
+	previewContext := context.Background()
+	var notice func(string)
 	if len(opts) > 0 {
+		if opts[0].PreviewContext != nil {
+			previewContext = opts[0].PreviewContext
+		}
+		notice = opts[0].Notice
 		recipes = opts[0].Recipes
 		platformIORecipes = opts[0].PlatformIORecipes
 		platformIOPlatforms = opts[0].PlatformIOPlatforms
@@ -202,15 +212,15 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 	if err != nil {
 		return err
 	}
-	if len(opts) > 0 && opts[0].Notice != nil {
-		for _, notice := range skillNoticesFor(report) {
-			opts[0].Notice(notice)
+	if notice != nil {
+		for _, message := range skillNoticesFor(report) {
+			notice(message)
 		}
 	}
 	if err := writeLibraryDocs(root, entries, recipes, libraryDocTree()); err != nil {
 		return err
 	}
-	if err := writeRecipesMetadata(root, entries, recipes); err != nil {
+	if err := writeRecipesMetadata(previewContext, root, entries, recipes, notice); err != nil {
 		return err
 	}
 	if err := writeSettingsSchema(root, entries, recipes); err != nil {

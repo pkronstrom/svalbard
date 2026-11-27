@@ -349,6 +349,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	}
 	if err := toolkit.Generate(root, m.Realized.Entries, presetName, toolkit.GenerateOpts{
 		EnvVars: envVars, Menus: menus, PlatformIORecipes: platformIORecipes, PlatformIOPlatforms: platforms, Recipes: recipes,
+		PreviewContext: applyCtx,
 		Notice: func(notice string) {
 			progress(ProgressEvent{ID: noticeID, Status: tui.StatusDone, Step: notice, Message: notice})
 		},

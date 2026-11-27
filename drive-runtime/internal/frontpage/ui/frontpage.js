@@ -5,17 +5,20 @@ const icons = {
   browse: "▤", documents: "≡", maps: "◇", chat: "◌", apps: "⊞",
   wiki: "✎", workspace: "↗", terminal: "›_", share: "⤢", settings: "⚙"
 };
-const startLabels = {
-  browse: "Start Kiwix", maps: "Start map viewer", wiki: "Start Wiki",
-  chat: "Start Open WebUI", documents: "Serve documents", apps: "Start app",
-  workspace: "Serve workspace", settings: "Show details"
-};
+const startLabels = {wiki: "Start Wiki", chat: "Start Open WebUI", settings: "Show details"};
 const readerKinds = new Set(["browse", "documents", "apps", "maps", "workspace"]);
+const overviewTypes = ["Archives", "Documents", "Maps", "Apps", "Saved apps", "Local AI", "Tools", "Settings"];
+const itemTypes = {
+  browse: "Archives", documents: "Documents", maps: "Maps",
+  apps: "Apps", wiki: "Apps", chat: "Local AI"
+};
+const nameOrder = new Intl.Collator(undefined, {numeric: true, sensitivity: "base"});
 const serviceStatus = {
   starting: "Starting…", running: "Running", stopping: "Stopping…", failed: "Failed"
 };
 const entries = new Map();
 const states = new Map();
+const activeRequests = new Set();
 let inventory;
 let selection;
 let model = "";
@@ -24,6 +27,7 @@ let polling = false;
 let searchRead = 0;
 let searchRequest = 0;
 let shownQuery = "";
+let queuedLaunch;
 
 function node(tag, css, text) {
   const element = document.createElement(tag);
@@ -64,26 +68,103 @@ async function request(path, data) {
   return response.json();
 }
 
-function navLink(item, home = false) {
-  const link = node("a", home ? "home-link" : "nav-link");
+function itemSearchText(item) {
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  return [item.group, item.label, item.summary, item.description, item.note, item.savedPath, item.recipeId, ...tags]
+    .filter(Boolean).join(" ").toLowerCase();
+}
+
+function navLink(item) {
+  const link = node("a", "nav-link");
   link.href = "#" + item.route;
+  link.title = item.label;
+  link.dataset.match = itemSearchText(item);
   const icon = node("span", "glyph", icons[item.icon] || "·");
   icon.setAttribute("aria-hidden", "true");
   link.append(icon, node("span", "nav-text", item.label));
-  if (home) {
-    link.append(node("span", "quiet", item.subheader || item.group));
-  } else {
-    link.title = item.label;
-    link.dataset.match = [item.group, item.label, item.description, item.note, item.savedPath]
-      .filter(Boolean).join(" ").toLowerCase();
-    if (item.service) {
-      link.dataset.service = item.service;
-      const indicator = node("span", "nav-dot");
-      indicator.hidden = true;
-      link.append(indicator);
-    }
+  if (item.service) {
+    link.dataset.service = item.service;
+    const indicator = node("span", "nav-dot");
+    indicator.hidden = true;
+    link.append(indicator);
   }
   return link;
+}
+
+function overviewType(item) {
+  if (item.group === "Saved apps" || item.icon === "workspace") return "Saved apps";
+  if (item.group === "Local AI") return "Local AI";
+  return itemTypes[item.icon] || item.group;
+}
+
+function previewURL(item) {
+  if (!item.image?.url) return "";
+  try {
+    const url = new URL(item.image.url, location.origin);
+    if (url.origin === location.origin && !url.username && !url.password) return url.href;
+  } catch {
+    // A missing or malformed preview uses the item icon.
+  }
+  return "";
+}
+
+function itemPreview(item, css) {
+  const preview = node("div", "preview " + css);
+  preview.dataset.type = overviewType(item);
+  const icon = node("span", "glyph", icons[item.icon] || "·");
+  icon.setAttribute("aria-hidden", "true");
+  preview.append(icon);
+  const src = previewURL(item);
+  if (src) {
+    const image = node("img");
+    image.alt = item.image.alt || "";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.className = "preview-image";
+    image.addEventListener("load", () => { image.classList.add("loaded"); });
+    image.addEventListener("error", () => { image.remove(); });
+    preview.append(image);
+    image.src = src;
+  }
+  return preview;
+}
+
+function overviewRow(item, grouped) {
+  const row = node("li", "overview-row");
+  const content = node("div", "overview-copy");
+  const link = node("a", "overview-name", item.label);
+  link.href = "#" + item.route;
+  content.append(link);
+  const summary = item.summary || item.description;
+  if (summary && summary !== item.label) content.append(node("p", "overview-summary", summary));
+  const meta = [grouped ? "" : overviewType(item), ...((item.tags || []).slice(0, 3)), item.note].filter(Boolean);
+  if (meta.length) content.append(node("p", "overview-meta", meta.join(" · ")));
+  row.append(itemPreview(item, "overview-preview"), content);
+
+  if (item.service && readerKinds.has(item.icon)) {
+    const launch = node("a", "button secondary overview-launch", overviewLaunchLabel(item.service));
+    launch.href = link.href;
+    launch.dataset.service = item.service;
+    launch.dataset.label = item.label;
+    launch.setAttribute("aria-label", launch.textContent + " " + item.label);
+    launch.addEventListener("click", event => {
+      if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      history.pushState(null, "", launch.hash);
+      renderRoute();
+      window.scrollTo(0, 0);
+      byId("item-title").focus({preventScroll: true});
+      const state = states.get(item.service)?.status;
+      if (state === "stopping") queuedLaunch = item;
+      else if (state !== "starting" && state !== "running") act(item);
+    });
+    row.append(launch);
+  }
+  return row;
+}
+
+function overviewLaunchLabel(key) {
+  return states.get(key)?.status === "running" ? "Open" : "Serve & open";
 }
 
 function buildNavigation(data) {
@@ -106,17 +187,59 @@ function buildNavigation(data) {
     byId("groups").append(section);
   });
   byId("filter").disabled = false;
+  syncOverviewTypes();
   renderHome();
+}
+
+function syncOverviewTypes() {
+  const control = byId("overview-type");
+  const selected = control.value;
+  const available = new Set(Array.from(entries.values(), overviewType));
+  const types = overviewTypes.filter(type => available.delete(type));
+  types.push(...Array.from(available).sort(nameOrder.compare));
+  control.replaceChildren(new Option("All types", ""), ...types.map(type => new Option(type, type)));
+  if (types.includes(selected)) control.value = selected;
 }
 
 function renderHome() {
   const items = Array.from(entries.values());
-  const readables = items.filter(item => readerKinds.has(item.icon));
-  const visible = readables.length ? readables : items;
   const count = items.length;
   note(byId("inventory-summary"), count ? count + (count === 1 ? " item" : " items") + " available locally" : "There are no launchable items on this drive yet.");
-  byId("home-links").replaceChildren(...visible.slice(0, 5).map(item => navLink(item, true)));
-  byId("home-content").hidden = !visible.length;
+  byId("home-content").hidden = !count;
+  const terms = byId("overview-filter").value.trim().toLowerCase().split(/\s+/);
+  const selected = byId("overview-type").value;
+  const visible = items.filter(item => {
+    if (selected && overviewType(item) !== selected) return false;
+    const description = itemSearchText(item);
+    return terms.every(term => description.includes(term));
+  });
+  visible.sort((a, b) => nameOrder.compare(a.label, b.label));
+  const output = byId("home-links");
+  output.replaceChildren();
+  const resultCount = visible.length;
+  const filtered = selected || terms[0];
+  note(byId("overview-results"), filtered ? (
+    resultCount ? resultCount + " of " + count + " items" : "No matching items."
+  ) : "");
+
+  if (byId("overview-order").value === "name") {
+    const list = node("ul", "overview-rows");
+    list.append(...visible.map(item => overviewRow(item, false)));
+    output.append(list);
+    return;
+  }
+
+  const groups = new Map(Array.from(byId("overview-type").options)
+    .slice(1).map(option => [option.value, []]));
+  for (const row of visible) groups.get(overviewType(row)).push(row);
+  for (const [type, rows] of groups) {
+    if (!rows.length) continue;
+    const section = node("section", "overview-group");
+    const list = node("ul", "overview-rows");
+    list.append(...rows.map(item => overviewRow(item, true)));
+    section.append(node("h3", "overview-group-title", type), list);
+    output.append(section);
+  }
 }
 
 function filterNavigation() {
@@ -151,6 +274,11 @@ function renderNavStatus(key) {
     if (serviceStatus[status]) link.setAttribute("aria-label", label + ", " + serviceStatus[status]);
     else link.removeAttribute("aria-label");
   }
+  for (const launch of byId("home-links").querySelectorAll(".overview-launch")) {
+    if (launch.dataset.service !== key) continue;
+    launch.textContent = overviewLaunchLabel(key);
+    launch.setAttribute("aria-label", launch.textContent + " " + launch.dataset.label);
+  }
 }
 
 function showState(key, state) {
@@ -158,6 +286,14 @@ function showState(key, state) {
   states.set(key, state);
   renderNavStatus(key);
   if (selection?.service === key) renderItem();
+  if (state.status === "stopped" && queuedLaunch?.service === key) {
+    const item = queuedLaunch;
+    queuedLaunch = undefined;
+    if (selection === item) act(item);
+  }
+  if (route === "search-result" && history.state?.reader?.service === key && unavailableReader(state)) {
+    renderRoute();
+  }
 }
 
 async function poll() {
@@ -178,28 +314,35 @@ async function poll() {
 }
 
 async function act(item, stop = false) {
+  if (activeRequests.has(item.service)) return;
+  activeRequests.add(item.service);
   const status = byId("item-status");
   const controls = byId("item-controls");
   if (item === selection) {
     controls.querySelectorAll("button").forEach(button => { button.disabled = true; });
     note(status, stop ? "Stopping…" : "Starting…");
   }
+  let result;
   try {
     const data = model && item.icon === "chat" && !stop ? {model} : {};
-    const result = await request("/api/services/" + item.service + (stop ? "/stop" : ""), data);
-    showState(item.service, result);
+    result = await request("/api/services/" + item.service + (stop ? "/stop" : ""), data);
   } catch (error) {
     if (item === selection) {
       controls.querySelectorAll("button").forEach(button => { button.disabled = false; });
       note(status, error.message, true);
     }
+  } finally {
+    activeRequests.delete(item.service);
   }
+  if (result) showState(item.service, result);
 }
 
 function closeReader() {
   byId("reader").hidden = true;
   byId("viewport").classList.remove("has-reader");
   byId("reader-frame")?.remove();
+  byId("stop-search-reader").hidden = true;
+  note(byId("reader-status"), "");
 }
 
 function readerURL(address) {
@@ -255,9 +398,11 @@ function renderItem() {
   controls.replaceChildren();
   note(status, "");
   note(output, "");
-  if (item.kind === "terminal") {
-    note(status, "Run this action from the drive’s terminal.");
-    note(output, item.command);
+  if (!item.service) {
+    if (item.command) {
+      note(status, "Run this action from the drive’s terminal.");
+      note(output, item.command);
+    }
     return;
   }
 
@@ -274,7 +419,7 @@ function renderItem() {
       controls.append(select);
     }
     let start = item.label === "Share on Local Network" ? "Share drive" : startLabels[item.icon] || "Start service";
-    if (item.savedPath) start = "Serve app";
+    if (readerKinds.has(item.icon)) start = "Serve & open";
     if (state.status === "failed") start = "Retry";
     controls.append(button(start, "primary", () => act(item)));
   }
@@ -295,7 +440,7 @@ function renderItem() {
   if (!reading) closeReader();
 
   if (active) {
-    const stop = button("Stop", "quiet-button", () => act(item, true));
+    const stop = button(reading ? "Stop serving" : "Stop", "quiet-button", () => act(item, true));
     stop.disabled = state.status === "stopping";
     controls.append(stop);
     if (!reading) note(status, serviceStatus[state.status]);
@@ -326,6 +471,7 @@ function renderRoute() {
 
   ++searchRead;
   model = "";
+  if (queuedLaunch !== selection) queuedLaunch = undefined;
   closeReader();
   byId("details").hidden = !selection;
   byId("overview").hidden = route !== "overview";
@@ -335,9 +481,13 @@ function renderRoute() {
   toggleSidebar(false);
 
   if (result) {
-    if (!showReader(result.label, result.address, result.kind, true)) {
-      history.replaceState({query: navigation.query}, "", "#search");
+    if (unavailableReader(states.get(result.service)) || !showReader(result.label, result.address, result.kind, true)) {
+      history.replaceState({query: navigation.query, position: navigation.position}, "", "#search");
       renderRoute();
+    } else {
+      const stop = byId("stop-search-reader");
+      stop.hidden = !result.service;
+      stop.disabled = false;
     }
     return;
   }
@@ -362,11 +512,10 @@ function renderRoute() {
   if (selection) {
     byId("item-title").textContent = selection.label;
     byId("item-kind").textContent = [selection.subheader, selection.note].filter(Boolean).join(" · ");
-    byId("item-description").textContent = selection.description || "";
+    byId("item-description").textContent = selection.summary || selection.description || "";
+    note(byId("item-recipe"), selection.recipeId ? "Recipe · " + selection.recipeId : "");
+    byId("item-preview").replaceChildren(itemPreview(selection, "detail-preview"));
     renderItem();
-    // Selecting a reader starts its local content service. Editing, model
-    // and network tools still show their explicit launch controls.
-    if (readerKinds.has(selection.icon) && !states.has(selection.service)) act(selection);
   }
 }
 
@@ -387,8 +536,9 @@ async function refreshPages() {
       return navLink(entry);
     }));
     note(status, pages.length ? "" : "No saved HTML apps yet.");
-    renderNavStatus(inventory.workspace);
+    syncOverviewTypes();
     renderHome();
+    renderNavStatus(inventory.workspace);
     filterNavigation();
     if (location.hash.startsWith("#saved/") && (!selection || !entries.has(route))) renderRoute();
     else markSelection();
@@ -419,7 +569,7 @@ function searchResult(item, position) {
       history.replaceState(searchState, "", "#search");
       history.pushState({
         ...searchState,
-        reader: {label: title.textContent, address: address.href, kind}
+        reader: {label: title.textContent, address: address.href, kind, service: link.service}
       }, "", "#search-result");
       note(status, "");
       renderRoute();
@@ -434,6 +584,25 @@ function searchResult(item, position) {
   if (item.snippet) row.append(node("p", "", item.snippet));
   row.append(status);
   return row;
+}
+
+function unavailableReader(state) {
+  return ["stopping", "stopped", "failed"].includes(state?.status);
+}
+
+async function stopSearchReader() {
+  const service = history.state?.reader?.service;
+  if (!service) return;
+  const stop = byId("stop-search-reader");
+  stop.disabled = true;
+  try {
+    const state = await request("/api/services/" + service + "/stop", {});
+    showState(service, state);
+  } catch (error) {
+    if (history.state?.reader?.service === service) note(byId("reader-status"), error.message, true);
+  } finally {
+    stop.disabled = false;
+  }
 }
 
 async function runSearch() {
@@ -481,6 +650,10 @@ document.querySelector(".skip").addEventListener("click", event => {
   byId("main").focus();
 });
 byId("filter").addEventListener("input", filterNavigation);
+byId("overview-filter").addEventListener("input", renderHome);
+byId("overview-type").addEventListener("change", renderHome);
+byId("overview-order").addEventListener("change", renderHome);
+byId("stop-search-reader").addEventListener("click", stopSearchReader);
 byId("refresh").addEventListener("click", refreshPages);
 byId("back-to-search").addEventListener("click", () => {
   const {query, position} = history.state || {};

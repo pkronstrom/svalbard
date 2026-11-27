@@ -25,7 +25,9 @@ svalbard index --vault /Volumes/MyDrive
 cd /Volumes/MyDrive && ./run
 ```
 
-Run `./run web` from the vault for a browser dashboard. The sidebar lists installed actions and HTML pages under the vault's `workspace/`. Select an archive, document, or local web app to open it in the main pane. **Wiki** opens the SilverBullet Markdown editor when installed. **Serve Everything** starts the vault's available services and provides a local link to browse drive files. **Share on Local Network** starts the file server on the network. Use `./run web --no-open` to print the dashboard URL without opening a browser. Use Ctrl+C to stop the dashboard and its services.
+Run `./run web` from the vault for a browser dashboard. The sidebar lists installed actions and HTML pages under the vault's `workspace/`. In **Overview**, filter installed items by name, description, tag, or type and view them grouped by type or A–Z. Select a title to see details, or choose **Serve & open** to open an archive, document, map, or local app directly. **Wiki** opens the SilverBullet Markdown editor when installed. **Serve Everything** starts the vault's available services and provides a local link to browse drive files. **Share on Local Network** starts the file server on the network.
+
+Archives listed in Overview and their search hits open through the dashboard's shared Kiwix library when the bundled Kiwix tools are installed. **Stop serving** removes an archive after its last active service releases it. Use `./run web --no-open` to print the dashboard URL without opening a browser. Use Ctrl+C to stop the dashboard and its services.
 
 Everything the wizard and the TUI screens do has a command, so scripts and agents never need the TUI:
 
@@ -76,6 +78,18 @@ sudo mkfs.exfat -c 4K -L SVALBARD /dev/sdX1
 ## Catalog And Presets
 
 The CLI loads the built-in catalog from embedded copies of `recipes/` and `presets/`.
+
+A recipe can supply an optional summary and image for the drive dashboard. Set either field or both.
+
+```yaml
+preview:
+  summary: Field guide to coastal trails and river crossings.
+  image:
+    url: https://example.org/coastal-trails.jpg
+    alt: Contour map of the coastal trail network
+```
+
+During apply, the host downloads the image and caches an offline JPEG within 480 × 300 pixels and 128 KiB. The dashboard uses the recipe description when the summary is absent and a notebook illustration by type when an image is unavailable.
 
 - `svalbard preset list` shows the embedded preset names and your custom presets.
 - `svalbard preset copy <source> <target>` starts a custom preset in `~/.config/svalbard/presets/` that extends `<source>`.

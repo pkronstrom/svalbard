@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/workspace"
 )
 
@@ -30,14 +31,18 @@ type group struct {
 }
 
 type entry struct {
-	Label       string `json:"label"`
-	Description string `json:"description,omitempty"`
-	Subheader   string `json:"subheader,omitempty"`
-	Note        string `json:"note,omitempty"`
-	Kind        string `json:"kind"`
-	Icon        string `json:"icon"`
-	Service     string `json:"service,omitempty"`
-	Command     string `json:"command,omitempty"`
+	Label       string        `json:"label"`
+	Description string        `json:"description,omitempty"`
+	Subheader   string        `json:"subheader,omitempty"`
+	Note        string        `json:"note,omitempty"`
+	Kind        string        `json:"kind"`
+	Icon        string        `json:"icon"`
+	Service     string        `json:"service,omitempty"`
+	Command     string        `json:"command,omitempty"`
+	RecipeID    string        `json:"recipeId,omitempty"`
+	Summary     string        `json:"summary,omitempty"`
+	Tags        []string      `json:"tags,omitempty"`
+	Image       *previewImage `json:"image,omitempty"`
 }
 
 type model struct {
@@ -71,6 +76,7 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 		return key
 	}
 	inv.Workspace = keyFor(serviceSpec{name: "workspace"})
+	metadata, _ := mcp.LoadMetadata(root)
 	var usesModels bool
 	modelLabels := make(map[string]string)
 
@@ -81,16 +87,17 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 		items := slices.Clone(g.Items)
 		slices.SortStableFunc(items, func(a, b config.MenuItem) int { return cmp.Compare(a.Order, b.Order) })
 		for _, item := range items {
+			view := terminalEntry(item)
+			addRecipePreview(&view, item.ID, metadata.Recipes)
 			if item.Action.Type != "" && item.Action.Type != "builtin" {
-				section.Items = append(section.Items, terminalEntry(item))
+				section.Items = append(section.Items, view)
 				continue
 			}
 			action, err := item.Action.DecodeBuiltin()
 			if err != nil {
-				section.Items = append(section.Items, terminalEntry(item))
+				section.Items = append(section.Items, view)
 				continue
 			}
-			view := terminalEntry(item)
 			view.Icon = actionIcon(action.Name)
 			switch action.Name {
 			case "web":

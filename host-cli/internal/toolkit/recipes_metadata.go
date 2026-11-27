@@ -1,6 +1,7 @@
 package toolkit
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -19,14 +20,20 @@ type recipeMetadata struct {
 	Description string            `json:"description"`
 	Tags        []string          `json:"tags"`
 	Viewer      map[string]string `json:"viewer,omitempty"`
+	Preview     *recipePreview    `json:"preview,omitempty"`
 }
 
 // writeRecipesMetadata writes catalog metadata for realized entries, keyed by
 // recipe ID. Without any, a stale file from an earlier apply is removed.
-func writeRecipesMetadata(root string, entries []manifest.RealizedEntry, recipes map[string]catalog.Item) error {
+func writeRecipesMetadata(ctx context.Context, root string, entries []manifest.RealizedEntry, recipes map[string]catalog.Item, notice func(string)) error {
 	path := filepath.Join(root, svalbardDir, recipesFile)
 	out := make(map[string]recipeMetadata)
+	var previous map[string]recipeMetadata
+	previousLoaded := false
 	for _, entry := range entries {
+		if _, listed := out[entry.ID]; listed {
+			continue
+		}
 		recipe, ok := recipes[entry.ID]
 		if !ok {
 			continue
@@ -37,6 +44,15 @@ func writeRecipesMetadata(root string, entries []manifest.RealizedEntry, recipes
 		}
 		if recipe.Viewer != nil {
 			meta.Viewer = map[string]string{"name": recipe.Viewer.Name, "category": recipe.Viewer.Category}
+		}
+		if recipe.Preview != nil {
+			if !previousLoaded {
+				if data, err := os.ReadFile(path); err == nil {
+					_ = json.Unmarshal(data, &previous)
+				}
+				previousLoaded = true
+			}
+			meta.Preview = prepareRecipePreview(ctx, filepath.Join(root, svalbardDir, previewsDir), recipe, previous[entry.ID].Preview, notice)
 		}
 		out[entry.ID] = meta
 	}

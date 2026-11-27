@@ -212,19 +212,9 @@ func (s *Session) ResultURL(ctx context.Context, result Result) (string, error) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// A document inside an archive is served by kiwix-serve, as the
-	// archive's pages are, and opens at the page of the hit.
-	if engine.IsEmbeddedSource(result.Filename) {
-		if err := s.ensureKiwix(ctx); err != nil {
-			return "", err
-		}
-		page, _ := engine.PageNumber(result.Path)
-		return embeddedURL(fmt.Sprintf("http://localhost:%d", s.kiwixPort), result.Filename, page), nil
-	}
-
 	// A document opens in the browser's own PDF viewer at the page of the
 	// hit; kiwix-serve only knows ZIM archives.
-	if IsDocumentSource(result.Filename) {
+	if IsDocumentSource(result.Filename) && !engine.IsEmbeddedSource(result.Filename) {
 		if s.documents == nil {
 			server, err := startDocumentServer(s.driveRoot, s.dashboardPort)
 			if err != nil {
@@ -239,9 +229,36 @@ func (s *Session) ResultURL(ctx context.Context, result Result) (string, error) 
 	if err := s.ensureKiwix(ctx); err != nil {
 		return "", err
 	}
-	book := strings.TrimSuffix(result.Filename, ".zim")
+	return ArchiveResultURL(fmt.Sprintf("http://localhost:%d", s.kiwixPort), "", result), nil
+}
+
+// ArchiveSource returns the ZIM that holds a search source, including a
+// document embedded in an archive. For a standalone document it is empty.
+func ArchiveSource(filename string) string {
+	if archive, _, ok := engine.EmbeddedArchive(filename); ok {
+		return archive
+	}
+	if strings.ContainsAny(filename, "/\\") || !strings.EqualFold(filepath.Ext(filename), ".zim") {
+		return ""
+	}
+	return filename
+}
+
+// ArchiveResultURL gives the article address on a Kiwix server that already
+// serves the archive. book is Kiwix's catalog alias, when available.
+func ArchiveResultURL(base, book string, result Result) string {
+	if engine.IsEmbeddedSource(result.Filename) {
+		page, _ := engine.PageNumber(result.Path)
+		if book == "" {
+			return embeddedURL(base, result.Filename, page)
+		}
+		return embeddedBookURL(base, book, result.Filename, page)
+	}
+	if book == "" {
+		book = strings.TrimSuffix(result.Filename, filepath.Ext(result.Filename))
+	}
 	article := strings.TrimLeft(result.Path, "/")
-	return workspace.URL(fmt.Sprintf("http://localhost:%d/content", s.kiwixPort), book+"/"+article), nil
+	return workspace.URL(base+"/content", book+"/"+article)
 }
 
 func (s *Session) Close() error {

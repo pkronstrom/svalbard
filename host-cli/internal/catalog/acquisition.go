@@ -11,9 +11,9 @@ import (
 const acquisitionHashPrefix = "acq-v1:sha256:"
 
 // acquisitionFields is the part of a recipe that decides which bytes get
-// installed. Descriptions, tags, menu and license text and size estimates are
-// left out, so editing them does not flag an installed item for update. A new
-// recipe field that affects acquisition belongs here.
+// installed. Descriptions, tags, menu text, previews, licenses and size
+// estimates are left out, so editing them does not flag an installed item
+// for update. A new recipe field that affects acquisition belongs here.
 type acquisitionFields struct {
 	Type           string            `json:"type"`
 	Strategy       string            `json:"strategy,omitempty"`

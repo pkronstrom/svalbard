@@ -3,6 +3,7 @@ package frontpage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +35,37 @@ func (d *dashboard) runService(ctx context.Context, spec serviceSpec, model stri
 	case "browse":
 		if spec.target != "" && (!isFileName(spec.target) || !strings.EqualFold(path.Ext(spec.target), ".zim")) {
 			return "", fmt.Errorf("invalid archive: %s", spec.target)
+		}
+		if spec.target != "" {
+			archive, err := d.kiwix.Acquire(ctx, spec.target)
+			if err == nil {
+				defer archive.Close()
+				report("Open in Kiwix", archive.ViewerURL)
+				select {
+				case <-ctx.Done():
+					return "", nil
+				case <-archive.Exited:
+					return "", fmt.Errorf("Kiwix stopped serving this archive")
+				}
+			}
+			if !errors.Is(err, browse.ErrLibraryUnavailable) {
+				return "", err
+			}
+		} else {
+			address, exited, release, err := d.acquireArchiveGroup(ctx)
+			if err == nil {
+				defer release()
+				report("Open in Kiwix", address)
+				select {
+				case <-ctx.Done():
+					return "", nil
+				case <-exited:
+					return "", fmt.Errorf("Kiwix stopped serving")
+				}
+			}
+			if !errors.Is(err, browse.ErrLibraryUnavailable) {
+				return "", err
+			}
 		}
 		return "", browse.RunForBrowser(ctx, io.Discard, root, spec.target, opener("Open in Kiwix"))
 	case "apps":
@@ -76,7 +108,7 @@ func (d *dashboard) runService(ctx context.Context, spec serviceSpec, model stri
 		err := inspect.Run(&output, root)
 		return output.String(), err
 	case "serve-all":
-		return "", serveall.RunForBrowser(ctx, root, report, func(ctx context.Context) (string, <-chan struct{}, func(), error) {
+		return "", serveall.RunForBrowser(ctx, root, report, d.acquireArchiveGroup, func(ctx context.Context) (string, <-chan struct{}, func(), error) {
 			lease, release, err := d.wiki.acquire(ctx, root)
 			if err != nil {
 				return "", nil, nil, err
