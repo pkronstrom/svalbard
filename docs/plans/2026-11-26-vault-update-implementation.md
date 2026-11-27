@@ -33,7 +33,7 @@ Status: implemented 2026-11-26, uncommitted; verified on macOS arm64 in a dispos
 - The planner and status compare ids only; `RealizedEntry` has no acquisition identity.
 - Step pipelines skip the build when their output exists (`builder/pipeline.go`), so an in-place update would do nothing and record a new hash. Moving the output aside first makes them rebuild; unchanged procedures still restore from the block cache.
 - Downloads reuse a final file whose sidecar matches URL and pin (`downloader.reusableFinal`). Moving the file aside avoids reusing the old artifact.
-- Python packages are installed by their venv's aggregate job, so the job id differs from the item id. They are out of scope here: `update` refuses them and says so.
+- Python packages are installed by their venv's aggregate job, so the job id differs from the item id. Moving `runtime/python` aside would reinstall every tool, so the venv builder updates them in place instead: an item being updated is passed in `builder.Options.Rebuild`, its tree is reinstalled through `installTree` (unpacked into `<tree>.partial`, which replaces the tree only when that succeeds), and a failure keeps the installed tree and fails the update, unlike a failed older-layout repair, which only warns. Package stamps record the interpreter version before the layout line, so a venv version change installs the new interpreter beside the old one, rebuilds the trees, and then removes the earlier interpreter.
 - A `content-archive` update is a full rebuild. That is correct but slow; its own targeted refetch stays the tool for partial refreshes.
 - A desired item that is neither installed nor in the catalog used to fail every `apply`. Plan and apply now leave it out and say so, and status names it `unavailable`. The saved selection is not changed, so the preset-customization contract holds.
 
@@ -48,4 +48,3 @@ Status: implemented 2026-11-26, uncommitted; verified on macOS arm64 in a dispos
 ## Not covered
 
 - Remote freshness behind a stable URL (a separate, queued question).
-- Python package and venv updates.

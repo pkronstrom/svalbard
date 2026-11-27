@@ -63,7 +63,7 @@ func contextForDestination(id string, m Model) tui.DetailPane {
 
 	case destUpdates:
 		base.Title = "Updates"
-		base.Body = "Installed items whose recipe changed since they were installed.\nEach installed copy is kept until its update is in place.\nItems no longer in the catalog stay on the vault."
+		base.Body = "Installed items whose recipe changed since they were installed.\nEach installed copy is kept until its update is in place,\nunless you choose to delete it first when space is short.\nItems no longer in the catalog stay on the vault."
 		if m.status != nil && m.status.UpdateCount > 0 {
 			base.Fields = []tui.DetailField{{Label: "Available", Value: fmt.Sprintf("%d items", m.status.UpdateCount)}}
 		}

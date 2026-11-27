@@ -8,8 +8,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkronstrom/svalbard/host-tui/internal/browse"
+	"github.com/pkronstrom/svalbard/host-tui/internal/index"
 	"github.com/pkronstrom/svalbard/host-tui/internal/plan"
 	"github.com/pkronstrom/svalbard/host-tui/internal/wizard"
+	"github.com/pkronstrom/svalbard/tui"
 )
 
 func TestWizardAdapterForwardsExactContextAndProgress(t *testing.T) {
@@ -146,5 +148,50 @@ func TestBackFromBrowseOpenedFromPlanReturnsToDashboard(t *testing.T) {
 	app = updated.(*appModel)
 	if app.screen != screenDashboard {
 		t.Fatalf("screen = %d, want the dashboard", app.screen)
+	}
+}
+
+// runCmd executes cmd and feeds every message it yields, including those of
+// a batch, back into app.
+func runCmd(t *testing.T, app *appModel, cmd tea.Cmd) *appModel {
+	t.Helper()
+	if cmd == nil {
+		return app
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			app = runCmd(t, app, c)
+		}
+		return app
+	}
+	updated, next := app.Update(msg)
+	app = updated.(*appModel)
+	if _, ok := msg.(tea.WindowSizeMsg); ok {
+		return app
+	}
+	return runCmd(t, app, next)
+}
+
+func TestBackFromIndexReloadsDashboardCounts(t *testing.T) {
+	updates := 3
+	deps := &DashboardDeps{LoadStatus: func() (VaultStatus, error) {
+		return VaultStatus{DesiredCount: 4, RealizedCount: 4, UpdateCount: updates}, nil
+	}}
+	app := newAppModel(nil, nil, deps)
+	app.screen, app.vaultPath = screenDashboard, "vault"
+	app.dashboard = app.newDashboard("vault")
+	updated, _ := app.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	app = runCmd(t, updated.(*appModel), app.dashboard.Init())
+	if !strings.Contains(tui.StripAnsi(app.dashboard.View()), "3 available") {
+		t.Fatalf("dashboard before update:\n%s", tui.StripAnsi(app.dashboard.View()))
+	}
+
+	updates = 1
+	app.screen = screenIndex
+	updated, cmd := app.Update(index.BackMsg{})
+	app = runCmd(t, updated.(*appModel), cmd)
+	if out := tui.StripAnsi(app.dashboard.View()); app.screen != screenDashboard || !strings.Contains(out, "1 available") {
+		t.Fatalf("dashboard after an update and index run should show fresh counts:\n%s", out)
 	}
 }
