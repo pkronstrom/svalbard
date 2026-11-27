@@ -106,10 +106,13 @@ type packer struct {
 	// goroutines.
 	mu sync.Mutex
 	// inline holds the inline module scripts by their virtual path.
-	inline   map[string]string
-	problems []Problem
-	notices  []string
-	warnings []string
+	inline map[string]string
+	// packedFiles are script files an earlier pack wrote (a --dir output's
+	// script.js), which are not scanned as the page's own code.
+	packedFiles map[string]bool
+	problems    []Problem
+	notices     []string
+	warnings    []string
 	// files are the extra files of a folder output, by path in it.
 	files map[string][]byte
 }
@@ -157,7 +160,7 @@ func Pack(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	defer libs.close()
-	p := &packer{opts: opts, pageDir: filepath.Dir(page), libs: libs, used: map[string]usedPackage{}, files: map[string][]byte{}, inline: map[string]string{}, warnings: libs.warnings}
+	p := &packer{opts: opts, pageDir: filepath.Dir(page), libs: libs, used: map[string]usedPackage{}, files: map[string][]byte{}, inline: map[string]string{}, packedFiles: map[string]bool{}, warnings: libs.warnings}
 
 	doc, err := html.Parse(bytes.NewReader(source))
 	if err != nil {
@@ -248,6 +251,15 @@ func (p *packer) copyTargets(problems []Problem) []Problem {
 		p.files[filepath.ToSlash(rel)] = data
 	}
 	return left
+}
+
+// realPath resolves symbolic links (macOS's /var is /private/var), so two
+// spellings of a file compare equal.
+func realPath(file string) string {
+	if resolved, err := filepath.EvalSymlinks(file); err == nil {
+		return resolved
+	}
+	return file
 }
 
 func dedupe(problems []Problem) []Problem {
@@ -591,6 +603,9 @@ func (p *packer) moduleEntry(n *html.Node, src string, hasSrc bool, index int) (
 		p.problem("missing-asset", "<script type=module src=%q>: %s is not there", src, file)
 		return "", false
 	}
+	if _, packed := attr(n, packedAttr); packed {
+		p.packedFiles[realPath(file)] = true
+	}
 	return file, true // scanned when esbuild loads it
 }
 
@@ -827,7 +842,7 @@ func (p *packer) plugin() api.Plugin {
 		// The page's own script files are scanned as esbuild reads them; it
 		// loads them itself.
 		build.OnLoad(api.OnLoadOptions{Filter: `\.(m?js|cjs|jsx|tsx?)$`, Namespace: "file"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
-			if data, err := os.ReadFile(args.Path); err == nil {
+			if data, err := os.ReadFile(args.Path); err == nil && !p.packedFiles[realPath(args.Path)] {
 				p.addProblems(scanOwnSource(filepath.Base(args.Path), string(data))...)
 			}
 			return api.OnLoadResult{}, nil

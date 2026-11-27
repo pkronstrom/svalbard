@@ -8,13 +8,12 @@
   body { font-family: system-ui, sans-serif; margin: 0; background: #f6f5f1; color: #1f2a24; }
   header { padding: 14px 24px; background: #2d4a2b; color: #fff; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
   header h1 { margin: 0; font-size: 1.3rem; flex: 1; }
-  header label { font-size: .9rem; }
   main { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; padding: 16px 24px; }
-  section { background: #fff; border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 4px #0002; min-width: 0; }
+  section { background: #fff; border-radius: 8px; padding: 12px 16px; min-width: 0; }
   section.wide { grid-column: 1 / -1; overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; font-size: .9rem; }
   th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e3e1da; }
-  th { cursor: pointer; user-select: none; }
+  th { cursor: pointer; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   #note { font-size: .85rem; color: #6b4d2a; }
 </style>
@@ -48,8 +47,7 @@ const settings = {
 };
 // /EDIT
 
-// Everything below works as it is: rows come from the data above or from
-// the file the user loads, and missing columns are guessed.
+// Below works as it is; missing columns are guessed.
 const toRows = input => typeof input === "string"
   ? Papa.parse(input.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true }).data
   : Array.isArray(input) ? input : [];

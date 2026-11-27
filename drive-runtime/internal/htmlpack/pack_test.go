@@ -518,4 +518,15 @@ func TestPackAPackedPageAgain(t *testing.T) {
 	if _, _, err := pack(t, drive, again, false); err != nil {
 		t.Errorf("packing %s again: %v", res.Out, err)
 	}
+	// A folder output's script.js is the same: its index.html packs again.
+	dirRes, _, err := pack(t, drive, p, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dirRes.Out, "script.js")
+	data, _ := os.ReadFile(script)
+	os.WriteFile(script, append(data, []byte(`;var u = "https://maplibre.org/";`)...), 0o644)
+	if _, err := Pack(context.Background(), Options{DriveRoot: drive, Page: filepath.Join(dirRes.Out, "index.html"), Out: filepath.Join(t.TempDir(), "again"), Dir: true}); err != nil {
+		t.Errorf("packing the folder output again: %v", err)
+	}
 }
