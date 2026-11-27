@@ -25,18 +25,28 @@ case "$(uname -s)-$(uname -m)" in
   *) printf 'unsupported platform %s\n' "$(uname -sm)" >&2; exit 2 ;;
 esac
 
-# offline runs a command with the network denied, loopback excepted. On
-# macOS every socket is denied, Unix sockets included (DNS through
-# mDNSResponder, Docker's socket), apart from connections to 127.0.0.1, which
-# the HTML skills' browser checks use to talk to their headless browsers; a
-# request handed to another process over XPC (`open https://...`) is not
-# stopped. On Linux the new network namespace has only its own loopback,
-# brought up for the same reason, and Unix sockets on the file system
-# (systemd-resolved, docker.sock) stay reachable. Both catch what a skill's
-# own scripts would do; neither is a hard boundary.
+# offline runs a command with the network denied. On macOS every socket is
+# denied, Unix sockets included (DNS through mDNSResponder, Docker's
+# socket), apart from two loopback ports kept for the HTML skills' browser
+# checks (Firefox's control port and the check's own page server) and
+# binding a local Unix socket (Chromium's singleton); no other service on
+# this computer is reachable, and proxy variables are unset. A request handed
+# to another process over XPC (`open https://...`) is not stopped. On Linux
+# the new network namespace has only its own loopback, brought up for the
+# same reason, and Unix sockets on the file system (systemd-resolved,
+# docker.sock) stay reachable. Both catch what a skill's own scripts would
+# do; neither is a hard boundary.
+port() { node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})' 2>/dev/null || echo 9; }
+export HTML_CHECK_FIREFOX_PORT=$(port) HTML_CHECK_SERVE_PORT=$(port)
+unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY ftp_proxy FTP_PROXY no_proxy NO_PROXY
 offline() {
   case $platform in
-    macos-*) sandbox-exec -p '(version 1)(allow default)(deny network*)(allow network-outbound (remote ip "localhost:*"))(allow network-bind (local ip "localhost:*"))(allow network-inbound (local ip "localhost:*"))(allow network-bind (local unix))(allow network-inbound (local unix))' "$@" ;;
+    macos-*)
+      local rules='(version 1)(allow default)(deny network*)(allow network-bind (local unix))(allow network-inbound (local unix))'
+      for p in "$HTML_CHECK_FIREFOX_PORT" "$HTML_CHECK_SERVE_PORT"; do
+        rules+="(allow network-bind (local ip \"localhost:$p\"))(allow network-inbound (local ip \"localhost:$p\"))(allow network-outbound (remote ip \"localhost:$p\"))"
+      done
+      sandbox-exec -p "$rules" "$@" ;;
     linux-*) unshare -rn sh -c 'ip link set lo up 2>/dev/null || true; exec "$@"' sh "$@" ;;
   esac
 }
@@ -45,7 +55,6 @@ offline() {
 # scripts/html-check.sh, inside the sandbox above.
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 export SVALBARD_HTML_CHECK=${SVALBARD_HTML_CHECK:-$here/html-check.sh}
-export HTML_CHECK_CONFINED=1
 
 skills=()
 if [[ $# -eq 0 ]]; then

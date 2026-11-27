@@ -71,7 +71,7 @@ async function startServer(root) {
     if (req.method === "HEAD") return res.end();
     fs.createReadStream(file).pipe(res);
   });
-  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  await new Promise(r => server.listen(Number(process.env.HTML_CHECK_SERVE_PORT || 0), "127.0.0.1", r));
   return server;
 }
 
@@ -82,9 +82,10 @@ function pageURL(server) {
 }
 
 // A request is local when it stays on this computer: a file, inline data,
-// or the --serve server.
+// or the --serve server (and no other port).
+let serveOrigin = null;
 function isLocal(url) {
-  return /^(file|data|blob|about|chrome|devtools|chrome-extension|moz-extension|resource):/.test(url) || /^https?:\/\/127\.0\.0\.1(:\d+)?\//.test(url);
+  return /^(file|data|blob|about|chrome|devtools|chrome-extension|moz-extension|resource):/.test(url) || (serveOrigin !== null && url.startsWith(serveOrigin + "/"));
 }
 
 // ---------------------------------------------------------------------------
@@ -137,8 +138,18 @@ async function runChromium(exe, url) {
   try {
     const { targetId } = await send("Target.createTarget", { url: "about:blank" });
     const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
+    // Workers report on their own sessions, attached automatically.
+    const sessions = new Set([sessionId]);
     listeners.push(msg => {
-      if (msg.sessionId !== sessionId && msg.method !== "Browser.downloadProgress") return;
+      if (msg.method === "Target.attachedToTarget" && sessions.has(msg.sessionId)) {
+        const child = msg.params.sessionId;
+        sessions.add(child);
+        for (const domain of ["Runtime.enable", "Network.enable"]) send(domain, {}, child).catch(() => {});
+        send("Runtime.runIfWaitingForDebugger", {}, child).catch(() => {});
+      }
+    });
+    listeners.push(msg => {
+      if (!sessions.has(msg.sessionId) && msg.method !== "Browser.downloadProgress") return;
       const p = msg.params || {};
       switch (msg.method) {
         case "Runtime.exceptionThrown":
@@ -161,6 +172,7 @@ async function runChromium(exe, url) {
           break;
       }
     });
+    await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
     await send("Runtime.enable", {}, sessionId);
     await send("Log.enable", {}, sessionId);
     await send("Network.enable", {}, sessionId);
@@ -229,7 +241,7 @@ async function runFirefox(exe, url) {
     'user_pref("browser.safebrowsing.phishing.enabled", false);', 'user_pref("extensions.update.enabled", false);',
     'user_pref("webgl.force-enabled", true);', 'user_pref("remote.prefs.recommended", true);',
   ].join("\n"));
-  const port = await freePort();
+  const port = Number(process.env.HTML_CHECK_FIREFOX_PORT) || await freePort();
   // file:// pages count as system access to Firefox's remote agent.
   // Inside html-check.sh's sandbox its content processes cannot start their
   // own, as for Chromium.
@@ -294,7 +306,7 @@ async function runFirefox(exe, url) {
       const p = ev.params;
       if (ev.method === "log.entryAdded" && p.level === "error") problems.push(`${p.type === "javascript" ? "uncaught" : "console.error"}: ${p.text}`.slice(0, 300));
       if (ev.method === "network.beforeRequestSent" && !isLocal(p.request.url)) problems.push(`network request: ${p.request.url.slice(0, 200)}`);
-      if (ev.method === "network.fetchError" && !isLocal(p.request.url)) problems.push(`failed load: ${p.errorText} ${p.request.url.slice(0, 120)}`);
+      if (ev.method === "network.fetchError" && !/favicon\.ico$/.test(p.request.url)) problems.push(`failed load: ${p.errorText} ${p.request.url.slice(0, 120)}`);
     }
   } catch (e) {
     problems.push(`check failed: ${e.message}`);
@@ -318,6 +330,7 @@ async function stop(child) {
 // ---------------------------------------------------------------------------
 
 const server = opts.serve ? await startServer(opts.serve) : null;
+if (server) serveOrigin = `http://127.0.0.1:${server.address().port}`;
 const url = pageURL(server);
 const browsers = [];
 if ((opts.browser === "both" || opts.browser === "chromium") && opts.chromium) browsers.push(["chromium", () => runChromium(opts.chromium, url)]);
@@ -326,6 +339,9 @@ if (browsers.length === 0) {
   console.log("SKIP: no browser found (set HTML_CHECK_CHROMIUM / HTML_CHECK_FIREFOX)");
   process.exit(77);
 }
+// Both browsers were asked for and one is missing: the other's pass is not
+// the whole check.
+const missing = opts.browser === "both" && browsers.length === 1 ? (opts.chromium ? "firefox" : "chromium") : null;
 let failed = false;
 for (const [name, run] of browsers) {
   const problems = [...new Set(await run())];
@@ -338,4 +354,8 @@ for (const [name, run] of browsers) {
   }
 }
 server?.close();
+if (!failed && missing) {
+  console.log(`SKIP ${missing}: not found (set HTML_CHECK_${missing.toUpperCase()}); only one browser checked`);
+  process.exit(77);
+}
 process.exit(failed ? 1 : 0);

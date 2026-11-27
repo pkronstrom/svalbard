@@ -33,23 +33,40 @@ chromium=${HTML_CHECK_CHROMIUM:-$(find_first chromium chromium-browser google-ch
   "/Applications/Chromium.app/Contents/MacOS/Chromium" "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")}
 firefox=${HTML_CHECK_FIREFOX:-$(find_first firefox "/Applications/Firefox.app/Contents/MacOS/firefox")}
 
+# sandbox_profile PORT...: macOS sandbox rules that deny the network but
+# these loopback ports and binding local Unix sockets.
+sandbox_profile() {
+  local rules='(version 1)(allow default)(deny network*)(allow network-bind (local unix))(allow network-inbound (local unix))'
+  for p in "$@"; do
+    rules+="(allow network-bind (local ip \"localhost:$p\"))(allow network-inbound (local ip \"localhost:$p\"))(allow network-outbound (remote ip \"localhost:$p\"))"
+  done
+  printf '%s' "$rules"
+}
+
 browser_args=()
 [[ -n $chromium ]] && browser_args+=(--chromium "$chromium")
 [[ -n $firefox ]] && browser_args+=(--firefox "$firefox")
 
-# Already confined to loopback (scripts/skill-run-check.sh): a sandbox
-# cannot be started inside another.
-if [[ -n ${HTML_CHECK_CONFINED:-} ]]; then
-  exec node "$here/html-check.mjs" "${browser_args[@]}" "$@"
-fi
+# The browsers may reach only two loopback ports, Firefox's BiDi port and
+# the --serve server's, and bind their own Unix sockets (Chromium's
+# singleton); nothing else on this computer, no proxy, no DNS.
+port() { node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})'; }
+export HTML_CHECK_FIREFOX_PORT=${HTML_CHECK_FIREFOX_PORT:-$(port)}
+export HTML_CHECK_SERVE_PORT=${HTML_CHECK_SERVE_PORT:-$(port)}
+unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY ftp_proxy FTP_PROXY no_proxy NO_PROXY
+# The browsers' own sandboxes cannot start inside this one.
+export HTML_CHECK_CONFINED=1
 
 case "$(uname -s)" in
   Darwin)
-    export HTML_CHECK_CONFINED=1
-    exec sandbox-exec -p '(version 1)(allow default)(deny network*)(allow network* (local unix))(allow network* (remote unix))(allow network-outbound (remote ip "localhost:*"))(allow network-bind (local ip "localhost:*"))(allow network-inbound (local ip "localhost:*"))' \
+    # Already inside a sandbox (scripts/skill-run-check.sh, which allows the
+    # same two ports): a second cannot be started, and is not needed.
+    if ! sandbox-exec -p '(version 1)(allow default)' /usr/bin/true 2>/dev/null; then
+      exec node "$here/html-check.mjs" "${browser_args[@]}" "$@"
+    fi
+    exec sandbox-exec -p "$(sandbox_profile "$HTML_CHECK_FIREFOX_PORT" "$HTML_CHECK_SERVE_PORT")" \
       node "$here/html-check.mjs" "${browser_args[@]}" "$@" ;;
   Linux)
-    export HTML_CHECK_CONFINED=1
     exec unshare -rn sh -c 'ip link set lo up 2>/dev/null || true; exec "$@"' sh node "$here/html-check.mjs" "${browser_args[@]}" "$@" ;;
   *)
     exec node "$here/html-check.mjs" "${browser_args[@]}" "$@" ;;
