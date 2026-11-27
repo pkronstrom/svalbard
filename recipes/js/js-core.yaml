@@ -186,6 +186,12 @@ bundle:
     extracted:
       files: 2
       bytes: 56442
+  - url: https://raw.githubusercontent.com/alpinejs/alpine/v3.17.5/LICENSE.md
+    sha256: 08b7502da6e7aa1d0bbdc97d220fbf669b9366c61bd0f072238283c89bc4773a
+    dest: node_modules/alpinejs
+    extracted:
+      files: 1
+      bytes: 1092
   - url: https://registry.npmjs.org/chart.js/-/chart.js-4.6.2.tgz
     sha256: 24bdaa65a5f90246ef451c0b47b29463fcfa4ff445d2cfcf684ff8f1a1e949c3
     strip: package
@@ -241,11 +247,11 @@ bundle:
     sha256: 5afde30558803961804d13fdfc9cf2dce914cf57c24fa29852ae1d3fffe4c433
     strip: package
     dest: node_modules/mathjs
-    include: [LICENSE, NOTICE, README.md, lib/browser/math.js, package.json]
+    include: [LICENSE, NOTICE, README.md, lib/browser/math.js, lib/browser/math.js.LICENSE.txt, package.json]
     main: lib/browser/math.js
     extracted:
-      files: 5
-      bytes: 683195
+      files: 6
+      bytes: 684343
   - url: https://registry.npmjs.org/mermaid/-/mermaid-12.3.0.tgz
     sha256: be0684e8d20bfc874df12c0f04927a5c482f57f2200eec54cca52a4583fd4040
     strip: package
@@ -291,5 +297,5 @@ bundle:
       files: 4
       bytes: 1025325
 archive:
-  files: 70
-  bytes: 3059526
+  files: 72
+  bytes: 3061237

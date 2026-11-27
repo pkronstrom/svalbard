@@ -56,7 +56,18 @@ func main() {
 		}
 		*cache = filepath.Join(dir, "svalbard", "js-lock")
 	}
-	locker := &locker{registry: *registry, cache: *cache, client: &http.Client{Timeout: 5 * time.Minute}, log: os.Stderr}
+	// A redirect never downgrades https to http: registry metadata supplies
+	// the integrity values tarballs are checked against.
+	client := &http.Client{Timeout: 5 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) > 0 && via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return fmt.Errorf("refusing a redirect from https to %s", req.URL)
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("too many redirects")
+		}
+		return nil
+	}}
+	locker := &locker{registry: *registry, cache: *cache, client: client, log: os.Stderr}
 	if err := locker.run(context.Background(), *specPath, *outPath); err != nil {
 		fmt.Fprintln(os.Stderr, "js-lock:", err)
 		os.Exit(1)

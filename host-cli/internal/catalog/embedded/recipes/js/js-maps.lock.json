@@ -51,5 +51,8 @@
     "topojson-client": {
       "license": "ISC"
     }
+  },
+  "license_files": {
+    "pmtiles": "https://raw.githubusercontent.com/protomaps/PMTiles/5897a82a16b233abac7b8f339c019b931c2bbf54/LICENSE"
   }
 }

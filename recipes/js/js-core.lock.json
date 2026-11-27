@@ -171,5 +171,8 @@
     "@fontsource-variable/fraunces": {
       "license": "OFL-1.1"
     }
+  },
+  "license_files": {
+    "alpinejs": "https://raw.githubusercontent.com/alpinejs/alpine/v{version}/LICENSE.md"
   }
 }

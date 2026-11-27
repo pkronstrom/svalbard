@@ -33,12 +33,18 @@ type archiveInfo struct {
 func archiveSize(id string, sources []source, tree string) (archiveInfo, error) {
 	mains := map[string]string{}
 	var files []string
+	extra := map[string][]byte{}
 	for _, s := range sources {
 		if s.node.umd != "" {
 			mains[s.node.dir] = path.Clean(s.node.umd)
 		}
 		for _, rel := range s.include {
 			files = append(files, s.node.dir+"/"+rel)
+		}
+		if s.license != nil {
+			name := s.node.dir + "/" + s.license.name
+			files = append(files, name)
+			extra[name] = s.license.data
 		}
 	}
 	sort.Strings(files)
@@ -63,6 +69,12 @@ func archiveSize(id string, sources []source, tree string) (archiveInfo, error) 
 		return archiveInfo{}, err
 	}
 	for _, name := range files {
+		if data, ok := extra[name]; ok {
+			if err := add(name, bytes.NewReader(data)); err != nil {
+				return archiveInfo{}, err
+			}
+			continue
+		}
 		f, err := os.Open(filepath.Join(tree, filepath.FromSlash(name)))
 		if err != nil {
 			return archiveInfo{}, err
@@ -169,6 +181,20 @@ func writeRecipe(outPath string, spec lockSpec, nodes []*node, sources []source,
 	if libs == nil || libs.Kind != yaml.SequenceNode {
 		libs = &yaml.Node{Kind: yaml.SequenceNode}
 	}
+	// A library that left the spec leaves the recipe: its source is gone.
+	inSpec := map[string]bool{}
+	for _, n := range nodes {
+		if n.library {
+			inSpec[n.name] = true
+		}
+	}
+	kept := libs.Content[:0]
+	for _, item := range libs.Content {
+		if p := field(item, "package"); p != nil && inSpec[p.Value] {
+			kept = append(kept, item)
+		}
+	}
+	libs.Content = kept
 	for _, n := range nodes {
 		if !n.library {
 			continue
@@ -203,6 +229,10 @@ func writeRecipe(outPath string, spec lockSpec, nodes []*node, sources []source,
 		}
 		setField(item, "extracted", mapping("files", strconv.Itoa(len(s.include)), "bytes", strconv.FormatInt(s.bytes, 10)))
 		bundle.Content = append(bundle.Content, item)
+		if s.license != nil {
+			bundle.Content = append(bundle.Content, mapping("url", s.license.url, "sha256", s.license.sha256, "dest", s.node.dir,
+				"extracted", mapping("files", "1", "bytes", strconv.Itoa(len(s.license.data)))))
+		}
 	}
 	setField(root, "bundle", bundle)
 	setField(root, "archive", mapping("files", strconv.Itoa(archive.files), "bytes", strconv.FormatInt(archive.bytes, 10)))

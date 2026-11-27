@@ -88,6 +88,12 @@ bundle:
     extracted:
       files: 3
       bytes: 17873
+  - url: https://raw.githubusercontent.com/protomaps/PMTiles/5897a82a16b233abac7b8f339c019b931c2bbf54/LICENSE
+    sha256: 0371c38f338835f7fc13ed71176f3d92144e22c8b736a31cced57adbbeb647b3
+    dest: node_modules/pmtiles
+    extracted:
+      files: 1
+      bytes: 1713
   - url: https://registry.npmjs.org/proj4/-/proj4-2.23.0.tgz
     sha256: dd8989d5adf35669773f16c5f696354553bbefe032e2b22f787f211e297ca4b4
     strip: package
@@ -107,5 +113,5 @@ bundle:
       files: 4
       bytes: 25772
 archive:
-  files: 24
-  bytes: 561005
+  files: 25
+  bytes: 562077

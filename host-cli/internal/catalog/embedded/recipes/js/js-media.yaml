@@ -60,11 +60,11 @@ bundle:
     sha256: 86dec0a9521dd69a59e7b824a83b132afd1ef8284bda1e7799449ab9d84d9f62
     strip: package
     dest: node_modules/tone
-    include: [LICENSE.md, README.md, build/Tone.js, package.json]
+    include: [LICENSE.md, README.md, build/Tone.js, build/Tone.js.LICENSE.txt, package.json]
     main: build/Tone.js
     extracted:
-      files: 4
-      bytes: 361529
+      files: 5
+      bytes: 361664
 archive:
-  files: 13
-  bytes: 405330
+  files: 14
+  bytes: 405632

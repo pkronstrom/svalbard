@@ -3,6 +3,7 @@ package toolkit
 import (
 	"io/fs"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
@@ -98,6 +99,53 @@ func TestLibraryBudgets(t *testing.T) {
 	for id := range recipeBudgets {
 		if !seen[id] {
 			t.Errorf("recipeBudgets names %s, which is not a js-lib recipe", id)
+		}
+	}
+}
+
+// What a recipe installs is its include lists: they must agree with the sizes
+// js-lock recorded, and a library's own files keep to the content rules (one
+// build: no source maps, no src/ tree, no minified and unminified copy of
+// the same file).
+func TestLibraryArchivesHoldWhatIsListed(t *testing.T) {
+	for _, recipe := range embeddedRecipes(t) {
+		if recipe.Type != catalog.LibraryType {
+			continue
+		}
+		libraries := map[string]bool{}
+		for _, lib := range recipe.Libraries {
+			libraries[lib.Package] = true
+		}
+		total := 1 // svalbard-js.json
+		for _, source := range recipe.Bundle {
+			listed := len(source.Include)
+			if listed == 0 && !strings.HasSuffix(source.URL, ".tgz") && !strings.HasSuffix(source.URL, ".zip") {
+				listed = 1 // a plain file, such as a licence text
+			}
+			if source.Extracted == nil || listed != source.Extracted.Files {
+				t.Errorf("%s %s: include lists %d files, extracted records %+v", recipe.ID, source.Dest, listed, source.Extracted)
+			}
+			total += listed
+			if !libraries[catalog.TopLevelPackage(source)] {
+				continue
+			}
+			names := map[string]bool{}
+			for _, name := range source.Include {
+				names[name] = true
+			}
+			for _, name := range source.Include {
+				switch {
+				case strings.HasSuffix(name, ".map"):
+					t.Errorf("%s %s keeps a source map: %s", recipe.ID, source.Dest, name)
+				case strings.HasPrefix(name, "src/"):
+					t.Errorf("%s %s keeps its src/ tree: %s", recipe.ID, source.Dest, name)
+				case strings.Contains(name, ".min.") && names[strings.Replace(name, ".min.", ".", 1)]:
+					t.Errorf("%s %s keeps %s beside its unminified copy", recipe.ID, source.Dest, name)
+				}
+			}
+		}
+		if recipe.Archive == nil || recipe.Archive.Files != total {
+			t.Errorf("%s: the include lists make %d archive files, archive records %+v", recipe.ID, total, recipe.Archive)
 		}
 	}
 }

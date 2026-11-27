@@ -39,6 +39,7 @@ func tgz(t *testing.T, files map[string]string) []byte {
 type fakePackage struct {
 	name, version string
 	latest        bool // tagged latest
+	noLicense     bool // the tarball holds no LICENSE
 	deps          map[string]string
 	files         map[string]string
 	badIntegrity  bool
@@ -72,6 +73,9 @@ func fakeRegistry(t *testing.T, packages []fakePackage, extra map[string][]byte)
 	t.Cleanup(server.Close)
 	for _, p := range packages {
 		files := map[string]string{"package.json": `{"name":"` + p.name + `","version":"` + p.version + `","license":"MIT"}`}
+		if !p.noLicense {
+			files["LICENSE"] = "MIT License\nCopyright " + p.name
+		}
 		for k, v := range p.files {
 			files[k] = v
 		}
@@ -169,8 +173,8 @@ func TestJSLockNestedVersions(t *testing.T) {
 	if len(r.Libraries) != 2 || r.Libraries[0].Version != "1.0.0" || r.Libraries[0].Quickstart != "a.md" || r.Libraries[0].License != "MIT" {
 		t.Errorf("libraries = %+v", r.Libraries)
 	}
-	if r.Archive.Files != 11 || r.Archive.Bytes == 0 {
-		t.Errorf("archive = %+v, want 10 files and the index", r.Archive)
+	if r.Archive.Files != 14 || r.Archive.Bytes == 0 {
+		t.Errorf("archive = %+v, want 13 files and the index", r.Archive)
 	}
 }
 
@@ -207,7 +211,7 @@ func TestJSLockDropsNodeOnly(t *testing.T) {
 	var dests []string
 	for _, s := range r.Bundle {
 		dests = append(dests, s.Dest)
-		if s.Dest == "node_modules/helper" && strings.Join(s.Include, ",") != "index.js,package.json" {
+		if s.Dest == "node_modules/helper" && strings.Join(s.Include, ",") != "LICENSE,index.js,package.json" {
 			t.Errorf("helper includes %v, want only what a page reads", s.Include)
 		}
 	}
@@ -253,7 +257,7 @@ bundle: []
 }
 
 func TestJSLockDirectTarball(t *testing.T) {
-	sheet := tgz(t, map[string]string{"package.json": `{"name":"xlsx","version":"0.20.3","dependencies":{"helper":"1"}}`, "xlsx.mjs": `import h from "helper"; export default h;`})
+	sheet := tgz(t, map[string]string{"package.json": `{"name":"xlsx","version":"0.20.3","dependencies":{"helper":"1"}}`, "xlsx.mjs": `import h from "helper"; export default h;`, "LICENSE": "Apache-2.0"})
 	server := fakeRegistry(t, []fakePackage{
 		{name: "helper", version: "1.0.0", files: map[string]string{"index.js": `export default 1;`}},
 	}, map[string][]byte{"/cdn/xlsx-0.20.3.tgz": sheet})
@@ -286,7 +290,7 @@ func TestJSLockUMDBringsNoDependencies(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := readRecipe(t, out)
-	if len(r.Bundle) != 2 || r.Bundle[0].Main != "dist/d3.min.js" || strings.Join(r.Bundle[0].Include, ",") != "dist/d3.min.js,package.json" {
+	if len(r.Bundle) != 2 || r.Bundle[0].Main != "dist/d3.min.js" || strings.Join(r.Bundle[0].Include, ",") != "LICENSE,dist/d3.min.js,package.json" {
 		t.Fatalf("bundle = %+v, want d3 as its one build with main set and no d3-array", r.Bundle)
 	}
 }
@@ -324,5 +328,57 @@ func TestJSLockPrefersTheLatestTag(t *testing.T) {
 	}
 	if r := readRecipe(t, out); r.Libraries[0].Version != "15.1.22" {
 		t.Errorf("version = %s, want the latest tag's 15.1.22", r.Libraries[0].Version)
+	}
+}
+
+// A kept package without a licence file needs its licence text pinned from
+// the spec; the text is installed beside it as a plain file.
+func TestJSLockLicenceFiles(t *testing.T) {
+	server := fakeRegistry(t, []fakePackage{
+		{name: "a", version: "1.0.0", noLicense: true, files: map[string]string{"dist/a.min.js": "x", "dist/a.min.js.LICENSE.txt": "bundled: decimal.js MIT"}},
+	}, map[string][]byte{"/raw/a/v1.0.0/LICENSE": []byte("MIT License\nCopyright a")})
+	spec := lockSpec{ID: "js-test", Packages: map[string]string{"a": "1.x"}, UMD: map[string]string{"a": "dist/a.min.js"}}
+	out := filepath.Join(t.TempDir(), "js-test.yaml")
+	if err := runLock(t, server, spec, out); err == nil || !strings.Contains(err.Error(), "license_files") {
+		t.Fatalf("err = %v, want the missing licence named", err)
+	}
+	spec.LicenseFiles = map[string]string{"a": server.URL + "/raw/a/v{version}/LICENSE"}
+	if err := runLock(t, server, spec, out); err != nil {
+		t.Fatal(err)
+	}
+	r := readRecipe(t, out)
+	if len(r.Bundle) != 2 || !strings.Contains(strings.Join(r.Bundle[0].Include, ","), "dist/a.min.js.LICENSE.txt") {
+		t.Fatalf("bundle = %+v, want the build's .LICENSE.txt kept", r.Bundle)
+	}
+	if lic := r.Bundle[1]; lic.Dest != "node_modules/a" || !strings.HasSuffix(lic.URL, "/raw/a/v1.0.0/LICENSE") || lic.SHA256 == "" || lic.Extracted.Files != 1 {
+		t.Errorf("licence source = %+v", lic)
+	}
+	if r.Archive.Files != 5 {
+		t.Errorf("archive = %+v, want package.json, the build, its .LICENSE.txt, LICENSE and the index", r.Archive)
+	}
+}
+
+func TestJSLockDropsLibrariesThatLeftTheSpec(t *testing.T) {
+	server := fakeRegistry(t, []fakePackage{
+		{name: "a", version: "1.0.0", files: map[string]string{"index.js": `export default 1;`}},
+		{name: "b", version: "1.0.0", files: map[string]string{"index.js": `export default 2;`}},
+	}, nil)
+	out := filepath.Join(t.TempDir(), "js-test.yaml")
+	if err := runLock(t, server, lockSpec{ID: "js-test", Packages: map[string]string{"a": "1.x", "b": "1.x"}}, out); err != nil {
+		t.Fatal(err)
+	}
+	if err := runLock(t, server, lockSpec{ID: "js-test", Packages: map[string]string{"a": "1.x"}}, out); err != nil {
+		t.Fatal(err)
+	}
+	if r := readRecipe(t, out); len(r.Libraries) != 1 || r.Libraries[0].Package != "a" {
+		t.Errorf("libraries = %+v, want b gone with its source", r.Libraries)
+	}
+}
+
+func TestJSLockDirectTarballNeedsAPin(t *testing.T) {
+	server := fakeRegistry(t, nil, map[string][]byte{"/cdn/x-1.0.0.tgz": tgz(t, map[string]string{"package.json": "{}"})})
+	err := runLock(t, server, lockSpec{ID: "js-test", Tarballs: map[string]tarballSpec{"x": {URL: server.URL + "/cdn/x-1.0.0.tgz", Version: "1.0.0"}}}, filepath.Join(t.TempDir(), "x.yaml"))
+	if err == nil || !strings.Contains(err.Error(), "sha256") {
+		t.Fatalf("err = %v, want an unpinned direct tarball refused", err)
 	}
 }

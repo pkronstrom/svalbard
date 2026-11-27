@@ -30,6 +30,10 @@ type lockSpec struct {
 	Include  map[string][]string    `json:"include"`
 	UMD      map[string]string      `json:"umd"`
 	Tarballs map[string]tarballSpec `json:"tarballs"`
+	// LicenseFiles gives, for a kept package whose tarball holds no licence
+	// file, the address of its licence text at the pinned version; it is
+	// pinned and installed beside the package.
+	LicenseFiles map[string]string `json:"license_files"`
 }
 
 type tarballSpec struct {
@@ -133,6 +137,14 @@ func (l *locker) run(ctx context.Context, specPath, outPath string) error {
 	if err != nil {
 		return err
 	}
+	for _, s := range sources {
+		if s.license == nil {
+			continue
+		}
+		if err := l.fetchLicense(ctx, s.license); err != nil {
+			return fmt.Errorf("%s: licence file: %w", s.node.name, err)
+		}
+	}
 	archive, err := archiveSize(spec.ID, sources, tree)
 	if err != nil {
 		return err
@@ -165,8 +177,8 @@ func (l *locker) resolve(ctx context.Context, spec lockSpec) ([]*node, error) {
 	for _, name := range names {
 		n := &node{name: name, dir: "node_modules/" + name, library: true, umd: spec.UMD[name]}
 		if tb, ok := spec.Tarballs[name]; ok {
-			if tb.URL == "" || tb.Version == "" {
-				return nil, fmt.Errorf("tarball %s needs a url and a version", name)
+			if tb.URL == "" || tb.Version == "" || tb.SHA256 == "" {
+				return nil, fmt.Errorf("tarball %s needs a url, a version and its sha256", name)
 			}
 			n.version, n.url, n.sha256, n.direct = tb.Version, tb.URL, strings.ToLower(tb.SHA256), true
 		} else {
@@ -496,6 +508,15 @@ type source struct {
 	node    *node
 	include []string
 	bytes   int64
+	// license is a licence file installed beside the package, for a
+	// tarball that has none.
+	license *extraFile
+}
+
+// extraFile is a pinned plain file a bundle source installs.
+type extraFile struct {
+	url, sha256, name string
+	data              []byte
 }
 
 // chooseFiles picks each node's files: the closure, package.json, licences,
@@ -533,13 +554,31 @@ func chooseFiles(spec lockSpec, nodes []*node, closure map[string]bool, tree str
 		if len(keep) == 0 {
 			return nil, fmt.Errorf("library %s has no file in its closure; check its entries", n.name)
 		}
+		// A self-contained build's bundled licences often sit beside it
+		// (math.js.LICENSE.txt), named by the build.
+		for rel := range keep {
+			for _, beside := range []string{rel + ".LICENSE.txt", strings.TrimSuffix(rel, path.Ext(rel)) + ".LICENSE.txt"} {
+				if _, ok := n.files[beside]; ok {
+					keep[beside] = true
+				}
+			}
+		}
+		licensed := false
 		for rel := range n.files {
 			top := !strings.Contains(rel, "/")
 			if rel == "package.json" || (top && licenseRe.MatchString(rel)) || (top && n.library && readmeRe.MatchString(rel)) {
 				keep[rel] = true
 			}
+			licensed = licensed || (top && licenseRe.MatchString(rel))
 		}
 		s := source{node: n}
+		if !licensed {
+			url := strings.ReplaceAll(spec.LicenseFiles[n.name], "{version}", n.version)
+			if url == "" {
+				return nil, fmt.Errorf("%s@%s has no licence file in its tarball; add its licence text's address at this version to license_files in the spec", n.name, n.version)
+			}
+			s.license = &extraFile{url: url, name: path.Base(url)}
+		}
 		for rel := range keep {
 			s.include = append(s.include, rel)
 			info, err := os.Stat(filepath.Join(tree, filepath.FromSlash(n.files[rel])))
@@ -574,4 +613,27 @@ func matchPattern(pattern, rel string) bool {
 		}
 	}
 	return true
+}
+
+// fetchLicense downloads a licence file, records its sha256 and keeps its
+// bytes for the archive's size.
+func (l *locker) fetchLicense(ctx context.Context, f *extraFile) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := l.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: %s", f.url, resp.Status)
+	}
+	if f.data, err = io.ReadAll(resp.Body); err != nil {
+		return err
+	}
+	sum := sha256.Sum256(f.data)
+	f.sha256 = hex.EncodeToString(sum[:])
+	return nil
 }
