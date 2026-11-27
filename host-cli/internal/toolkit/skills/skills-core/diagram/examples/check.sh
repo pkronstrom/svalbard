@@ -24,7 +24,11 @@ validate() {
     exit 1
   fi
   if [ -n "${SVALBARD_HTML_CHECK:-}" ]; then
-    "$SVALBARD_HTML_CHECK" --wait 20 --expect "$EXPECT" "$1" || { echo "$1 fails in a browser (above): a diagram did not render"; exit 1; }
+    if "$SVALBARD_HTML_CHECK" --wait 20 --expect "$EXPECT" "$1"; then :; else
+      status=$?
+      [ $status -eq 77 ] || { echo "$1 fails in a browser (above): a diagram did not render"; exit 1; }
+      echo "browser check skipped: a browser is missing"
+    fi
   else
     echo "no browser check: SVALBARD_HTML_CHECK is not set"
   fi

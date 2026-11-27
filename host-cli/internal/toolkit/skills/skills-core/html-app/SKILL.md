@@ -13,8 +13,10 @@ working folder, never inside `<folder>`.
 1. Copy the template:
 
    ```sh
-   cp "<folder>"/templates/app.html app.html
+   cp -n "<folder>"/templates/app.html app.html
    ```
+
+   `-n` keeps a file of that name already there: then pick another name.
 
 2. Pick libraries for what the app needs: `skill_search` with `kind`
    library, for example "chart", "spreadsheet", "markdown", "search",

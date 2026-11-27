@@ -18,7 +18,7 @@
 <script type="module">
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Protocol, PMTiles } from "pmtiles";
+import { Protocol, PMTiles, TileType } from "pmtiles";
 
 // EDIT: settings (the basemap is a file vault_maps lists; centre is [longitude, latitude])
 const settings = {
@@ -58,9 +58,14 @@ const fill = { earth: "#eceade", landcover: "#c9debc", landuse: "#dae1c7", park:
 const line = { roads: "#fffdf3", boundaries: "#9a8d96", transit: "#a89d98", water: "#72b5cd" };
 const order = ["earth", "landcover", "landuse", "water", "buildings", "boundaries", "transit", "roads"];
 
-const metadata = await archive.getMetadata();
+// A raster map (a topographic sheet) is drawn as images; a vector one with
+// the colours above.
+const header = await archive.getHeader();
+const raster = [TileType.Png, TileType.Jpeg, TileType.Webp, TileType.Avif].includes(header.tileType);
+const metadata = raster ? {} : await archive.getMetadata();
 const names = (metadata.vector_layers || []).map(l => l.id).filter(n => order.includes(n)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
 const layers = [{ id: "paper", type: "background", paint: { "background-color": "#f4f1e7" } }];
+if (raster) layers.push({ id: "base-image", type: "raster", source: "base" });
 for (const name of names) {
   if (fill[name]) layers.push({ id: name + "-fill", type: "fill", source: "base", "source-layer": name, filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": fill[name] } });
   if (line[name]) layers.push({ id: name + "-line", type: "line", source: "base", "source-layer": name, filter: ["==", ["geometry-type"], "LineString"],
@@ -68,7 +73,7 @@ for (const name of names) {
 }
 const map = new maplibregl.Map({
   container: "map",
-  style: { version: 8, sources: { base: { type: "vector", url: "pmtiles://" + url, attribution: "© OpenStreetMap contributors" } }, layers },
+  style: { version: 8, sources: { base: raster ? { type: "raster", url: "pmtiles://" + url, tileSize: 256 } : { type: "vector", url: "pmtiles://" + url, attribution: "© OpenStreetMap contributors" } }, layers },
   center: settings.center,
   zoom: settings.zoom,
 });

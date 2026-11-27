@@ -13,8 +13,10 @@ working folder, never inside `<folder>`.
 1. Copy the template:
 
    ```sh
-   cp "<folder>"/templates/sketch.html sketch.html
+   cp -n "<folder>"/templates/sketch.html sketch.html
    ```
+
+   `-n` keeps a file of that name already there: then pick another name.
 
 2. Decide the idea in a sentence (for example "ink rivers following
    noise", "circles packing into a grid that breaks apart"), then edit the
@@ -44,8 +46,11 @@ working folder, never inside `<folder>`.
 
 ## Ideas and p5 notes
 
-- This drive has p5.js 1.x: `s.preload`, `s.loadImage` and `s.noise` work
-  as in most p5 examples; write them as `s.` methods (instance mode).
+- This drive has p5.js 1.x: `s.preload` and `s.noise` work as in most p5
+  examples; write them as `s.` methods (instance mode). An image is
+  imported (`import photo from "./photo.jpg"`, a data URL) and loaded with
+  `s.loadImage(photo)`: `s.loadImage("photo.jpg")` fetches a file, which a
+  page opened by double-click cannot, and html pack refuses it.
 - Flow fields: angle from `s.noise(x * scale, y * scale)`; particles: many
   short lines with low alpha (`c.setAlpha(40)`); patterns: nested loops
   over a grid with `s.random` breaking the order.

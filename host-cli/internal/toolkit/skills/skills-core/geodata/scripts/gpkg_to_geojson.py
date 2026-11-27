@@ -20,12 +20,17 @@ import os
 import sqlite3
 import struct
 import sys
+import urllib.parse
 
 USAGE = __doc__.split("\n\n")[1]
 
 
 class Unsupported(Exception):
     pass
+
+
+class EmptyPoint(Exception):
+    """A point written as NaN NaN, the WKB form of an empty point."""
 
 
 def find_gpkg(name):
@@ -92,6 +97,8 @@ class WKB:
 
     def point(self, order, dims):
         values = self.read(order + "d" * dims)
+        if math.isnan(values[0]) or math.isnan(values[1]):
+            raise EmptyPoint()
         return [round(values[0], self.precision), round(values[1], self.precision)]
 
     def points(self, order, dims):
@@ -109,11 +116,17 @@ def to_geometry(blob, precision):
     start, empty = header_size(blob)
     if empty:
         return None
-    return WKB(blob[start:], precision).geometry()
+    try:
+        return WKB(blob[start:], precision).geometry()
+    except EmptyPoint:
+        return None
+    except struct.error:
+        raise Unsupported("truncated geometry")
 
 
 def open_db(path):
-    return sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+    # Quoted, so a "#" or "?" in the path cannot cut off mode=ro.
+    return sqlite3.connect("file:%s?mode=ro" % urllib.parse.quote(os.path.abspath(path)), uri=True)
 
 
 def layers(db):

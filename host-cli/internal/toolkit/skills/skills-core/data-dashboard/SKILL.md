@@ -17,8 +17,10 @@ working folder, never inside `<folder>`.
 2. Copy the template:
 
    ```sh
-   cp "<folder>"/templates/dashboard.html dashboard.html
+   cp -n "<folder>"/templates/dashboard.html dashboard.html
    ```
+
+   `-n` keeps a file of that name already there: then pick another name.
 
 3. Edit only the two marked regions of `dashboard.html`:
    - `EDIT: data`: the file to import, `import data from "./data.csv";`

@@ -26,8 +26,10 @@ working folder, never inside `<folder>`.
 3. Copy the template:
 
    ```sh
-   cp "<folder>"/templates/choropleth.html map.html
+   cp -n "<folder>"/templates/choropleth.html map.html
    ```
+
+   `-n` keeps a file of that name already there: then pick another name.
 
 4. Edit only the marked regions of `map.html`:
    - `EDIT: data`: `import geo from "./countries.geojson";` (your file).

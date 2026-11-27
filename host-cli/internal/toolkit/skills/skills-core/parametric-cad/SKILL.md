@@ -13,8 +13,10 @@ working folder, never inside `<folder>`.
 1. Copy the template:
 
    ```sh
-   cp "<folder>"/templates/gear.html gear.html
+   cp -n "<folder>"/templates/gear.html gear.html
    ```
+
+   `-n` keeps a file of that name already there: then pick another name.
 
 2. For a spur gear, edit only the region `EDIT: parameters`: the title and
    each parameter's `value` (module, teeth, thickness, bore, pressure angle,

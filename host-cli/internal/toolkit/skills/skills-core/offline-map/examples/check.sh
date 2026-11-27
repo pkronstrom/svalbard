@@ -40,7 +40,11 @@ validate() {
   mkdir -p "$TMP/served/workspace"
   ln -s "$(cd "$DRIVE_DIR/maps" && pwd)" "$TMP/served/maps"
   cp -R "$dir" "$TMP/served/workspace/page"
-  "$SVALBARD_HTML_CHECK" --wait 20 --serve "$TMP/served" --expect "$EXPECT" "$TMP/served/workspace/page/index.html" || { echo "$dir fails in a browser (above)"; exit 1; }
+  if "$SVALBARD_HTML_CHECK" --wait 20 --serve "$TMP/served" --expect "$EXPECT" "$TMP/served/workspace/page/index.html"; then :; else
+    status=$?
+    [ $status -eq 77 ] || { echo "$dir fails in a browser (above)"; exit 1; }
+    echo "browser check skipped: a browser is missing"
+  fi
 }
 
 if [ $# -gt 0 ]; then

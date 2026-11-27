@@ -44,9 +44,19 @@ validate_page() {
     echo "no browser check: SVALBARD_HTML_CHECK is not set"
     return
   fi
-  "$SVALBARD_HTML_CHECK" --browser firefox --expect "$SHOWN" "$1" || { echo "$1 fails in Firefox (above)"; exit 1; }
-  "$SVALBARD_HTML_CHECK" --browser chromium --expect "$2" --click "#export" --download "$TMP/export.stl" "$1" || { echo "$1 fails in Chromium (above)"; exit 1; }
-  $PY "$SKILL/examples/validate_stl.py" "$TMP/export.stl" --min-triangles 12
+  if "$SVALBARD_HTML_CHECK" --browser firefox --expect "$SHOWN" "$1"; then :; else
+    status=$?
+    [ $status -eq 77 ] || { echo "$1 fails in Firefox (above)"; exit 1; }
+    echo "browser check skipped: a browser is missing"
+  fi
+  if "$SVALBARD_HTML_CHECK" --browser chromium --expect "$2" --click "#export" --download "$TMP/export.stl" "$1"; then :; else
+    status=$?
+    [ $status -eq 77 ] || { echo "$1 fails in Chromium (above)"; exit 1; }
+    echo "browser check skipped: a browser is missing"
+  fi
+  if [ -f "$TMP/export.stl" ]; then
+    $PY "$SKILL/examples/validate_stl.py" "$TMP/export.stl" --min-triangles 12
+  fi
 }
 
 case "${1:-}" in

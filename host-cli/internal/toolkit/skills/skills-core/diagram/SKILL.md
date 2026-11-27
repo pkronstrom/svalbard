@@ -13,8 +13,10 @@ working folder, never inside `<folder>`.
 1. Copy the template:
 
    ```sh
-   cp "<folder>"/templates/diagram.html diagram.html
+   cp -n "<folder>"/templates/diagram.html diagram.html
    ```
+
+   `-n` keeps a file of that name already there: then pick another name.
 
 2. Edit the region `EDIT: diagrams`: the page title, then one `<section>`
    per diagram with a heading and a `<pre class="mermaid">` holding the

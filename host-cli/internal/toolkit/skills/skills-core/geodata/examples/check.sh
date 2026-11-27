@@ -26,7 +26,11 @@ validate() {
     exit 1
   fi
   if [ -n "${SVALBARD_HTML_CHECK:-}" ]; then
-    "$SVALBARD_HTML_CHECK" --expect "$EXPECT" "$1" || { echo "$1 fails in a browser (above)"; exit 1; }
+    if "$SVALBARD_HTML_CHECK" --expect "$EXPECT" "$1"; then :; else
+      status=$?
+      [ $status -eq 77 ] || { echo "$1 fails in a browser (above)"; exit 1; }
+      echo "browser check skipped: a browser is missing"
+    fi
   else
     echo "no browser check: SVALBARD_HTML_CHECK is not set"
   fi
@@ -42,8 +46,9 @@ TOOL="$SKILL/scripts/gpkg_to_geojson.py"
 py-docs "$SKILL/examples/make_fixture.py" example.gpkg
 py-docs "$TOOL" example.gpkg places example-places.geojson --columns NAME,VALUE > example-out.txt
 cat example-out.txt
-grep -q "4 features" example-out.txt || { echo "the fixture should give 4 features"; exit 1; }
+grep -q "5 features" example-out.txt || { echo "the fixture should give 5 features"; exit 1; }
 grep -q "unsupported: 1 features skipped (WKB geometry type 7)" example-out.txt || { echo "the GeometryCollection was not reported as unsupported"; exit 1; }
+grep -q "unsupported: 1 features skipped (truncated geometry)" example-out.txt || { echo "the truncated geometry was not reported as unsupported"; exit 1; }
 py-docs -c "
 import json, sys
 f = {x['properties']['NAME']: x['geometry'] for x in json.load(open('example-places.geojson'))['features']}
@@ -53,8 +58,12 @@ for name, (kind, first) in want.items():
     c = g['coordinates']
     while isinstance(c[0], list): c = c[0]
     if g['type'] != kind or c != first: sys.exit('%s: %s %s, want %s %s' % (name, g['type'], c, kind, first))
-if f['empty'] is not None: sys.exit('the empty geometry is not null')
+if f['empty'] is not None or f['empty-point'] is not None: sys.exit('an empty geometry is not null')
 "
+# A path with "#" in it opens read-only and leaves nothing behind.
+mkdir "odd#dir" && cp example.gpkg "odd#dir/x.gpkg"
+py-docs "$TOOL" "odd#dir/x.gpkg" places example-odd.geojson >/dev/null
+[ ! -e odd ] || { echo "a path with # created a stray file"; exit 1; }
 DATA="${DRIVE_ROOT:-${DRIVE:-$SKILL/../../..}}/data/natural_earth_vector.gpkg"
 if [ -f "$DATA" ]; then
   py-docs "$TOOL" natural_earth_vector.gpkg ne_110m_admin_0_countries countries.geojson --columns NAME,POP_EST

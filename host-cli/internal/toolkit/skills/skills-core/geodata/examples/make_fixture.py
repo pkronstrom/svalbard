@@ -43,6 +43,8 @@ rows = [
     (gp(multi_z, envelope=2), "multipolygon-z", 3),
     (gp(b"", empty=True), "empty", 4),
     (gp(collection), "collection", 5),
+    (gp(point("<", float("nan"), float("nan"))), "empty-point", 6),
+    (gp(point("<", 1, 2)[:12]), "truncated", 7),
 ]
 db.executemany("INSERT INTO places (shape, NAME, VALUE) VALUES (?, ?, ?)", rows)
 db.commit()

@@ -10,13 +10,16 @@ requires: [js-maps, type:pmtiles]
 around it in commands: a drive's path can hold spaces). Work in the user's
 working folder, never inside `<folder>`.
 
-1. Find the maps: `vault_maps` lists the drive's map files. The basemap is
-   the large OpenStreetMap one (for example `osm-uusimaa.pmtiles`).
+1. Find the maps: `vault_maps` lists the drive's map files. A basemap is
+   an OpenStreetMap one (for example `osm-uusimaa.pmtiles`, vector) or a
+   topographic sheet (raster); the template draws either.
 2. Copy the template:
 
    ```sh
-   cp "<folder>"/templates/map.html map.html
+   cp -n "<folder>"/templates/map.html map.html
    ```
+
+   `-n` keeps a file of that name already there: then pick another name.
 
 3. Edit only the marked regions of `map.html`:
    - `EDIT: settings`: the title, `basemap` (a file name from step 1),
@@ -26,18 +29,18 @@ working folder, never inside `<folder>`.
      places put them in `places.geojson` beside the page and import it, as
      the comment shows; never fetch it. Lines and areas work too (see the
      MapLibre quickstart).
-4. Pack it as a folder on the drive, in its `workspace` folder (`$DRIVE_ROOT`
-   is the drive; keep the quotes):
+4. Pack it as a folder on the drive, in its `workspace` folder. `<drive>`
+   is the start of `<folder>` before `/skills/` (keep the quotes):
 
    ```sh
-   svalbard-drive html pack map.html --dir -o "$DRIVE_ROOT/workspace/my-map"
+   svalbard-drive html pack map.html --dir -o "<drive>/workspace/my-map"
    ```
 
    It prints `wrote …/workspace/my-map (…, directory)`.
 5. Check your result. It must print `ok`:
 
    ```sh
-   sh "<folder>"/examples/check.sh "$DRIVE_ROOT/workspace/my-map"
+   sh "<folder>"/examples/check.sh "<drive>/workspace/my-map"
    ```
 
 6. Tell the user how to open it: start Maps from the drive's menu (or run
