@@ -273,13 +273,18 @@ func NewRootCommand() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
+			keywordProgress := func(p commands.IndexProgress) {
+				if p.Status != "skip" {
+					fmt.Fprintf(out, "%s: %s\n", p.File, p.Detail)
+				}
+			}
 			switch kind, _ := cmd.Flags().GetString("type"); kind {
 			case "keyword":
-				return commands.IndexVaultContext(ctx, vaultRoot, false, out, nil)
+				return commands.IndexVaultContext(ctx, vaultRoot, false, out, keywordProgress)
 			case "semantic":
 				return commands.IndexSemantic(ctx, vaultRoot, false, out, nil)
 			case "full":
-				return commands.RunConfiguredIndex(ctx, vaultRoot, "full", out, nil, nil)
+				return commands.RunConfiguredIndex(ctx, vaultRoot, "full", out, keywordProgress, nil)
 			default:
 				return fmt.Errorf("unknown index type %q; use keyword, semantic or full", kind)
 			}

@@ -78,6 +78,15 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 	if err != nil {
 		return err
 	}
+	sizes := make(map[string]int64, len(zimFiles))
+	for _, filename := range zimFiles {
+		info, err := os.Stat(filepath.Join(root, "zim", filename))
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", filename, err)
+		}
+		sizes[filename] = info.Size()
+	}
+	sort.SliceStable(zimFiles, func(i, j int) bool { return sizes[zimFiles[i]] < sizes[zimFiles[j]] })
 	if err := ctx.Err(); err != nil {
 		return err
 	}

@@ -2,14 +2,20 @@ package zimext
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"iter"
+	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 	"github.com/stazelabs/gozim/zim"
@@ -35,16 +41,25 @@ func ArchiveUUID(ctx context.Context, path string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	archive, err := zim.Open(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("open zim: %w", err)
 	}
-	defer archive.Close()
+	defer file.Close()
+	var header [80]byte
+	if _, err := io.ReadFull(file, header[:]); err != nil {
+		return "", fmt.Errorf("read ZIM header: %w", err)
+	}
+	if binary.LittleEndian.Uint32(header[:4]) != 0x044d495a {
+		return "", zim.ErrInvalidMagic
+	}
+	if version := binary.LittleEndian.Uint16(header[4:6]); version != 5 && version != 6 {
+		return "", fmt.Errorf("%w: version %d", zim.ErrUnsupportedVersion, version)
+	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	uuid := archive.UUID()
-	return hex.EncodeToString(uuid[:]), nil
+	return hex.EncodeToString(header[8:24]), nil
 }
 
 // ExtractArticlesContext opens a ZIM archive and returns its searchable
@@ -54,43 +69,115 @@ func ExtractArticlesContext(ctx context.Context, path string) ([]searchdb.Articl
 	if err := ctx.Err(); err != nil {
 		return nil, "", "", err
 	}
-	archive, err := zim.Open(path)
-	if err != nil {
-		return nil, "", "", fmt.Errorf("open zim: %w", err)
-	}
-	defer archive.Close()
-
-	archiveTitle := filepath.Base(path)
-	if metaTitle, err := archive.Metadata("Title"); err == nil && strings.TrimSpace(metaTitle) != "" {
-		archiveTitle = strings.TrimSpace(metaTitle)
-	}
-
-	// Newer ZIM files (new namespace scheme) store content in 'C'; older ones
-	// use 'A' for articles.  Try 'C' first, fall back to 'A'.
-	ns := byte('C')
-	count := archive.EntryCountByNamespace(ns)
-	if count == 0 {
-		ns = 'A'
-		count = archive.EntryCountByNamespace(ns)
-	}
-	articles, err := extractArticleEntries(ctx, archive.AllEntriesByNamespace(ns), count)
-	if archive.HasTitleIndex() && (count == 0 || isLongDirectoryEntry(err)) {
-		// A long auxiliary URL can break the namespace lookup or iteration.
-		// The title listing generally points only to the readable articles.
-		articles, err = extractArticleEntries(ctx, archive.AllEntriesByTitle(), 0)
-	}
-	if isLongDirectoryEntry(err) {
-		articles, err = extractArticleEntries(ctx, readableContentEntries(ctx, archive), 0)
-	}
+	archive, err := OpenIndexArchive(path)
 	if err != nil {
 		return nil, "", "", err
 	}
-	uuid := archive.UUID()
-	return articles, archiveTitle, hex.EncodeToString(uuid[:]), nil
+	defer archive.Close()
+
+	var articles []searchdb.Article
+	for article, err := range archive.Articles(ctx, IndexWorkers()) {
+		if err != nil {
+			return nil, "", "", err
+		}
+		articles = append(articles, article)
+	}
+	title := archive.Title()
+	if title == "" {
+		title = filepath.Base(path)
+	}
+	return articles, title, archive.UUID(), nil
 }
 
-func extractArticleEntries(ctx context.Context, entries iter.Seq2[zim.Entry, error], count int) ([]searchdb.Article, error) {
-	articles := make([]searchdb.Article, 0, count)
+// IndexWorkers leaves indexing usable on smaller machines and bounds the
+// concurrent allocations made by HTML extraction on large ones.
+func IndexWorkers() int { return min(runtime.GOMAXPROCS(0), 6) }
+
+type articleJob struct {
+	entry   zim.Entry
+	content []byte
+	article *searchdb.Article
+}
+
+// Articles streams articles from one open archive in cluster order. A single
+// reader decompresses each cluster once. Workers extract HTML in parallel
+// from independent copies, with one bounded batch of results in memory.
+func (a *Archive) Articles(ctx context.Context, workers int) iter.Seq2[searchdb.Article, error] {
+	return func(yield func(searchdb.Article, error) bool) {
+		if err := a.eachArticle(ctx, max(1, workers), yield); err != nil {
+			yield(searchdb.Article{}, err)
+		}
+	}
+}
+
+func (a *Archive) eachArticle(ctx context.Context, workers int, yield func(searchdb.Article, error) bool) error {
+	count := a.zim.EntryCountByNamespace(a.ns)
+	refs, err := articleReferences(ctx, a.zim.AllEntriesByNamespace(a.ns), count)
+	if a.zim.HasTitleIndex() && (count == 0 || isLongDirectoryEntry(err)) {
+		// A long auxiliary URL can make the namespace listing unreadable.
+		refs, err = articleReferences(ctx, a.zim.AllEntriesByTitle(), 0)
+	}
+	if isLongDirectoryEntry(err) {
+		refs, err = articleReferences(ctx, readableContentEntries(ctx, a.zim), 0)
+	}
+	if err != nil {
+		return err
+	}
+	slices.Sort(refs)
+
+	jobs := make(chan articleJob, workers)
+	var pool, batch sync.WaitGroup
+	for range workers {
+		pool.Go(func() {
+			for job := range jobs {
+				*job.article = parseArticle(job.entry, job.content)
+				batch.Done()
+			}
+		})
+	}
+	defer func() {
+		close(jobs)
+		pool.Wait()
+	}()
+
+	const batchSize = 128
+	var articles [batchSize]searchdb.Article
+	var found bool
+	for refs := range slices.Chunk(refs, batchSize) {
+		for i, ref := range refs {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			entry, err := a.zim.EntryByIndex(uint32(ref))
+			if err != nil {
+				return fmt.Errorf("read content entry %d: %w", uint32(ref), err)
+			}
+			content, err := entry.ReadContentCopy()
+			if err != nil {
+				return fmt.Errorf("read %s: %w", entry.FullPath(), err)
+			}
+			batch.Add(1)
+			jobs <- articleJob{entry: entry, content: content, article: &articles[i]}
+		}
+		batch.Wait()
+		for i := range refs {
+			if article := articles[i]; article.Path != "" {
+				found = true
+				if !yield(article, nil) {
+					return nil
+				}
+			}
+		}
+		clear(articles[:])
+	}
+	if !found {
+		return ErrNoIndexableArticles
+	}
+	return ctx.Err()
+}
+
+func articleReferences(ctx context.Context, entries iter.Seq2[zim.Entry, error], count int) ([]uint64, error) {
+	refs := make([]uint64, 0, count)
 	for entry, iterErr := range entries {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -105,41 +192,32 @@ func extractArticleEntries(ctx context.Context, entries iter.Seq2[zim.Entry, err
 			continue
 		}
 
-		content, err := entry.ReadContent()
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", entry.FullPath(), err)
-		}
-
-		if strings.HasPrefix(entry.MIMEType(), "text/html") && IsTemplateTitle(htmlTitle(content)) {
-			continue
-		}
-
-		// Extract sections from raw HTML before stripping.
-		sections := ExtractSections(string(content))
-		var sectionsJSON string
-		if len(sections) > 0 {
-			if data, err := json.Marshal(sections); err == nil {
-				sectionsJSON = string(data)
-			}
-		}
-
-		body := StripHTML(string(content))
-		if body == "" {
-			continue
-		}
-
-		articles = append(articles, searchdb.Article{
-			Path:     "/" + strings.TrimLeft(entry.Path(), "/"),
-			Title:    strings.TrimSpace(entry.Title()),
-			Body:     TruncateText(body, maxArticleBodyChars),
-			Sections: sectionsJSON,
-		})
+		refs = append(refs, uint64(entry.ClusterNum())<<32|uint64(entry.Index()))
 	}
+	return refs, ctx.Err()
+}
 
-	if len(articles) == 0 {
-		return nil, ErrNoIndexableArticles
+func parseArticle(entry zim.Entry, content []byte) searchdb.Article {
+	if strings.HasPrefix(entry.MIMEType(), "text/html") && IsTemplateTitle(htmlTitle(content)) {
+		return searchdb.Article{}
 	}
-	return articles, nil
+	raw := string(content)
+	body := StripHTML(raw)
+	if body == "" {
+		return searchdb.Article{}
+	}
+	var sectionsJSON string
+	if sections := ExtractSections(raw); len(sections) > 0 {
+		if data, err := json.Marshal(sections); err == nil {
+			sectionsJSON = string(data)
+		}
+	}
+	return searchdb.Article{
+		Path:     "/" + strings.TrimLeft(entry.Path(), "/"),
+		Title:    strings.TrimSpace(entry.Title()),
+		Body:     TruncateText(body, maxArticleBodyChars),
+		Sections: sectionsJSON,
+	}
 }
 
 // junkExtensions are the files of a ZIM's own web app that are stored with a

@@ -90,7 +90,7 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 		return present, nil
 	}
 
-	archive, err := zimext.OpenArchive(path)
+	archive, err := zimext.OpenIndexArchive(path)
 	if err != nil {
 		notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
 		return nil, fmt.Errorf("opening %s: %w", zf, err)
@@ -144,48 +144,52 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 // indexZIMPages is the HTML pass. The source it writes has reader version 0,
 // so the archive counts as unfinished until its documents are done too.
 func indexZIMPages(ctx context.Context, db *searchdb.DB, archive *zimext.Archive, path, zf string, identity searchdb.Source, notify func(IndexProgress)) error {
+	workers := zimext.IndexWorkers()
 	notify(IndexProgress{File: zf, Status: "extracting", Detail: "extracting articles..."})
-
-	articles, title, uuid, err := zimext.ExtractArticlesContext(ctx, path)
-	if errors.Is(err, zimext.ErrNoIndexableArticles) && archive.HoldsDocuments() {
-		// Its content is the documents inside.
-		articles, title, uuid, err = nil, archive.Title(), archive.UUID(), nil
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	if err != nil {
-		notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
-		return fmt.Errorf("extracting articles from %s: %w", zf, err)
-	}
+	title := archive.Title()
 	if title == "" {
 		title = strings.TrimSuffix(zf, filepath.Ext(zf))
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	current, err := archiveSourceIdentity(ctx, path, zf)
-	if err != nil {
-		return fmt.Errorf("rechecking identity for %s: %w", zf, err)
-	}
-	if current.UUID != uuid || !identity.IdentityCurrent(current) {
-		return fmt.Errorf("source %s changed during extraction; retry indexing", zf)
-	}
-
-	notify(IndexProgress{
-		File: zf, Status: "extracting",
-		Detail:  fmt.Sprintf("inserting %d articles...", len(articles)),
-		Current: int64(len(articles)), Total: int64(len(articles)),
-	})
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	identity.Title = title
 	identity.ReaderVersion = 0
-	if err := db.ReplaceSource(ctx, identity, articles); err != nil {
+	var count int64
+	err := db.ReplaceSourceStream(ctx, identity, func(yield func(searchdb.Article, error) bool) {
+		for article, err := range archive.Articles(ctx, workers) {
+			if errors.Is(err, zimext.ErrNoIndexableArticles) && archive.HoldsDocuments() {
+				// Its content is the documents inside.
+				break
+			}
+			if count == 0 && err == nil {
+				notify(IndexProgress{File: zf, Status: "extracting", Detail: "inserting articles..."})
+			}
+			if !yield(article, err) || err != nil {
+				return
+			}
+			count++
+			if count%50000 == 0 {
+				notify(IndexProgress{File: zf, Status: "extracting", Detail: fmt.Sprintf("processed %d articles", count), Current: count})
+			}
+		}
+		current, err := archiveSourceIdentity(ctx, path, zf)
+		if err != nil {
+			yield(searchdb.Article{}, fmt.Errorf("rechecking source identity: %w", err))
+		} else if current.UUID != archive.UUID() || !identity.IdentityCurrent(current) {
+			yield(searchdb.Article{}, fmt.Errorf("source %s changed during extraction; retry indexing", zf))
+		}
+	})
+	if err != nil {
+		if cancelErr := ctx.Err(); cancelErr != nil {
+			return cancelErr
+		}
+		notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
 		return fmt.Errorf("replacing articles for %s: %w", zf, err)
 	}
 	notify(IndexProgress{
 		File: zf, Status: "done",
-		Detail:  fmt.Sprintf("%d articles", len(articles)),
-		Current: int64(len(articles)), Total: int64(len(articles)),
+		Detail: fmt.Sprintf("%d articles", count), Current: count, Total: count,
 	})
 	return nil
 }

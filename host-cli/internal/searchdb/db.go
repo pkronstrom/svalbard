@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"time"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -322,6 +323,17 @@ func (s Source) IdentityCurrent(candidate Source) bool {
 // ReplaceSource atomically replaces a source's articles and identity. It
 // deletes embeddings explicitly because older databases did not cascade them.
 func (d *DB) ReplaceSource(ctx context.Context, source Source, articles []Article) error {
+	return d.ReplaceSourceStream(ctx, source, func(yield func(Article, error) bool) {
+		for _, article := range articles {
+			if !yield(article, nil) {
+				return
+			}
+		}
+	})
+}
+
+// ReplaceSourceStream rolls back when article extraction or insertion fails.
+func (d *DB) ReplaceSourceStream(ctx context.Context, source Source, articles iter.Seq2[Article, error]) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("searchdb: begin replacement: %w", err)
@@ -422,14 +434,17 @@ func (d *DB) PruneSources(ctx context.Context, present map[string]bool) error {
 	return nil
 }
 
-func insertArticles(ctx context.Context, tx *sql.Tx, sourceID int64, articles []Article) error {
+func insertArticles(ctx context.Context, tx *sql.Tx, sourceID int64, articles iter.Seq2[Article, error]) error {
 	stmt, err := tx.PrepareContext(ctx, "INSERT INTO articles (source_id, path, title, body, sections) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("searchdb: prepare insert: %w", err)
 	}
 	defer stmt.Close()
 
-	for _, a := range articles {
+	for a, extractErr := range articles {
+		if extractErr != nil {
+			return extractErr
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}

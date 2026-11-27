@@ -142,6 +142,36 @@ func TestIndexVaultCreatesSearchDB(t *testing.T) {
 	}
 }
 
+func TestIndexVaultProcessesSmallerZIMsFirst(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "zim"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := os.ReadFile(testSmallZIMPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range map[string][]byte{
+		"a-large.zim": append(bytes.Clone(fixture), make([]byte, 4096)...),
+		"z-small.zim": fixture,
+	} {
+		if err := os.WriteFile(filepath.Join(root, "zim", name), contents, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var order []string
+	if err := IndexVault(root, false, io.Discard, func(p IndexProgress) {
+		if p.Status == "done" {
+			order = append(order, p.File)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(order, ","); got != "z-small.zim,a-large.zim" {
+		t.Fatalf("completed in order %q", got)
+	}
+}
+
 func TestIndexVaultSkipsAlreadyIndexed(t *testing.T) {
 	root := t.TempDir()
 	zimDir := filepath.Join(root, "zim")

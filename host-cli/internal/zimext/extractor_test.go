@@ -5,8 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/pkronstrom/svalbard/host-cli/internal/searchdb"
 )
 
 func testSmallZIMPath(t *testing.T) string {
@@ -34,6 +37,25 @@ func TestExtractArticlesContextReturnsArchiveUUID(t *testing.T) {
 	}
 	if uuid == "" {
 		t.Fatal("archive UUID is empty")
+	}
+}
+
+func TestArticleWorkersPreserveResults(t *testing.T) {
+	archive := openDocuments(t)
+	read := func(workers int) []searchdb.Article {
+		t.Helper()
+		var articles []searchdb.Article
+		for article, err := range archive.Articles(context.Background(), workers) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			articles = append(articles, article)
+		}
+		return articles
+	}
+	serial, parallel := read(1), read(4)
+	if len(serial) != 5 || !slices.Equal(serial, parallel) {
+		t.Fatalf("serial = %v, parallel = %v", serial, parallel)
 	}
 }
 

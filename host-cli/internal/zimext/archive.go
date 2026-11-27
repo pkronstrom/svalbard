@@ -45,7 +45,17 @@ type Archive struct {
 // gozim's defaults, a run over 180 PDFs in four ZIMs peaked at 1.6 GB, and
 // at 0.9 GB with this.
 func OpenArchive(filename string) (*Archive, error) {
-	archive, err := zim.OpenWithOptions(filename, zim.WithCacheSize(1), zim.WithMmap(false))
+	return openArchive(filename, false)
+}
+
+// OpenIndexArchive maps the archive for the two directory scans and article
+// reads of a keyword build. The same handle can read its documents afterwards.
+func OpenIndexArchive(filename string) (*Archive, error) {
+	return openArchive(filename, true)
+}
+
+func openArchive(filename string, mapped bool) (*Archive, error) {
+	archive, err := zim.OpenWithOptions(filename, zim.WithCacheSize(1), zim.WithMmap(mapped))
 	if err != nil {
 		return nil, fmt.Errorf("open zim: %w", err)
 	}
