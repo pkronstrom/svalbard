@@ -7,7 +7,7 @@ const icons = {
 };
 const startLabels = {wiki: "Start Wiki", chat: "Start Open WebUI", settings: "Show details"};
 const readerKinds = new Set(["browse", "documents", "apps", "maps", "workspace"]);
-const overviewTypes = ["Archives", "Documents", "Maps", "Apps", "Saved apps", "Local AI", "Tools", "Settings"];
+const overviewTypes = ["Maps", "Archives", "Documents", "Apps", "Saved apps", "Local AI", "Tools", "Settings"];
 const itemTypes = {
   browse: "Archives", documents: "Documents", maps: "Maps",
   apps: "Apps", wiki: "Apps", chat: "Local AI"
@@ -133,18 +133,20 @@ function itemPreview(item, css) {
 
 function overviewRow(item, grouped) {
   const row = node("li", "overview-row");
+  const type = overviewType(item);
+  row.classList.toggle("compact", type === "Tools" || type === "Settings");
   const content = node("div", "overview-copy");
   const link = node("a", "overview-name", item.label);
   link.href = "#" + item.route;
   content.append(link);
   const summary = item.summary || item.description;
   if (summary && summary !== item.label) content.append(node("p", "overview-summary", summary));
-  const meta = [grouped ? "" : overviewType(item), ...((item.tags || []).slice(0, 3)), item.note].filter(Boolean);
+  const meta = [grouped ? "" : type, ...((item.tags || []).slice(0, 3)), item.note].filter(Boolean);
   if (meta.length) content.append(node("p", "overview-meta", meta.join(" · ")));
   row.append(itemPreview(item, "overview-preview"), content);
 
   if (item.service && readerKinds.has(item.icon)) {
-    const launch = node("a", "button secondary overview-launch", overviewLaunchLabel(item.service));
+    const launch = node("a", "button primary overview-launch", overviewLaunchLabel(item.service));
     launch.href = link.href;
     launch.dataset.service = item.service;
     launch.dataset.label = item.label;
@@ -239,7 +241,7 @@ function renderHome() {
     const section = node("section", "overview-group");
     const list = node("ul", "overview-rows");
     list.append(...rows.map(item => overviewRow(item, true)));
-    section.append(node("h3", "overview-group-title", type), list);
+    section.append(node("h2", "overview-group-title", type), list);
     output.append(section);
   }
 }

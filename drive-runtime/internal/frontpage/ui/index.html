@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#e9eef0">
+  <meta name="theme-color" content="#f7f1e5">
   <title>Svalbard Drive</title>
   <link rel="icon" href="/favicon.png" type="image/png">
   <link rel="stylesheet" href="/vendor/xterm/xterm.css">
@@ -65,8 +65,7 @@
           </div>
         </form>
         <div class="overview-list" id="home-content" hidden>
-          <h2 id="contents-title">Installed items</h2>
-          <div class="catalog-controls" aria-labelledby="contents-title">
+          <div class="catalog-controls" role="group" aria-label="Catalog filters">
             <label class="catalog-filter" for="overview-filter">
               Filter items
               <input id="overview-filter" type="search" placeholder="Name, description, or tag">
