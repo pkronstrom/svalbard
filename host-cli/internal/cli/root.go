@@ -193,7 +193,7 @@ func NewRootCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			detail := commands.DescribePlan(cat, m)
+			detail := commands.DescribeVaultPlan(vaultRoot, cat, m)
 			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 				return writeJSON(cmd.OutOrStdout(), detail)
 			}

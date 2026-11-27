@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -304,8 +305,15 @@ func rejectMacOSTmp(path string) error {
 	return nil
 }
 
+// bundledPython returns the interpreter binary itself, python3.<minor>, before
+// any other python3*: newer builders turn bin/python3 into a script, and older
+// ones on exFAT left it as a file macOS wrote for a symlink, which does not
+// run on Linux.
 func bundledPython(root string) (string, error) {
 	matches, _ := filepath.Glob(filepath.Join(root, "python", "cpython-*", "bin", "python3*"))
+	sort.SliceStable(matches, func(i, j int) bool {
+		return exactPython.MatchString(filepath.Base(matches[i])) && !exactPython.MatchString(filepath.Base(matches[j]))
+	})
 	for _, path := range matches {
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return path, nil
@@ -313,6 +321,8 @@ func bundledPython(root string) (string, error) {
 	}
 	return "", fmt.Errorf("missing bundled Python interpreter under %s", root)
 }
+
+var exactPython = regexp.MustCompile(`^python3\.[0-9]+$`)
 
 var runBootstrapFn = runBootstrap
 

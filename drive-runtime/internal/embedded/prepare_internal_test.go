@@ -438,3 +438,30 @@ func TestCacheDirectoryRejectsMacOSTmp(t *testing.T) {
 		}
 	}
 }
+
+func TestBundledPythonPrefersTheInterpreterBinary(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "python", "cpython-3.12.16-linux-aarch64-gnu", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// python3 as an older CLI left it on exFAT (macOS's XSym file for a
+	// symlink), and as newer ones write it (a script).
+	for name, data := range map[string]string{
+		"python3":           "XSym\n0010\n0123456789abcdef0123456789abcdef\npython3.12\n",
+		"python3-config":    "#!/bin/sh\n",
+		"python3.12":        "\x7fELF",
+		"python3.12-config": "#!/bin/sh\n",
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(data), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := bundledPython(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(bin, "python3.12"); got != want {
+		t.Fatalf("bundledPython = %s, want %s", got, want)
+	}
+}
