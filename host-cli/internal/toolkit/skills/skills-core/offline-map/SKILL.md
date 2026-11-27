@@ -1,6 +1,6 @@
 ---
 name: offline-map
-description: Make an interactive map page over the drive's own offline maps (PMTiles basemaps) with MapLibre, with your places, routes or areas drawn on it. The map reads tiles from the drive, so it opens through the drive's maps server, not by double-click.
+description: Make an interactive map page over the drive's own offline maps (PMTiles basemaps) with MapLibre, with your places, routes or areas drawn on it. The map reads tiles from the drive, so it is packed into the drive's workspace folder and opens through the drive's maps server, not by double-click.
 requires: [js-maps, type:pmtiles]
 ---
 
@@ -43,11 +43,11 @@ working folder, never inside `<folder>`.
    sh "<folder>"/examples/check.sh "<drive>/workspace/my-map"
    ```
 
-6. Tell the user how to open it: start Maps from the drive's menu (or run
-   `<drive>/run maps`); it prints an address such as
-   `http://localhost:8081`. Open that address followed by
-   `/workspace/my-map/` in the browser. A double-click on the file cannot
-   read the map tiles.
+6. Tell the user how to open it: in the drive's menu (`<drive>/run`, which
+   is the user's to run, not yours) open any map under Maps; that starts the
+   maps server and prints an address such as `http://localhost:8081`. Open
+   that address followed by `/workspace/my-map/` in the browser. A
+   double-click on the file cannot read the map tiles.
 
 ## Notes
 
