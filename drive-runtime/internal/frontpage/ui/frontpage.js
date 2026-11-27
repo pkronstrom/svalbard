@@ -260,9 +260,13 @@ function filterNavigation() {
 }
 
 function markSelection() {
-  const active = route === "search-result" ? "#search" : "#" + route;
   for (const link of byId("nav").querySelectorAll("a")) {
-    if (link.hash === active) link.setAttribute("aria-current", "page");
+    if (link.hash === "#" + route) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  const view = route === "search-result" ? "search" : selection && route !== "terminal" ? "overview" : route;
+  for (const link of byId("work-nav").querySelectorAll("a")) {
+    if (link.hash === "#" + view) link.setAttribute("aria-current", route === view ? "page" : "location");
     else link.removeAttribute("aria-current");
   }
 }
@@ -343,7 +347,7 @@ async function act(item, stop = false) {
 
 function closeReader() {
   byId("reader").hidden = true;
-  byId("viewport").classList.remove("has-reader");
+  delete byId("viewport").dataset.reader;
   byId("reader-frame")?.remove();
   byId("stop-search-reader").hidden = true;
   note(byId("reader-status"), "");
@@ -384,7 +388,7 @@ function showReader(label, address, kind, fromSearch = false) {
   byId("reader-bar").hidden = !fromSearch;
   byId("reader-link").href = url.href;
   byId("reader-title").textContent = label;
-  byId("viewport").classList.add("has-reader");
+  byId("viewport").dataset.reader = fromSearch ? "search" : "item";
   return true;
 }
 
@@ -467,7 +471,7 @@ function renderItem() {
   const focused = controls.contains(document.activeElement);
   const status = byId("item-status");
   const output = byId("item-output");
-  byId("terminal").hidden = !item.terminal;
+  byId("terminal-panel").hidden = !item.terminal;
   controls.replaceChildren();
   note(status, "");
   note(output, "");
@@ -528,6 +532,7 @@ function renderItem() {
 function toggleSidebar(open) {
   document.body.classList.toggle("sidebar-open", open);
   byId("menu").setAttribute("aria-expanded", String(open));
+  byId("menu").setAttribute("aria-label", open ? "Close drive index" : "Open drive index");
 }
 
 function renderRoute() {
@@ -548,10 +553,12 @@ function renderRoute() {
   model = "";
   if (queuedLaunch !== selection) queuedLaunch = undefined;
   closeReader();
-  byId("details").hidden = !selection;
+  const details = byId("details");
+  details.hidden = !selection;
+  details.classList.toggle("terminal-page", Boolean(selection?.terminal));
   byId("overview").hidden = route !== "overview";
   byId("search-panel").hidden = route !== "search";
-  byId("location").textContent = selection?.group || (inSearch ? "Search" : "Overview");
+  note(byId("location"), selection && route !== "terminal" ? selection.group : "");
   markSelection();
   toggleSidebar(false);
 
@@ -589,7 +596,9 @@ function renderRoute() {
     byId("item-kind").textContent = [selection.subheader, selection.note].filter(Boolean).join(" · ");
     byId("item-description").textContent = selection.summary || selection.description || "";
     note(byId("item-recipe"), selection.recipeId ? "Recipe · " + selection.recipeId : "");
-    byId("item-preview").replaceChildren(itemPreview(selection, "detail-preview"));
+    const preview = byId("item-preview");
+    preview.hidden = Boolean(selection.terminal);
+    if (!preview.hidden) preview.replaceChildren(itemPreview(selection, "detail-preview"));
     renderItem();
   }
 }
@@ -699,7 +708,9 @@ async function runSearch() {
     if (submitted !== searchRequest) return;
     results.replaceChildren(...data.hits.map(searchResult));
     results.hidden = !data.hits.length;
-    note(status, data.status || (data.hits.length ? "" : "No matching articles or documents."));
+    const count = data.hits.length;
+    const summary = count ? "Showing " + count + (count === 1 ? " result" : " results") : "No matching articles or documents.";
+    note(status, data.status || summary);
   } catch (error) {
     if (submitted === searchRequest) {
       shownQuery = "";
@@ -710,7 +721,22 @@ async function runSearch() {
   }
 }
 
-byId("menu").addEventListener("click", () => toggleSidebar(!document.body.classList.contains("sidebar-open")));
+byId("menu").addEventListener("click", event => {
+  const open = !document.body.classList.contains("sidebar-open");
+  toggleSidebar(open);
+  if (open && !event.detail) byId("filter").focus({preventScroll: true});
+});
+byId("dismiss-sidebar").addEventListener("click", () => {
+  toggleSidebar(false);
+  byId("menu").focus();
+});
+byId("work-nav").addEventListener("click", event => {
+  const link = event.target.closest("a");
+  if (link && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+    toggleSidebar(false);
+    window.scrollTo(0, 0);
+  }
+});
 byId("nav").addEventListener("click", event => {
   if (event.target.closest("a")?.hash === "#" + route) toggleSidebar(false);
 });
