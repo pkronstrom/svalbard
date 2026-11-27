@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	// documentsDir is the vault directory of document collections: PDFs,
-	// whose source name in the index is the vault-relative path.
+	// documentsDir is the vault directory of document collections: PDFs and
+	// EPUBs, whose source name in the index is the vault-relative path.
 	documentsDir = "books"
 	// maxDocumentPartChars caps the text indexed for one page.
 	maxDocumentPartChars = 16000
@@ -55,8 +55,9 @@ type documentKind struct {
 // them. A kind is added here and nowhere else; documentRoots says where on
 // the vault files of it are looked for.
 var documentKinds = map[string]documentKind{
-	".pdf": {unit: "page", open: openPDFReader},
-	".md":  {unit: "section", open: openMarkdownReader},
+	".pdf":  {unit: "page", open: openPDFReader},
+	".epub": {unit: "part", open: openEPUBReader},
+	".md":   {unit: "section", open: openMarkdownReader},
 }
 
 // documentRoot is a vault directory whose files are indexed as documents,
@@ -77,7 +78,7 @@ type documentRoot struct {
 // skills, and the quickstarts of JS libraries. Skills and quickstarts are
 // markdown, kept apart from the knowledge sources when the drive searches.
 var documentRoots = []documentRoot{
-	{dir: documentsDir, extensions: []string{".pdf"}},
+	{dir: documentsDir, extensions: []string{".pdf", ".epub"}},
 	{dir: "skills", extensions: []string{".md"}},
 	{dir: "lib/js", extensions: []string{".md"}, folders: libraryDocFolders, within: isLibraryDoc},
 }
@@ -124,11 +125,43 @@ func isLibraryDoc(rel string) bool {
 
 // documentReader extracts the text of one kind of document.
 type documentReader interface {
-	// Read returns what the file holds. A file that cannot be read, or has
-	// no text, is not an error: it comes back with a Note and few or no
-	// parts. Only cancellation is returned as an error.
-	Read(ctx context.Context, path string) (documentText, error)
+	// Read returns what the document holds. A document that cannot be read,
+	// or has no text, is not an error: it comes back with a Note and few or
+	// no parts. Only cancellation is returned as an error.
+	Read(ctx context.Context, src documentSource) (documentText, error)
 	Close() error
+}
+
+// readSeekerAt is what a reader may need of a document's bytes: a PDF is
+// read with seeks, an EPUB as a zip.
+type readSeekerAt interface {
+	io.ReadSeeker
+	io.ReaderAt
+}
+
+// documentSource is one document to read: a file on the vault, or an entry
+// read out of a ZIM into memory.
+type documentSource struct {
+	// Name is the document's source name, the vault path or
+	// "<zim>/<entry>"; a title falls back to it.
+	Name string
+	Data readSeekerAt
+	Size int64
+}
+
+// fileSource opens a vault file as a documentSource named rel. The returned
+// function closes it.
+func fileSource(file, rel string) (documentSource, func() error, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return documentSource{}, nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return documentSource{}, nil, err
+	}
+	return documentSource{Name: rel, Data: f, Size: info.Size()}, f.Close, nil
 }
 
 // documentText is what a reader found in one file.
@@ -259,7 +292,7 @@ func (r documentRoot) scan(root string) ([]string, error) {
 // all (a permission or disk error) is reported and skipped, keeping whatever
 // the index held for it; one document never stops the others. The caller
 // holds the writer lock and prunes sources that are no longer present.
-func indexDocuments(ctx context.Context, root string, documents []string, force bool, db *searchdb.DB, indexed map[string]searchdb.Source, w io.Writer, notify func(IndexProgress)) error {
+func indexDocuments(ctx context.Context, root string, documents []string, force bool, db *searchdb.DB, indexed map[string]searchdb.Source, readers *readerSet, w io.Writer, notify func(IndexProgress)) error {
 	if len(documents) == 0 {
 		return nil
 	}
@@ -333,24 +366,15 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 		}
 	}
 
-	readers := map[string]documentReader{}
-	defer func() {
-		for _, reader := range readers {
-			reader.Close()
-		}
-	}()
 	for _, doc := range pending {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		ext := strings.ToLower(path.Ext(doc.rel))
 		kind := documentKinds[ext]
-		reader, ok := readers[ext]
-		if !ok {
-			if reader, err = kind.open(); err != nil {
-				return err
-			}
-			readers[ext] = reader
+		reader, err := readers.get(ext)
+		if err != nil {
+			return err
 		}
 		notify(IndexProgress{File: doc.rel, Status: "extracting", Detail: "reading " + kind.unit + "s..."})
 		// skip leaves the index as it was for this document and goes on.
@@ -375,7 +399,13 @@ func indexDocuments(ctx context.Context, root string, documents []string, force 
 			skip("cannot read file: " + unwrapPathError(err))
 			continue
 		}
-		text, err := reader.Read(ctx, file)
+		src, closeFile, err := fileSource(file, doc.rel)
+		if err != nil {
+			skip("cannot read file: " + unwrapPathError(err))
+			continue
+		}
+		text, err := reader.Read(ctx, src)
+		closeFile()
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -485,7 +515,7 @@ func documentTitle(given, own, rel string) string {
 		return given
 	}
 	own = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(own), "Microsoft Word - "))
-	if own != "" && !strings.EqualFold(own, "untitled") && !titleFileSuffixRe.MatchString(own) {
+	if own != "" && !strings.EqualFold(own, "untitled") && !strings.EqualFold(own, "PowerPoint Presentation") && !titleFileSuffixRe.MatchString(own) {
 		return own
 	}
 	base := path.Base(rel)
@@ -578,10 +608,10 @@ func (r pdfReader) Close() error { return r.extractor.Close() }
 
 var pdfiumCodeRe = regexp.MustCompile(`^\d+: `)
 
-func (r pdfReader) Read(ctx context.Context, file string) (documentText, error) {
+func (r pdfReader) Read(ctx context.Context, src documentSource) (documentText, error) {
 	limited, cancel := context.WithTimeout(ctx, documentTimeout)
 	defer cancel()
-	doc, err := r.extractor.Document(limited, file)
+	doc, err := r.extractor.DocumentFrom(limited, src.Data, src.Size)
 	switch {
 	case ctx.Err() != nil:
 		return documentText{}, ctx.Err()

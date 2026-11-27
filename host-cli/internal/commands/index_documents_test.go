@@ -24,8 +24,8 @@ type fakeDocumentReader struct {
 	onRead func(name string)
 }
 
-func (r *fakeDocumentReader) Read(ctx context.Context, path string) (documentText, error) {
-	name := filepath.Base(path)
+func (r *fakeDocumentReader) Read(ctx context.Context, src documentSource) (documentText, error) {
+	name := filepath.Base(src.Name)
 	r.reads = append(r.reads, name)
 	if r.onRead != nil {
 		r.onRead(name)

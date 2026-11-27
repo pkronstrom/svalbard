@@ -27,6 +27,9 @@ type SourceInfo struct {
 	Title        string `json:"title,omitempty"`
 	PagesIndexed *int   `json:"pages_indexed,omitempty"`
 	Note         string `json:"note,omitempty"`
+	// Documents counts the PDFs and EPUBs indexed from inside an archive;
+	// absent for one that holds none.
+	Documents *int `json:"documents,omitempty"`
 }
 
 // DriveStats holds aggregate drive statistics.

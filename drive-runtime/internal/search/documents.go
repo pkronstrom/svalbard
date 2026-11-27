@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -25,8 +27,12 @@ import (
 func IsDocumentSource(filename string) bool { return engine.IsDocumentSource(filename) }
 
 // SourceLabel is a source as a results list names it: an archive without its
-// extension, a document by its path below books/.
+// extension, a document by its path below books/, and a document inside an
+// archive by the archive's name and its path there.
 func SourceLabel(filename string) string {
+	if archive, entry, ok := engine.EmbeddedArchive(filename); ok {
+		return strings.TrimSuffix(archive, ".zim") + "/" + entry
+	}
 	if IsDocumentSource(filename) {
 		return strings.TrimPrefix(filename, engine.DocumentsDir+"/")
 	}
@@ -34,9 +40,30 @@ func SourceLabel(filename string) string {
 }
 
 // DocumentFile is a document page as a drive-relative address:
-// "books/manuals/volvo.pdf#page=12".
+// "books/manuals/volvo.pdf#page=12". A document inside an archive is no file
+// on the drive and has none.
 func DocumentFile(filename string, page int) string {
+	if engine.IsEmbeddedSource(filename) {
+		return ""
+	}
 	return fmt.Sprintf("%s#page=%d", filename, page)
+}
+
+// embeddedURL is the kiwix-serve address of a document inside an archive,
+// at its page for a PDF: browsers honour "#page=N" only there. Each segment
+// of the entry path is escaped: nautilus files are named like
+// "Emergency Preparedness (10).pdf".
+func embeddedURL(base, filename string, page int) string {
+	archive, entry, _ := engine.EmbeddedArchive(filename)
+	segments := strings.Split(entry, "/")
+	for i, segment := range segments {
+		segments[i] = url.PathEscape(segment)
+	}
+	address := base + "/content/" + url.PathEscape(strings.TrimSuffix(archive, ".zim")) + "/" + strings.Join(segments, "/")
+	if page > 0 && strings.EqualFold(path.Ext(entry), ".pdf") {
+		address += fmt.Sprintf("#page=%d", page)
+	}
+	return address
 }
 
 // documentServer serves books/ on 127.0.0.1 until it is closed.
@@ -78,7 +105,7 @@ func startDocumentServer(driveRoot string) (*documentServer, error) {
 // pageURL is the address of a document, at a page when one is given.
 func (d *documentServer) pageURL(filename string, page int) string {
 	address := workspace.URL(d.base, strings.TrimPrefix(filename, engine.DocumentsDir+"/"))
-	if page > 0 {
+	if page > 0 && strings.EqualFold(path.Ext(filename), ".pdf") {
 		address += fmt.Sprintf("#page=%d", page)
 	}
 	return address

@@ -99,6 +99,12 @@ func stripHTMLWithParagraphs(raw string) string {
 	return strings.TrimSpace(s)
 }
 
+// TextWithParagraphs is StripHTML keeping the page's paragraphs and line
+// breaks as lines, for text that is read back and cut at line breaks.
+func TextWithParagraphs(raw string) string {
+	return stripHTMLWithParagraphs(raw)
+}
+
 // Section represents a heading-delimited section of an HTML document.
 type Section struct {
 	Heading string `json:"heading"` // "" for intro/lead content before first heading

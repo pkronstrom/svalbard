@@ -74,8 +74,17 @@ func (c *VaultCapability) handleSources(params map[string]any) (ActionResult, er
 	}
 
 	documents := c.indexedDocuments()
+	inArchives := map[string]int{}
+	for filename := range documents {
+		if archive, _, ok := engine.EmbeddedArchive(filename); ok {
+			inArchives[archive]++
+		}
+	}
 	// Enrich with recipe metadata
 	for i := range sources {
+		if count, ok := inArchives[sources[i].Name]; ok && sources[i].Type == "zim" {
+			sources[i].Documents = &count
+		}
 		if doc, ok := documents[sources[i].Path]; ok {
 			pages := doc.Pages
 			sources[i].Title, sources[i].PagesIndexed, sources[i].Note = doc.Title, &pages, doc.Note

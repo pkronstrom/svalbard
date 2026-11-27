@@ -151,7 +151,16 @@ func (e *Extractor) Document(ctx context.Context, path string) (doc Doc, err err
 	if err != nil {
 		return Doc{}, err
 	}
-	if info.Size() == 0 {
+	return e.DocumentFrom(ctx, file, info.Size())
+}
+
+// DocumentFrom is Document for a PDF that is not a file of its own, such as
+// an entry read out of a ZIM: size bytes read through r.
+func (e *Extractor) DocumentFrom(ctx context.Context, r io.ReadSeeker, size int64) (doc Doc, err error) {
+	if err := ctx.Err(); err != nil {
+		return Doc{}, err
+	}
+	if size == 0 {
 		return Doc{}, errors.New("empty file")
 	}
 
@@ -179,7 +188,7 @@ func (e *Extractor) Document(ctx context.Context, path string) (doc Doc, err err
 		}
 	}()
 
-	opened, err := instance.OpenDocument(&requests.OpenDocument{FileReader: file, FileReaderSize: info.Size()})
+	opened, err := instance.OpenDocument(&requests.OpenDocument{FileReader: r, FileReaderSize: size})
 	if err != nil {
 		if errors.Is(err, pdfiumerrors.ErrPassword) {
 			return Doc{}, ErrPassword

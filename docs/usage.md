@@ -193,6 +193,16 @@ Build the SQLite search index from the vault's ZIM files and documents: the keyw
 
 The generated database is written under `data/search.db`.
 
+The PDFs and EPUBs stored inside a ZIM are indexed page by page too. Some archives are mostly documents: the zimgit series (water, medicine, knots, food preparation, post-disaster) and `usda-2015`, the USDA home canning guide, are a small web app around a set of PDFs, and WikEM carries 48 clinical PDFs. The index skips the archive's own web-app files (scripts, styles, source maps, templates) and reports the documents per archive:
+
+```text
+Documents in zimgit-post-disaster_en_2024-05.zim:
+  zimgit-post-disaster_en_2024-05: 108 documents, 11466 pages; 6 not searchable
+    files/Foraging (5).pdf  not searchable: scanned: no text layer, needs OCR
+```
+
+An EPUB that is the same book as an HTML page of the archive, as in Gutenberg ZIMs, is left out: its text is indexed already. An index built by an older `svalbard` picks the documents up at the next `index` or `apply`, which reads again only the archives that hold documents or web-app files.
+
 ## Your own documents
 
 A document collection puts your own PDFs on a vault and makes every page searchable: manuals, datasheets, guides, by URL or from your disk. You describe the collection in one small file; `svalbard apply` fetches what is missing and indexes it.
@@ -264,7 +274,7 @@ svalbard apply --vault /Volumes/MyDrive
 
 ### On the drive
 
-Search finds document pages next to archive articles. A hit is one page, titled with the document, the page number and, when the PDF has an outline, the section:
+Search finds document pages next to archive articles, the pages of documents inside archives among them. A hit is one page, titled with the document, the page number and, when the PDF has an outline, the section:
 
 ```text
   1. [car-manuals/volvo-240-1990.pdf] Volvo 240 Owner's Manual (1990), p. 112 · Cooling system
@@ -274,6 +284,10 @@ Search finds document pages next to archive articles. A hit is one page, titled 
 Opening it shows the PDF in your browser at that page. A search lists at most three pages of one document, so one long manual does not push everything else out.
 
 AI tools connected to the drive get the same pages through `search` and `search_read`, with the page number to cite. They can limit a search to one document or to a whole collection (`books/car-manuals`).
+
+A document inside an archive is named after the archive and its path there, `usda-2015_en_2025-04.zim/files/GUIDE04_HomeCan_rev0715.pdf`, and cited by the title the archive gives it ("USDA Guide to Home Canning, Part 4: Vegetables and Vegetable Products, p. 5"). A search limited to the archive (`usda-2015`) covers its documents, `search_read` of the archive lists them, and opening a hit from the search screen shows the PDF from kiwix-serve at its page.
+
+An EPUB under `books/` is indexed as well, in parts of a chapter each ("Fixture Book, ch. 2"). Collection files take PDFs only for now. Browsers do not show EPUBs, so opening one from the search screen hands the file over without a position.
 
 The collection also has its own entry in the drive's menu, under `Library` → `Documents`, with the number of documents beside it. Opening it lists the collection's files in your browser, and so does `./run car-manuals`. The entry is named after the id ("Car Manuals") and described by the `description:`; to name it yourself, add this to the collection file:
 

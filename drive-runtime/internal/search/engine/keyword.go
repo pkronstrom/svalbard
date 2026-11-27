@@ -76,6 +76,8 @@ func scopeClause(scope string) (string, []any) {
 	case strings.HasSuffix(scope, "/"):
 		// substr, not LIKE: a folder name may hold "%" or "_".
 		return ` AND substr(src.filename, 1, length(?)) = ?`, []any{scope, scope}
+	case isArchiveName(scope):
+		return ` AND (src.filename = ? OR substr(src.filename, 1, length(?)) = ?)`, []any{scope, scope + "/", scope + "/"}
 	}
 	return ` AND src.filename = ?`, []any{scope}
 }
