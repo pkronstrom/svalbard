@@ -30,8 +30,8 @@ func TestMergeZIMKeywordsUsesBothLanguagesAndSQLite(t *testing.T) {
 		switch {
 		case reflect.DeepEqual(books, []string{"north", "south"}):
 			fmt.Fprint(w, `<rss><channel>
-				<item><title>Carbon</title><link>/content/north/Carbon</link><description>&lt;b&gt;Carbon&lt;/b&gt; dioxide</description></item>
-				<item><title>Soils</title><link>/content/south/Soils</link></item>
+				<item><title>Carbon</title><link>/content/north/Carbon</link><description><b>Carbon</b> dioxide</description></item>
+				<item><title>Soils</title><link>/content/south/Soils</link><description>Organic &lt;b&gt;carbon&lt;/b&gt; in soil</description></item>
 				<item><title>Incorrect</title><link>/content/other/Incorrect</link></item>
 			</channel></rss>`)
 		case reflect.DeepEqual(books, []string{"suomi"}):
@@ -54,5 +54,8 @@ func TestMergeZIMKeywordsUsesBothLanguagesAndSQLite(t *testing.T) {
 		if !slices.ContainsFunc(got, func(r Result) bool { return r.Filename == wanted }) {
 			t.Errorf("missing %s in %+v", wanted, got)
 		}
+	}
+	if !slices.ContainsFunc(got, func(r Result) bool { return r.Snippet == "Organic carbon in soil" }) {
+		t.Errorf("escaped HTML snippet was not rendered as plain text: %+v", got)
 	}
 }

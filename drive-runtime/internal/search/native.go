@@ -16,6 +16,8 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 )
 
+var escapedKiwixHighlights = strings.NewReplacer("&lt;b&gt;", "<b>", "&lt;/b&gt;", "</b>")
+
 // MergeZIMKeywords adds native full-text hits to the SQLite result list.
 // covered indicates that this scope has native sources, even if Kiwix fails.
 // The caller can still use the returned SQLite hits with a coverage warning.
@@ -93,7 +95,9 @@ func KiwixKeyword(ctx context.Context, port int, books []string, query string, l
 		Items   []struct {
 			Title       string `xml:"title"`
 			Link        string `xml:"link"`
-			Description string `xml:"description"`
+			Description struct {
+				HTML string `xml:",innerxml"`
+			} `xml:"description"`
 		} `xml:"channel>item"`
 	}
 	if err := xml.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&rss); err != nil {
@@ -111,7 +115,9 @@ func KiwixKeyword(ctx context.Context, port int, books []string, query string, l
 			continue
 		}
 		r := Result{Filename: book + ".zim", Path: "/" + path, Title: strings.TrimSpace(item.Title), Native: true}
-		if page, err := ExtractText(item.Description); err == nil {
+		// Decode nested highlights as well as character data. Otherwise
+		// encoding/xml drops the matched words wrapped in <b> tags.
+		if page, err := ExtractText(escapedKiwixHighlights.Replace(item.Description.HTML)); err == nil {
 			r.Snippet = strings.Join(strings.Fields(page.Body), " ")
 			if text := []rune(r.Snippet); len(text) > 320 {
 				r.Snippet = string(text[:320]) + "…"
