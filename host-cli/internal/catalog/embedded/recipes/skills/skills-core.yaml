@@ -10,8 +10,8 @@ strategy: build
 # apply writes those whose requires: are installed into skills/skills-core/.
 build:
   family: embedded
-deps: [py-docs]
-description: Svalbard's procedures for the AI clients (spreadsheets, PDFs, Word, slides, research, local models, ESP32 firmware), found with skill_search
+deps: [py-docs, js-core]
+description: Svalbard's procedures for the AI clients (single-file apps, dashboards, maps, diagrams, 3D-printable parts, generative art, spreadsheets, PDFs, Word, slides, research, local models, ESP32 firmware), found with skill_search
 license:
   id: GPL-3.0-only
   attribution: Svalbard contributors

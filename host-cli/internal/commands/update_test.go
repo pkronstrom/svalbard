@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
@@ -150,5 +151,41 @@ func TestMarkCurrentTracksUnknownItemsWithoutDownloading(t *testing.T) {
 	r := BuildStatus(cat, saved)
 	if len(r.Unknown) != 0 || !reflect.DeepEqual(r.Updates, []string{"wikipedia-en-nopic"}) {
 		t.Errorf("after marking: unknown = %v, updates = %v", r.Unknown, r.Updates)
+	}
+}
+
+// A GeoPackage's pin is its zip's: the installed GeoPackage's checksum is not
+// compared with it, and the old layout (the zip at the vault's root, which
+// matches the pin) is not marked current, since only an update moves it.
+func TestMarkCurrentKeepsGeoPackageHashesApart(t *testing.T) {
+	pin := strings.Repeat("ab", 32)
+	recipe := "id: ne\ntype: gpkg\nurl: https://example.test/ne.gpkg.zip\nfilename: ne.gpkg.zip\nsha256: " + pin + "\n"
+	cat, err := catalog.LoadFromFS(fstest.MapFS{"ne.yaml": {Data: []byte(recipe)}}, fstest.MapFS{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		entry  manifest.RealizedEntry
+		marked bool
+	}{
+		"unzipped in data": {manifest.RealizedEntry{ID: "ne", Type: "gpkg", Filename: "ne.gpkg", RelativePath: "data/ne.gpkg", ChecksumSHA256: strings.Repeat("cd", 32)}, true},
+		"zip at the root":  {manifest.RealizedEntry{ID: "ne", Type: "gpkg", Filename: "ne.gpkg.zip", RelativePath: "ne.gpkg.zip", ChecksumSHA256: pin}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			m := manifest.New("test")
+			m.Desired.Items = []string{"ne"}
+			m.Realized.Entries = []manifest.RealizedEntry{tc.entry}
+			if err := manifest.Save(root+"/manifest.yaml", m); err != nil {
+				t.Fatal(err)
+			}
+			marked, differing, err := MarkCurrent(root, cat, []string{"ne"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := len(marked) == 1; got != tc.marked || (len(differing) == 1) == tc.marked {
+				t.Errorf("marked = %v, differing = %v; want marked %v", marked, differing, tc.marked)
+			}
+		})
 	}
 }

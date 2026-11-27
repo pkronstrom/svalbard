@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 )
 
 // SkillProblem is one reason a shipped skill would not work on a stick
@@ -157,39 +159,92 @@ func lintSkill(skills fs.FS, skill, name string, recipeIDs, recipeTypes map[stri
 			add(rel, 0, err.Error())
 			continue
 		}
-		markdown := path.Ext(p) == ".md"
-		fence := "" // the open fence's marker, "" outside one
-		fenceLine := 0
-		skip := false
-		lines := strings.Split(string(data), "\n")
-		for i, line := range lines {
-			if markdown {
-				trimmed := strings.TrimLeft(line, " ")
-				if fence == "" {
-					if marker := fenceMarker(trimmed); marker != "" {
-						fence, fenceLine = marker, i+1
-						info := strings.Fields(strings.TrimLeft(trimmed, marker[:1]))
-						skip = len(info) > 0 && info[0] == offlineFence
-						continue
-					}
-				} else if strings.HasPrefix(trimmed, fence) && strings.Trim(trimmed, fence[:1]+" \t") == "" {
-					fence, skip = "", false
-					continue
-				}
-				if skip {
-					continue
-				}
-			}
-			for _, rule := range fetchRules {
-				if rule.pattern.MatchString(line) {
-					add(rel, i+1, rule.reason+": "+strings.TrimSpace(line))
-					break
+		for _, problem := range lintLines(string(data), path.Ext(p) == ".md", nil) {
+			add(rel, problem.Line, problem.Reason)
+		}
+	}
+	return problems
+}
+
+// notForThisDrive starts a line of a library reference file that js-docs
+// marked as a network instruction from the upstream docs.
+const notForThisDrive = "Not for this drive:"
+
+// LintLibraryDocs applies the offline check to the embedded library docs
+// (<recipe>/<file>.md): a quickstart passes it as a skill does, a reference
+// file (upstream docs) on the lines js-docs did not mark as network
+// instructions. Every library of a catalog js-lib recipe has both files.
+func LintLibraryDocs(docs fs.FS, recipes []catalog.Item) []SkillProblem {
+	var problems []SkillProblem
+	for _, recipe := range recipes {
+		if recipe.Type != catalog.LibraryType {
+			continue
+		}
+		for _, lib := range recipe.Libraries {
+			for _, name := range []string{catalog.LibraryDocName(lib.Package), catalog.LibraryReferenceName(lib.Package)} {
+				if _, err := fs.Stat(docs, path.Join(recipe.ID, name)); err != nil {
+					problems = append(problems, SkillProblem{Skill: recipe.ID, File: name, Reason: "missing for library " + lib.Package})
 				}
 			}
 		}
-		if fence != "" {
-			add(rel, fenceLine, "code fence is never closed")
+	}
+	_ = fs.WalkDir(docs, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path.Ext(p) != ".md" {
+			return err
 		}
+		data, err := fs.ReadFile(docs, p)
+		if err != nil {
+			return err
+		}
+		reference := strings.HasSuffix(p, ".reference.md")
+		for _, problem := range lintLines(string(data), true, func(line string) bool {
+			return reference && strings.HasPrefix(line, notForThisDrive)
+		}) {
+			problem.Skill, problem.File = path.Dir(p), path.Base(p)
+			problems = append(problems, problem)
+		}
+		return nil
+	})
+	return problems
+}
+
+// lintLines applies the fetch rules to a file's lines, outside fences marked
+// not-for-this-stick in markdown and lines exempt says to skip.
+func lintLines(text string, markdown bool, exempt func(string) bool) []SkillProblem {
+	var problems []SkillProblem
+	fence := "" // the open fence's marker, "" outside one
+	fenceLine := 0
+	skip := false
+	for i, line := range strings.Split(text, "\n") {
+		if markdown {
+			trimmed := strings.TrimLeft(line, " ")
+			if fence == "" {
+				if marker := fenceMarker(trimmed); marker != "" {
+					fence, fenceLine = marker, i+1
+					info := strings.Fields(strings.TrimLeft(trimmed, marker[:1]))
+					skip = len(info) > 0 && info[0] == offlineFence
+					continue
+				}
+			} else if strings.HasPrefix(trimmed, fence) && strings.Trim(trimmed, fence[:1]+" \t") == "" {
+				fence, skip = "", false
+				continue
+			}
+			if skip {
+				continue
+			}
+		}
+		if exempt != nil && exempt(line) {
+			continue
+		}
+		for _, rule := range fetchRules {
+			if rule.pattern.MatchString(line) {
+				problems = append(problems, SkillProblem{Line: i + 1, Reason: rule.reason + ": " + strings.TrimSpace(line)})
+				break
+			}
+		}
+	}
+	if fence != "" {
+		problems = append(problems, SkillProblem{Line: fenceLine, Reason: "code fence is never closed"})
 	}
 	return problems
 }

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App</title>
+<link rel="stylesheet" href="@picocss/pico">
+<style>
+@font-face { font-family: "Inter"; font-weight: 100 900; font-display: swap; src: url("@fontsource-variable/inter") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-weight: 100 900; font-display: swap; src: url("@fontsource-variable/fraunces") format("woff2"); }
+
+/* EDIT: theme (colours and fonts; references/themes.md has ten) */
+body {
+  --app-background: #faf9f6;
+  --app-text: #2d4a2b;
+  --app-accent: #7d8471;
+  --app-accent-text: #ffffff;
+  --app-soft: #a4ac86;
+  --app-heading-font: "Fraunces", Georgia, serif;
+  --app-body-font: "Inter", system-ui, sans-serif;
+}
+/* /EDIT */
+
+/* Pico reads these; set on body they win over its own defaults. */
+body {
+  --pico-font-family: var(--app-body-font);
+  --pico-background-color: var(--app-background);
+  --pico-color: var(--app-text);
+  --pico-primary: var(--app-accent);
+  --pico-primary-background: var(--app-accent);
+  --pico-primary-border: var(--app-accent);
+  --pico-primary-hover-background: var(--app-text);
+  --pico-primary-inverse: var(--app-accent-text);
+  --pico-h1-color: var(--app-text);
+  --pico-h2-color: var(--app-text);
+  background: var(--app-background);
+  color: var(--app-text);
+  font-family: var(--app-body-font);
+}
+h1, h2, h3 { font-family: var(--app-heading-font); font-weight: 650; }
+header.hero { border-bottom: 3px solid var(--app-soft); margin-bottom: 1.5rem; }
+li.done span { text-decoration: line-through; opacity: .6; }
+</style>
+</head>
+<body>
+<main class="container" x-data="app">
+<!-- EDIT: page (the markup; Alpine attributes call the app's data and methods) -->
+  <header class="hero">
+    <h1>Supplies</h1>
+    <p>What is in the store room. Saved in this browser.</p>
+  </header>
+  <form @submit.prevent="add()" role="group">
+    <input x-model="draft" placeholder="Add an item" aria-label="Item">
+    <button type="submit">Add</button>
+  </form>
+  <ul id="items">
+    <template x-for="item in items" :key="item.id">
+      <li :class="{ done: item.done }">
+        <label><input type="checkbox" x-model="item.done" @change="save()"> <span x-text="item.name"></span></label>
+      </li>
+    </template>
+  </ul>
+  <p><small x-text="`${items.filter(i => !i.done).length} of ${items.length} left`"></small></p>
+<!-- /EDIT -->
+</main>
+<script type="module">
+import Alpine from "alpinejs";
+
+// EDIT: app (state and methods the page uses; localStorage keeps them)
+const STORAGE_KEY = "supplies";
+Alpine.data("app", () => ({
+  draft: "",
+  items: JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || [
+    { id: 1, name: "Water, 12 l", done: false },
+    { id: 2, name: "Rice, 4 kg", done: false },
+  ],
+  add() {
+    const name = this.draft.trim();
+    if (!name) return;
+    this.items.push({ id: Date.now(), name, done: false });
+    this.draft = "";
+    this.save();
+  },
+  save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items)); },
+}));
+// /EDIT
+
+window.Alpine = Alpine;
+Alpine.start();
+</script>
+</body>
+</html>

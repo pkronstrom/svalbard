@@ -2,9 +2,14 @@ package mcp_test
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	_ "github.com/ncruces/go-sqlite3/driver"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
@@ -210,5 +215,49 @@ func writeTestFile(t *testing.T, path string, data []byte) {
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", path, err)
+	}
+}
+
+func TestVaultDatabasesShowsGpkgTables(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data", "natural_earth_vector.gpkg")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		"CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT)",
+		"CREATE TABLE ne_110m_admin_0_countries (fid INTEGER PRIMARY KEY, geom BLOB, NAME TEXT, POP_EST REAL)",
+		"INSERT INTO gpkg_contents VALUES ('ne_110m_admin_0_countries', 'features')",
+		"INSERT INTO ne_110m_admin_0_countries VALUES (1, X'4750000100000000', 'Finland', 5520314)",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+
+	meta := mcp.DriveMetadata{Manifest: map[string]string{}, Recipes: map[string]mcp.RecipeMeta{}}
+	result, err := mcp.NewVaultCapability(dir, meta).Handle(context.Background(), "databases", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbs, ok := result.Data.([]inspect.DatabaseInfo)
+	if !ok || len(dbs) != 1 || dbs[0].Name != "natural_earth_vector.gpkg" || len(dbs[0].Tables) != 1 || dbs[0].Tables[0] != "ne_110m_admin_0_countries" {
+		t.Fatalf("databases = %#v, want the GeoPackage with its countries table", result.Data)
+	}
+
+	rows, err := mcp.NewQueryCapability(dir, meta).Handle(context.Background(), "sql", map[string]any{
+		"database": "natural_earth_vector.gpkg", "sql": "SELECT NAME, POP_EST, geom FROM ne_110m_admin_0_countries LIMIT 3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(rows.Data)
+	if got := string(data); !strings.Contains(got, `"NAME":"Finland"`) || !strings.Contains(got, `"POP_EST":5520314`) || !strings.Contains(got, `"geom":"\u003cGeoPackage geometry, 8 bytes\u003e"`) {
+		t.Errorf("query_sql = %s, want the name, the population and the geometry by its size", got)
 	}
 }

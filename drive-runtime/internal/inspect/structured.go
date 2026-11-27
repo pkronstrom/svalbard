@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -41,12 +42,22 @@ type DriveStats struct {
 	Sizes   map[string]string `json:"sizes"`
 }
 
-// DatabaseInfo describes a SQLite database on the drive.
+// DatabaseInfo describes a SQLite database on the drive. For a GeoPackage
+// (.gpkg, also SQLite) Tables are its layers and Note says how its shapes
+// are stored.
 type DatabaseInfo struct {
 	Name   string   `json:"name"`
 	Path   string   `json:"path"`
 	Tables []string `json:"tables"`
+	Note   string   `json:"note,omitempty"`
 }
+
+// geoPackageNote tells a model what it cannot read from a layer with SQL.
+const geoPackageNote = "GeoPackage: each table is a map layer; its geom column holds the shapes as GeoPackage binary, which query_sql shows only by size. Query the other columns, and export shapes to GeoJSON with the geodata skill."
+
+// DatabaseExts are the extensions of the SQLite files the drive's query
+// tools open in data/.
+var DatabaseExts = []string{".sqlite", ".gpkg"}
 
 // MapInfo describes a PMTiles map file on the drive.
 type MapInfo struct {
@@ -63,7 +74,7 @@ var knownSourceDirs = []struct {
 	exts []string
 }{
 	{"zim", "zim", []string{".zim"}},
-	{"data", "database", []string{".sqlite"}},
+	{"data", "database", DatabaseExts},
 	{"maps", "map", []string{".pmtiles"}},
 	{"books", "book", []string{".epub", ".pdf"}},
 }
@@ -139,17 +150,23 @@ func Stats(driveRoot string) (DriveStats, error) {
 	}, nil
 }
 
-// Databases lists SQLite databases in the data/ directory, including their tables.
-// Table listing is best-effort; Tables will be nil if the database cannot be opened.
+// Databases lists SQLite databases and GeoPackages in the data/ directory,
+// including their tables. Table listing is best-effort; Tables will be nil if
+// the database cannot be opened.
 func Databases(driveRoot string) ([]DatabaseInfo, error) {
 	dataDir := filepath.Join(driveRoot, "data")
-	files, err := ListFilesWithExtension(dataDir, ".sqlite")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
+	var files []string
+	for _, ext := range DatabaseExts {
+		found, err := ListFilesWithExtension(dataDir, ext)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, nil
+			}
+			return nil, err
 		}
-		return nil, err
+		files = append(files, found...)
 	}
+	sort.Strings(files)
 
 	var dbs []DatabaseInfo
 	for _, f := range files {
@@ -165,8 +182,12 @@ func Databases(driveRoot string) ([]DatabaseInfo, error) {
 		}
 
 		// Best-effort table listing
-		tables, err := listSQLiteTables(f)
-		if err == nil {
+		if strings.EqualFold(filepath.Ext(f), ".gpkg") {
+			dbInfo.Note = geoPackageNote
+			if tables, err := listGeoPackageLayers(f); err == nil {
+				dbInfo.Tables = tables
+			}
+		} else if tables, err := listSQLiteTables(f); err == nil {
 			dbInfo.Tables = tables
 		}
 
@@ -189,6 +210,30 @@ func listSQLiteTables(path string) ([]string, error) {
 	}
 	defer rows.Close()
 
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		tables = append(tables, name)
+	}
+	return tables, rows.Err()
+}
+
+// listGeoPackageLayers returns the tables a GeoPackage lists as its contents
+// (features and attributes), not its own metadata or spatial index tables.
+func listGeoPackageLayers(path string) ([]string, error) {
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=ro", path))
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query("SELECT table_name FROM gpkg_contents ORDER BY table_name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 	var tables []string
 	for rows.Next() {
 		var name string

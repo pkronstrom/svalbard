@@ -67,9 +67,11 @@ var TypeDirs = map[string]string{
 	"app":            "apps",
 	"dataset":        "data",
 	"sqlite":         "data",
+	"gpkg":           "data",
 	"python-venv":    "runtime/python",
 	"python-package": "runtime/python",
 	"skills":         "skills",
+	"js-lib":         "lib/js",
 }
 
 // runtimeConfig mirrors drive-runtime/internal/config.RuntimeConfig.
@@ -204,6 +206,9 @@ func Generate(root string, entries []manifest.RealizedEntry, presetName string, 
 		for _, notice := range skillNoticesFor(report) {
 			opts[0].Notice(notice)
 		}
+	}
+	if err := writeLibraryDocs(root, entries, recipes, libraryDocTree()); err != nil {
+		return err
 	}
 	if err := writeRecipesMetadata(root, entries, recipes); err != nil {
 		return err

@@ -1,0 +1,33 @@
+{
+  "id": "js-3d-cad",
+  "packages": {
+    "three": "0.187.x",
+    "@jscad/modeling": "2.x",
+    "@jscad/stl-serializer": "2.x"
+  },
+  "entries": {
+    "three": [
+      "three",
+      "three/addons/controls/OrbitControls.js",
+      "three/addons/exporters/STLExporter.js"
+    ]
+  },
+  "umd": {
+    "@jscad/modeling": "dist/jscad-modeling.min.js"
+  },
+  "docs": {
+    "three": {
+      "license": "MIT",
+      "gap": "three.js documents itself in HTML pages (docs/api/en, about 1,000 pages); its TypeScript types are a separate package, @types/three, not pinned here"
+    },
+    "@jscad/modeling": {
+      "types": [
+        "src/**/*.d.ts"
+      ],
+      "license": "MIT"
+    },
+    "@jscad/stl-serializer": {
+      "license": "MIT"
+    }
+  }
+}

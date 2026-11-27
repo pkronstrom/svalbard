@@ -1,0 +1,29 @@
+{
+  "id": "js-media",
+  "packages": {
+    "p5": "1.11.x",
+    "tone": "15.x",
+    "matter-js": "0.20.x"
+  },
+  "umd": {
+    "p5": "lib/p5.min.js",
+    "tone": "build/Tone.js",
+    "matter-js": "build/matter.min.js"
+  },
+  "docs": {
+    "p5": {
+      "license": "LGPL-2.1",
+      "gap": "p5.js 1.x builds its reference from JSDoc comments into the p5js.org site; there are no Markdown docs or types in the package"
+    },
+    "tone": {
+      "types": [
+        "build/esm/**/*.d.ts"
+      ],
+      "license": "MIT"
+    },
+    "matter-js": {
+      "license": "MIT",
+      "gap": "Matter.js builds its API pages from comments with YUIDoc; there are no Markdown docs or types in the package"
+    }
+  }
+}

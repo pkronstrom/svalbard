@@ -38,8 +38,9 @@ var supportOnlyTypes = map[string]string{
 	"gguf-mtp":    "draft model: speeds up the chat model it is paired with",
 	"python-venv": "the Python environment that Python packages run in",
 	"skills":      "procedures for the AI clients, which find them with skill_search",
+	"js-lib":      "browser libraries the AI clients' HTML skills pack into pages with svalbard-drive html pack",
 	"dataset":     noEntryYet, // word lists and templates for the command-line tools
-	"gpkg":        noEntryYet, // GeoPackage map data, for a desktop GIS
+	"gpkg":        "map layers in data/, which the AI clients query with query_sql and the geodata skill exports",
 	"sqlite":      noEntryYet, // gets a row only when the SQLiteViz app is installed too, and nothing installs it for it
 }
 

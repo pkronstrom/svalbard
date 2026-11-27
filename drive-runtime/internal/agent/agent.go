@@ -371,8 +371,11 @@ func ompPrompt(driveRoot string, ctxSize int) string {
 		prompt += "The svalbard wiki tools read and write the user's own notes on this drive: use them when asked to save or look up a note.\n"
 	}
 	if mcp.SkillsInstalled(driveRoot) {
-		prompt += buildingContext(ContextOptions{DriveRoot: driveRoot, ToolPrefix: OmpToolPrefix, Skills: true, NoIndex: !mcp.SkillsIndexed(driveRoot)}) + "\n"
+		prompt += buildingContext(ContextOptions{DriveRoot: driveRoot, ToolPrefix: OmpToolPrefix, Skills: true, NoIndex: !mcp.SkillsIndexed(driveRoot), Libraries: mcp.LibrariesInstalled(driveRoot)}) + "\n"
+	} else if mcp.LibrariesInstalled(driveRoot) {
+		prompt += librariesContext(ContextOptions{DriveRoot: driveRoot, ToolPrefix: OmpToolPrefix, Libraries: true, NoIndex: !mcp.SkillsIndexed(driveRoot)}) + "\n"
 	}
+
 	return prompt + stayInPlace + "\n"
 }
 

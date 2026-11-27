@@ -43,7 +43,29 @@ func TestHarnessesPackIncludesSkills(t *testing.T) {
 		}
 	}
 	got := resolvedWithDeps(t, cat, "default-256")
-	for _, id := range []string{"skills-core", "py-docs"} {
+	for _, id := range []string{"skills-core", "py-docs", "js-core"} {
+		if !got[id] {
+			t.Errorf("default-256 does not install %s", id)
+		}
+	}
+}
+
+func TestDefault256IncludesArtifacts(t *testing.T) {
+	cat, err := NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack, err := cat.ResolvePreset("ai/artifacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, src := range pack.Sources {
+		if src == "js-core" {
+			t.Error("ai/artifacts names js-core; it arrives through skills-core's deps so deselecting skills-core drops it")
+		}
+	}
+	got := resolvedWithDeps(t, cat, "default-256")
+	for _, id := range []string{"js-3d-cad", "js-maps", "js-media"} {
 		if !got[id] {
 			t.Errorf("default-256 does not install %s", id)
 		}
@@ -64,7 +86,7 @@ func TestSkillsCoreDeselectable(t *testing.T) {
 		t.Fatalf("user preset skipped: %+v", skipped)
 	}
 	got := resolvedWithDeps(t, cat, "no-skills")
-	for _, id := range []string{"skills-core", "py-docs"} {
+	for _, id := range []string{"skills-core", "py-docs", "js-core"} {
 		if got[id] {
 			t.Errorf("no-skills still installs %s", id)
 		}

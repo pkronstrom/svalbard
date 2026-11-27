@@ -1,0 +1,1078 @@
+# dompurify 3.5.0 reference
+
+This is the project's own documentation, joined at the version on this drive. Here nothing is installed or downloaded: import the package by name in a module script and pack the page with `svalbard-drive html pack`. Code blocks marked `not-for-this-stick` and lines starting "Not for this drive:" show package managers, CDN links or downloads; this drive does not use them.
+
+## DOMPurify
+
+Not for this drive: [![npm](https://img.shields.io/npm/v/dompurify.svg)](https://www.npmjs.com/package/dompurify) [![License](https://img.shields.io/badge/license-MPL--2.0%20OR%20Apache--2.0-blue.svg)](https://github.com/cure53/DOMPurify/blob/main/LICENSE) [![Downloads](https://img.shields.io/npm/dm/dompurify.svg)](https://www.npmjs.com/package/dompurify) [![dependents](https://badgen.net/github/dependents-repo/cure53/dompurify?color=green&label=dependents)](https://github.com/cure53/DOMPurify/network/dependents) ![npm package minimized gzipped size (select exports)](https://img.shields.io/bundlejs/size/dompurify?color=%233C1&label=gzip) [![Cloudback](https://app.cloudback.it/badge/cure53/DOMPurify)](https://cloudback.it)
+
+Not for this drive: [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12162/badge)](https://www.bestpractices.dev/projects/12162) [![Build & Test](https://github.com/cure53/DOMPurify/actions/workflows/build-and-test.yml/badge.svg?branch=main)](https://github.com/cure53/DOMPurify/actions/workflows/build-and-test.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/cure53/DOMPurify/badge)](https://scorecard.dev/viewer/?uri=github.com/cure53/DOMPurify) [![Socket Badge](https://badge.socket.dev/npm/package/dompurify/latest)](https://badge.socket.dev/npm/package/dompurify/latest) [![snyk.io package health](https://img.shields.io/badge/snyk.io%20package%20health-97%2F100-brightgreen)](https://security.snyk.io/package/npm/dompurify)
+
+DOMPurify is a DOM-only, super-fast, uber-tolerant XSS sanitizer for HTML, MathML and SVG.
+
+It's also very simple to use and get started with. DOMPurify was [started in February 2014](https://github.com/cure53/DOMPurify/commit/a630922616927373485e0e787ab19e73e3691b2b) and, meanwhile, has reached version **v3.5.0**.
+
+DOMPurify runs as JavaScript and works in all modern browsers (Safari (10+), Opera (15+), Edge, Firefox and Chrome - as well as almost anything else using Blink, Gecko or WebKit). It doesn't break on MSIE or other legacy browsers. It simply does nothing.
+
+**Note that [DOMPurify v2.5.9](https://github.com/cure53/DOMPurify/releases/tag/2.5.9) is the latest version supporting MSIE. For important security updates compatible with MSIE, please use the [2.x branch](https://github.com/cure53/DOMPurify/tree/2.x).**
+
+Our automated tests cover 9 browser/OS combinations on the current engines (Chromium, Firefox, and WebKit across Ubuntu, macOS, and Windows) on every push to a release branch (pull requests run all three engines on Linux), and a separate matrix re-runs the suite on older engine snapshots (back to roughly Chromium 110, Firefox 108 and WebKit 16.4, around three years old) so regressions on outdated browsers get caught too. We also run Node.js v20, v22, v24 and v26 with DOMPurify on [jsdom](https://github.com/jsdom/jsdom). Older Node versions are known to work as well, but hey... no guarantees.
+
+DOMPurify is written by security people who have vast background in web attacks and XSS. Fear not. For more details please also read about our [Security Goals & Threat Model](https://github.com/cure53/DOMPurify/wiki/Security-Goals-&-Threat-Model). Please, read it. Like, really. And if you enjoy the gory details, the [Attack Classes & Bypass History](https://github.com/cure53/DOMPurify/wiki/Attack-Classes-&-Bypass-History) page catalogs the parser-mutation, namespace, clobbering, and template tricks DOMPurify defends against.
+
+The DOMPurify project inspired the creation of the [HTML Sanitizer API](https://wicg.github.io/sanitizer-api/#sanitizer), which is already shipping in [many browsers](https://developer.mozilla.org/en-US/docs/Web/API/HTML_Sanitizer_API#browser_compatibility). The same capability is now being standardized directly in the [WHATWG HTML specification](https://html.spec.whatwg.org/#html-sanitization).
+
+## DOMPurify: Table of Contents
+
+- [What does it do?](#what-does-it-do)
+- [How do I use it?](#how-do-i-use-it)
+- [Is there a demo?](#is-there-a-demo)
+- [What if I find a _security_ bug?](#what-if-i-find-a-security-bug)
+- [Some purification samples please?](#some-purification-samples-please)
+- [What is supported?](#what-is-supported)
+- [What about legacy browsers like Internet Explorer?](#what-about-legacy-browsers-like-internet-explorer)
+- [What about DOMPurify and Trusted Types?](#what-about-dompurify-and-trusted-types)
+- [Can I configure DOMPurify?](#can-i-configure-dompurify)
+- [Persistent Configuration](#persistent-configuration)
+- [Hooks](#hooks)
+- [Removed Configuration](#removed-configuration)
+- [Continuous Integration](#continuous-integration)
+- [Security Mailing List](#security-mailing-list)
+- [Who contributed?](#who-contributed)
+
+## DOMPurify: What does it do?
+
+DOMPurify sanitizes HTML and prevents XSS attacks. You can feed DOMPurify with e.g. a string full of dirty HTML and it will return a string (unless configured otherwise) with clean HTML. DOMPurify will strip out everything that contains dangerous HTML and thereby prevent XSS attacks and other nastiness. It's also damn bloody fast. We use the technologies the browser provides and turn them into an XSS filter. The faster your browser, the faster DOMPurify will be.
+
+## DOMPurify: How do I use it?
+
+It's easy. Just include DOMPurify on your website.
+
+### Using the unminified version (source-map available)
+
+```html
+
+```
+
+### Using the minified and tested production version (source-map available)
+
+```html
+
+```
+
+Afterwards you can sanitize strings by executing the following code:
+
+```js
+const clean = DOMPurify.sanitize(dirty);
+```
+
+Or maybe this, if you love working with Angular or alike:
+
+```js
+import DOMPurify from 'dompurify';
+
+const clean = DOMPurify.sanitize('<b>hello there</b>');
+```
+
+The resulting HTML can be written into a DOM element using `innerHTML` or the DOM using `document.write()`. That is fully up to you.
+Note that by default, we permit HTML, SVG **and** MathML. If you only need HTML, which might be a very common use-case, you can easily set that up as well:
+
+```js
+const clean = DOMPurify.sanitize(dirty, { USE_PROFILES: { html: true } });
+```
+
+### Is there any foot-gun potential?
+
+Well, please note, if you _first_ sanitize HTML and then modify it _afterwards_, you might easily **void the effects of sanitization**. If you feed the sanitized markup to another library _after_ sanitization, please be certain that the library doesn't mess around with the HTML on its own. See the [Security Goals & Threat Model](https://github.com/cure53/DOMPurify/wiki/Security-Goals-&-Threat-Model) for safe-usage recipes and the tags/attributes worth thinking twice about, and [Attack Classes & Bypass History](https://github.com/cure53/DOMPurify/wiki/Attack-Classes-&-Bypass-History) for why post-processing and changing the markup context defeat sanitization.
+
+### What about passing a DOM node instead of a string?
+
+`DOMPurify.sanitize()` also accepts a DOM node (an `Element` or a `DocumentFragment`). A `Document` itself cannot be imported, so pass `document.documentElement` or `document.body` instead. Since 3.4.14 that path is hardened for nodes that did not come out of the HTML parser: a node built with the DOM API or parsed as XML/XHTML (for example via `DOMParser` with `application/xhtml+xml` and `importNode()`) can carry case-preserved attribute names such as `ONERROR`, or a rawtext element like `<style>` with an element child or its own end tag inside its text. Both shapes are invisible to a string sanitizer because the HTML parser can never build them, but they break out on reparse. DOMPurify now removes attributes by their exact `Attr` node and treats these literal-text trees as unsafe, so mixing document contexts on the input side is covered. Since 3.5.0 the same goes for two more shapes only a DOM-built tree can have: a `<textarea>` or `<title>` with an element child, and a void element such as `<img>` or `<col>` with children. Both are removed. It remains your job not to mix contexts on the _output_ side, see the paragraph above.
+
+One thing DOMPurify cannot sanitize is the content of a closed shadow root. Open shadow roots are walked, closed ones are invisible to any script, DOMPurify included. Markup can create one declaratively (`<template shadowrootmode="closed">`) when it goes through a parser that honors declarative shadow DOM, such as `setHTMLUnsafe()` or `parseHTMLUnsafe()`. So do not parse untrusted markup that way before handing the node to DOMPurify. This matters for `IN_PLACE`, `RETURN_DOM` and `RETURN_DOM_FRAGMENT`; string output never contains shadow roots, and string input is not affected.
+
+### Okay, makes sense, let's move on
+
+After sanitizing your markup, you can also have a look at the property `DOMPurify.removed` and find out, what elements and attributes were thrown out. Please **do not use** this property for making any security critical decisions. This is just a little helper for curious minds.
+
+### Running DOMPurify on the server
+
+DOMPurify technically also works server-side with Node.js. Our support strives to follow the [Node.js release cycle](https://nodejs.org/en/about/previous-releases).
+
+Running DOMPurify on the server requires a DOM to be present, which is probably no surprise. Usually, [jsdom](https://github.com/jsdom/jsdom) is the tool of choice and we **strongly recommend** to use the latest version of _jsdom_.
+
+Why? Because older versions of _jsdom_ are known to be buggy in ways that result in XSS _even if_ DOMPurify does everything 100% correctly. There are **known attack vectors** in, e.g. _jsdom v19.0.0_ that are fixed in _jsdom v20.0.0_ - and we really recommend to keep _jsdom_ up to date because of that.
+
+Please also be aware that tools like [happy-dom](https://github.com/capricorn86/happy-dom) exist but **are not considered safe** at this point. Combining DOMPurify with _happy-dom_ is currently not recommended and will likely lead to XSS. For background on why the server-side DOM you choose is part of your trusted computing base, see [Attack Classes & Bypass History](https://github.com/cure53/DOMPurify/wiki/Attack-Classes-&-Bypass-History).
+
+Not for this drive: On runtimes where _jsdom_ cannot run, such as Cloudflare Workers or Vercel Edge, [purify-edge](https://github.com/anzal1/purify-edge) is a third-party project that runs an unmodified DOMPurify on a parse5-based window. Our test suite can be run against it with `npm run test:purify-edge` as a compatibility check. It is not maintained by us, and a passing run is neither an endorsement nor a security guarantee.
+
+Other than that, you are fine to use DOMPurify on the server. Probably. This really depends on _jsdom_ or whatever DOM you utilize server-side. If you can live with that, this is how you get it to work:
+
+```not-for-this-stick
+npm install dompurify
+npm install jsdom
+```
+
+For _jsdom_ (please use an up-to-date version), this should do the trick:
+
+```js
+const createDOMPurify = require('dompurify');
+const { JSDOM } = require('jsdom');
+
+const window = new JSDOM('').window;
+const DOMPurify = createDOMPurify(window);
+const clean = DOMPurify.sanitize('<b>hello there</b>');
+```
+
+Or even this, if you prefer working with imports:
+
+```js
+import { JSDOM } from 'jsdom';
+import DOMPurify from 'dompurify';
+
+const window = new JSDOM('').window;
+const purify = DOMPurify(window);
+const clean = purify.sanitize('<b>hello there</b>');
+```
+
+If you have problems making it work in your specific setup, consider looking at the amazing [isomorphic-dompurify](https://github.com/kkomelin/isomorphic-dompurify) project which solves lots of problems people might run into.
+
+```not-for-this-stick
+npm install isomorphic-dompurify
+```
+
+```js
+import DOMPurify from 'isomorphic-dompurify';
+
+const clean = DOMPurify.sanitize('<s>hello</s>');
+```
+
+## DOMPurify: Is there a demo?
+
+Of course there is a demo! [Play with DOMPurify](https://cure53.de/purify)
+
+## DOMPurify: What if I find a security bug?
+
+First of all, please immediately contact us via [email](mailto:mario@cure53.de) so we can work on a fix. [PGP key](https://keyserver.ubuntu.com/pks/lookup?op=vindex&search=0xC26C858090F70ADA)
+
+Also, you probably qualify for a bug bounty! The fine folks over at [Fastmail](https://www.fastmail.com/) use DOMPurify for their services and added our library to their bug bounty scope. So, if you find a way to bypass or weaken DOMPurify, please also have a look at their website and the [bug bounty info](https://www.fastmail.com/about/bugbounty/).
+
+## DOMPurify: Some purification samples please?
+
+How does purified markup look like? Well, [the demo](https://cure53.de/purify) shows it for a big bunch of nasty elements. But let's also show some smaller examples!
+
+```js
+DOMPurify.sanitize('<img src=x onerror=alert(1)//>'); // becomes <img src="x">
+DOMPurify.sanitize('<svg><g/onload=alert(2)//<p>'); // becomes <svg><g></g></svg>
+DOMPurify.sanitize('<p>abc<iframe//src=jAva&Tab;script:alert(3)>def</p>'); // becomes <p>abc</p>
+DOMPurify.sanitize('<math><mi//xlink:href="data:x,">'); // becomes <math><mi></mi></math>
+DOMPurify.sanitize('<TABLE><tr><td>HELLO</tr></TABL>'); // becomes <table><tbody><tr><td>HELLO</td></tr></tbody></table>
+DOMPurify.sanitize('<UL><li><A HREF=//google.com>click</UL>'); // becomes <ul><li><a href="//google.com">click</a></li></ul>
+```
+
+These are just a taste. For the full taxonomy of attack classes these samples come from - mutation XSS, namespace confusion, DOM clobbering, rawtext breakouts, and more - see [Attack Classes & Bypass History](https://github.com/cure53/DOMPurify/wiki/Attack-Classes-&-Bypass-History).
+
+## DOMPurify: What is supported?
+
+DOMPurify currently supports HTML5, SVG and MathML. DOMPurify per default allows CSS, HTML custom data attributes. DOMPurify also supports the Shadow DOM - and sanitizes DOM templates recursively. That covers open shadow roots only: a closed shadow root cannot be read from script, so DOMPurify can neither see nor sanitize what is inside it. Strings are not affected, because DOMPurify's own parser ignores declarative shadow roots (`<template shadowrootmode>`), but `setHTMLUnsafe()` and `Document.parseHTMLUnsafe()` do not: if you parse untrusted markup with those and then pass the resulting nodes to DOMPurify (`IN_PLACE`, `RETURN_DOM`, `RETURN_DOM_FRAGMENT`), any closed shadow root in that markup comes back unsanitized. Pass untrusted markup to DOMPurify as a string instead. DOMPurify also allows you to sanitize HTML for being used with the jQuery `$()` and `elm.html()` API without any known problems. For the exact set of elements and attributes permitted by default, see the [Default TAGs & ATTRIBUTEs allow-list & blocklist](https://github.com/cure53/DOMPurify/wiki/Default-TAGs-ATTRIBUTEs-allow-list-&-blocklist) wiki page.
+
+## DOMPurify: What about legacy browsers like Internet Explorer?
+
+DOMPurify does nothing at all. It simply returns exactly the string that you fed it. DOMPurify exposes a property called `isSupported`, which tells you whether it will be able to do its job, so you can come up with your own backup plan.
+
+## DOMPurify: What about DOMPurify and Trusted Types?
+
+In version 1.0.9, support for the [Trusted Types API](https://github.com/w3c/webappsec-trusted-types) ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Trusted_Types_API)) was added to DOMPurify.
+In version 2.0.0, a config flag was added to control DOMPurify's behavior regarding this.
+
+When `DOMPurify.sanitize` is used in an environment where the Trusted Types API is available and `RETURN_TRUSTED_TYPE` is set to `true`, it tries to return a `TrustedHTML` value instead of a string (the behavior for `RETURN_DOM` and `RETURN_DOM_FRAGMENT` config options does not change).
+
+Note that in order to create a policy in `trustedTypes` using DOMPurify, `RETURN_TRUSTED_TYPE: false` is required, as `createHTML` expects a normal string, not `TrustedHTML`. The example below shows this.
+
+```js
+window.trustedTypes.createPolicy('default', {
+  createHTML: (to_escape) =>
+    DOMPurify.sanitize(to_escape, { RETURN_TRUSTED_TYPE: false }),
+});
+```
+
+When no `TRUSTED_TYPES_POLICY` is supplied, DOMPurify attempts to create its own internal Trusted Types policy named `dompurify`. If your page already defines its own policy together with a strict CSP (for example `trusted-types my-organization`) that does not allow a policy named `dompurify`, this attempt is blocked by the browser and logs a `TrustedTypes policy dompurify could not be created.` warning along with a CSP violation.
+
+To stop DOMPurify from creating its internal fallback policy, pass `TRUSTED_TYPES_POLICY: null`. This is the right choice when you call `DOMPurify.sanitize` from inside your own policy's `createHTML`, and it means you do not have to add `dompurify` to your CSP's `trusted-types` allowlist.
+
+```js
+window.trustedTypes.createPolicy('my-organization', {
+  createHTML: (input) =>
+    DOMPurify.sanitize(input, { TRUSTED_TYPES_POLICY: null }),
+});
+```
+
+Do **not** pass your own wrapping policy back to DOMPurify as its `TRUSTED_TYPES_POLICY` (for example via `DOMPurify.setConfig({ TRUSTED_TYPES_POLICY: myPolicy })`) when that policy's `createHTML` already calls `DOMPurify.sanitize`. That is circular by definition - sanitizing would call the policy, which sanitizes by calling DOMPurify again - and DOMPurify will throw a descriptive `TypeError` to prevent the infinite recursion. Your own policy should call DOMPurify; DOMPurify should not be configured to call your policy.
+
+If you want this `default`-policy pattern applied across an entire page automatically - so that every HTML sink is sanitized, including legacy code, third-party widgets, and the thousands of `innerHTML` assignments you cannot easily find or rewrite - have a look at [DOMFortify](https://github.com/cure53/DOMFortify). It installs exactly such a Trusted Types `default` policy backed by DOMPurify and refuses script sinks (`eval`, `script.src`, ...) outright. It is a deliberately separate project: DOMPurify stays a focused sanitizer, and DOMFortify handles the document-wide enforcement layer that is intentionally out of DOMPurify's scope.
+
+## DOMPurify: Can I configure DOMPurify?
+
+Yes. The included default configuration values are pretty good already - but you can of course override them. Check out the [`/demos`](https://github.com/cure53/DOMPurify/tree/main/demos) folder to see a bunch of examples on how you can [customize DOMPurify](https://github.com/cure53/DOMPurify/tree/main/demos#what-is-this).
+
+Before you widen the allow-list (`ADD_TAGS`, `ADD_ATTR`, `CUSTOM_ELEMENT_HANDLING`, …) or relax a default, it's worth skimming the [tags and attributes to think twice about](https://github.com/cure53/DOMPurify/wiki/Security-Goals-&-Threat-Model#dangerous-tags-and-attributes-think-twice-before-allow-listing) - a few are dangerous in non-obvious ways.
+
+### General settings
+
+```js
+// strip {{ ... }}, ${ ... } and <% ... %> from text, comments and attribute values.
+// other template syntaxes and framework directives are not covered.
+// be careful please, this mode is not recommended for production usage.
+// allowing template parsing in user-controlled HTML is not advised at all.
+// only use this mode if there is really no alternative.
+// attribute names are not scrubbed, and neither are values a hook keeps via
+// forceKeepAttr or writes itself.
+// this is guaranteed for string input. For DOM node input and IN_PLACE it is
+// best effort: a tree the HTML parser did not build can change shape when it
+// is parsed again, and text can join into an expression at that point.
+const clean = DOMPurify.sanitize(dirty, { SAFE_FOR_TEMPLATES: true });
+
+// change how e.g. comments containing risky HTML characters are treated.
+// be very careful, this setting should only be set to `false` if you really only handle
+// HTML and nothing else, no SVG, MathML or the like.
+// Otherwise, changing from `true` to `false` will lead to XSS in this or some other way.
+const clean = DOMPurify.sanitize(dirty, { SAFE_FOR_XML: false });
+```
+
+### Control our allow-lists and block-lists
+
+```js
+// allow only <b> elements, very strict
+const clean = DOMPurify.sanitize(dirty, { ALLOWED_TAGS: ['b'] });
+
+// allow only <b> and <q> with style attributes
+const clean = DOMPurify.sanitize(dirty, {
+  ALLOWED_TAGS: ['b', 'q'],
+  ALLOWED_ATTR: ['style'],
+});
+
+// allow all safe HTML elements but neither SVG nor MathML
+// note that the USE_PROFILES setting will override the ALLOWED_TAGS and
+// ALLOWED_ATTR settings, so don't use them together (DOMPurify warns on the
+// console if you do)
+const clean = DOMPurify.sanitize(dirty, { USE_PROFILES: { html: true } });
+
+// allow all safe SVG elements and SVG Filters, no HTML or MathML
+const clean = DOMPurify.sanitize(dirty, {
+  USE_PROFILES: { svg: true, svgFilters: true },
+});
+
+// allow all safe MathML elements and SVG, but no SVG Filters
+const clean = DOMPurify.sanitize(dirty, {
+  USE_PROFILES: { mathMl: true, svg: true },
+});
+
+// change the default namespace from HTML to something different
+const clean = DOMPurify.sanitize(dirty, {
+  NAMESPACE: 'http://www.w3.org/2000/svg',
+});
+
+// leave all safe HTML as it is and add <style> elements to block-list
+const clean = DOMPurify.sanitize(dirty, { FORBID_TAGS: ['style'] });
+
+// note: while <table> is allowed, <tbody> is always allowed too and cannot be
+// forbidden - browsers insert it on their own, and forbidding it used to make
+// sanitize() loop (see #365). Forbid 'table' as well to drop tables entirely.
+
+// leave all safe HTML as it is and add style attributes to block-list
+const clean = DOMPurify.sanitize(dirty, { FORBID_ATTR: ['style'] });
+
+// extend the existing array of allowed tags and add <my-tag> to allow-list
+const clean = DOMPurify.sanitize(dirty, { ADD_TAGS: ['my-tag'] });
+
+// extend the existing array of allowed attributes and add my-attr to allow-list
+const clean = DOMPurify.sanitize(dirty, { ADD_ATTR: ['my-attr'] });
+
+// use functions to control which additional tags and attributes are allowed
+const allowlist = {
+  one: ['attribute-one'],
+  two: ['attribute-two'],
+};
+const clean = DOMPurify.sanitize(
+  '<one attribute-one="1" attribute-two="2"></one><two attribute-one="1" attribute-two="2"></two>',
+  {
+    ADD_TAGS: (tagName) => {
+      return Object.keys(allowlist).includes(tagName);
+    },
+    ADD_ATTR: (attributeName, tagName) => {
+      return allowlist[tagName]?.includes(attributeName) || false;
+    },
+  }
+); // <one attribute-one="1"></one><two attribute-two="2"></two>
+
+// prohibit ARIA attributes, leave other safe HTML as is (default is true)
+const clean = DOMPurify.sanitize(dirty, { ALLOW_ARIA_ATTR: false });
+
+// prohibit HTML5 data attributes, leave other safe HTML as is (default is true)
+const clean = DOMPurify.sanitize(dirty, { ALLOW_DATA_ATTR: false });
+```
+
+### Control behavior relating to Custom Elements
+
+```js
+// DOMPurify allows to define rules for Custom Elements. When using the CUSTOM_ELEMENT_HANDLING
+// literal, it is possible to define exactly what elements you wish to allow (by default, none are allowed).
+//
+// The same goes for their attributes. By default, the built-in or configured allow.list is used.
+//
+// You can use a RegExp literal to specify what is allowed or a predicate, examples for both can be seen below.
+// When using a predicate function for attributeNameCheck, it can optionally receive the tagName as a second parameter
+// for more granular control over which attributes are allowed for specific elements.
+// The default values are very restrictive to prevent accidental XSS bypasses. Handle with great care!
+// A broad attributeNameCheck such as /./ or () => true also lets event handlers like onclick through.
+// Custom elements exist in HTML only: a matching name inside SVG or MathML is removed (since 3.5.0).
+
+const clean = DOMPurify.sanitize(
+  '<foo-bar baz="foobar" forbidden="true"></foo-bar><div is="foo-baz"></div>',
+  {
+    CUSTOM_ELEMENT_HANDLING: {
+      tagNameCheck: null, // no custom elements are allowed
+      attributeNameCheck: null, // default / standard attribute allow-list is used
+      allowCustomizedBuiltInElements: false, // no customized built-ins allowed
+    },
+  }
+); // <div is=""></div>
+
+const clean = DOMPurify.sanitize(
+  '<foo-bar baz="foobar" forbidden="true"></foo-bar><div is="foo-baz"></div>',
+  {
+    CUSTOM_ELEMENT_HANDLING: {
+      tagNameCheck: /^foo-/, // allow all tags starting with "foo-"
+      attributeNameCheck: /baz/, // allow all attributes containing "baz"
+      allowCustomizedBuiltInElements: true, // customized built-ins are allowed
+    },
+  }
+); // <foo-bar baz="foobar"></foo-bar><div is="foo-baz"></div>
+
+const clean = DOMPurify.sanitize(
+  '<foo-bar baz="foobar" forbidden="true"></foo-bar><div is="foo-baz"></div>',
+  {
+    CUSTOM_ELEMENT_HANDLING: {
+      tagNameCheck: (tagName) => tagName.match(/^foo-/), // allow all tags starting with "foo-"
+      attributeNameCheck: (attr) => attr.match(/baz/), // allow all containing "baz"
+      allowCustomizedBuiltInElements: true, // allow customized built-ins
+    },
+  }
+); // <foo-bar baz="foobar"></foo-bar><div is="foo-baz"></div>
+
+// Example with attributeNameCheck receiving tagName as a second parameter
+const clean = DOMPurify.sanitize(
+  '<element-one attribute-one="1" attribute-two="2"></element-one><element-two attribute-one="1" attribute-two="2"></element-two>',
+  {
+    CUSTOM_ELEMENT_HANDLING: {
+      tagNameCheck: (tagName) => tagName.match(/^element-(one|two)$/),
+      attributeNameCheck: (attr, tagName) => {
+        if (tagName === 'element-one') {
+          return ['attribute-one'].includes(attr);
+        } else if (tagName === 'element-two') {
+          return ['attribute-two'].includes(attr);
+        } else {
+          return false;
+        }
+      },
+      allowCustomizedBuiltInElements: false,
+    },
+  }
+); // <element-one attribute-one="1"></element-one><element-two attribute-two="2"></element-two>
+```
+
+### Control behavior relating to URI values
+
+```js
+// extend the existing array of elements that can use Data URIs
+const clean = DOMPurify.sanitize(dirty, { ADD_DATA_URI_TAGS: ['a', 'area'] });
+
+// extend the existing array of elements that are safe for URI-like values (be careful, XSS risk)
+const clean = DOMPurify.sanitize(dirty, { ADD_URI_SAFE_ATTR: ['my-attr'] });
+```
+
+### Control permitted attribute values
+
+```js
+// allow external protocol handlers in URL attributes (default is false, be careful, XSS risk)
+// by default only http, https, ftp, ftps, tel, mailto, callto, sms, cid, xmpp and matrix are allowed.
+const clean = DOMPurify.sanitize(dirty, { ALLOW_UNKNOWN_PROTOCOLS: true });
+
+// allow specific protocol handlers in URL attributes via regex (default is false, be careful, XSS risk)
+// by default only (protocol-)relative URLs, http, https, ftp, ftps, tel, mailto, callto, sms, cid, xmpp and matrix are allowed.
+// Default RegExp: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
+// The example below extends the default with one additional scheme (sftp).
+// Keep the pattern linear-time: it runs against attacker-controlled values.
+const clean = DOMPurify.sanitize(dirty, {
+  ALLOWED_URI_REGEXP:
+    /^(?:(?:(?:f|ht)tps?|sftp|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+});
+```
+
+### Influence the return-type
+
+```js
+// return a DOM HTMLBodyElement instead of an HTML string (default is false)
+const clean = DOMPurify.sanitize(dirty, { RETURN_DOM: true });
+
+// return a DOM DocumentFragment instead of an HTML string (default is false)
+const clean = DOMPurify.sanitize(dirty, { RETURN_DOM_FRAGMENT: true });
+
+// use the RETURN_TRUSTED_TYPE flag to turn on Trusted Types support if available
+const clean = DOMPurify.sanitize(dirty, { RETURN_TRUSTED_TYPE: true }); // will return a TrustedHTML object instead of a string if possible
+
+// use a provided Trusted Types policy
+const clean = DOMPurify.sanitize(dirty, {
+  // supplied policy must define createHTML and createScriptURL
+  TRUSTED_TYPES_POLICY: trustedTypes.createPolicy('dompurify', {
+    createHTML(s) {
+      return s;
+    },
+    createScriptURL(s) {
+      return s;
+    },
+  }),
+});
+
+// opt out of DOMPurify's internal `dompurify` Trusted Types policy entirely
+// (useful when your CSP `trusted-types` allowlist does not include `dompurify`)
+const clean = DOMPurify.sanitize(dirty, { TRUSTED_TYPES_POLICY: null });
+```
+
+### Influence how we sanitize
+
+```js
+// return entire document including <html> tags (default is false)
+const clean = DOMPurify.sanitize(dirty, { WHOLE_DOCUMENT: true });
+
+// disable DOM Clobbering protection on output (default is true, handle with care, minor XSS risks here)
+const clean = DOMPurify.sanitize(dirty, { SANITIZE_DOM: false });
+
+// enforce strict DOM Clobbering protection via namespace isolation (default is false)
+// when enabled, isolates the namespace of named properties (i.e., `id` and `name` attributes)
+// from JS variables by prefixing them with the string `user-content-`
+const clean = DOMPurify.sanitize(dirty, { SANITIZE_NAMED_PROPS: true });
+
+// keep an element's content when the element is removed (default is true)
+const clean = DOMPurify.sanitize(dirty, { KEEP_CONTENT: false });
+
+// glue elements like style, script or others to document.body and prevent unintuitive browser behavior in several edge-cases (default is false)
+const clean = DOMPurify.sanitize(dirty, { FORCE_BODY: true });
+
+// remove all <a> elements under <p> elements that are removed
+const clean = DOMPurify.sanitize(dirty, {
+  FORBID_CONTENTS: ['a'],
+  FORBID_TAGS: ['p'],
+});
+
+// extend the default FORBID_CONTENTS list to also remove <a> elements under <p> elements
+const clean = DOMPurify.sanitize(dirty, {
+  ADD_FORBID_CONTENTS: ['a'],
+  FORBID_TAGS: ['p'],
+});
+
+// change the parser type so sanitized data is treated as XML and not as HTML, which is the default
+const clean = DOMPurify.sanitize(dirty, {
+  PARSER_MEDIA_TYPE: 'application/xhtml+xml',
+});
+```
+
+### Influence where we sanitize
+
+```js
+// use the IN_PLACE mode to sanitize a node "in place", which is much faster depending on how you use DOMPurify
+const dirty = document.createElement('a');
+dirty.setAttribute('href', 'javascript:alert(1)');
+
+const clean = DOMPurify.sanitize(dirty, { IN_PLACE: true }); // see https://github.com/cure53/DOMPurify/issues/288 for more info
+```
+
+A few things to know about `IN_PLACE`:
+
+- The root node you pass in must itself be an allowed tag and must not be DOM-clobbered (for example a `<form>` with a child named `nodeName` or `ownerDocument`). If it is, DOMPurify empties the root, strips every non-allow-listed attribute from what was under it, open shadow roots included, and then throws a `TypeError`, so a rejected root is never handed back armed.
+- If anything throws mid-walk, the same fail-closed neutralization runs over the root and over every subtree already detached during that walk before the error propagates.
+- Nodes that a hook detaches from the tree (a common pattern, see [Hooks](#hooks)) are treated as removed. In `IN_PLACE` mode, every element that was under the root when `sanitize()` started and is no longer under it when the call ends has its non-allow-listed attributes stripped before `sanitize()` returns or throws, no matter what detached it: a hook removing the node it was called for, its parent or another ancestor, or a node elsewhere in the tree, a hook moving a subtree out of the root, or a custom element reacting to one of DOMPurify's own attribute removals. So an `<img onload>` that was already loading when you built the live tree cannot fire after `sanitize()` returns. Likewise, a node of your tree that a hook or custom element moves to a position the walk has already passed is still sanitized before `sanitize()` returns, and so is a removed node that something puts back. If the tree keeps changing that way, for example because an element re-inserts itself every time it is removed, DOMPurify strips the root bare and throws instead of returning it.
+- Content inside a closed shadow root is not sanitized, see [the note on DOM nodes](#what-about-passing-a-dom-node-instead-of-a-string).
+- Two things the walk does not follow: a hook that moves nodes into or out of `<template>` content, and a custom element that re-inserts itself while DOMPurify empties a tree it refuses to return. Avoid both.
+- DOMPurify cannot undo engine mutations that already fired _before_ `sanitize()` was called (a patch applied on connection, a `selectedcontent` re-clone, and so on). Sanitize attacker-controlled trees before connecting them to the live document, not after.
+
+There is even [more examples here](https://github.com/cure53/DOMPurify/tree/main/demos#what-is-this), showing how you can run, customize and configure DOMPurify to fit your needs.
+
+## DOMPurify: Persistent Configuration
+
+Instead of repeatedly passing the same configuration to `DOMPurify.sanitize`, you can use the `DOMPurify.setConfig` method. Your configuration will persist until your next call to `DOMPurify.setConfig`, or until you invoke `DOMPurify.clearConfig` to reset it. Remember that there is only one active configuration, which means once it is set, all extra configuration parameters passed to `DOMPurify.sanitize` are ignored.
+
+## DOMPurify: Hooks
+
+DOMPurify allows you to augment its functionality by attaching one or more functions with the `DOMPurify.addHook` method to one of the following hooks:
+
+- `beforeSanitizeElements`
+- `uponSanitizeElement` (No 's' - called for every element)
+- `afterSanitizeElements`
+- `beforeSanitizeAttributes`
+- `uponSanitizeAttribute`
+- `afterSanitizeAttributes`
+- `beforeSanitizeShadowDOM`
+- `uponSanitizeShadowNode`
+- `afterSanitizeShadowDOM`
+
+It passes the currently processed DOM node, when needed a literal with verified node and attribute data and the DOMPurify configuration to the callback. Check out the [MentalJS hook demo](https://github.com/cure53/DOMPurify/blob/main/demos/hooks-mentaljs-demo.html) to see how the API can be used nicely.
+
+_Example_:
+
+```js
+DOMPurify.addHook(
+  'uponSanitizeAttribute',
+  function (currentNode, hookEvent, config) {
+    // Do something with the current node
+    // You can also mutate hookEvent for current node (i.e. set hookEvent.forceKeepAttr = true)
+    // For other than 'uponSanitizeAttribute' hook types hookEvent equals to null
+  }
+);
+```
+
+### Hook behavior worth knowing
+
+- **Detaching a node from a hook is supported.** If a `beforeSanitizeElements` or `uponSanitizeElement` hook removes the current node from the tree (for example `node.remove()` to drop a `foreignObject`), DOMPurify treats the node as removed and stops processing it. Such nodes are not recorded in `DOMPurify.removed`. In `IN_PLACE` mode the detached subtree is still neutralized (since 3.4.13), because a live node may carry an already-queued resource event.
+- **`afterSanitizeElements` runs for kept custom elements, too.** Since 3.4.12, an element admitted via `CUSTOM_ELEMENT_HANDLING.tagNameCheck` goes through `afterSanitizeElements` exactly like an allow-listed element, so a policy applied in that hook (for example stripping an attribute from every surviving element) cannot silently skip custom elements ([GHSA-c2j3-45gr-mqc4](https://github.com/cure53/DOMPurify/security/advisories/GHSA-c2j3-45gr-mqc4)).
+- **Prefer `hookEvent.keepAttr` / `forceKeepAttr` over writing to `hookEvent.allowedAttributes` or `allowedTags`.** The per-node flags cannot leak. Writes to the allow-list objects are isolated per call, including when the hook is installed lazily from inside another hook and when a persistent config from `setConfig()` is active ([GHSA-cmwh-pvxp-8882](https://github.com/cure53/DOMPurify/security/advisories/GHSA-cmwh-pvxp-8882)), but they remain the sharper tool.
+- **`afterSanitize*` hooks run after validation.** Whatever you write there is not re-checked. To change an attribute value, set `hookEvent.attrValue` in `uponSanitizeAttribute`; that value is checked afterwards. An attribute you set on the node yourself is only checked if you do it in `beforeSanitizeAttributes` or earlier.
+- **A hook may remove attributes of the node it is called for.** Before 3.5.0, removing several at once from `uponSanitizeAttribute` could make `sanitize()` throw.
+
+### A note on calling `sanitize()` from a hook
+
+Since 3.5.0 you can call `DOMPurify.sanitize()` from inside a hook, or from a configuration callback such as `CUSTOM_ELEMENT_HANDLING.tagNameCheck`. When the nested call returns, the outer one gets its configuration, its allow-lists and `DOMPurify.removed` back, so the rest of the document is still sanitized the way you asked.
+
+Two things to keep in mind. Your hooks also run for the nested call, so guard against recursion. And `DOMPurify.removed` shows the removals of the outer call afterwards, not those of the nested one.
+
+Before 3.5.0 a nested call replaced the configuration of the outer one for the rest of the pass. If you support older versions, set your configuration with [`DOMPurify.setConfig`](#persistent-configuration) or sanitize nested fragments after the outer call has returned.
+
+## DOMPurify: Removed Configuration
+
+| Option          | Since | Note                     |
+| --------------- | ----- | ------------------------ |
+| SAFE_FOR_JQUERY | 2.1.0 | No replacement required. |
+
+## DOMPurify: Continuous Integration
+
+We are currently using GitHub Actions in combination with Playwright. This lets us confirm on every commit that everything works in the relevant modern browsers, and a separate scheduled and on-merge workflow re-runs the suite on older engine snapshots so breakage on outdated browsers is caught too. Check out the build logs here: https://github.com/cure53/DOMPurify/actions
+
+Not for this drive: You can further run local tests by executing `npm run test`.
+
+All relevant commits will be signed with the key `0x24BB6BF4` for additional security (since 8th of April 2016).
+
+### Development and contributing
+
+Not for this drive: #### Installation (`npm i`)
+
+Not for this drive: We support `npm` officially. GitHub Actions workflow is configured to install dependencies using `npm`. When using a deprecated version of `npm`, we cannot fully ensure the versions of installed dependencies, which might lead to unanticipated problems.
+
+#### Scripts
+
+We use ESLint via `xo` as part of our pre-commit workflow to help ensure code consistency. In addition, we use [Prettier](https://github.com/prettier/prettier) for source and Markdown formatting, and `/dist` assets are built through `rolldown`.
+
+Not for this drive: These are our npm scripts:
+
+Not for this drive: - `npm run dev` to build the unminified UMD bundle while watching sources for changes
+Not for this drive: - `npm run test` to lint the sources, run tests through jsdom, and run browser tests in Chromium via Playwright
+Not for this drive:   - `npm run test:jsdom` to only run tests through jsdom
+Not for this drive:   - `npm run test:happydom` to run the suite through happy-dom (an unsupported environment; kept as a robustness check, not a compatibility promise)
+Not for this drive:   - `npm run test:purify-edge` to run the suite through [purify-edge](https://github.com/anzal1/purify-edge), a third-party parse5-based window (an unsupported environment; kept as a compatibility check, not a promise of support). The XSS sink tests run in a second pass, with jsdom as the sink
+Not for this drive:   - `npm run test:browser` to only run tests through Playwright
+Not for this drive:   - `npm run test:browser:legacy` to run the suite on older browser engines (point `PW_MODULE` at a pinned old Playwright install; see `.github/workflows/legacy-browsers.yml`)
+Not for this drive:   - `npm run test:ci` to run jsdom and all three Playwright engines in one go
+Not for this drive:   - `npm run test:fuzz` to run a small fuzzer covering `sanitize()` and CONFIG
+Not for this drive: - `npm run bench` to run the jsdom micro-benchmark over the built `dist/purify.cjs` (build first; `--json` and `--compare a.json b.json` support A/B runs across branches - results are directional, confirm user-facing claims in real browsers)
+Not for this drive: - `npm run coverage` to build an instrumented bundle, run the jsdom suite, and write a local HTML line/branch coverage report to `coverage/index.html` (jsdom scope only, not run in CI)
+Not for this drive:   - `npm run build:cov` to only build the instrumented coverage bundle
+Not for this drive: - `npm run lint` to lint the sources using ESLint via xo
+Not for this drive: - `npm run format` to format JavaScript/TypeScript and Markdown sources with Prettier
+Not for this drive:   - `npm run format:js` to only format JavaScript/TypeScript sources
+Not for this drive:   - `npm run format:md` to only format Markdown files
+Not for this drive: - `npm run build` to build type declarations and distribution bundles, then fix and clean up generated types
+Not for this drive:   - `npm run build:types` to only emit TypeScript declaration files
+Not for this drive:   - `npm run build:rolldown` to build all Rolldown bundles
+Not for this drive:   - `npm run build:umd` to only build an unminified UMD bundle
+Not for this drive:   - `npm run build:umd:min` to only build a minified UMD bundle
+Not for this drive:   - `npm run build:es` to only build the ES module bundle
+Not for this drive:   - `npm run build:cjs` to only build the CommonJS bundle
+Not for this drive:   - `npm run build:fix-types` to post-process generated type files
+Not for this drive:   - `npm run build:cleanup` to clean up temporary generated type output
+Not for this drive: - `npm run verify-typescript` to run the TypeScript verification script
+Not for this drive: - `npm run commit-amend-build` to run the maintainer helper script for amending build output
+
+Not for this drive: Note: all run scripts triggered via `npm run <script>`.
+
+Not for this drive: There are more npm scripts but they are mainly to integrate with CI or are meant to be "private" for instance to amend build distribution files with every commit.
+
+## DOMPurify: Security Mailing List
+
+We maintain a mailing list that notifies whenever a **security-critical** release of DOMPurify was published. This means, if someone found a bypass and we fixed it with a release (which always happens when a bypass was found) a mail will go out to that list. This usually happens within minutes or a few hours after learning about a bypass. The list can be subscribed to here:
+
+[https://lists.ruhr-uni-bochum.de/mailman/listinfo/dompurify-security](https://lists.ruhr-uni-bochum.de/mailman/listinfo/dompurify-security)
+
+Feature releases will not be announced to this list.
+
+## DOMPurify: Who contributed?
+
+Many people have helped DOMPurify become what it is today, and they deserve to be acknowledged!
+
+[gnyselcuk](https://github.com/gnyselcuk), [leechristensen](https://github.com/leechristensen),[offset](https://github.com/offset), [Bankde](https://github.com/Bankde), [lukewarlow](https://github.com/lukewarlow), [DEMON1A](https://github.com/DEMON1A), [fg0x0](https://github.com/fg0x0), [kodareef5](https://github.com/kodareef5), [DavidOliver](https://github.com/DavidOliver), [1Jesper1](https://github.com/1Jesper1), [bencalif](https://github.com/bencalif), [trace37labs](https://github.com/trace37labs), [eddieran](https://github.com/eddieran), [christos-eth](https://github.com/christos-eth), [researchatfluidattacks](https://github.com/researchatfluidattacks), [frevadiscor](https://github.com/frevadiscor), [Rotzbua](https://github.com/Rotzbua), [binhpv](https://github.com/binhpv), [MariusRumpf](https://github.com/MariusRumpf), [prasadrajandran](https://github.com/prasadrajandran), [Cybozu 💛💸](https://github.com/cybozu), [hata6502 💸](https://github.com/hata6502), [openclaw 💸](https://github.com/openclaw), [intra-mart-dh 💸](https://github.com/intra-mart-dh), [nelstrom ❤️](https://github.com/nelstrom), [hash_kitten ❤️](https://twitter.com/hash_kitten), [kevin_mizu ❤️](https://twitter.com/kevin_mizu), [icesfont ❤️](https://github.com/icesfont), [reduckted ❤️](https://github.com/reduckted), [dcramer 💸](https://github.com/dcramer), [JGraph 💸](https://github.com/jgraph), [baekilda 💸](https://github.com/baekilda), [Healthchecks 💸](https://github.com/healthchecks), [Sentry 💸](https://github.com/getsentry), [jarrodldavis 💸](https://github.com/jarrodldavis), [CynegeticIO](https://github.com/CynegeticIO), [ssi02014 ❤️](https://github.com/ssi02014), [GrantGryczan](https://github.com/GrantGryczan), [Lowdefy](https://twitter.com/lowdefy), [granlem](https://twitter.com/MaximeVeit), [oreoshake](https://github.com/oreoshake), [tdeekens ❤️](https://github.com/tdeekens), [peernohell ❤️](https://github.com/peernohell), [is2ei](https://github.com/is2ei), [SoheilKhodayari](https://github.com/SoheilKhodayari), [franktopel](https://github.com/franktopel), [NateScarlet](https://github.com/NateScarlet), [neilj](https://github.com/neilj), [fhemberger](https://github.com/fhemberger), [Joris-van-der-Wel](https://github.com/Joris-van-der-Wel), [ydaniv](https://github.com/ydaniv), [terjanq](https://twitter.com/terjanq), [filedescriptor](https://github.com/filedescriptor), [ConradIrwin](https://github.com/ConradIrwin), [gibson042](https://github.com/gibson042), [choumx](https://github.com/choumx), [0xSobky](https://github.com/0xSobky), [styfle](https://github.com/styfle), [koto](https://github.com/koto), [tlau88](https://github.com/tlau88), [strugee](https://github.com/strugee), [oparoz](https://github.com/oparoz), [mathiasbynens](https://github.com/mathiasbynens), [edg2s](https://github.com/edg2s), [dnkolegov](https://github.com/dnkolegov), [dhardtke](https://github.com/dhardtke), [wirehead](https://github.com/wirehead), [thorn0](https://github.com/thorn0), [styu](https://github.com/styu), [mozfreddyb ❤️](https://github.com/mozfreddyb), [mikesamuel](https://github.com/mikesamuel), [jorangreef](https://github.com/jorangreef), [jimmyhchan](https://github.com/jimmyhchan), [jameydeorio](https://github.com/jameydeorio), [jameskraus](https://github.com/jameskraus), [hyderali](https://github.com/hyderali), [hansottowirtz](https://github.com/hansottowirtz), [hackvertor](https://github.com/hackvertor), [freddyb](https://github.com/freddyb), [flavorjones](https://github.com/flavorjones), [djfarrelly](https://github.com/djfarrelly), [devd](https://github.com/devd), [camerondunford](https://github.com/camerondunford), [buu700](https://github.com/buu700), [buildog](https://github.com/buildog), [alabiaga](https://github.com/alabiaga), [Vector919](https://github.com/Vector919), [Robbert](https://github.com/Robbert), [GreLI](https://github.com/GreLI), [FuzzySockets](https://github.com/FuzzySockets), [ArtemBernatskyy](https://github.com/ArtemBernatskyy), [@garethheyes](https://twitter.com/garethheyes), [@shafigullin](https://twitter.com/shafigullin), [@mmrupp](https://twitter.com/mmrupp), [@irsdl](https://twitter.com/irsdl),[ShikariSenpai](https://github.com/ShikariSenpai), [ansjdnakjdnajkd](https://github.com/ansjdnakjdnajkd), [@asutherland](https://twitter.com/asutherland), [@mathias](https://twitter.com/mathias), [@cgvwzq](https://twitter.com/cgvwzq), [@robbertatwork](https://twitter.com/robbertatwork), [@giutro](https://twitter.com/giutro), [@CmdEngineer\_](https://twitter.com/CmdEngineer_), [@avr4mit](https://twitter.com/avr4mit), [davecardwell](https://github.com/davecardwell), [Develop-KIM](https://github.com/Develop-KIM), [asamuzaK](https://github.com/asamuzaK), [fishjojo1 ❤️](https://github.com/fishjojo1), [Rikuxx0](https://github.com/Rikuxx0), [donmccurdy](https://github.com/donmccurdy), [hhk-png](https://github.com/hhk-png), [elrion018](https://github.com/elrion018), [michalnieruchalski-tiugo](https://github.com/michalnieruchalski-tiugo), [reey](https://github.com/reey), [KanhaKanhaiya](https://github.com/KanhaKanhaiya), [odaysec](https://github.com/odaysec), [Akokonunes](https://github.com/Akokonunes), [alirezarouhbakhsh](https://github.com/alirezarouhbakhsh), [Jaybhade](https://github.com/Jaybhade), [rugk](https://github.com/rugk), [anzal1](https://github.com/anzal1), [e1abrador](https://github.com/e1abrador) and especially [@securitymb ❤️](https://twitter.com/securitymb) & [@masatokinugawa ❤️](https://twitter.com/masatokinugawa)
+
+
+## Types
+
+The package's type definitions, 1 files.
+
+### dist/purify.es.d.mts
+
+```ts
+/*! @license DOMPurify 3.5.0 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.5.0/LICENSE */
+import { TrustedHTML, TrustedTypePolicy, TrustedTypesWindow } from "trusted-types/lib/index.js";
+/**
+ * Configuration to control DOMPurify behavior.
+ */
+interface Config {
+  /**
+   * Extend the existing array of allowed attributes.
+   * Can be an array of attribute names, or a function that receives
+   * the attribute name and tag name to determine if the attribute is allowed.
+   */
+  ADD_ATTR?: string[] | ((attributeName: string, tagName: string) => boolean) | undefined;
+  /**
+   * Extend the existing array of elements that can use Data URIs.
+   */
+  ADD_DATA_URI_TAGS?: string[] | undefined;
+  /**
+   * Extend the existing array of allowed tags.
+   * Can be an array of tag names, or a function that receives
+   * the tag name to determine if the tag is allowed.
+   */
+  ADD_TAGS?: string[] | ((tagName: string) => boolean) | undefined;
+  /**
+   * Extend the existing array of elements that are safe for URI-like values (be careful, XSS risk).
+   */
+  ADD_URI_SAFE_ATTR?: string[] | undefined;
+  /**
+   * Allow ARIA attributes, leave other safe HTML as is (default is true).
+   */
+  ALLOW_ARIA_ATTR?: boolean | undefined;
+  /**
+   * Allow HTML5 data attributes, leave other safe HTML as is (default is true).
+   */
+  ALLOW_DATA_ATTR?: boolean | undefined;
+  /**
+   * Allow external protocol handlers in URL attributes (default is false, be careful, XSS risk).
+   * By default only `http`, `https`, `ftp`, `ftps`, `tel`, `mailto`, `callto`, `sms`, `cid`, `xmpp` and `matrix` are allowed.
+   */
+  ALLOW_UNKNOWN_PROTOCOLS?: boolean | undefined;
+  /**
+   * Decide if self-closing tags in attributes are allowed.
+   * Usually removed due to a mXSS issue in jQuery 3.0.
+   */
+  ALLOW_SELF_CLOSE_IN_ATTR?: boolean | undefined;
+  /**
+   * Allow only specific attributes.
+   */
+  ALLOWED_ATTR?: string[] | undefined;
+  /**
+   * Allow only specific elements.
+   */
+  ALLOWED_TAGS?: string[] | undefined;
+  /**
+   * Allow only specific namespaces. Defaults to:
+   *  - `http://www.w3.org/1999/xhtml`
+   *  - `http://www.w3.org/2000/svg`
+   *  - `http://www.w3.org/1998/Math/MathML`
+   */
+  ALLOWED_NAMESPACES?: string[] | undefined;
+  /**
+   * Allow specific protocols handlers in URL attributes via regex (be careful, XSS risk).
+   * Default RegExp:
+   * ```
+   * /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
+   * ```
+   */
+  ALLOWED_URI_REGEXP?: RegExp | undefined;
+  /**
+   * Define how custom elements are handled.
+   */
+  CUSTOM_ELEMENT_HANDLING?: {
+    /**
+     * Regular expression or function to match to allowed elements.
+     * Default is null (disallow any custom elements).
+     */
+    tagNameCheck?: RegExp | ((tagName: string) => boolean) | null | undefined;
+    /**
+     * Regular expression or function to match to allowed attributes.
+     * Default is null (disallow any attributes not on the allow list).
+     */
+    attributeNameCheck?: RegExp | ((attributeName: string, tagName?: string) => boolean) | null | undefined;
+    /**
+     * Allow custom elements derived from built-ins if they pass `tagNameCheck`. Default is false.
+     */
+    allowCustomizedBuiltInElements?: boolean | undefined;
+  };
+  /**
+   * Add attributes to block-list.
+   */
+  FORBID_ATTR?: string[] | undefined;
+  /**
+   * Add child elements to be removed when their parent is removed.
+   */
+  FORBID_CONTENTS?: string[] | undefined;
+  /**
+   * Extend the existing or default array of forbidden content elements.
+   */
+  ADD_FORBID_CONTENTS?: string[] | undefined;
+  /**
+   * Add elements to block-list.
+   */
+  FORBID_TAGS?: string[] | undefined;
+  /**
+   * Glue elements like style, script or others to `document.body` and prevent unintuitive browser behavior in several edge-cases (default is false).
+   */
+  FORCE_BODY?: boolean | undefined;
+  /**
+   * Map of non-standard HTML element names to support. Map to true to enable support. For example:
+   *
+   * ```
+   * HTML_INTEGRATION_POINTS: { foreignobject: true }
+   * ```
+   */
+  HTML_INTEGRATION_POINTS?: Record<string, boolean> | undefined;
+  /**
+   * Sanitize a node "in place", which is much faster depending on how you use DOMPurify.
+   */
+  IN_PLACE?: boolean | undefined;
+  /**
+   * Keep an element's content when the element is removed (default is true).
+   */
+  KEEP_CONTENT?: boolean | undefined;
+  /**
+   * Map of MathML element names to support. Map to true to enable support. For example:
+   *
+   * ```
+   * MATHML_TEXT_INTEGRATION_POINTS: { mtext: true }
+   * ```
+   */
+  MATHML_TEXT_INTEGRATION_POINTS?: Record<string, boolean> | undefined;
+  /**
+   * Change the default namespace from HTML to something different.
+   */
+  NAMESPACE?: string | undefined;
+  /**
+   * Change the parser type so sanitized data is treated as XML and not as HTML, which is the default.
+   */
+  PARSER_MEDIA_TYPE?: DOMParserSupportedType | undefined;
+  /**
+   * Return a DOM `DocumentFragment` instead of an HTML string (default is false).
+   */
+  RETURN_DOM_FRAGMENT?: boolean | undefined;
+  /**
+   * Return the sanitized body element instead of an HTML string (default is false).
+   * With `WHOLE_DOCUMENT` or a custom `NAMESPACE` it is the root element.
+   */
+  RETURN_DOM?: boolean | undefined;
+  /**
+   * Return a TrustedHTML object instead of a string if possible.
+   */
+  RETURN_TRUSTED_TYPE?: boolean | undefined;
+  /**
+   * Strip `{{ ... }}`, `${ ... }` and `<% ... %>` to make output safe for template systems.
+   * Be careful please, this mode is not recommended for production usage.
+   * Allowing template parsing in user-controlled HTML is not advised at all.
+   * Only use this mode if there is really no alternative.
+   */
+  SAFE_FOR_TEMPLATES?: boolean | undefined;
+  /**
+   * Change how e.g. comments containing risky HTML characters are treated.
+   * Be very careful, this setting should only be set to `false` if you really only handle
+   * HTML and nothing else, no SVG, MathML or the like.
+   * Otherwise, changing from `true` to `false` will lead to XSS in this or some other way.
+   */
+  SAFE_FOR_XML?: boolean | undefined;
+  /**
+   * Use DOM Clobbering protection on output (default is true, handle with care, minor XSS risks here).
+   */
+  SANITIZE_DOM?: boolean | undefined;
+  /**
+   * Enforce strict DOM Clobbering protection via namespace isolation (default is false).
+   * When enabled, isolates the namespace of named properties (i.e., `id` and `name` attributes)
+   * from JS variables by prefixing them with the string `user-content-`
+   */
+  SANITIZE_NAMED_PROPS?: boolean | undefined;
+  /**
+   * Supplied policy must define `createHTML` and `createScriptURL`.
+   */
+  TRUSTED_TYPES_POLICY?: TrustedTypePolicy | null | undefined;
+  /**
+   * Controls categories of allowed elements.
+   *
+   * Note that the `USE_PROFILES` setting will override the `ALLOWED_TAGS` and
+   * `ALLOWED_ATTR` settings, so don't use them together.
+   */
+  USE_PROFILES?: false | UseProfilesConfig | undefined;
+  /**
+   * Return entire document including <html> tags (default is false).
+   */
+  WHOLE_DOCUMENT?: boolean | undefined;
+}
+/**
+ * Defines categories of allowed elements.
+ */
+interface UseProfilesConfig {
+  /**
+   * Allow all safe MathML elements.
+   */
+  mathMl?: boolean | undefined;
+  /**
+   * Allow all safe SVG elements.
+   */
+  svg?: boolean | undefined;
+  /**
+   * Allow all safe SVG Filters.
+   */
+  svgFilters?: boolean | undefined;
+  /**
+   * Allow all safe HTML elements.
+   */
+  html?: boolean | undefined;
+}
+interface DOMPurify {
+  /**
+   * Creates a DOMPurify instance using the given window-like object. Defaults to `window`.
+   */
+  (root?: WindowLike): DOMPurify;
+  /**
+   * Version label, exposed for easier checks
+   * if DOMPurify is up to date or not
+   */
+  version: string;
+  /**
+   * Array of elements that DOMPurify removed during sanitation.
+   * Empty if nothing was removed.
+   */
+  removed: Array<RemovedElement | RemovedAttribute>;
+  /**
+   * Expose whether this browser supports running the full DOMPurify.
+   */
+  isSupported: boolean;
+  /**
+   * Set the configuration once.
+   *
+   * @param cfg configuration object
+   */
+  setConfig(cfg?: Config): void;
+  /**
+   * Removes the configuration.
+   */
+  clearConfig(): void;
+  /**
+   * Provides core sanitation functionality.
+   *
+   * @param dirty string or DOM node
+   * @param cfg object
+   * @returns Sanitized TrustedHTML.
+   */
+  sanitize(dirty: string | Node, cfg: Config & {
+    RETURN_TRUSTED_TYPE: true;
+  }): TrustedHTML;
+  /**
+   * Provides core sanitation functionality.
+   *
+   * @param dirty DOM node
+   * @param cfg object
+   * @returns Sanitized DOM node.
+   */
+  sanitize(dirty: Node, cfg: Config & {
+    IN_PLACE: true;
+  }): Node;
+  /**
+   * Provides core sanitation functionality.
+   *
+   * @param dirty string or DOM node
+   * @param cfg object
+   * @returns Sanitized body or root element. Can be null at runtime if
+   * the input cannot be parsed, e.g. malformed XHTML.
+   */
+  sanitize(dirty: string | Node, cfg: Config & {
+    RETURN_DOM: true;
+  }): Element;
+  /**
+   * Provides core sanitation functionality.
+   *
+   * @param dirty string or DOM node
+   * @param cfg object
+   * @returns Sanitized document fragment. Can be null at runtime if
+   * the input cannot be parsed, e.g. malformed XHTML.
+   */
+  sanitize(dirty: string | Node, cfg: Config & {
+    RETURN_DOM_FRAGMENT: true;
+  }): DocumentFragment;
+  /**
+   * Provides core sanitation functionality.
+   *
+   * @param dirty string or DOM node
+   * @param cfg object
+   * @returns Sanitized string.
+   */
+  sanitize(dirty: string | Node, cfg?: Config): string;
+  /**
+   * Checks if an attribute value is valid.
+   * Uses last set config, if any. Otherwise, uses config defaults.
+   *
+   * @param tag Tag name of containing element.
+   * @param attr Attribute name.
+   * @param value Attribute value.
+   * @returns Returns true if `value` is valid. Otherwise, returns false.
+   */
+  isValidAttribute(tag: string, attr: string, value: string): boolean;
+  /**
+   * Adds a DOMPurify hook.
+   *
+   * @param entryPoint entry point for the hook to add
+   * @param hookFunction function to execute
+   */
+  addHook(entryPoint: BasicHookName, hookFunction: NodeHook): void;
+  /**
+   * Adds a DOMPurify hook.
+   *
+   * @param entryPoint entry point for the hook to add
+   * @param hookFunction function to execute
+   */
+  addHook(entryPoint: ElementHookName, hookFunction: ElementHook): void;
+  /**
+   * Adds a DOMPurify hook.
+   *
+   * @param entryPoint entry point for the hook to add
+   * @param hookFunction function to execute
+   */
+  addHook(entryPoint: DocumentFragmentHookName, hookFunction: DocumentFragmentHook): void;
+  /**
+   * Adds a DOMPurify hook.
+   *
+   * @param entryPoint entry point for the hook to add
+   * @param hookFunction function to execute
+   */
+  addHook(entryPoint: 'uponSanitizeElement', hookFunction: UponSanitizeElementHook): void;
+  /**
+   * Adds a DOMPurify hook.
+   *
+   * @param entryPoint entry point for the hook to add
+   * @param hookFunction function to execute
+   */
+  addHook(entryPoint: 'uponSanitizeAttribute', hookFunction: UponSanitizeAttributeHook): void;
+  /**
+   * Remove a DOMPurify hook at a given entryPoint
+   * (pops it from the stack of hooks if hook not specified)
+   *
+   * @param entryPoint entry point for the hook to remove
+   * @param hookFunction optional specific hook to remove
+   * @returns removed hook
+   */
+  removeHook(entryPoint: BasicHookName, hookFunction?: NodeHook): NodeHook | undefined;
+  /**
+   * Remove a DOMPurify hook at a given entryPoint
+   * (pops it from the stack of hooks if hook not specified)
+   *
+   * @param entryPoint entry point for the hook to remove
+   * @param hookFunction optional specific hook to remove
+   * @returns removed hook
+   */
+  removeHook(entryPoint: ElementHookName, hookFunction?: ElementHook): ElementHook | undefined;
+  /**
+   * Remove a DOMPurify hook at a given entryPoint
+   * (pops it from the stack of hooks if hook not specified)
+   *
+   * @param entryPoint entry point for the hook to remove
+   * @param hookFunction optional specific hook to remove
+   * @returns removed hook
+   */
+  removeHook(entryPoint: DocumentFragmentHookName, hookFunction?: DocumentFragmentHook): DocumentFragmentHook | undefined;
+  /**
+   * Remove a DOMPurify hook at a given entryPoint
+   * (pops it from the stack of hooks if hook not specified)
+   *
+   * @param entryPoint entry point for the hook to remove
+   * @param hookFunction optional specific hook to remove
+   * @returns removed hook
+   */
+  removeHook(entryPoint: 'uponSanitizeElement', hookFunction?: UponSanitizeElementHook): UponSanitizeElementHook | undefined;
+  /**
+   * Remove a DOMPurify hook at a given entryPoint
+   * (pops it from the stack of hooks if hook not specified)
+   *
+   * @param entryPoint entry point for the hook to remove
+   * @param hookFunction optional specific hook to remove
+   * @returns removed hook
+   */
+  removeHook(entryPoint: 'uponSanitizeAttribute', hookFunction?: UponSanitizeAttributeHook): UponSanitizeAttributeHook | undefined;
+  /**
+   * Removes all DOMPurify hooks at a given entryPoint
+   *
+   * @param entryPoint entry point for the hooks to remove
+   */
+  removeHooks(entryPoint: HookName): void;
+  /**
+   * Removes all DOMPurify hooks.
+   */
+  removeAllHooks(): void;
+}
+/**
+ * An element removed by DOMPurify.
+ */
+interface RemovedElement {
+  /**
+   * The element that was removed.
+   */
+  element: Node;
+}
+/**
+ * An element removed by DOMPurify.
+ */
+interface RemovedAttribute {
+  /**
+   * The attribute that was removed.
+   */
+  attribute: Attr | null;
+  /**
+   * The element that the attribute was removed.
+   */
+  from: Node;
+}
+type BasicHookName = 'beforeSanitizeElements' | 'afterSanitizeElements' | 'uponSanitizeShadowNode';
+type ElementHookName = 'beforeSanitizeAttributes' | 'afterSanitizeAttributes';
+type DocumentFragmentHookName = 'beforeSanitizeShadowDOM' | 'afterSanitizeShadowDOM';
+type UponSanitizeElementHookName = 'uponSanitizeElement';
+type UponSanitizeAttributeHookName = 'uponSanitizeAttribute';
+type HookName = BasicHookName | ElementHookName | DocumentFragmentHookName | UponSanitizeElementHookName | UponSanitizeAttributeHookName;
+type NodeHook = (this: DOMPurify, currentNode: Node, hookEvent: null, config: Config) => void;
+type ElementHook = (this: DOMPurify, currentNode: Element, hookEvent: null, config: Config) => void;
+type DocumentFragmentHook = (this: DOMPurify, currentNode: DocumentFragment, hookEvent: null, config: Config) => void;
+type UponSanitizeElementHook = (this: DOMPurify, currentNode: Node, hookEvent: UponSanitizeElementHookEvent, config: Config) => void;
+type UponSanitizeAttributeHook = (this: DOMPurify, currentNode: Element, hookEvent: UponSanitizeAttributeHookEvent, config: Config) => void;
+interface UponSanitizeElementHookEvent {
+  tagName: string;
+  allowedTags: Record<string, boolean>;
+}
+interface UponSanitizeAttributeHookEvent {
+  attrName: string;
+  attrValue: string;
+  keepAttr: boolean;
+  allowedAttributes: Record<string, boolean>;
+  forceKeepAttr: boolean | undefined;
+}
+/**
+ * A `Window`-like object containing the properties and types that DOMPurify requires.
+ */
+type WindowLike = Pick<typeof globalThis, 'DocumentFragment' | 'HTMLTemplateElement' | 'Node' | 'Element' | 'NodeFilter' | 'NamedNodeMap' | 'HTMLFormElement' | 'DOMParser'> & {
+  document?: Document;
+  MozNamedAttrMap?: typeof window.NamedNodeMap;
+} & Pick<TrustedTypesWindow, 'trustedTypes'>;
+declare const _default: DOMPurify;
+export { _default as default };
+export type { Config, DOMPurify, DocumentFragmentHook, ElementHook, HookName, NodeHook, RemovedAttribute, RemovedElement, UponSanitizeAttributeHook, UponSanitizeAttributeHookEvent, UponSanitizeElementHook, UponSanitizeElementHookEvent, WindowLike };
+```
+

@@ -5,8 +5,12 @@ tags:
 - navigation
 - general-reference
 depth: overview
-size_gb: 0.42
+# The unpacked GeoPackage (0.89 GB); the zip is 0.45 GB. Apply installs the
+# zip's natural_earth_vector.gpkg as data/natural_earth_vector.gpkg, where the
+# drive's query tools open it.
+size_gb: 0.89
 url: https://naciscdn.org/naturalearth/packages/natural_earth_vector.gpkg.zip
+sha256: b9e2e7b3d5c2c59593f6eafc19be2ba87fb04788a90c57ccd6cf32a587b6ecc3
 filename: natural_earth_vector.gpkg.zip
 description: Natural Earth — public domain global basemap vectors (boundaries, coastlines, roads, populated places)
 license:

@@ -3,15 +3,22 @@ package apply
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
@@ -43,8 +50,8 @@ func assembleBundle(ctx context.Context, root, id string, recipe catalog.Item, o
 		}
 		filename := filenameFromURL(source.URL)
 		downloaded := filepath.Join(staging, "downloads", filename)
-		if !isArchive(filename) && (source.Strip != "" || len(source.Files) > 0) {
-			return manifest.RealizedEntry{}, fmt.Errorf("%s: strip and files apply only to archives, not %s", id, filename)
+		if !isArchive(filename) && (source.Strip != "" || len(source.Files) > 0 || len(source.Include) > 0) {
+			return manifest.RealizedEntry{}, fmt.Errorf("%s: strip, files and include apply only to archives, not %s", id, filename)
 		}
 		if _, err := fetchFile(ctx, id, source.URL, downloaded, filename, source.SHA256, onProgress); err != nil {
 			return manifest.RealizedEntry{}, err
@@ -58,9 +65,13 @@ func assembleBundle(ctx context.Context, root, id string, recipe catalog.Item, o
 			}
 			continue
 		}
-		if err := extractArchive(downloaded, filepath.Join(tree, dest), source.Strip, source.Files); err != nil {
+		if err := extractArchive(downloaded, filepath.Join(tree, dest), source.Strip, source.Files, source.Include); err != nil {
 			return manifest.RealizedEntry{}, fmt.Errorf("%s: unpacking %s: %w", id, filename, err)
 		}
+	}
+
+	if recipe.Type == catalog.LibraryType {
+		return writeLibraryArchive(root, typeDir, id, recipe, tree, staging)
 	}
 
 	final := filepath.Join(root, typeDir, id)
@@ -90,11 +101,128 @@ func assembleBundle(ctx context.Context, root, id string, recipe catalog.Item, o
 	}, nil
 }
 
-// extractArchive writes the regular files below strip (optionally only those
-// listed in files) into destDir. Symlinks and other special entries are
-// skipped, and every listed file must be present.
-func extractArchive(archivePath, destDir, strip string, files []string) error {
+// libraryIndexFile is the file at the top of a js-lib archive that names, by
+// package directory, the file a bare import resolves to when a bundle source
+// sets main. `svalbard-drive html pack` reads it.
+const libraryIndexFile = "svalbard-js.json"
+
+// archiveTime is the modification time of every file in a js-lib archive, so
+// the same sources always make the same bytes (and the same checksum).
+var archiveTime = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// writeLibraryArchive packs a js-lib recipe's assembled tree into
+// <type dir>/<id>.zip, the one file it puts on the drive, and deletes the
+// tree and the downloads.
+func writeLibraryArchive(root, typeDir, id string, recipe catalog.Item, tree, staging string) (manifest.RealizedEntry, error) {
+	mains := map[string]string{}
+	for _, source := range recipe.Bundle {
+		if source.Main != "" {
+			mains[path.Clean(source.Dest)] = path.Clean(source.Main)
+		}
+	}
+	var files []string
+	if err := filepath.WalkDir(tree, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(tree, p)
+		files = append(files, filepath.ToSlash(rel))
+		return err
+	}); err != nil {
+		return manifest.RealizedEntry{}, err
+	}
+	sort.Strings(files)
+	for dir, main := range mains {
+		if !slices.Contains(files, dir+"/"+main) {
+			return manifest.RealizedEntry{}, fmt.Errorf("%s: main %s of %s is not among the extracted files", id, main, dir)
+		}
+	}
+
+	final := filepath.Join(root, typeDir, id+".zip")
+	if err := os.MkdirAll(filepath.Dir(final), 0o755); err != nil {
+		return manifest.RealizedEntry{}, err
+	}
+	partial := final + ".part"
+	out, err := os.Create(partial)
+	if err != nil {
+		return manifest.RealizedEntry{}, err
+	}
+	hash := sha256.New()
+	counter := &countingWriter{w: io.MultiWriter(out, hash)}
+	zw := zip.NewWriter(counter)
+	add := func(name string, r io.Reader) error {
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: archiveTime})
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(w, r)
+		return err
+	}
+	index, err := json.Marshal(struct {
+		Recipe string            `json:"recipe"`
+		Main   map[string]string `json:"main"`
+	}{id, mains})
+	if err == nil {
+		err = add(libraryIndexFile, bytes.NewReader(index))
+	}
+	for _, name := range files {
+		if err != nil {
+			break
+		}
+		var f *os.File
+		if f, err = os.Open(filepath.Join(tree, filepath.FromSlash(name))); err == nil {
+			err = add(name, f)
+			f.Close()
+		}
+	}
+	if err == nil {
+		err = zw.Close()
+	}
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(partial, final)
+	}
+	if err != nil {
+		os.Remove(partial)
+		return manifest.RealizedEntry{}, fmt.Errorf("%s: writing %s: %w", id, filepath.Base(final), err)
+	}
+	if err := os.RemoveAll(staging); err != nil {
+		return manifest.RealizedEntry{}, err
+	}
+	return manifest.RealizedEntry{
+		ID:             id,
+		Type:           recipe.Type,
+		Filename:       id + ".zip",
+		RelativePath:   filepath.Join(typeDir, id+".zip"),
+		SizeBytes:      counter.n,
+		ChecksumSHA256: hex.EncodeToString(hash.Sum(nil)),
+		SourceStrategy: recipe.Strategy,
+	}, nil
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+// extractArchive writes the regular files below strip into destDir:
+// optionally only those listed in files, or only those matching an include
+// pattern. Symlinks and other special entries are skipped, every listed file
+// must be present and every pattern must match a file.
+func extractArchive(archivePath, destDir, strip string, files, include []string) error {
+	if len(files) > 0 && len(include) > 0 {
+		return fmt.Errorf("files and include cannot be used together: list the exact names as include patterns")
+	}
 	strip = strings.Trim(path.Clean("/"+strip), "/")
+	matched := make([]bool, len(include))
 	wanted := make(map[string]bool, len(files))
 	for _, name := range files {
 		clean, err := localPath(name)
@@ -121,6 +249,17 @@ func extractArchive(archivePath, destDir, strip string, files []string) error {
 				return nil
 			}
 			wanted[rel] = true
+		}
+		if len(include) > 0 {
+			keep := false
+			for i, pattern := range include {
+				if matchInclude(pattern, rel) {
+					matched[i], keep = true, true
+				}
+			}
+			if !keep {
+				return nil
+			}
 		}
 		target := filepath.Join(destDir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -156,10 +295,38 @@ func extractArchive(archivePath, destDir, strip string, files []string) error {
 			return fmt.Errorf("archive has no %s", path.Join(strip, name))
 		}
 	}
+	for i, pattern := range include {
+		if !matched[i] {
+			return fmt.Errorf("include pattern %q matches no file below %q", pattern, strip)
+		}
+	}
 	if written == 0 {
 		return fmt.Errorf("no files below %q", strip)
 	}
 	return nil
+}
+
+// matchInclude reports whether rel, a slash path below the strip directory,
+// matches an include pattern: path.Match segment by segment, where a final
+// "**" segment matches everything below the segments before it.
+func matchInclude(pattern, rel string) bool {
+	patternSegs := strings.Split(strings.Trim(pattern, "/"), "/")
+	relSegs := strings.Split(rel, "/")
+	if last := len(patternSegs) - 1; patternSegs[last] == "**" {
+		if len(relSegs) <= last {
+			return false
+		}
+		patternSegs, relSegs = patternSegs[:last], relSegs[:last]
+	}
+	if len(patternSegs) != len(relSegs) {
+		return false
+	}
+	for i, seg := range patternSegs {
+		if ok, err := path.Match(seg, relSegs[i]); err != nil || !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func isArchive(filename string) bool {

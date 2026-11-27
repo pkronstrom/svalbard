@@ -2,6 +2,7 @@ package query_test
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -152,5 +153,74 @@ func TestDescribeReturnsSampleRows(t *testing.T) {
 	samples := info.Tables[0].Samples
 	if len(samples) != 3 {
 		t.Fatalf("expected 3 sample rows, got %d", len(samples))
+	}
+}
+
+func TestGeoPackageDescribeListsLayersAndHidesBlobs(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "data"), 0o755)
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "data", "ne.gpkg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		"CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT)",
+		"CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT, srs_id INTEGER PRIMARY KEY)",
+		"CREATE TABLE countries (fid INTEGER PRIMARY KEY, geom BLOB, NAME TEXT)",
+		"CREATE TABLE rtree_countries_geom_node (nodeno INTEGER PRIMARY KEY, data BLOB)",
+		"INSERT INTO gpkg_contents VALUES ('countries', 'features')",
+		"INSERT INTO countries VALUES (1, X'4750000100000000', 'Finland')",
+		"INSERT INTO countries VALUES (2, X'00FF00', 'Sweden')",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+
+	info, err := query.Describe(dir, "ne.gpkg", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.Tables) != 1 || info.Tables[0].Name != "countries" {
+		t.Fatalf("tables = %+v, want only the layer", info.Tables)
+	}
+	one, err := query.Describe(dir, "ne.gpkg", "countries")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(one.Tables) != 1 || len(one.Tables[0].Samples) != 2 {
+		t.Fatalf("describe countries = %+v", one)
+	}
+	if got := one.Tables[0].Samples[0]["geom"]; got != "<GeoPackage geometry, 8 bytes>" {
+		t.Errorf("geometry sample = %q, want its size", got)
+	}
+	if got := one.Tables[0].Samples[1]["geom"]; got != "<blob, 3 bytes>" {
+		t.Errorf("blob sample = %q, want its size", got)
+	}
+	if got := one.Tables[0].Samples[0]["NAME"]; got != "Finland" {
+		t.Errorf("NAME = %v", got)
+	}
+}
+
+func TestDescribeLeavesColumnsOutOfLongTableLists(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "data"), 0o755)
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "data", "many.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 30 {
+		if _, err := db.Exec(fmt.Sprintf("CREATE TABLE t%02d (a TEXT, b TEXT)", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	info, err := query.Describe(dir, "many.sqlite", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.Tables) != 30 || info.Tables[0].Columns != nil || info.Note == "" {
+		t.Fatalf("describe = %+v, want 30 tables without columns and a note to name one", info)
 	}
 }

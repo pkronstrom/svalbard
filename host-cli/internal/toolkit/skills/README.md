@@ -43,6 +43,24 @@ skill folder's name is the skill's name.
 - The last step is "Check your result", running `examples/check.sh` on what
   the agent made.
 
+## HTML skills
+
+The skills that make pages (`html-app`, `data-dashboard`, `geodata`,
+`offline-map`, `diagram`, `parametric-cad`, `generative-art`) start from a
+tested template in `templates/`, with the parts a model changes between
+`<!-- EDIT: name -->` and `<!-- /EDIT -->` (or `// EDIT:` and `// /EDIT` in
+scripts). The rest of the template must keep working whatever goes into
+those regions. A page imports the drive's libraries by package name and
+imports its data files; `svalbard-drive html pack` makes one file of it
+(or, for a map over the drive's tiles, a folder with `--dir`). Never a CDN,
+never a fetch of a file beside the page.
+
+Their `examples/check.sh` packs the page again (which fails on anything
+that loads from the network, fetches, or names a missing file) and, when
+`SVALBARD_HTML_CHECK` names `scripts/html-check.sh`, loads it offline in
+headless Chromium and Firefox with a condition that it drew what it should.
+Without a browser checker the check says so and passes on the rest.
+
 ## Offline rules
 
 `make verify` fails a skill (`skills_lint.go`) that:

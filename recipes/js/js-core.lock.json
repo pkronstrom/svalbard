@@ -1,0 +1,178 @@
+{
+  "id": "js-core",
+  "packages": {
+    "alpinejs": "3.x",
+    "@picocss/pico": "2.x",
+    "lucide": "1.x",
+    "chart.js": "4.x",
+    "d3": "7.x",
+    "papaparse": "5.x",
+    "dompurify": "3.x",
+    "minisearch": "7.x",
+    "fflate": "0.8.x",
+    "marked": "18.x",
+    "mermaid": "12.x",
+    "pdf-lib": "1.x",
+    "mathjs": "15.x",
+    "@fontsource-variable/inter": "5.x",
+    "@fontsource-variable/fraunces": "5.x"
+  },
+  "entries": {
+    "chart.js": [
+      "chart.js",
+      "chart.js/auto"
+    ]
+  },
+  "umd": {
+    "alpinejs": "dist/module.esm.min.js",
+    "@picocss/pico": "css/pico.min.css",
+    "lucide": "dist/umd/lucide.min.js",
+    "d3": "dist/d3.min.js",
+    "papaparse": "papaparse.min.js",
+    "dompurify": "dist/purify.es.mjs",
+    "mermaid": "dist/mermaid.min.js",
+    "xlsx": "xlsx.mjs",
+    "pdf-lib": "dist/pdf-lib.esm.min.js",
+    "mathjs": "lib/browser/math.js",
+    "@fontsource-variable/inter": "files/inter-latin-wght-normal.woff2",
+    "@fontsource-variable/fraunces": "files/fraunces-latin-wght-normal.woff2"
+  },
+  "tarballs": {
+    "xlsx": {
+      "url": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+      "version": "0.20.3",
+      "sha256": "8dc73fc3b00203e72d176e85b50938627c7b086e607c682e8d3c22c02bb99fe8"
+    }
+  },
+  "docs": {
+    "alpinejs": {
+      "repo": "alpinejs/alpine",
+      "ref": "v{version}",
+      "include": [
+        "packages/docs/src/en/**/*.md"
+      ],
+      "license": "MIT"
+    },
+    "@picocss/pico": {
+      "license": "MIT",
+      "gap": "Pico's documentation is the picocss.com site, not Markdown in its repository; the README and the class names in css/pico.min.css cover what a page uses"
+    },
+    "lucide": {
+      "repo": "lucide-icons/lucide",
+      "ref": "{version}",
+      "include": [
+        "docs/guide/lucide/*.md",
+        "docs/guide/basics/*.md"
+      ],
+      "license": "ISC",
+      "names": "dist/esm/icons/*.mjs",
+      "names_note": "Every icon name in this version, for data-lucide=\"name\" (and as PascalCase in lucide.icons, for example ArrowRight)."
+    },
+    "chart.js": {
+      "repo": "chartjs/Chart.js",
+      "ref": "v{version}",
+      "include": [
+        "docs/**/*.md"
+      ],
+      "exclude": [
+        "docs/samples/**",
+        "docs/migration/**",
+        "docs/developers/contributing.md",
+        "docs/developers/publishing.md"
+      ],
+      "license": "MIT"
+    },
+    "d3": {
+      "repo": "d3/d3",
+      "ref": "v{version}",
+      "include": [
+        "docs/**/*.md"
+      ],
+      "exclude": [
+        "docs/api.md",
+        "docs/community.md",
+        "docs/getting-started.md"
+      ],
+      "license": "ISC"
+    },
+    "papaparse": {
+      "license": "MIT",
+      "gap": "Papa Parse's documentation is docs.html in its repository, not Markdown"
+    },
+    "dompurify": {
+      "types": [
+        "dist/purify.es.d.mts"
+      ],
+      "license": "MPL-2.0 OR Apache-2.0"
+    },
+    "minisearch": {
+      "types": [
+        "dist/es/index.d.ts"
+      ],
+      "license": "MIT"
+    },
+    "fflate": {
+      "repo": "101arrowz/fflate",
+      "ref": "v{version}",
+      "include": [
+        "docs/**/*.md"
+      ],
+      "license": "MIT"
+    },
+    "marked": {
+      "repo": "markedjs/marked",
+      "ref": "v{version}",
+      "include": [
+        "docs/INDEX.md",
+        "docs/USING_ADVANCED.md",
+        "docs/USING_PRO.md"
+      ],
+      "license": "MIT"
+    },
+    "mermaid": {
+      "repo": "mermaid-js/mermaid",
+      "ref": "mermaid@{version}",
+      "include": [
+        "docs/syntax/*.md",
+        "docs/config/usage.md",
+        "docs/config/theming.md",
+        "docs/intro/syntax-reference.md"
+      ],
+      "exclude": [
+        "docs/syntax/all-examples.md",
+        "docs/syntax/examples.md"
+      ],
+      "license": "MIT"
+    },
+    "xlsx": {
+      "types": [
+        "types/index.d.ts"
+      ],
+      "license": "Apache-2.0",
+      "gap": "SheetJS documents itself at docs.sheetjs.com, from a separate repository; the README and types/index.d.ts are joined here"
+    },
+    "pdf-lib": {
+      "types": [
+        "es/api/**/*.d.ts"
+      ],
+      "license": "MIT"
+    },
+    "mathjs": {
+      "repo": "josdejong/mathjs",
+      "ref": "v{version}",
+      "include": [
+        "docs/**/*.md"
+      ],
+      "license": "Apache-2.0"
+    },
+    "@fontsource-variable/inter": {
+      "license": "OFL-1.1"
+    },
+    "@fontsource-variable/fraunces": {
+      "license": "OFL-1.1"
+    }
+  },
+  "license_files": {
+    "alpinejs": "https://raw.githubusercontent.com/alpinejs/alpine/v{version}/LICENSE.md"
+  }
+}

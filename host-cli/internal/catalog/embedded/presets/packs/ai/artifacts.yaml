@@ -1,0 +1,9 @@
+name: ai/artifacts
+kind: pack
+display_group: AI
+description: Browser libraries for 3D and CAD, map and creative pages that the AI clients build and pack into one HTML file (js-core comes with the skills)
+target_size_gb: 0.01
+sources:
+- js-3d-cad
+- js-maps
+- js-media

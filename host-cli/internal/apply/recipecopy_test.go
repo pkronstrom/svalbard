@@ -176,3 +176,25 @@ func TestRunKeepsRecipeCopyOfAFailedCollectionAndRemovesItWithTheCollection(t *t
 		t.Fatalf("books/manuals left behind: %v", err)
 	}
 }
+
+// A user js-lib recipe travels with the vault like a document collection.
+func TestRecipeCopyOfAUserJSLib(t *testing.T) {
+	cat := catalog.NewTestCatalog(t)
+	dir := t.TempDir()
+	body := "type: js-lib\nbundle:\n  - url: https://registry.npmjs.org/uplot/-/uplot-1.6.32.tgz\n    sha256: " + strings.Repeat("ab", 32) + "\n    dest: node_modules/uplot\n"
+	if err := os.WriteFile(filepath.Join(dir, "js-mine.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if skipped := cat.LoadUserRecipes(dir); len(skipped) != 0 {
+		t.Fatalf("skipped %+v", skipped)
+	}
+	root := t.TempDir()
+	m := manifest.New("test")
+	m.Desired.Items = []string{"js-mine"}
+	if err := syncRecipeCopies(root, &m, cat); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(catalog.VaultRecipeDir(root), "js-mine.yaml")); err != nil || string(data) != body {
+		t.Errorf("vault copy = %q, %v", data, err)
+	}
+}

@@ -88,8 +88,8 @@ func VaultRecipeDir(vaultRoot string) string {
 }
 
 // LoadUserRecipes adds the *.yaml recipes found in dirs (missing dirs are
-// ignored) to the catalog. A user recipe is a document collection: it must
-// list documents, and its id may not shadow a built-in recipe or another user
+// ignored) to the catalog. A user recipe is a document collection, which
+// lists documents, or a js-lib recipe of pinned packages; its id may not shadow a built-in recipe or another user
 // recipe, also not by letter case, since both would share one folder on the
 // vault. A recipe that fails is skipped rather than failing the load; the
 // skipped files are returned and kept for SkippedUserRecipes. Local document
@@ -171,6 +171,10 @@ func (c *Catalog) loadRecipeDir(dir string, vaultCopy bool) (added []string, ski
 			skip(item.ID, path, reason)
 			continue
 		}
+		if err := ValidateLibraries(append(c.AllRecipes(), item)); err != nil {
+			skip(item.ID, path, err.Error())
+			continue
+		}
 		item.Path, item.VaultCopy = path, vaultCopy
 		c.recipes[item.ID] = item
 		added = append(added, item.ID)
@@ -199,8 +203,11 @@ func prepareUserRecipe(item *Item, baseDir string, resolve bool) string {
 	if !userRecipeIDRe.MatchString(item.ID) {
 		return fmt.Sprintf("id %q may only hold letters, digits, '.', '_' and '-'", item.ID)
 	}
+	if item.Type == LibraryType {
+		return prepareUserLibraries(item)
+	}
 	if len(item.Documents) == 0 {
-		return "missing documents: a user recipe lists the documents of a collection"
+		return "missing documents: a user recipe lists the documents of a collection, or is of type js-lib"
 	}
 	if item.URL != "" || item.URLPattern != "" || len(item.Platforms) > 0 || len(item.Bundle) > 0 || item.Build != nil {
 		return "a user recipe takes documents only, not url, url_pattern, platforms, bundle or build"
@@ -262,6 +269,33 @@ func prepareUserRecipe(item *Item, baseDir string, resolve bool) string {
 			return fmt.Sprintf("%s: another document is already saved as %s; set filename: on one of them", entry, name)
 		}
 		names[key] = true
+	}
+	return ""
+}
+
+// prepareUserLibraries validates a user js-lib recipe: pinned npm-style
+// sources only, installed into its archive like a built-in one.
+func prepareUserLibraries(item *Item) string {
+	if len(item.Bundle) == 0 {
+		return "a js-lib recipe lists its packages under bundle"
+	}
+	if len(item.Documents) > 0 || item.URL != "" || item.URLPattern != "" || len(item.Platforms) > 0 || item.Build != nil {
+		return "a js-lib recipe takes bundle and libraries only, not documents, url, url_pattern, platforms or build"
+	}
+	for i, source := range item.Bundle {
+		u, err := url.Parse(source.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Sprintf("bundle[%d]: url %q must start with http:// or https://", i, source.URL)
+		}
+		if !sha256Re.MatchString(source.SHA256) {
+			return fmt.Sprintf("bundle[%d]: sha256 must be 64 hex characters", i)
+		}
+	}
+	if item.Strategy == "" {
+		item.Strategy = "download"
+	}
+	if err := validateLibraryRecipe(*item); err != nil {
+		return err.Error()
 	}
 	return ""
 }

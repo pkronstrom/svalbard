@@ -122,3 +122,19 @@ build:
 		t.Error("changing a band's zoom range kept the acquisition hash")
 	}
 }
+
+// A bundle recipe installed before include patterns existed keeps its hash:
+// the field is left out of the projection when empty.
+func TestBundleHashUnchangedWithoutInclude(t *testing.T) {
+	item := parseItem(t, `
+id: jscad-web
+type: app
+bundle:
+  - url: https://registry.npmjs.org/@jscad/web/-/web-2.6.13.tgz
+    sha256: 9ed53c6aefa537e84e36b90a55ca451c3eef50eda6c0916e1f95a42abf5a810f
+    strip: package
+`)
+	if got, want := item.AcquisitionHash(), "acq-v1:sha256:e291d3b1aa1f4c974fbde5b11c86d8f2709690dd24205f0637bf8dd1924e3f0b"; got != want {
+		t.Errorf("hash = %s, want %s (as before include patterns)", got, want)
+	}
+}

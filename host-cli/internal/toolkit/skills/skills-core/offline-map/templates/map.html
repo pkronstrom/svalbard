@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map</title>
+<style>
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #203328; }
+  #map { position: absolute; inset: 0; }
+  #panel { position: absolute; top: 12px; left: 12px; background: #fff; border-radius: 6px; box-shadow: 0 1px 7px #1a302744; padding: 10px 14px; max-width: 300px; }
+  #panel h1 { font-size: 1.05rem; margin: 0 0 4px; }
+  #status { font-size: 12px; color: #893c21; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel"><h1 id="title"></h1><div id="info"></div><div id="status"></div></div>
+<script type="module">
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { Protocol, PMTiles, TileType } from "pmtiles";
+
+// EDIT: settings (the basemap is a file vault_maps lists; centre is [longitude, latitude])
+const settings = {
+  title: "Water points",
+  basemap: "osm-uusimaa.pmtiles",
+  center: [24.94, 60.17],
+  zoom: 11,
+};
+// /EDIT
+
+// EDIT: places (GeoJSON points drawn over the map; or import a file: import places from "./places.geojson";)
+const places = {
+  type: "FeatureCollection",
+  features: [
+    { type: "Feature", properties: { name: "Helsinki Central Station" }, geometry: { type: "Point", coordinates: [24.9414, 60.1719] } },
+    { type: "Feature", properties: { name: "Kaivopuisto" }, geometry: { type: "Point", coordinates: [24.9566, 60.1566] } },
+  ],
+};
+// /EDIT
+
+// The drive's maps server serves the drive at its root, so the map file is
+// /maps/<file> on the same server as this page.
+const status = document.getElementById("status");
+document.getElementById("title").textContent = settings.title;
+document.title = settings.title;
+if (location.protocol === "file:") {
+  status.textContent = "Open this map through the drive's maps server, not by double-click: it reads the map file from the drive.";
+}
+const protocol = new Protocol();
+maplibregl.addProtocol("pmtiles", protocol.tile);
+const url = new URL("/maps/" + settings.basemap, location.href).href;
+const archive = new PMTiles(url);
+protocol.add(archive);
+
+// Colours of the drive's map viewer for the Protomaps basemap layers.
+const fill = { earth: "#eceade", landcover: "#c9debc", landuse: "#dae1c7", park: "#c1d9b5", water: "#9acbd8", buildings: "#c6b9a9" };
+const line = { roads: "#fffdf3", boundaries: "#9a8d96", transit: "#a89d98", water: "#72b5cd" };
+const order = ["earth", "landcover", "landuse", "water", "buildings", "boundaries", "transit", "roads"];
+
+// A raster map (a topographic sheet) is drawn as images; a vector one with
+// the colours above.
+const header = await archive.getHeader();
+const raster = [TileType.Png, TileType.Jpeg, TileType.Webp, TileType.Avif].includes(header.tileType);
+const metadata = raster ? {} : await archive.getMetadata();
+const names = (metadata.vector_layers || []).map(l => l.id).filter(n => order.includes(n)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+const layers = [{ id: "paper", type: "background", paint: { "background-color": "#f4f1e7" } }];
+if (raster) layers.push({ id: "base-image", type: "raster", source: "base" });
+for (const name of names) {
+  if (fill[name]) layers.push({ id: name + "-fill", type: "fill", source: "base", "source-layer": name, filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": fill[name] } });
+  if (line[name]) layers.push({ id: name + "-line", type: "line", source: "base", "source-layer": name, filter: ["==", ["geometry-type"], "LineString"],
+    paint: { "line-color": name === "roads" ? ["match", ["get", "kind"], ["highway", "major_road"], "#e9b776", "#fffdf3"] : line[name], "line-width": name === "roads" ? ["interpolate", ["linear"], ["zoom"], 8, 0.6, 16, 6] : 1 } });
+}
+const map = new maplibregl.Map({
+  container: "map",
+  style: { version: 8, sources: { base: raster ? { type: "raster", url: "pmtiles://" + url, tileSize: 256 } : { type: "vector", url: "pmtiles://" + url, attribution: "© OpenStreetMap contributors" } }, layers },
+  center: settings.center,
+  zoom: settings.zoom,
+});
+map.addControl(new maplibregl.NavigationControl());
+map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+map.on("error", e => { status.textContent = e.error.message; console.error(e.error.message); });
+map.on("load", () => {
+  map.addSource("places", { type: "geojson", data: places });
+  map.addLayer({ id: "places", type: "circle", source: "places", paint: { "circle-radius": 7, "circle-color": "#b7472a", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+  document.getElementById("info").textContent = `${places.features.length} places`;
+});
+map.on("click", "places", e => new maplibregl.Popup().setLngLat(e.lngLat).setText(e.features[0].properties.name).addTo(map));
+// For examples/check.sh: what the map shows.
+map.on("idle", () => {
+  const shown = map.queryRenderedFeatures();
+  window.svalbardMap = { features: shown.length, basemap: shown.filter(f => f.source === "base").length };
+});
+</script>
+</body>
+</html>

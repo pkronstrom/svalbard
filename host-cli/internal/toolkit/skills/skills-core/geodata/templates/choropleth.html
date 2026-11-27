@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f4f1e7; color: #1f2a24; }
+  header { padding: 14px 24px; background: #23415a; color: #fff; }
+  header h1 { margin: 0; font-size: 1.3rem; }
+  header p { margin: 4px 0 0; font-size: .9rem; opacity: .85; }
+  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; padding: 16px 24px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  section { background: #fff; border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 4px #0002; min-width: 0; }
+  #map { width: 100%; height: auto; display: block; }
+  #map path { stroke: #fff; stroke-width: .4; }
+  #map path:hover { stroke: #1f2a24; stroke-width: 1.2; }
+  #legend { display: flex; gap: 2px; align-items: center; font-size: .8rem; margin-top: 8px; flex-wrap: wrap; }
+  #legend span.swatch { width: 28px; height: 12px; display: inline-block; }
+  #tip { position: fixed; pointer-events: none; background: #1f2a24; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: .85rem; display: none; }
+</style>
+</head>
+<body>
+<header><h1 id="title"></h1><p id="subtitle"></p></header>
+<main>
+  <section><svg id="map" viewBox="0 0 960 500"></svg><div id="legend"></div></section>
+  <section><canvas id="top"></canvas></section>
+</main>
+<div id="tip"></div>
+<script type="module">
+import * as d3 from "d3";
+import Chart from "chart.js/auto";
+
+// EDIT: data (GeoJSON made with scripts/gpkg_to_geojson.py; html pack puts it in the page)
+import geo from "./countries.geojson";
+// /EDIT
+
+// EDIT: settings (the property to colour by, the name property, titles)
+const settings = {
+  title: "Population by country",
+  subtitle: "Natural Earth, 1:110m",
+  value: "POP_EST",       // number property that colours the map
+  name: "NAME",           // property that names a feature
+  label: "people",        // unit of the value, for the legend and tooltip
+  scale: "log",           // "log" for values spanning orders of magnitude, else "linear"
+  top: 10,                // how many features the bar chart shows
+};
+// /EDIT
+
+const format = d3.format(",.0f");
+const valueOf = f => Number(f.properties[settings.value]);
+const features = geo.features.filter(f => f.geometry);
+const values = features.map(valueOf).filter(v => Number.isFinite(v) && (settings.scale !== "log" || v > 0));
+const extent = d3.extent(values);
+const color = (settings.scale === "log" ? d3.scaleSequentialLog() : d3.scaleSequential())
+  .domain(extent).interpolator(d3.interpolateYlOrRd);
+
+document.getElementById("title").textContent = settings.title;
+document.getElementById("subtitle").textContent = settings.subtitle;
+document.title = settings.title;
+
+const svg = d3.select("#map");
+const projection = d3.geoNaturalEarth1().fitSize([960, 500], { type: "FeatureCollection", features });
+const path = d3.geoPath(projection);
+const tip = document.getElementById("tip");
+svg.selectAll("path").data(features).join("path")
+  .attr("d", path)
+  .attr("fill", f => Number.isFinite(valueOf(f)) && (settings.scale !== "log" || valueOf(f) > 0) ? color(valueOf(f)) : "#d8d4c8")
+  .on("mousemove", (event, f) => {
+    tip.style.display = "block";
+    tip.style.left = event.clientX + 12 + "px";
+    tip.style.top = event.clientY + 12 + "px";
+    tip.textContent = `${f.properties[settings.name]}: ${Number.isFinite(valueOf(f)) ? format(valueOf(f)) + " " + settings.label : "no data"}`;
+  })
+  .on("mouseleave", () => { tip.style.display = "none"; });
+
+const legend = document.getElementById("legend");
+const ticks = settings.scale === "log"
+  ? d3.range(5).map(i => Math.exp(Math.log(extent[0]) + (i / 4) * (Math.log(extent[1]) - Math.log(extent[0]))))
+  : d3.range(5).map(i => extent[0] + (i / 4) * (extent[1] - extent[0]));
+legend.append(`${settings.label}: `);
+for (const t of ticks) {
+  const swatch = document.createElement("span");
+  swatch.className = "swatch";
+  swatch.style.background = color(t);
+  legend.append(swatch, ` ${d3.format(".2s")(t)} `);
+}
+
+const top = [...features].filter(f => Number.isFinite(valueOf(f))).sort((a, b) => valueOf(b) - valueOf(a)).slice(0, settings.top);
+new Chart(document.getElementById("top"), {
+  type: "bar",
+  data: {
+    labels: top.map(f => f.properties[settings.name]),
+    datasets: [{ label: settings.label, data: top.map(valueOf), backgroundColor: top.map(f => color(valueOf(f))) }],
+  },
+  options: { indexAxis: "y", plugins: { legend: { display: false }, title: { display: true, text: `Top ${settings.top}` } } },
+});
+</script>
+</body>
+</html>

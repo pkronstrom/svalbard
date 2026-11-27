@@ -5,6 +5,7 @@ region: default
 extends:
   - default-128
   - ai/harnesses
+  - ai/artifacts
   - ai/models-8gb-ram
   - ai/models-16gb-ram
 sources:

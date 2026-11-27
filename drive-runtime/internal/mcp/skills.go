@@ -366,17 +366,34 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 		if err != nil || rel == "" || strings.HasPrefix(requested, "/") {
 			return ActionResult{}, fmt.Errorf("file %q is not a file of %s: name one from \"files\"", requested, entry.ID)
 		}
-		if entry.Folder == "" {
+		var target string
+		switch {
+		case len(entry.Companions) > 0:
+			// A library's files are its companions, by name.
+			for _, companion := range entry.Companions {
+				if strings.EqualFold(path.Base(companion), rel) || strings.EqualFold(companion, rel) {
+					target = companion
+				}
+			}
+			if target == "" {
+				return ActionResult{}, fmt.Errorf("%s has no file %q. Its files: %s", entry.ID, requested, strings.Join(companionNames(entry), ", "))
+			}
+		case entry.Folder == "":
 			return ActionResult{}, fmt.Errorf("%s is one file and has no others", entry.ID)
-		}
-		// Letter case is not held against the name: the file systems sticks
-		// use do not tell "References/R.md" from "references/r.md" either.
-		target, indexed := catalog.filename(entry.Folder + "/" + rel)
-		if !indexed {
-			return ActionResult{}, c.notIndexedError(entry, catalog, entry.Folder+"/"+rel)
+		default:
+			// Letter case is not held against the name: the file systems
+			// sticks use do not tell "References/R.md" from "references/r.md"
+			// either.
+			var indexed bool
+			if target, indexed = catalog.filename(entry.Folder + "/" + rel); !indexed {
+				return ActionResult{}, c.notIndexedError(entry, catalog, entry.Folder+"/"+rel)
+			}
 		}
 		if target != entry.File {
 			file, result.File = target, strings.TrimPrefix(target, entry.Folder+"/")
+			if len(entry.Companions) > 0 {
+				result.File = path.Base(target)
+			}
 			result.Title = firstNonEmpty(catalog.titles[target], path.Base(target))
 		}
 	}
@@ -398,6 +415,11 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 			result.Sections = text.headings
 		}
 	}
+	if offset == 0 && file == entry.File && len(entry.Companions) > 0 && !text.oneSection {
+		result.Files = companionNames(entry)
+		result.Folder = c.place(path.Dir(entry.File))
+		result.Note = "Pass a file's name as file to read it."
+	}
 	if offset == 0 && file == entry.File && entry.Folder != "" && !text.oneSection {
 		var more string
 		if result.Files, more = c.otherFiles(entry, catalog); len(result.Files) > 0 {
@@ -410,6 +432,15 @@ func (c *SkillCapability) handleRead(ctx context.Context, params map[string]any)
 		}
 	}
 	return ActionResult{Data: result}, nil
+}
+
+// companionNames lists a library's other files by name.
+func companionNames(entry skillEntry) []string {
+	names := make([]string, len(entry.Companions))
+	for i, companion := range entry.Companions {
+		names[i] = path.Base(companion)
+	}
+	return names
 }
 
 // notIndexedError explains a file of a skill that skill_read cannot return.
@@ -518,6 +549,18 @@ type skillEntry struct {
 	Title string
 	// Folder is the skill's folder on the drive; a quickstart has none.
 	Folder string
+	// Companions are a quickstart's other indexed files: its reference file.
+	Companions []string
+}
+
+// libraryReferenceSuffix names a library's reference file, which belongs to
+// the quickstart of the same name: chart.js.reference.md to chart.js.md.
+const libraryReferenceSuffix = ".reference.md"
+
+// quickstartOf returns the quickstart a library reference file belongs to.
+func quickstartOf(filename string) (string, bool) {
+	base, ok := strings.CutSuffix(filename, libraryReferenceSuffix)
+	return base + ".md", ok
 }
 
 // skillCatalog is what the index holds of skills and library quickstarts.
@@ -551,13 +594,29 @@ func loadSkillCatalog(ctx context.Context, eng *engine.Engine) (*skillCatalog, e
 	catalog := &skillCatalog{folders: map[string]int{}, titles: make(map[string]string, len(sources))}
 	for _, source := range sources {
 		catalog.titles[source.Filename] = source.Title
+	}
+	quickstarts := map[string]int{}
+	for _, source := range sources {
 		switch {
 		case strings.HasPrefix(source.Filename, engine.LibraryDocsDir+"/"):
+			if quickstart, isReference := quickstartOf(source.Filename); isReference {
+				if _, ok := catalog.titles[quickstart]; ok {
+					continue // listed with its quickstart below
+				}
+			}
+			quickstarts[source.Filename] = len(catalog.entries)
 			catalog.entries = append(catalog.entries, skillEntry{ID: source.Filename, Kind: libraryKind, File: source.Filename, Title: source.Title})
 		case strings.EqualFold(path.Base(source.Filename), "SKILL.md"):
 			folder := path.Dir(source.Filename)
 			catalog.folders[folder] = len(catalog.entries)
 			catalog.entries = append(catalog.entries, skillEntry{ID: folder, Kind: skillKind, File: source.Filename, Title: source.Title, Folder: folder})
+		}
+	}
+	for _, source := range sources {
+		if quickstart, isReference := quickstartOf(source.Filename); isReference && strings.HasPrefix(source.Filename, engine.LibraryDocsDir+"/") {
+			if at, ok := quickstarts[quickstart]; ok {
+				catalog.entries[at].Companions = append(catalog.entries[at].Companions, source.Filename)
+			}
 		}
 	}
 	// Markdown under skills/ that no SKILL.md is above stands for itself.
@@ -575,6 +634,18 @@ func loadSkillCatalog(ctx context.Context, eng *engine.Engine) (*skillCatalog, e
 // within that folder when it is not the entry file itself.
 func (c *skillCatalog) entryOf(filename string) (entry skillEntry, file string) {
 	if strings.HasPrefix(filename, engine.LibraryDocsDir+"/") {
+		if quickstart, isReference := quickstartOf(filename); isReference {
+			for _, entry := range c.entries {
+				if entry.File == quickstart {
+					return entry, path.Base(filename)
+				}
+			}
+		}
+		for _, entry := range c.entries {
+			if entry.File == filename {
+				return entry, ""
+			}
+		}
 		return skillEntry{ID: filename, Kind: libraryKind, File: filename, Title: c.titles[filename]}, ""
 	}
 	folders := make(map[string]bool, len(c.folders))

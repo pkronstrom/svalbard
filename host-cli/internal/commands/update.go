@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -137,6 +138,32 @@ func runPlan(ctx context.Context, root string, m *manifest.Manifest, plan planne
 	return nil
 }
 
+// installedAsRecipe reports whether installed entries can be what the
+// recipe installs today, as far as can be told without downloading. The
+// recipe's sha256 pins the downloaded file, so it is compared only with an
+// entry that is that file; a GeoPackage is installed unzipped from its pinned
+// zip, so its entry's checksum is the GeoPackage's and is never compared with
+// the pin, but it must be under data/ (a zip at the vault's root is the old
+// layout, which only an update moves).
+func installedAsRecipe(recipe catalog.Item, entries []manifest.RealizedEntry) bool {
+	downloaded := recipe.Filename
+	if downloaded == "" {
+		downloaded = path.Base(strings.SplitN(recipe.URL, "?", 2)[0])
+	}
+	if recipe.Type == "gpkg" && strings.HasSuffix(strings.ToLower(downloaded), ".zip") {
+		for _, e := range entries {
+			if !strings.HasPrefix(filepath.ToSlash(e.RelativePath), "data/") || !strings.HasSuffix(strings.ToLower(e.Filename), ".gpkg") {
+				return false
+			}
+		}
+		return true
+	}
+	if pinned := recipe.SHA256; pinned != "" && len(entries) == 1 && entries[0].ChecksumSHA256 != "" && entries[0].Filename == downloaded {
+		return strings.EqualFold(pinned, entries[0].ChecksumSHA256)
+	}
+	return true
+}
+
 // MarkCurrent records today's recipe as the version of installed items whose
 // version is unknown, without downloading anything: the ids given, or every
 // such item when ids is empty. An item whose recipe pins a checksum that the
@@ -164,7 +191,7 @@ func MarkCurrent(root string, cat *catalog.Catalog, ids []string) (marked, diffe
 			return nil, nil, fmt.Errorf("%s is %s; only an item of unknown version can be marked current", id, versionLabels[version])
 		}
 		recipe, _ := cat.RecipeByID(id)
-		if pinned := recipe.SHA256; pinned != "" && len(entries) == 1 && entries[0].ChecksumSHA256 != "" && !strings.EqualFold(pinned, entries[0].ChecksumSHA256) {
+		if !installedAsRecipe(recipe, entries) {
 			differing = append(differing, id)
 			continue
 		}

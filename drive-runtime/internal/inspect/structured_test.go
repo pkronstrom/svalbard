@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -270,5 +271,62 @@ trailing:
 	}
 	if got, err := inspect.ReadManifestRecipes(filepath.Join(dir, "absent.yaml")); err == nil || got == nil {
 		t.Errorf("missing manifest: %v, %v, want an error and an empty map", got, err)
+	}
+}
+
+// writeGeoPackage writes a GeoPackage shaped like Natural Earth's: feature
+// tables listed in gpkg_contents, beside the GeoPackage's own tables and a
+// spatial index.
+func writeGeoPackage(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		"CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT, srs_id INTEGER PRIMARY KEY)",
+		"CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT)",
+		"CREATE TABLE ne_110m_admin_0_countries (fid INTEGER PRIMARY KEY, geom BLOB, NAME TEXT, POP_EST REAL)",
+		"CREATE TABLE ne_10m_lakes (fid INTEGER PRIMARY KEY, geom BLOB, name TEXT)",
+		"CREATE TABLE rtree_ne_10m_lakes_geom_node (nodeno INTEGER PRIMARY KEY, data BLOB)",
+		"INSERT INTO gpkg_contents VALUES ('ne_110m_admin_0_countries', 'features'), ('ne_10m_lakes', 'features')",
+		"INSERT INTO ne_110m_admin_0_countries VALUES (1, X'47500003E6100000', 'Finland', 5520314)",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+}
+
+func TestDatabasesListsGeoPackages(t *testing.T) {
+	dir := t.TempDir()
+	writeGeoPackage(t, filepath.Join(dir, "data", "natural_earth_vector.gpkg"))
+	mustWriteFile(t, filepath.Join(dir, "natural_earth_vector.gpkg.zip"), []byte("zip at the root is not a database"))
+
+	dbs, err := inspect.Databases(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dbs) != 1 || dbs[0].Name != "natural_earth_vector.gpkg" || dbs[0].Path != "data/natural_earth_vector.gpkg" {
+		t.Fatalf("databases = %+v, want the GeoPackage in data/", dbs)
+	}
+	// The layers, not the GeoPackage's own tables or its spatial index.
+	if got := strings.Join(dbs[0].Tables, ","); got != "ne_10m_lakes,ne_110m_admin_0_countries" {
+		t.Errorf("tables = %s, want the two feature tables", got)
+	}
+	if dbs[0].Note == "" {
+		t.Error("a GeoPackage has no note on its geometry column")
+	}
+
+	sources, err := inspect.Sources(dir, "database")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 1 || sources[0].Name != "natural_earth_vector.gpkg" {
+		t.Errorf("database sources = %+v, want the GeoPackage", sources)
 	}
 }
