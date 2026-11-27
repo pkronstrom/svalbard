@@ -91,7 +91,8 @@ func SummarizeDirectory(root string) (int, int64, error) {
 		if d.IsDir() {
 			return nil
 		}
-		if strings.HasPrefix(filepath.Base(path), "._") {
+		name := filepath.Base(path)
+		if strings.HasPrefix(name, "._") || strings.HasSuffix(name, ".download.json") {
 			return nil
 		}
 		info, err := d.Info()

@@ -55,7 +55,7 @@ func (c *SearchCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "search",
-			Desc: "Search the drive's archives and documents by keyword. Use specific subjects such as \"octopus camouflage\". A document hit identifies the page to cite. Pass a result's source and path to search_read to verify the relevant passage, or search_link to get a browser link to a ZIM article. Use vault_sources when choosing a particular source and query_sql for SQLite data.",
+			Desc: "Search the drive's archives and documents by keyword. Use a specific subject such as \"growing potatoes\" and start with about five results. Read a promising result before broadening the search. Pass its source and path to search_read or search_link. Use vault_sources for source names and query_sql for SQLite data.",
 			Params: []ParamDef{
 				{Name: "query", Type: "string", Required: true, Desc: "Keywords, for example: nmap port scan"},
 				{Name: "source", Type: "string", Desc: "Restrict to one archive or document, by its name from vault_sources, or to a folder of documents such as books/car-manuals"},
@@ -73,7 +73,7 @@ func (c *SearchCapability) Actions() []ActionDef {
 		},
 		{
 			Name: "read",
-			Desc: "Read an article from an archive, or a page of a document. Long articles come in parts: when the result has \"continues\", call again with the offset it names. Omit path for the archive's main page or a document's list of pages. Paths come from search results and from the links of a page already read; a document's pages are page/1, page/2 and so on.",
+			Desc: "Read an archive article or a document page. When a result includes continues, use its offset with that same source and path. Omit path for the archive's main page or document overview. Get article paths from search results or a page's links. Document paths look like page/1.",
 			Params: []ParamDef{
 				{Name: "source", Type: "string", Required: true, Desc: "Archive or document name, as in search results"},
 				{Name: "path", Type: "string", Desc: "Article path, as in search results; page/N for a document. Omit for the main page."},
