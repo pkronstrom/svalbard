@@ -11,7 +11,16 @@ const collections = [
   {name:"Settings", types:["Settings"], description:"Drive configuration"}
 ];
 const legacyRoutes = new Map();
-let railPreference;
+const chapterArt = {
+  "Reading room":"books", Atlas:"compass", Instruments:"telescope", Intelligence:"brain",
+  Libraries:"crystals", Tools:"cog", Settings:"cog"
+};
+function collectionFilter(collection) {
+  return collection.types.length > 1 ? "collection:" + collection.name : collection.types[0];
+}
+function collectionURL(collection) {
+  return "#overview?" + new URLSearchParams({type:collectionFilter(collection)});
+}
 const startLabels = {wiki: "Start Wiki", chat: "Start Open WebUI", settings: "Show details"};
 const readerKinds = new Set(["browse", "documents", "apps", "maps", "workspace"]);
 const overviewTypes = ["Maps", "Archives", "Documents", "Apps", "Saved apps", "Local AI", "Tools", "Settings"];
@@ -233,11 +242,12 @@ function renderCollections(items) {
   const knownTypes = new Set(collections.flatMap(collection => collection.types));
   const additional = [...counts.keys()].filter(type => !knownTypes.has(type)).map(name => ({name, types:[name]}));
   const available = [...collections, ...additional].filter(collection => collection.types.some(type => counts.has(type)));
-  byId("collections").replaceChildren(...available.map(({name, types, description}) => {
+  byId("collections").replaceChildren(...available.map(collection => {
+    const {name, types, description} = collection;
     const count = types.reduce((sum,type) => sum + (counts.get(type) || 0),0);
     const line = node("li");
     const link = node("a", "collection-link");
-    link.href = "#overview?" + new URLSearchParams({type:types.length > 1 ? "collection:" + name : types[0]});
+    link.href = collectionURL(collection);
     link.append(node("span", "collection-name", name), node("span", "collection-count", String(count).padStart(2, "0")));
     if (description) link.append(node("span", "collection-description", description));
     line.append(link);
@@ -249,7 +259,7 @@ function renderCollections(items) {
 function renderHome() {
   const items = Array.from(entries.values());
   const count = items.length;
-  note(byId("inventory-summary"), count ? count + (count === 1 ? " item" : " items") + " available locally" : "There are no launchable items on this drive yet.");
+
   byId("home-content").hidden = !count;
   const terms = byId("overview-filter").value.trim().toLowerCase().split(/\s+/);
   const query = byId("overview-filter").value.trim();
@@ -267,7 +277,13 @@ function renderHome() {
   const output = byId("home-links");
   output.replaceChildren();
   const resultCount = visible.length;
-  const filtered = selected || terms[0];
+  const chapter = collections.find(group => collectionFilter(group) === selected);
+  const parent = chapter || collections.find(group => group.types.includes(selected));
+  byId("home-title").textContent = chapter?.name || selected || "Catalogue";
+  note(byId("collection-description"), chapter?.description || "");
+  byId("collection-plate").src = parent ? "/engraving-" + chapterArt[parent.name] + ".webp" : "/survey.svg";
+  note(byId("inventory-summary"), query ? "" : (count ? resultCount + (resultCount === 1 ? " entry" : " entries") : "No items are installed on this drive yet."));
+  const filtered = query;
   note(byId("overview-results"), filtered ? (
     resultCount ? resultCount + " of " + count + " items" : "No matching items."
   ) : "");
@@ -277,11 +293,16 @@ function renderHome() {
   for (const type of types) {
     const rows = grouped ? visible.filter(item => overviewType(item) === type) : visible;
     if (!rows.length) continue;
-    if (grouped) output.append(node("h2", "overview-heading", type));
+    const section = grouped ? node("section", "register-group") : output;
+    if (grouped) {
+      const heading = node("h2", "overview-heading", type);
+      section.append(heading);
+      output.append(section);
+    }
     const list = node("ul", "overview-rows");
     list.setAttribute("role", "list");
     list.append(...rows.map(item => overviewRow(item, grouped)));
-    output.append(list);
+    section.append(list);
   }
 }
 
@@ -615,14 +636,15 @@ function toggleSidebar(open) {
   byId("menu").setAttribute("aria-label", open ? "Close drive index" : "Open drive index");
 }
 
-function updateRail() {
-  const collapsed = railPreference ?? (route === "cover");
+function updateRail(collapsed) {
   document.body.classList.toggle("rail", collapsed);
-  byId("rail-toggle").setAttribute("aria-expanded", String(!collapsed));
+  const toggle = byId("rail-toggle");
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  toggle.title = collapsed ? "Expand catalogue margin" : "Collapse catalogue margin";
+  toggle.setAttribute("aria-label", toggle.title);
 }
 byId("rail-toggle").addEventListener("click", () => {
-  railPreference = !document.body.classList.contains("rail");
-  updateRail();
+  updateRail(!document.body.classList.contains("rail"));
 });
 function syncCatalogueURL() {
   const params = new URLSearchParams();
@@ -656,9 +678,12 @@ function renderRoute() {
   if (!selection && !inSearch && route !== "overview") route = "cover";
   byId("cover").hidden = route !== "cover";
   byId("crumbs").hidden = route === "cover";
-  byId("crumb-leaf").textContent = selection?.group || (inSearch ? "Search" : "");
+  const parent = selection && collections.find(group => group.types.includes(overviewType(selection)));
+  const crumb = byId("crumb-leaf");
+  crumb.hidden = !parent && !inSearch;
+  crumb.textContent = parent?.name || (inSearch ? "Search" : "");
+  crumb.href = parent ? collectionURL(parent) : "#search";
   byId("source-view").hidden = true;
-  updateRail();
 
   ++searchRead;
   model = "";

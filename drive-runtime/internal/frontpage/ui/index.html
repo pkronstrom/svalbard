@@ -13,11 +13,13 @@
 <body class="rail">
   <a class="skip" href="#main">Skip to workspace</a>
   <aside class="sidebar" id="sidebar" aria-label="Drive sidebar">
-    <button id="rail-toggle" type="button" title="Toggle catalogue margin" aria-label="Toggle catalogue margin" aria-controls="nav" aria-expanded="false"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="7"/><path d="M16 1v30M1 16h30"/></svg></button>
-    <a class="brand" href="#cover" aria-label="Svalbard cover">
-      <strong>Svalbard</strong>
-      <small id="vault">Drive</small>
-    </a>
+    <header class="index-heading">
+      <a class="brand" href="#cover" aria-label="Svalbard cover">
+        <strong>Svalbard</strong>
+        <small id="vault">Drive</small>
+      </a>
+      <button id="rail-toggle" type="button" title="Expand catalogue margin" aria-label="Expand catalogue margin" aria-controls="nav" aria-expanded="false"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="7"/><path d="M16 1v30M1 16h30"/></svg></button>
+    </header>
     <nav class="work-nav" id="work-nav" aria-label="Workspace">
       <a href="#overview" class="work-tab top-home" aria-current="page" aria-label="Catalogue">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2m3 0h9M5 12h2m3 0h9M5 19h2m3 0h9"/></svg>
@@ -61,7 +63,9 @@
       <span id="location" hidden></span>
     </header>
 
-    <nav id="crumbs" class="breadcrumbs" aria-label="Breadcrumb" hidden><a href="#cover">Svalbard</a><span aria-hidden="true">/</span><a href="#overview">Catalogue</a><span id="crumb-leaf"></span></nav>
+    <nav id="crumbs" class="leaf-running" aria-label="Breadcrumb" hidden>
+      <div class="cover-running"><a href="#cover" title="Return to the cover">Archivum Svalbardense — Vol. I</a><span class="leaf-path"><a href="#overview">Catalogue</a><a id="crumb-leaf" hidden></a></span></div>
+    </nav>
     <div id="viewport" class="viewport">
       <section id="cover" class="cover" aria-labelledby="masthead">
         <header class="cover-running"><span>Archivum Svalbardense — Vol. I</span><span>Tab. 01</span></header>
@@ -87,17 +91,18 @@
       </section>
       <section id="overview" hidden class="page overview" aria-labelledby="home-title">
         <header class="folio-heading welcome">
-          <h1 id="home-title" tabindex="-1">Drive catalogue</h1>
-          <p id="inventory-summary" class="quiet" role="status">Loading drive contents…</p>
+          <div><h1 id="home-title" tabindex="-1">Drive catalogue</h1><p id="collection-description" class="leaf-subtitle" hidden></p></div>
+          <img id="collection-plate" class="chapter-plate" src="/survey.svg" width="120" height="80" alt="">
         </header>
         <div id="home-content" class="catalog-controls" role="group" aria-label="Catalog filters" hidden>
-          <input id="overview-filter" class="catalog-filter" type="search" aria-label="Filter catalog by name, description, or tag" placeholder="Filter catalog…">
+          <input id="overview-filter" class="catalog-filter" type="search" aria-label="Filter catalog by name, description, or tag" placeholder="Find an entry…">
           <select id="overview-type" aria-label="Content type"><option value="">All types</option></select>
           <select id="overview-order" aria-label="Catalog order">
             <option value="grouped">Grouped by type</option>
             <option value="name">A–Z</option>
           </select>
         </div>
+        <p id="inventory-summary" class="quiet catalog-count" role="status">Loading drive contents…</p>
         <p id="overview-results" class="quiet catalog-count" role="status" hidden></p>
         <a id="article-search" class="all-collections" href="#search" hidden>Search inside articles and documents →</a>
         <div id="home-links" class="overview-list"></div>
@@ -105,12 +110,11 @@
       </section>
 
       <section id="search-panel" class="page" aria-labelledby="search-title" hidden>
-        <header class="folio-heading"><h1 id="search-title">Search the vault</h1></header>
+        <header class="folio-heading welcome"><div><h1 id="search-title">Search the vault</h1><p class="leaf-subtitle">Indexed articles and documents</p></div><img class="chapter-plate" src="/engraving-telescope.webp" width="120" height="80" alt=""></header>
         <div class="search-toolbar">
           <form id="search-form" class="search-form">
-            <label for="query">Indexed articles and documents</label>
             <div class="search-controls">
-              <input id="query" type="search" maxlength="500" placeholder="Search the vault" required>
+              <input id="query" aria-label="Search indexed articles and documents" type="search" maxlength="500" placeholder="Search the vault" required>
               <button class="button primary" type="submit">Search</button>
             </div>
           </form>
