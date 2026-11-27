@@ -137,6 +137,7 @@ func (d *dashboard) handler(host string) http.Handler {
 		}
 		writeJSON(w, pages)
 	})
+	mux.HandleFunc("GET /api/source", d.serveSource)
 	mux.HandleFunc("GET /api/previews/{file}", d.servePreview)
 	mux.HandleFunc("GET /api/services", d.states)
 	mux.HandleFunc("POST /api/services/{key}", d.start)

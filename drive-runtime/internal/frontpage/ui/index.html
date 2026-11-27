@@ -3,24 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f1f3f2">
+  <meta name="theme-color" content="#f7f7f2">
   <title>Svalbard Drive</title>
-  <link rel="icon" href="/favicon.png" type="image/png">
+  <link rel="icon" href="/survey.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/vendor/xterm/xterm.css">
   <link rel="stylesheet" href="/style.css">
   <script src="/frontpage.js" defer></script>
 </head>
-<body>
+<body class="rail">
   <a class="skip" href="#main">Skip to workspace</a>
   <aside class="sidebar" id="sidebar" aria-label="Drive sidebar">
-    <a class="brand" href="#overview">
+    <button id="rail-toggle" type="button" title="Toggle catalogue margin" aria-label="Toggle catalogue margin" aria-controls="nav" aria-expanded="false"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="7"/><path d="M16 1v30M1 16h30"/></svg></button>
+    <a class="brand" href="#cover" aria-label="Svalbard cover">
       <strong>Svalbard</strong>
       <small id="vault">Drive</small>
     </a>
     <nav class="work-nav" id="work-nav" aria-label="Workspace">
-      <a href="#overview" class="work-tab top-home" aria-current="page" aria-label="Catalog">
+      <a href="#overview" class="work-tab top-home" aria-current="page" aria-label="Catalogue">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2m3 0h9M5 12h2m3 0h9M5 19h2m3 0h9"/></svg>
-        <span class="tab-label" aria-hidden="true">Catalog</span>
+        <span class="tab-label" aria-hidden="true">Catalogue</span>
       </a>
       <a href="#search" class="work-tab" id="search-nav" hidden aria-label="Search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
@@ -47,6 +48,7 @@
       </section>
       <p id="filter-status" class="quiet" role="status" hidden></p>
     </nav>
+    <a class="spine-title" href="#cover" aria-label="Return to the cover">Svalbard · Vol. I</a>
     <span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span>
   </aside>
   <button type="button" id="dismiss-sidebar" class="sidebar-scrim" aria-label="Close drive index" tabindex="-1"></button>
@@ -59,10 +61,33 @@
       <span id="location" hidden></span>
     </header>
 
+    <nav id="crumbs" class="breadcrumbs" aria-label="Breadcrumb" hidden><a href="#cover">Svalbard</a><span aria-hidden="true">/</span><a href="#overview">Catalogue</a><span id="crumb-leaf"></span></nav>
     <div id="viewport" class="viewport">
-      <section id="overview" class="page overview" aria-labelledby="home-title">
+      <section id="cover" class="cover" aria-labelledby="masthead">
+        <header class="cover-running"><span>Archivum Svalbardense — Vol. I</span><span>Tab. 01</span></header>
+        <div class="cover-head">
+          <div class="coordinates"><span>78° 13′ N</span><span>15° 38′ E</span><small>Longyearbyen</small></div>
+          <hgroup><h1 id="masthead">Svalbard</h1><p>An Atlas of Human Capability</p></hgroup>
+          <img src="/survey.svg" width="160" height="160" alt="" class="survey-mark">
+        </div>
+        <div class="cover-body">
+          <nav class="collection-index" aria-labelledby="collections-heading">
+            <h2 id="collections-heading">Index</h2><p class="index-subtitle">(Collections)</p>
+            <ol id="collections"></ol><a class="all-collections" href="#overview">Full catalogue <span aria-hidden="true">→</span></a>
+          </nav>
+          <figure class="map-plate"><img src="/svalbard-plate.svg" alt="Topographic map of the Svalbard archipelago with Longyearbyen marked on Spitsbergen." width="760" height="438">
+            <figcaption><span>Fig. 01 · Topography</span><a href="/plate-sources.txt" target="_blank" rel="noopener">100 m contours · Sources ↗</a></figcaption>
+          </figure>
+        </div>
+        <footer class="cover-foot">
+          <form id="cover-search" role="search"><span class="lens" aria-hidden="true"></span><input id="cover-query" type="search" placeholder="Search the collection…" aria-label="Search the collection"><kbd id="search-shortcut">Ctrl K</kbd></form>
+          <span id="cover-total" role="status">Reading drive contents…</span>
+          <span class="cover-imprint">Offline knowledge vault</span>
+        </footer>
+      </section>
+      <section id="overview" hidden class="page overview" aria-labelledby="home-title">
         <header class="folio-heading welcome">
-          <h1 id="home-title">Drive catalog</h1>
+          <h1 id="home-title" tabindex="-1">Drive catalogue</h1>
           <p id="inventory-summary" class="quiet" role="status">Loading drive contents…</p>
         </header>
         <div id="home-content" class="catalog-controls" role="group" aria-label="Catalog filters" hidden>
@@ -74,6 +99,7 @@
           </select>
         </div>
         <p id="overview-results" class="quiet catalog-count" role="status" hidden></p>
+        <a id="article-search" class="all-collections" href="#search" hidden>Search inside articles and documents →</a>
         <div id="home-links" class="overview-list"></div>
         <noscript><p>Enable JavaScript to browse this dashboard, or open <code>./run</code> in a terminal.</p></noscript>
       </section>
@@ -104,6 +130,7 @@
           </div>
         </header>
         <div id="item-controls"></div>
+        <section id="source-view" hidden aria-label="Source reader"></section>
         <p id="item-status" role="status" hidden></p>
         <pre id="item-output" hidden></pre>
         <section id="terminal-panel" class="terminal" aria-label="Drive terminal" hidden>

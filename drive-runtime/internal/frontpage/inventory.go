@@ -26,11 +26,16 @@ type inventory struct {
 }
 
 type group struct {
+	ID    string  `json:"id,omitempty"`
 	Label string  `json:"label"`
 	Items []entry `json:"items"`
 }
 
 type entry struct {
+	ID           string        `json:"id,omitempty"`
+	Parts        []sourcePart  `json:"parts,omitempty"`
+	Format       string        `json:"format,omitempty"`
+	Bytes        int64         `json:"bytes,omitempty"`
 	Label        string        `json:"label"`
 	Description  string        `json:"description,omitempty"`
 	Subheader    string        `json:"subheader,omitempty"`
@@ -85,7 +90,7 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 	groups := slices.Clone(cfg.Groups)
 	slices.SortStableFunc(groups, func(a, b config.MenuGroup) int { return cmp.Compare(a.Order, b.Order) })
 	for _, g := range groups {
-		section := group{Label: g.Label}
+		section := group{ID: g.ID, Label: g.Label}
 		items := slices.Clone(g.Items)
 		slices.SortStableFunc(items, func(a, b config.MenuItem) int { return cmp.Compare(a.Order, b.Order) })
 		for _, item := range items {
@@ -121,7 +126,15 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 				fallthrough
 			case "browse", "apps", "documents", "maps", "wiki", "workspace", "inspect", "serve-all", "share", "mcp-serve":
 				view.Kind = "launch"
-				view.Service = keyFor(specFor(action))
+				spec := specFor(action)
+				view.Service = keyFor(spec)
+				dir := map[string]string{"browse": "zim", "documents": "books"}[spec.name]
+				if dir != "" && spec.target != "" && filepath.IsLocal(spec.target) {
+					if info, err := os.Stat(filepath.Join(root, dir, spec.target)); err == nil && info.Mode().IsRegular() {
+						view.Format = strings.ToUpper(strings.TrimPrefix(filepath.Ext(spec.target), "."))
+						view.Bytes = info.Size()
+					}
+				}
 			}
 			if view.Kind != "terminal" {
 				view.Command = ""
@@ -142,6 +155,7 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 			inv.Models = append(inv.Models, model{Label: label, File: file})
 		}
 	}
+	inv.Groups = append(inv.Groups, sourceGroups(root)...)
 	return inv, services
 }
 
@@ -179,7 +193,7 @@ func actionIcon(name string) string {
 
 func terminalEntry(item config.MenuItem) entry {
 	view := entry{
-		Label: item.Label, Description: item.Description, Subheader: item.Subheader,
+		ID: item.ID, Label: item.Label, Description: item.Description, Subheader: item.Subheader,
 		Note: item.Note, Kind: "terminal", Icon: "terminal", Command: "./run",
 	}
 	if len(item.Aliases) > 0 {

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" fill="none" stroke="#253f43">
+<title>Svalbard survey mark</title>
+<g stroke-width=".8"><circle cx="80" cy="80" r="61"/><circle cx="80" cy="80" r="47" stroke-dasharray="1.8 3"/><path d="M80 11v139M10 80h140M36 36l88 88M36 124l88-88" stroke-dasharray="2 2"/></g>
+<path d="M80 15v9m0 112v9M15 80h9m112 0h9M30 53l5 3m90 49 5 3M53 30l3 5m49 90 3 5M30 107l5-3m90-49 5-3M53 130l3-5m49-90 3-5" stroke-width="1.35"/>
+<g fill="#f7f7f2" stroke-linejoin="round"><path d="m26 92 15-8 11-13 7 4 9-8 7 9 16-25 12 19 5-4 10 13 16 10-16-4-8 3-12-5-14 10-12-4-13 6-12-5-9 2z"/></g>
+<g fill="#31494a" stroke="none"><path d="m91 51-6 24-11 12 6-13-8 8zM91 56l2 14-5 9 12-10zM52 71l-3 12-13 7 8-10zM68 67l-4 15-9 6zM108 66l-5 12-5 4 11-5zM116 76l9 9-9-3z"/></g>
+<g stroke-width=".7"><path d="m91 57-1 11m4-5 7 9m-14-5-8 12m6-3-8 12m17-13-7 10m9-9-5 9m8-8-5 8m-38-9-7 10m3-12-8 10m18-11-7 10m17-9-4 8m-5-2-8 6m53-13 4 7m-5-2 8 4m-18 1-10 7m-21-1-10 6m34-8-8 7m-29-4-9 5"/></g>
+<text x="80" y="10" text-anchor="middle" stroke="none" fill="#253f43" font-family="Georgia,serif" font-style="italic" font-size="10">N</text></svg>

@@ -1,10 +1,17 @@
 "use strict";
 
 const byId = id => document.getElementById(id);
-const icons = {
-  browse: "▤", documents: "≡", maps: "◇", chat: "◌", apps: "⊞",
-  wiki: "✎", workspace: "↗", terminal: "›_", share: "⤢", settings: "⚙"
-};
+const collections = [
+  {name:"Reading room", types:["Archives", "Documents"], description:"Books, encyclopaedias & field guides"},
+  {name:"Atlas", types:["Maps"], description:"Maps, geography & the natural world"},
+  {name:"Instruments", types:["Apps", "Saved apps"], description:"Applications & saved work"},
+  {name:"Intelligence", types:["Local AI", "Skills"], description:"Local models, skills & procedures"},
+  {name:"Libraries", types:["Libraries"], description:"Software, source & documentation"},
+  {name:"Tools", types:["Tools"], description:"Utilities & shell access"},
+  {name:"Settings", types:["Settings"], description:"Drive configuration"}
+];
+const legacyRoutes = new Map();
+let railPreference;
 const startLabels = {wiki: "Start Wiki", chat: "Start Open WebUI", settings: "Show details"};
 const readerKinds = new Set(["browse", "documents", "apps", "maps", "workspace"]);
 const overviewTypes = ["Maps", "Archives", "Documents", "Apps", "Saved apps", "Local AI", "Tools", "Settings"];
@@ -74,7 +81,7 @@ async function request(path, data) {
 
 function itemSearchText(item) {
   const tags = Array.isArray(item.tags) ? item.tags : [];
-  return [item.group, item.label, item.summary, item.description, item.note, item.savedPath, item.recipeId, ...tags]
+  return [item.group, item.label, item.summary, item.description, item.note, item.savedPath, item.recipeId, item.id, item.format, ...tags]
     .filter(Boolean).join(" ").toLowerCase();
 }
 
@@ -113,9 +120,6 @@ function previewURL(item) {
 function itemPreview(item, css) {
   const preview = node("div", "preview " + css);
   preview.dataset.type = overviewType(item);
-  const icon = node("span", "glyph", icons[item.icon] || "·");
-  icon.setAttribute("aria-hidden", "true");
-  preview.append(icon);
   const src = previewURL(item);
   if (src) {
     const image = node("img");
@@ -143,7 +147,8 @@ function overviewRow(item, grouped) {
   content.append(title);
   const summary = item.summary || item.description;
   if (summary && summary !== item.label) content.append(node("p", "overview-summary", summary));
-  const meta = [...((item.tags || []).slice(0, 3)), item.note].filter(Boolean);
+  const size = item.bytes ? new Intl.NumberFormat(undefined, {maximumFractionDigits: 1}).format(item.bytes / 1048576) + " MiB" : "";
+  const meta = [item.id || item.savedPath, size, ...((item.tags || []).slice(0, 3)), item.note].filter(Boolean);
   if (meta.length) content.append(node("p", "overview-meta", meta.join(" · ")));
   if (!grouped) content.prepend(node("p", "overview-type", type));
   row.append(itemPreview(item, "overview-preview"), content);
@@ -186,7 +191,10 @@ function buildNavigation(data) {
     section.open = true;
     section.append(node("summary", "", group.label));
     items.forEach((item, position) => {
-      const entry = {...item, group: group.label, route: "item-" + index + "-" + position};
+      const legacy = "item-" + index + "-" + position;
+      const stable = item.id ? "resource/" + encodeURIComponent(group.id || group.label) + "/" + encodeURIComponent(item.id) : legacy;
+      const entry = {...item, group: group.label, route: entries.has(stable) ? legacy : stable};
+      legacyRoutes.set(legacy, entry.route);
       entries.set(entry.route, entry);
       section.append(navLink(entry));
     });
@@ -198,13 +206,44 @@ function buildNavigation(data) {
 }
 
 function syncOverviewTypes() {
+  renderCollections(Array.from(entries.values()));
   const control = byId("overview-type");
   const selected = control.value;
   const available = new Set(Array.from(entries.values(), overviewType));
   const types = overviewTypes.filter(type => available.delete(type));
   types.push(...Array.from(available).sort(nameOrder.compare));
   control.replaceChildren(new Option("All types", ""), ...types.map(type => new Option(type, type)));
-  if (types.includes(selected)) control.value = selected;
+  const group = node("optgroup");
+  group.label = "Collections";
+  for (const collection of collections) {
+    if (collection.types.length > 1 && collection.types.some(type => types.includes(type))) {
+      group.append(new Option(collection.name, "collection:" + collection.name));
+    }
+  }
+  if (group.childElementCount) control.append(group);
+  if ([...control.options].some(option => option.value === selected)) control.value = selected;
+}
+
+function renderCollections(items) {
+  const counts = new Map();
+  for (const item of items) {
+    const type = overviewType(item);
+    counts.set(type, (counts.get(type) || 0) + 1);
+  }
+  const knownTypes = new Set(collections.flatMap(collection => collection.types));
+  const additional = [...counts.keys()].filter(type => !knownTypes.has(type)).map(name => ({name, types:[name]}));
+  const available = [...collections, ...additional].filter(collection => collection.types.some(type => counts.has(type)));
+  byId("collections").replaceChildren(...available.map(({name, types, description}) => {
+    const count = types.reduce((sum,type) => sum + (counts.get(type) || 0),0);
+    const line = node("li");
+    const link = node("a", "collection-link");
+    link.href = "#overview?" + new URLSearchParams({type:types.length > 1 ? "collection:" + name : types[0]});
+    link.append(node("span", "collection-name", name), node("span", "collection-count", String(count).padStart(2, "0")));
+    if (description) link.append(node("span", "collection-description", description));
+    line.append(link);
+    return line;
+  }));
+  byId("cover-total").textContent = items.length + (items.length === 1 ? " entry" : " entries") + " in the catalogue";
 }
 
 function renderHome() {
@@ -213,9 +252,14 @@ function renderHome() {
   note(byId("inventory-summary"), count ? count + (count === 1 ? " item" : " items") + " available locally" : "There are no launchable items on this drive yet.");
   byId("home-content").hidden = !count;
   const terms = byId("overview-filter").value.trim().toLowerCase().split(/\s+/);
+  const query = byId("overview-filter").value.trim();
+  const articles = byId("article-search");
+  articles.hidden = !inventory?.hasSearch || !query;
+  articles.href = "#search?" + new URLSearchParams({q:query});
   const selected = byId("overview-type").value;
+  const collection = collections.find(group => selected === "collection:" + group.name);
   const visible = items.filter(item => {
-    if (selected && overviewType(item) !== selected) return false;
+    if (selected && !(collection ? collection.types.includes(overviewType(item)) : overviewType(item) === selected)) return false;
     const description = itemSearchText(item);
     return terms.every(term => description.includes(term));
   });
@@ -229,7 +273,7 @@ function renderHome() {
   ) : "");
 
   const grouped = byId("overview-order").value === "grouped";
-  const types = grouped ? Array.from(byId("overview-type").options, option => option.value).filter(Boolean) : [""];
+  const types = grouped ? Array.from(byId("overview-type").options, option => option.value).filter(type => type && !type.startsWith("collection:")) : [""];
   for (const type of types) {
     const rows = grouped ? visible.filter(item => overviewType(item) === type) : visible;
     if (!rows.length) continue;
@@ -387,6 +431,47 @@ function showReader(label, address, kind, fromSearch = false) {
   return true;
 }
 
+// Colour a bounded opening excerpt; long minified bundles stay cheap to display.
+function highlightSource(body, text) {
+  const first = text.slice(0, 16000);
+  const pattern = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|\b(?:async|await|break|case|class|const|default|else|export|false|for|function|if|import|let|new|null|return|throw|true|typeof|var|while)\b/g;
+  const fragments = document.createDocumentFragment();
+  let offset = 0;
+  for (const match of first.matchAll(pattern)) {
+    fragments.append(first.slice(offset, match.index), node("span", match[1] ? "literal" : match[2] ? "comment" : "keyword", match[0]));
+    offset = match.index + match[0].length;
+  }
+  fragments.append(text.slice(offset));
+  body.replaceChildren(fragments);
+}
+
+async function renderSource(item, active = item.parts[0]) {
+  const panel = byId("source-view");
+  const tabs = node("nav", "source-tabs");
+  tabs.setAttribute("aria-label", "Resource views");
+  for (const part of item.parts) {
+    const tab = button(part.label, "secondary", () => renderSource(item, part));
+    tab.setAttribute("aria-pressed", String(part === active));
+    tabs.append(tab);
+  }
+  const file = node("p", "item-recipe", active.path);
+  const body = node("pre", "source-text", "Loading…");
+  panel.hidden = false;
+  panel.replaceChildren(tabs, file, body);
+  try {
+    const data = await request("/api/source?" + new URLSearchParams({id:item.id, view:active.label}));
+    if (!body.isConnected) return;
+    body.tabIndex = 0;
+    if (/\.(m?js|json|cjs)$/.test(active.path)) highlightSource(body, data.text);
+    else body.textContent = data.text;
+    if (data.truncated) file.append(" · First 256 KiB");
+    const copy = button("Copy text", "quiet-button", async () => {
+      try { await navigator.clipboard.writeText(data.text); copy.textContent = "Copied"; }
+      catch { body.focus(); }
+    });
+    tabs.append(copy);
+  } catch (error) {note(body, error.message, true);}
+}
 function savedAddress(item, base) {
   const path = item.savedPath.split("/").map(encodeURIComponent).join("/");
   return new URL(path, base).href;
@@ -530,11 +615,37 @@ function toggleSidebar(open) {
   byId("menu").setAttribute("aria-label", open ? "Close drive index" : "Open drive index");
 }
 
+function updateRail() {
+  const collapsed = railPreference ?? (route === "cover");
+  document.body.classList.toggle("rail", collapsed);
+  byId("rail-toggle").setAttribute("aria-expanded", String(!collapsed));
+}
+byId("rail-toggle").addEventListener("click", () => {
+  railPreference = !document.body.classList.contains("rail");
+  updateRail();
+});
+function syncCatalogueURL() {
+  const params = new URLSearchParams();
+  if (byId("overview-filter").value) params.set("q", byId("overview-filter").value);
+  if (byId("overview-type").value) params.set("type", byId("overview-type").value);
+  if (byId("overview-order").value === "name") params.set("order", "name");
+  history.replaceState(history.state, "", "#overview" + (params.size ? "?" + params : ""));
+  renderHome();
+}
+
 function renderRoute() {
   if (!inventory) return;
   const returningFromResult = route === "search-result";
   const navigation = history.state;
-  route = location.hash.slice(1) || "overview";
+  const [hashRoute, options] = location.hash.slice(1).split("?");
+  route = legacyRoutes.get(hashRoute) || hashRoute || "cover";
+  const params = new URLSearchParams(options);
+  if (route === "overview") {
+    byId("overview-filter").value = params.get("q") || "";
+    byId("overview-type").value = params.get("type") || "";
+    byId("overview-order").value = params.get("order") === "name" ? "name" : "grouped";
+    renderHome();
+  }
   const result = route === "search-result" && inventory.hasSearch && navigation?.reader;
   if (route === "search-result" && !result) {
     route = "search";
@@ -542,7 +653,12 @@ function renderRoute() {
   }
   selection = route === "terminal" ? shellItem : entries.get(route);
   const inSearch = inventory.hasSearch && (route === "search" || Boolean(result));
-  if (!selection && !inSearch) route = "overview";
+  if (!selection && !inSearch && route !== "overview") route = "cover";
+  byId("cover").hidden = route !== "cover";
+  byId("crumbs").hidden = route === "cover";
+  byId("crumb-leaf").textContent = selection?.group || (inSearch ? "Search" : "");
+  byId("source-view").hidden = true;
+  updateRail();
 
   ++searchRead;
   model = "";
@@ -575,9 +691,10 @@ function renderRoute() {
         byId("search-results").querySelectorAll("button")[navigation?.position]?.focus();
       }
     };
-    if (typeof navigation?.query === "string") {
-      byId("query").value = navigation.query;
-      if (navigation.query !== shownQuery) {
+    const searchQuery = params.get("q") ?? navigation?.query;
+    if (typeof searchQuery === "string") {
+      byId("query").value = searchQuery;
+      if (searchQuery !== shownQuery) {
         runSearch().then(focusResult);
       } else {
         focusResult();
@@ -595,6 +712,7 @@ function renderRoute() {
     preview.hidden = Boolean(selection.terminal);
     if (!preview.hidden) preview.replaceChildren(itemPreview(selection, "detail-preview"));
     renderItem();
+    if (selection.parts?.length) renderSource(selection);
   }
 }
 
@@ -644,6 +762,8 @@ function searchResult(item, position) {
       const address = readerURL(link.url);
       if (!address) throw new Error("The result has no local reader address.");
       const kind = item.source.startsWith("books/") ? "documents" : "browse";
+      // The read endpoint has acquired this archive; an earlier poll may still describe the previous lease.
+      if (link.service && unavailableReader(states.get(link.service))) states.delete(link.service);
       const searchState = {query: shownQuery, position};
       history.replaceState(searchState, "", "#search");
       history.pushState({
@@ -689,8 +809,8 @@ async function runSearch() {
   const query = byId("query").value.trim();
   const submitted = ++searchRequest;
   shownQuery = query;
-  if (location.hash === "#search" && history.state?.query !== query) {
-    history.replaceState({query}, "", "#search");
+  if (route === "search" && history.state?.query !== query) {
+    history.replaceState({query}, "", "#search?" + new URLSearchParams({q:query}));
   }
   const button = byId("search-form").querySelector("button");
   const results = byId("search-results");
@@ -737,7 +857,26 @@ byId("work-nav").addEventListener("click", event => {
 byId("nav").addEventListener("click", event => {
   if (event.target.closest("a")?.hash === "#" + route) toggleSidebar(false);
 });
+function openGlobalSearch() {
+  if (route === "cover") { byId("cover-query").focus(); return; }
+  const target = inventory?.hasSearch ? "search" : "overview";
+  if (route !== target) {
+    history.pushState(null, "", "#" + target);
+    renderRoute();
+  }
+  byId(target === "search" ? "query" : "overview-filter").focus();
+}
+byId("search-shortcut").textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl K";
+byId("cover-search").addEventListener("submit", event => {
+  event.preventDefault();
+  const q = byId("cover-query").value.trim();
+  location.hash = q ? "overview?" + new URLSearchParams({q}) : "overview";
+});
 document.addEventListener("keydown", event => {
+  if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    openGlobalSearch();
+  }
   if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
     toggleSidebar(false);
     byId("menu").focus();
@@ -748,9 +887,9 @@ document.querySelector(".skip").addEventListener("click", event => {
   byId("main").focus();
 });
 byId("filter").addEventListener("input", filterNavigation);
-byId("overview-filter").addEventListener("input", renderHome);
-byId("overview-type").addEventListener("change", renderHome);
-byId("overview-order").addEventListener("change", renderHome);
+byId("overview-filter").addEventListener("input", syncCatalogueURL);
+byId("overview-type").addEventListener("change", syncCatalogueURL);
+byId("overview-order").addEventListener("change", syncCatalogueURL);
 byId("terminal-start").addEventListener("click", startTerminal);
 byId("terminal-stop").addEventListener("click", () => selectedTerminal().session?.disconnect());
 byId("terminal-paste").addEventListener("click", () => selectedTerminal().session?.paste(selection.command));
@@ -768,7 +907,12 @@ byId("search-form").addEventListener("submit", event => {
   event.preventDefault();
   runSearch();
 });
-window.addEventListener("hashchange", renderRoute);
+window.addEventListener("hashchange", () => {
+  renderRoute();
+  if (route === "overview") byId("home-title").focus({preventScroll:true});
+  else if (selection) byId("item-title").focus({preventScroll:true});
+  else if (route === "search") byId("query").focus({preventScroll:true});
+});
 
 request("/api/inventory")
   .then(data => {
@@ -779,4 +923,4 @@ request("/api/inventory")
     setInterval(poll, 1000);
     document.addEventListener("visibilitychange", poll);
   })
-  .catch(error => note(byId("inventory-summary"), error.message, true));
+  .catch(error => note(byId("cover-total"), error.message, true));

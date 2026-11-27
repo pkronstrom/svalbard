@@ -1,0 +1,7 @@
+Svalbard — Plate I
+Coastline: Natural Earth, 1:10m Land, public domain (naturalearthdata.com).
+Elevation: Mapzen Terrain Tiles, Terrarium, zoom 6, columns 33–37, rows 6–10.
+Polar stereographic projection centered on 19° E. The scale bar uses the local scale at 79° N. Contours are generalized at 100 m intervals, with 500 m index contours.
+Map data credits: ArcticDEM terrain data DEM(s) were created from DigitalGlobe, Inc., imagery and funded under National Science Foundation awards 1043681, 1559691, and 1542736. Norway terrain data © Kartverket. Global ETOPO1 terrain data, U.S. National Oceanic and Atmospheric Administration. Global GMTED2010 terrain data courtesy of the U.S. Geological Survey.
+https://registry.opendata.aws/terrain-tiles/
+https://github.com/tilezen/joerd/blob/master/docs/attribution.md
