@@ -228,14 +228,14 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	// --- Import messages ---
+	// Import, and the apply or update an index run follows, change the
+	// dashboard's counts, so it is reloaded.
 	case importscreen.BackMsg:
-		m.screen = screenDashboard
-		return m, m.sendSize()
+		return m, m.reloadDashboard()
 
 	// --- Index messages ---
 	case index.BackMsg:
-		m.screen = screenDashboard
-		return m, m.sendSize()
+		return m, m.reloadDashboard()
 
 	// --- Open Vault messages ---
 	case openvault.DoneMsg:
@@ -333,6 +333,11 @@ func (m *appModel) returnFromBrowse() tea.Cmd {
 		return m.sendSize()
 	}
 	// Reload the dashboard: a saved selection changes its counts.
+	return m.reloadDashboard()
+}
+
+// reloadDashboard shows the dashboard with freshly loaded vault status.
+func (m *appModel) reloadDashboard() tea.Cmd {
 	m.screen = screenDashboard
 	m.dashboard = m.newDashboard(m.vaultPath)
 	return tea.Batch(m.dashboard.Init(), m.sendSize())
@@ -491,7 +496,7 @@ func (m *appModel) newPlan() plan.Model {
 }
 
 // newUpdates creates the plan screen listing available updates; applying it
-// updates every listed item.
+// updates the items the user leaves ticked.
 func (m *appModel) newUpdates() plan.Model {
 	cfg := plan.Config{
 		Title:     "Updates available",
@@ -505,17 +510,16 @@ func (m *appModel) newUpdates() plan.Model {
 		return plan.New(cfg)
 	}
 	cfg.DownloadGB = summary.DownloadGB
-	var ids []string
+	cfg.FreeGB = summary.FreeGB
 	for _, item := range summary.ToDownload {
-		ids = append(ids, item.ID)
 		cfg.Items = append(cfg.Items, plan.PlanItem{
 			ID: item.ID, Type: item.Type, SizeGB: item.SizeGB,
 			Description: item.Description, Action: item.Action,
 		})
 	}
-	if len(ids) > 0 && m.deps.RunUpdate != nil {
-		cfg.RunApply = func(ctx context.Context, onProgress func(plan.ApplyEvent)) error {
-			return m.deps.RunUpdate(ctx, ids, func(ev ApplyEvent) {
+	if len(cfg.Items) > 0 && m.deps.RunUpdate != nil {
+		cfg.RunSelected = func(ctx context.Context, ids []string, replace bool, onProgress func(plan.ApplyEvent)) error {
+			return m.deps.RunUpdate(ctx, ids, replace, func(ev ApplyEvent) {
 				onProgress(plan.ApplyEvent{
 					ID: ev.ID, Procedure: ev.Procedure, State: ev.State,
 					Status: ev.Status, Step: ev.Step, Message: ev.Message,

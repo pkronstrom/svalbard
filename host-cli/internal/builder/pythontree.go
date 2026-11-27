@@ -157,6 +157,36 @@ func installInterpreter(ctx context.Context, root, workdir, request, dest string
 	return installTree(ctx, root, workdir, nil, commands, skipInterpreterEntry, dest)
 }
 
+// installInterpreterBeside installs request like installInterpreter but keeps
+// the interpreters already in dest, so tools built for an earlier version run
+// until theirs are rebuilt: it installs into dest.next and moves the new
+// interpreter's directory into dest.
+func installInterpreterBeside(ctx context.Context, root, workdir, request, dest string) error {
+	next := dest + ".next"
+	if err := installInterpreter(ctx, root, workdir, request, next); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+	builds, err := os.ReadDir(next)
+	if err != nil {
+		return err
+	}
+	for _, build := range builds {
+		// A directory of the same name holds no working interpreter, or
+		// findInstalledPython would have found it.
+		target := filepath.Join(dest, build.Name())
+		if err := os.RemoveAll(target); err != nil {
+			return err
+		}
+		if err := os.Rename(filepath.Join(next, build.Name()), target); err != nil {
+			return err
+		}
+	}
+	return os.Remove(next)
+}
+
 func createTempPath(dir, pattern string) (string, error) {
 	f, err := os.CreateTemp(dir, pattern)
 	if err != nil {

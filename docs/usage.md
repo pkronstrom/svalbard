@@ -159,6 +159,8 @@ Update installed items whose recipe changed since they were installed. `apply` n
 
 Each installed copy is kept until its new one is in place, and put back if the download or build fails. That needs room for both copies; `--replace` deletes the installed copy first, and a failed `--replace` leaves the item pending.
 
+The dashboard's Updates screen does the same: every listed item starts ticked, Space unticks one, and `r` deletes installed copies first. That choice starts on when the vault lacks room for both copies.
+
 `status` shows a version for every installed item:
 
 - `current`: installed from the recipe as it is now
@@ -168,7 +170,7 @@ Each installed copy is kept until its new one is in place, and put back if the d
 - `local`: a file you imported
 - `by document`: a document collection. `apply` fetches its new and changed documents, and `update` leaves it alone
 
-Python tools cannot be updated this way yet; remove them, apply, and add them back.
+Python tools are updated in place: each tool is reinstalled beside its installed copy, which is kept if that fails, so `--replace` makes no difference to them. Updating `svalbard-python` reinstalls every Python tool on the vault.
 
 ### `svalbard status --vault <path> [--json]`
 

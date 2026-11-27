@@ -47,7 +47,10 @@ var pythonTargets = map[string]pythonTarget{
 // A package that cannot be installed for a platform (no compatible wheels) is
 // skipped for that platform with a warning; it fails the build only when no
 // platform could install it, or when it has a python_launcher (scripts call
-// that on every platform).
+// that on every platform). A package or venv named in opts.Rebuild is being
+// updated: its trees are reinstalled, and one that fails to reinstall keeps
+// its installed tree and fails the build. A tree of an older layout is
+// reinstalled too, but one that fails to is kept with a warning.
 func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
 	ctx := opts.Ctx
 	if ctx == nil {
@@ -88,6 +91,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 	}
 
 	version := pythonVersionFromSpec(recipe.Python)
+	rebuildAll := opts.Rebuild[recipe.ID]
 
 	workdir, err := pythonBuildDir()
 	if err != nil {
@@ -98,10 +102,10 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 	}
 
 	var entries []manifest.RealizedEntry
-	installed := map[string]bool{}
+	installedOn := map[string]bool{}
 	// A tree of an older layout that cannot be installed again (offline) is
 	// kept and the build goes on; after one such failure the others are not
-	// tried, since they would fail the same way.
+	// tried, since they would fail the same way. An update is still tried.
 	repairDeferred := false
 
 	for _, platform := range targets {
@@ -125,12 +129,22 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 		// Phase 1: Install the interpreter for this platform, also over one an
 		// older layout left (symlinks, terminfo).
 		pythonBin := findInstalledPython(interpreterDir, version)
-		repair := pythonBin != "" && !pythonLayoutCurrent(interpreterDir+".layout")
-		if pythonBin == "" || (repair && !repairDeferred) {
+		newInterpreter := pythonBin == ""
+		// Trees built before stamps named the interpreter version were built
+		// for the one interpreter beside them.
+		soleInterpreter := !newInterpreter && len(otherPythons(interpreterDir, version)) == 0
+		repair := !newInterpreter && !pythonLayoutCurrent(interpreterDir+".layout")
+		if newInterpreter || (repair && (!repairDeferred || rebuildAll)) {
 			slog.Info("installing python", "version", version, "platform", platform)
 			emit(opts, BuildEvent{RecipeID: recipe.ID, State: EventProgress, Message: "installing python " + version + " for " + platform})
 			request := "cpython-" + version + "-" + target.python
-			switch err := installInterpreter(ctx, root, workdir, request, interpreterDir); {
+			install := installInterpreter
+			if newInterpreter {
+				install = installInterpreterBeside
+			}
+			switch err := install(ctx, root, workdir, request, interpreterDir); {
+			case err != nil && repair && rebuildAll:
+				return nil, fmt.Errorf("updating %s for %s: %w; its installed copy was kept", recipe.ID, platform, err)
 			case err != nil && repair:
 				slog.Warn("kept python interpreter of an older layout", "platform", platform, "err", truncate(err.Error(), 300))
 				repairDeferred = true
@@ -162,19 +176,27 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				}
 				stamp += "requirements_from: " + pkg.RequirementsFrom + "\n"
 			}
-			stamp += pythonTreeLayoutStamp
+			// Trees are built for one interpreter version and laid out by
+			// installTree. A stamp from before the version was recorded
+			// matches the interpreter it was built with.
+			legacy := stamp
+			body := stamp + "python: " + version + "\n"
+			stamp = body + pythonTreeLayoutStamp
 			stampPath := toolDir + ".packages"
 			existing, stampErr := os.ReadFile(stampPath)
-			rebuild := stampErr != nil || string(existing) != stamp
+			info, dirErr := os.Stat(toolDir)
+			installed := stampErr == nil && dirErr == nil && info.IsDir()
+			existingBody := stampWithoutLayout(string(existing))
+			samePins := installed && (existingBody == body || (soleInterpreter && existingBody == legacy))
+			current := samePins && string(existing) == existingBody+pythonTreeLayoutStamp
 			// The same pins installed in an older layout.
-			repair := rebuild && stampErr == nil && stampWithoutLayout(string(existing)) == stampWithoutLayout(stamp)
+			repair := samePins && !current
+			updating := installed && (rebuildAll || opts.Rebuild[pkg.ID])
+			rebuild := !current || updating
 			if isPlatformIOPythonPackage(pkg) && !platformIOPythonTreeComplete(toolDir, pkg.EntryPoints) {
 				rebuild, repair = true, false
 			}
-			if info, err := os.Stat(toolDir); err != nil || !info.IsDir() {
-				repair = false
-			}
-			if repair && repairDeferred {
+			if repair && repairDeferred && !updating {
 				rebuild = false
 			}
 			if rebuild {
@@ -213,6 +235,8 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 					err = install()
 				}
 				switch {
+				case err != nil && updating:
+					return nil, fmt.Errorf("updating %s for %s: %w; its installed copy was kept", pkg.ID, platform, err)
 				case err != nil && repair:
 					slog.Warn("kept python package tree of an older layout", "package", pkg.ID, "platform", platform, "err", truncate(err.Error(), 300))
 					repairDeferred = true
@@ -266,7 +290,7 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				}
 			}
 
-			installed[pkg.ID] = true
+			installedOn[pkg.ID] = true
 			entries = append(entries, manifest.RealizedEntry{
 				ID:             pkg.ID,
 				Type:           pkg.Type,
@@ -276,10 +300,12 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 				SourceStrategy: "build",
 			})
 		}
+		// Every tree on this platform now runs on this interpreter.
+		removeOtherPythons(interpreterDir, version)
 	}
 
 	for _, pkg := range pkgItems {
-		if !installed[pkg.ID] {
+		if !installedOn[pkg.ID] {
 			return nil, fmt.Errorf("python package %s could not be installed for any of %v", pkg.ID, targets)
 		}
 	}
@@ -486,6 +512,30 @@ func findInstalledPython(installDir, version string) string {
 		}
 	}
 	return ""
+}
+
+// otherPythons returns the interpreters of a uv-managed install dir other
+// than version.
+func otherPythons(installDir, version string) []string {
+	var names []string
+	dirs, _ := os.ReadDir(installDir)
+	for _, dir := range dirs {
+		name := dir.Name()
+		if strings.HasPrefix(name, "cpython-") && !strings.HasPrefix(name, "cpython-"+version+".") && !strings.HasPrefix(name, "cpython-"+version+"-") {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// removeOtherPythons deletes the interpreters of a uv-managed install dir
+// other than version, left behind when the venv's Python version changes.
+func removeOtherPythons(installDir, version string) {
+	for _, name := range otherPythons(installDir, version) {
+		if err := os.RemoveAll(filepath.Join(installDir, name)); err != nil {
+			slog.Warn("removing an earlier python", "path", name, "error", err)
+		}
+	}
 }
 
 // hostPlatformStr returns the svalbard platform string for the current machine.

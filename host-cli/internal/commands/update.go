@@ -109,9 +109,6 @@ func UpdateVault(ctx context.Context, root string, cat *catalog.Catalog, ids []s
 			return fmt.Errorf("%s is a document collection; \"svalbard apply\" fetches its new and changed documents", id)
 		}
 		recipe, _ := cat.RecipeByID(id)
-		if recipe.Type == "python-package" || recipe.Type == "python-venv" {
-			return fmt.Errorf("%s is a Python tool; update it with \"svalbard remove %s\", apply, then add it back", id, id)
-		}
 		needGB += recipe.SizeGBFor(m.Desired.Options.HostPlatforms)
 	}
 	if freeGB := volumes.FreeSpaceGB(root); !replace && freeGB > 0 && needGB > freeGB {

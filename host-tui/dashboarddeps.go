@@ -22,8 +22,8 @@ type DashboardDeps struct {
 	// Long-running operations (run in goroutines, report progress via callback)
 	RunApply func(ctx context.Context, onProgress func(ApplyEvent)) error
 	// RunUpdate reacquires the given installed items, keeping each installed
-	// copy until its new one is in place.
-	RunUpdate          func(ctx context.Context, ids []string, onProgress func(ApplyEvent)) error
+	// copy until its new one is in place, or deleting it first with replace.
+	RunUpdate          func(ctx context.Context, ids []string, replace bool, onProgress func(ApplyEvent)) error
 	RunImport          func(ctx context.Context, source string) (ImportResult, error)
 	RunIndex           func(ctx context.Context, indexType string, onProgress func(IndexEvent)) error
 	RunConfiguredIndex func(ctx context.Context, vaultPath string, onProgress func(IndexEvent)) error
