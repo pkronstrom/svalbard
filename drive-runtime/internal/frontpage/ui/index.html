@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f1f3f2">
+  <meta name="theme-color" content="#faf8f1">
   <title>Svalbard Drive</title>
   <link rel="icon" href="/favicon.png" type="image/png">
   <link rel="stylesheet" href="/vendor/xterm/xterm.css">
@@ -12,14 +12,28 @@
 </head>
 <body>
   <a class="skip" href="#main">Skip to workspace</a>
-  <aside class="sidebar" id="sidebar" aria-label="Drive sidebar">
-    <a class="brand" href="#overview">
-      <strong>Svalbard</strong>
-      <small id="vault">Drive</small>
-    </a>
+  <main id="main" class="main" tabindex="-1">
+    <div class="masthead">
+      <a class="nameplate" href="#overview">Svalbard</a>
+      <span id="vault">Drive</span>
+    </div>
+    <header class="top">
+      <div class="top-location">
+        <button type="button" id="menu" class="button quiet-button mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Open drive index">Contents</button>
+        <nav class="work-nav" id="work-nav" aria-label="Workspace">
+          <a href="#overview" class="work-tab top-home" aria-current="page">Catalog</a>
+          <a href="#search" class="work-tab" id="search-nav" hidden>Search</a>
+          <a href="#terminal" class="work-tab">Terminal</a>
+        </nav>
+      </div>
+      <span id="location" hidden></span>
+      <span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span>
+    </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Table of contents" hidden>
     <label class="filter">
       <span class="lens" aria-hidden="true"></span>
-      <input id="filter" type="search" placeholder="Filter sidebar" aria-label="Filter sidebar" disabled>
+      <input id="filter" type="search" placeholder="Find in contents" aria-label="Find in contents" disabled>
     </label>
     <nav id="nav" aria-label="Drive contents">
       <div id="groups"></div>
@@ -34,29 +48,15 @@
       <p id="filter-status" class="quiet" role="status" hidden></p>
     </nav>
   </aside>
-  <button type="button" id="dismiss-sidebar" class="sidebar-scrim" aria-label="Close drive index" tabindex="-1"></button>
-
-  <main id="main" class="main" tabindex="-1">
-    <header class="top">
-      <div class="top-location">
-        <button type="button" id="menu" class="button quiet-button mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Open drive index">Index</button>
-        <nav class="work-nav" id="work-nav" aria-label="Workspace">
-          <a href="#overview" class="work-tab top-home" aria-current="page">Catalog</a>
-          <a href="#search" class="work-tab" id="search-nav" hidden>Search</a>
-          <a href="#terminal" class="work-tab">Terminal</a>
-        </nav>
-      </div>
-      <span id="location" hidden></span>
-      <span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span>
-    </header>
-
     <div id="viewport" class="viewport">
       <section id="overview" class="page overview" aria-labelledby="home-title">
         <header class="folio-heading welcome">
           <h1 id="home-title">Drive catalog</h1>
           <p id="inventory-summary" class="quiet" role="status">Loading drive contents…</p>
         </header>
-        <div class="catalog-toolbar">
+        <details class="catalog-options">
+          <summary>Search &amp; filter</summary>
+          <div class="catalog-toolbar">
           <form id="home-search" class="search-form" hidden>
             <label for="home-query">Search articles and documents</label>
             <div class="search-controls">
@@ -82,6 +82,7 @@
             </label>
           </div>
         </div>
+        </details>
         <p id="overview-results" class="quiet catalog-count" role="status" hidden></p>
         <div id="home-links" class="overview-list"></div>
         <noscript><p>Enable JavaScript to browse this dashboard, or open <code>./run</code> in a terminal.</p></noscript>

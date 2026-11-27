@@ -235,6 +235,8 @@ function renderHome() {
   if (visible.length) {
     const list = node("ul", "overview-rows");
     list.setAttribute("role", "list");
+    list.classList.toggle("with-lead", !filtered && byId("overview-order").value === "grouped" &&
+      visible.length > 1 && !["Tools", "Settings"].includes(overviewType(visible[0])));
     list.append(...visible.map(overviewRow));
     output.append(list);
   }
@@ -524,7 +526,7 @@ function renderItem() {
 }
 
 function toggleSidebar(open) {
-  document.body.classList.toggle("sidebar-open", open);
+  byId("sidebar").hidden = !open;
   byId("menu").setAttribute("aria-expanded", String(open));
   byId("menu").setAttribute("aria-label", open ? "Close drive index" : "Open drive index");
 }
@@ -716,13 +718,9 @@ async function runSearch() {
 }
 
 byId("menu").addEventListener("click", event => {
-  const open = !document.body.classList.contains("sidebar-open");
+  const open = byId("sidebar").hidden;
   toggleSidebar(open);
   if (open && !event.detail) byId("filter").focus({preventScroll: true});
-});
-byId("dismiss-sidebar").addEventListener("click", () => {
-  toggleSidebar(false);
-  byId("menu").focus();
 });
 byId("work-nav").addEventListener("click", event => {
   const link = event.target.closest("a");
@@ -735,7 +733,7 @@ byId("nav").addEventListener("click", event => {
   if (event.target.closest("a")?.hash === "#" + route) toggleSidebar(false);
 });
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
+  if (event.key === "Escape" && !byId("sidebar").hidden) {
     toggleSidebar(false);
     byId("menu").focus();
   }
