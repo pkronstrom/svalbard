@@ -27,6 +27,9 @@ type SemanticContract struct {
 	QueryPrefix string `json:"query_prefix"`
 	Dimensions  int    `json:"dimensions"`
 	Matryoshka  bool   `json:"matryoshka"`
+	// SourceSelectors is a canonical JSON array of exact filenames and
+	// directory prefixes. An empty value retains legacy full coverage.
+	SourceSelectors string `json:"source_selectors,omitempty"`
 }
 
 // Article represents an article to be indexed.
@@ -563,7 +566,16 @@ func (d *DB) CompleteSemanticContract(ctx context.Context, contract SemanticCont
 		return nil
 	}
 	var missing int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM articles a WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.article_id=a.id)`).Scan(&missing); err != nil {
+	coverage := `SELECT COUNT(*) FROM articles a JOIN sources s ON s.id=a.source_id
+		WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.article_id=a.id)`
+	var args []any
+	if contract.SourceSelectors != "" {
+		coverage += ` AND EXISTS (SELECT 1 FROM json_each(?) selected
+			WHERE s.filename=selected.value OR
+				(substr(selected.value, -1)='/' AND substr(s.filename, 1, length(selected.value))=selected.value))`
+		args = append(args, contract.SourceSelectors)
+	}
+	if err := tx.QueryRowContext(ctx, coverage, args...).Scan(&missing); err != nil {
 		return err
 	}
 	if missing != 0 {

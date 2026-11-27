@@ -149,6 +149,30 @@ func TestIndexSemanticResumeCompletesCancelledCommittedBatch(t *testing.T) {
 	}
 }
 
+func TestIndexSemanticSelectedPreservesCoverageOnResume(t *testing.T) {
+	root, db, _, excludedID := semanticCommandFixture(t)
+	ctx := context.Background()
+	if err := db.ReplaceSource(ctx, searchdb.Source{Filename: "books/guide.pdf", Title: "Guide"}, []searchdb.Article{
+		{Path: "page/1", Title: "Preserving food", Body: "A handbook for preserving food."},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	installFakeEmbeddingServer(t, &fakeEmbeddingServer{dimensions: 2}, nil)
+	if err := IndexSemanticSelected(ctx, root, false, io.Discard, nil, []string{"books/"}, "model.gguf"); err != nil {
+		t.Fatal(err)
+	}
+	if err := IndexSemantic(ctx, root, false, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	contract, state, err := db.LoadSemanticContract()
+	if err != nil || state != "complete" || contract.SourceSelectors != `["books/"]` {
+		t.Fatalf("selection after resume = %q, %q, %v", contract.SourceSelectors, state, err)
+	}
+	if count, err := db.EmbeddingCountBySource(excludedID); err != nil || count != 0 {
+		t.Fatalf("unselected Wiki articles with embeddings = %d, %v", count, err)
+	}
+}
+
 func TestPrepareEmbeddingTextTruncatesLongBody(t *testing.T) {
 	body := strings.Repeat("token ", 800)
 

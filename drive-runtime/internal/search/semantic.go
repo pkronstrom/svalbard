@@ -26,13 +26,14 @@ import (
 
 // SemanticContract is the reader-side form of the host semantic contract.
 type SemanticContract struct {
-	Version     int    `json:"version"`
-	Model       string `json:"model"`
-	ModelSHA256 string `json:"model_sha256"`
-	DocPrefix   string `json:"doc_prefix"`
-	QueryPrefix string `json:"query_prefix"`
-	Dimensions  int    `json:"dimensions"`
-	Matryoshka  bool   `json:"matryoshka"`
+	Version         int    `json:"version"`
+	Model           string `json:"model"`
+	ModelSHA256     string `json:"model_sha256"`
+	DocPrefix       string `json:"doc_prefix"`
+	QueryPrefix     string `json:"query_prefix"`
+	Dimensions      int    `json:"dimensions"`
+	Matryoshka      bool   `json:"matryoshka"`
+	SourceSelectors string `json:"source_selectors,omitempty"`
 }
 
 type semanticQuery interface{ QueryRow(string, ...any) *sql.Row }
@@ -331,7 +332,13 @@ func hybridSnapshot(ctx context.Context, db *sql.DB, contract SemanticContract, 
 	if !ok || snapshot != contract {
 		return nil, false, nil
 	}
-	results, err := engine.New(tx).HybridContext(ctx, query, vector, candidateLimit, source, excluded...)
+	eng := engine.New(tx)
+	var results []Result
+	if contract.SourceSelectors == "" {
+		results, err = eng.HybridContext(ctx, query, vector, candidateLimit, source, excluded...)
+	} else {
+		results, err = eng.SelectiveHybridContext(ctx, query, vector, candidateLimit, source, excluded...)
+	}
 	if err != nil {
 		return nil, false, err
 	}

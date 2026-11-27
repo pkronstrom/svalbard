@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -104,18 +105,28 @@ type SemanticProgress struct {
 //
 // The keyword index must already exist (run IndexVault first).
 func IndexSemantic(ctx context.Context, root string, force bool, w io.Writer, onProgress func(SemanticProgress)) error {
+	return IndexSemanticSelected(ctx, root, force, w, onProgress, nil, "")
+}
+
+// IndexSemanticSelected limits embeddings to already indexed source paths.
+// A subsequent run without selectors resumes the selection on disk.
+func IndexSemanticSelected(ctx context.Context, root string, force bool, w io.Writer, onProgress func(SemanticProgress), selectors []string, model string) error {
 	releaseLock, err := acquireIndexWriterLock(root)
 	if err != nil {
 		return err
 	}
 	defer releaseLock()
-	return indexSemanticUnlocked(ctx, root, force, w, onProgress)
+	return indexSemanticSelectedUnlocked(ctx, root, force, w, onProgress, selectors, model)
 }
 
 // indexSemanticUnlocked performs semantic indexing while its caller holds the
 // vault writer lock. A later combined index runner can retain that lock across
 // keyword and semantic stages.
 func indexSemanticUnlocked(ctx context.Context, root string, force bool, w io.Writer, onProgress func(SemanticProgress)) error {
+	return indexSemanticSelectedUnlocked(ctx, root, force, w, onProgress, nil, "")
+}
+
+func indexSemanticSelectedUnlocked(ctx context.Context, root string, force bool, w io.Writer, onProgress func(SemanticProgress), selectors []string, model string) error {
 	dataDir := filepath.Join(root, "data")
 	dbPath := filepath.Join(dataDir, "search.db")
 	if _, err := os.Stat(dbPath); err != nil {
@@ -135,6 +146,14 @@ func indexSemanticUnlocked(ctx context.Context, root string, force bool, w io.Wr
 	if len(sources) == 0 {
 		return fmt.Errorf("no indexed sources — run keyword indexing first")
 	}
+	previous, _, err := db.LoadSemanticContract()
+	if err != nil {
+		return err
+	}
+	sources, selection, err := selectSemanticSources(sources, selectors, previous.SourceSelectors)
+	if err != nil {
+		return err
+	}
 
 	notify := func(p SemanticProgress) {
 		if onProgress != nil {
@@ -144,7 +163,7 @@ func indexSemanticUnlocked(ctx context.Context, root string, force bool, w io.Wr
 
 	// Find the embedding model and load its spec BEFORE any destructive work.
 	// Preflight must be able to refuse without losing existing embeddings.
-	modelPath, err := findEmbeddingModel(root)
+	modelPath, err := resolveSemanticModel(root, model, previous.Model)
 	if err != nil {
 		return err
 	}
@@ -184,7 +203,7 @@ func indexSemanticUnlocked(ctx context.Context, root string, force bool, w io.Wr
 	if err != nil {
 		return fmt.Errorf("resolving embedding model path: %w", err)
 	}
-	contract := searchdb.SemanticContract{Version: 1, Model: filepath.ToSlash(relativeModel), ModelSHA256: modelHash, DocPrefix: embSpec.DocPrefix, QueryPrefix: embSpec.QueryPrefix, Dimensions: dims, Matryoshka: embSpec.Matryoshka}
+	contract := searchdb.SemanticContract{Version: 1, Model: filepath.ToSlash(relativeModel), ModelSHA256: modelHash, DocPrefix: embSpec.DocPrefix, QueryPrefix: embSpec.QueryPrefix, Dimensions: dims, Matryoshka: embSpec.Matryoshka, SourceSelectors: selection}
 	if _, err := db.BeginSemanticContract(ctx, contract, force); err != nil {
 		return fmt.Errorf("starting semantic contract: %w", err)
 	}
@@ -233,6 +252,62 @@ func indexSemanticUnlocked(ctx context.Context, root string, force bool, w io.Wr
 	}
 
 	return nil
+}
+
+func selectSemanticSources(sources []searchdb.SourceInfo, requested []string, recorded string) ([]searchdb.SourceInfo, string, error) {
+	selectors := slices.Clone(requested)
+	if len(selectors) == 0 && recorded != "" {
+		if err := json.Unmarshal([]byte(recorded), &selectors); err != nil {
+			return nil, "", fmt.Errorf("reading semantic source selection: %w", err)
+		}
+	}
+	if len(selectors) == 0 {
+		return sources, "", nil
+	}
+	for i, selector := range selectors {
+		selectors[i] = filepath.ToSlash(strings.TrimSpace(selector))
+		if selectors[i] == "" {
+			return nil, "", fmt.Errorf("empty semantic source selector")
+		}
+	}
+	slices.Sort(selectors)
+	selectors = slices.Compact(selectors)
+	var selected []searchdb.SourceInfo
+	matched := map[string]bool{}
+	for _, source := range sources {
+		include := false
+		for _, selector := range selectors {
+			if source.Filename == selector || strings.HasSuffix(selector, "/") && strings.HasPrefix(source.Filename, selector) {
+				include = true
+				matched[selector] = matched[selector] || source.ArticleCount > 0
+			}
+		}
+		if include && source.ArticleCount > 0 {
+			selected = append(selected, source)
+		}
+	}
+	for _, selector := range selectors {
+		if !matched[selector] {
+			return nil, "", fmt.Errorf("no indexed text for semantic source %q", selector)
+		}
+	}
+	raw, err := json.Marshal(selectors)
+	return selected, string(raw), err
+}
+
+func resolveSemanticModel(root, requested, recorded string) (string, error) {
+	switch {
+	case requested == "" && recorded == "":
+		return findEmbeddingModel(root)
+	case requested == "":
+		if !strings.HasPrefix(recorded, "models/embed/") || filepath.ToSlash(filepath.Clean(recorded)) != recorded {
+			return "", fmt.Errorf("invalid recorded embedding model %q", recorded)
+		}
+		return filepath.Join(root, filepath.FromSlash(recorded)), nil
+	case filepath.Base(requested) != requested || !strings.EqualFold(filepath.Ext(requested), ".gguf"):
+		return "", fmt.Errorf("embedding model must be a GGUF filename under models/embed/")
+	}
+	return filepath.Join(root, "models", "embed", requested), nil
 }
 
 func semanticMetadata(modelID string) searchdb.SemanticCompletionMetadata {
@@ -593,6 +668,9 @@ func prepareEmbeddingText(prefix, title, body string) string {
 	body = strings.Join(strings.Fields(body), " ")
 
 	base := prefix + title
+	if strings.Contains(prefix, "{title}") {
+		base = strings.TrimRight(strings.ReplaceAll(prefix, "{title}", title), " ")
+	}
 	if body == "" {
 		return truncateRunes(base, embeddingTextMaxRunes)
 	}
