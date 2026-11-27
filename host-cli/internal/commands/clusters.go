@@ -39,8 +39,8 @@ func ClusterSize(dir string) (int64, error) {
 	}
 	f, err := os.CreateTemp(dir, ".svalbard-cluster-*")
 	if err != nil {
-		// A disk this user cannot write: the smallest file already there.
-		return smallestAllocation(dir)
+		// A disk this user cannot write: the files already there.
+		return clusterFromFiles(dir)
 	}
 	defer os.Remove(f.Name())
 	_, err = f.Write([]byte{0})
@@ -61,27 +61,44 @@ func ClusterSize(dir string) (int64, error) {
 	return allocatedBytes(info), nil
 }
 
-// smallestAllocation is the least space a file directly in dir takes, the
-// cluster size when one of them is smaller than a cluster.
-func smallestAllocation(dir string) (int64, error) {
+// clusterFromFiles reads the cluster size from the files directly in dir:
+// the greatest common divisor of what they take on disk. That is the cluster
+// size, or a multiple of it, so it is trusted only when it is a power of two
+// and some file holds at most half of it: such a file takes exactly one
+// cluster, which a multiple could not divide. A directory of large files
+// alone gives no answer rather than a wrong one.
+func clusterFromFiles(dir string) (int64, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0, err
 	}
-	var smallest int64
+	var divisor int64
+	var sizes []int64
 	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		if allocated := allocatedBytes(info); allocated > 0 && (smallest == 0 || allocated < smallest) {
-			smallest = allocated
+		if allocated := allocatedBytes(info); allocated > 0 {
+			divisor = gcd(divisor, allocated)
+			sizes = append(sizes, info.Size())
 		}
 	}
-	if smallest == 0 {
-		return 0, fmt.Errorf("cannot measure the cluster size of %s", dir)
+	if divisor >= 512 && divisor&(divisor-1) == 0 {
+		for _, size := range sizes {
+			if size > 0 && size <= divisor/2 {
+				return divisor, nil
+			}
+		}
 	}
-	return smallest, nil
+	return 0, fmt.Errorf("cannot measure the cluster size of %s", dir)
+}
+
+func gcd(a, b int64) int64 {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
 }
 
 func allocatedBytes(info fs.FileInfo) int64 {

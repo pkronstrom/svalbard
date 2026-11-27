@@ -128,3 +128,21 @@ func TestClusterSizeOfAnUnwritableDirectory(t *testing.T) {
 		t.Fatalf("ClusterSize = %d, %v", size, err)
 	}
 }
+
+// Large files alone tell nothing about the cluster size: no guess.
+func TestClusterSizeOfAnUnwritableDirectoryOfLargeFiles(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root writes anywhere")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "big.zim"), bytes.Repeat([]byte("z"), 300<<10), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	if size, err := ClusterSize(dir); err == nil {
+		t.Fatalf("ClusterSize = %d, want unknown", size)
+	}
+}
