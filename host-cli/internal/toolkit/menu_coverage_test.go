@@ -36,6 +36,7 @@ const noEntryYet = "no menu entry yet"
 var supportOnlyTypes = map[string]string{
 	"gguf-embed":  "embedding model: Search uses it for semantic results",
 	"gguf-mtp":    "draft model: speeds up the chat model it is paired with",
+	"gguf-mmproj": "vision projector: adds image input to its chat model",
 	"python-venv": "the Python environment that Python packages run in",
 	"skills":      "procedures for the AI clients, which find them with skill_search",
 	"js-lib":      "browser libraries the AI clients' HTML skills pack into pages with svalbard-drive html pack",

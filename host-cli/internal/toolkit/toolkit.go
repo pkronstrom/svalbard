@@ -63,6 +63,7 @@ var TypeDirs = map[string]string{
 	"gguf":           "models",
 	"gguf-embed":     "models/embed",
 	"gguf-mtp":       "models/draft",
+	"gguf-mmproj":    "models/vision",
 	"binary":         "bin",
 	"app":            "apps",
 	"dataset":        "data",

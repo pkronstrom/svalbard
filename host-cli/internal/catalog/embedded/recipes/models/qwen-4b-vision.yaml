@@ -1,0 +1,13 @@
+id: qwen-4b-vision
+type: gguf-mmproj
+display_group: models
+tags: [computing, vision]
+size_gb: 0.63
+filename: mmproj-Qwen3.5-4B-BF16.gguf
+url: https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/mmproj-Qwen_Qwen3.5-4B-bf16.gguf
+sha256: 463f39bd1c291c1186c319a8c90ff8640aafa678b14cbee2232d695113dfbb66
+description: Optional BF16 vision projector for Qwen3.5 4B
+deps: [llama-server]
+license:
+  id: Apache-2.0
+  attribution: Alibaba Cloud / Qwen Team / bartowski

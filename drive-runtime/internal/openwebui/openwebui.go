@@ -15,6 +15,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -137,7 +138,7 @@ func Environment(l Launch) map[string]string {
 
 		"TOOL_SERVER_CONNECTIONS": mustJSON(toolServers),
 		"DEFAULT_MODEL_METADATA": mustJSON(map[string]any{
-			// Vision stays off until the runtime loads a projector with the model.
+			// Projector-enabled models override this through the model list.
 			"capabilities": map[string]any{
 				"file_upload": true, "vision": false,
 				"web_search": false, "code_interpreter": false, "image_generation": false, "memory": false,
@@ -298,6 +299,16 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	modelName := strings.TrimSuffix(filepath.Base(model), filepath.Ext(model))
 	llamaRoot := fmt.Sprintf("http://127.0.0.1:%d", llamaPort)
 	webuiRoot := fmt.Sprintf("http://127.0.0.1:%d", port)
+	visionModels := map[string]bool{}
+	if modelPreset != "" {
+		for _, name := range models {
+			if llamaserve.VisionProjector(filepath.Join(driveRoot, "models", name)) != "" {
+				visionModels[strings.TrimSuffix(name, filepath.Ext(name))] = true
+			}
+		}
+	} else if llamaserve.VisionProjector(model) != "" {
+		visionModels[modelName] = true
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
@@ -305,7 +316,27 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		cancel()
 		wg.Wait()
 	}()
-	exited := make(chan error, 4)
+	exited := make(chan error, 5)
+
+	webuiBackend := llamaRoot
+	if len(visionModels) > 0 {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return fmt.Errorf("starting image-capable model connection: %w", err)
+		}
+		target := &url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", llamaPort)}
+		proxy := &http.Server{Handler: visionProxy(target, visionModels), ReadHeaderTimeout: 5 * time.Second}
+		defer listener.Close()
+		defer proxy.Close()
+		webuiBackend = "http://" + listener.Addr().String()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := proxy.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				exited <- fmt.Errorf("model connection stopped: %w", err)
+			}
+		}()
+	}
 
 	mcpServer := mcp.NewDriveServer(driveRoot, mcp.DriveOptions{Context: ctxSize})
 	mcpServers := map[string]*mcp.Server{mcp.StreamableHTTPPath: mcpServer}
@@ -359,7 +390,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		SecretKey:   secret,
 		ModelName:   modelName,
 		ContextSize: ctxSize,
-		LlamaURL:    llamaRoot + "/v1",
+		LlamaURL:    webuiBackend + "/v1",
 		MCPURL:      fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
 		Wiki:        mcp.WikiOffered(driveRoot, ctxSize),
 		FilesURL:    filesURL,

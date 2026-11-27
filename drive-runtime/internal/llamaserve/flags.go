@@ -84,6 +84,9 @@ func modelOptions(modelPath string, ctxSize int) []modelOption {
 	if draft, mode, nMax, ok := packagedDraft(modelPath, name); ok {
 		options = append(options, modelOption{"--spec-type", mode}, modelOption{"--spec-draft-model", draft}, modelOption{"--spec-draft-n-max", nMax})
 	}
+	if projector := VisionProjector(modelPath); projector != "" {
+		options = append(options, modelOption{"--mmproj", projector})
+	}
 
 	return options
 }
