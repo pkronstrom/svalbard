@@ -232,3 +232,28 @@ func TestPlainApplyConvertsAFlatTreeLeftByAnOlderRuntime(t *testing.T) {
 		t.Fatalf("apply did not say what it converted: %v", notices)
 	}
 }
+
+// An update that stopped after removing the old archive's copy has happened:
+// the old tree left aside is dropped, and the new tree stays.
+func TestApplyDropsTheOldTreeOfAFinishedUpdate(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin", "linux-arm64")
+	archive := filepath.Join(bin, "llama.tar.gz")
+	os.MkdirAll(filepath.Join(archive+".unpacked"+asideSuffix, "llama"), 0o755)
+	os.WriteFile(filepath.Join(archive+".unpacked"+asideSuffix, "llama", "llama-server"), []byte("old"), 0o755)
+	os.MkdirAll(filepath.Join(archive+".unpacked", "llama"), 0o755)
+	os.WriteFile(filepath.Join(archive+".unpacked", "llama", "llama-server"), []byte("new"), 0o755)
+	os.WriteFile(archive, []byte(llamaArchive(t, "llama", "new")), 0o644)
+	m := manifest.New("test")
+	m.Realized.Entries = []manifest.RealizedEntry{{ID: "llama-server", Type: "binary", Filename: "llama.tar.gz", RelativePath: "bin/linux-arm64/llama.tar.gz"}}
+	cat, _ := catalog.LoadFromFS(fstest.MapFS{}, fstest.MapFS{})
+	if err := Run(context.Background(), root, &m, planner.Plan{}, cat); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(archive+".unpacked", "llama", "llama-server")); got != "new" {
+		t.Fatalf("tree = %q, want the new one", got)
+	}
+	if _, err := os.Stat(archive + ".unpacked" + asideSuffix); !os.IsNotExist(err) {
+		t.Fatalf("old tree kept: %v", err)
+	}
+}

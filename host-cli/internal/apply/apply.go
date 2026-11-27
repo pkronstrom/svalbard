@@ -548,11 +548,13 @@ func (s updateSwap) run(root, id string, job func() downloadResult) downloadResu
 				slog.Warn("removing the previous unpacked tree", "id", id, "error", err)
 			}
 		}
-		if err := os.RemoveAll(bintree.UnpackedDir(path) + asideSuffix); err != nil {
-			slog.Warn("removing the previous unpacked tree", "id", id, "error", err)
-		}
+		// The archive's copy goes first: once it is gone the update has
+		// happened, and recoverAsides drops a tree left aside without it.
 		if err := os.RemoveAll(path + asideSuffix); err != nil {
 			slog.Warn("removing the previous copy", "id", id, "error", err)
+		}
+		if err := os.RemoveAll(bintree.UnpackedDir(path) + asideSuffix); err != nil {
+			slog.Warn("removing the previous unpacked tree", "id", id, "error", err)
 		}
 	}
 	return result
@@ -565,8 +567,14 @@ func (s updateSwap) run(root, id string, job func() downloadResult) downloadResu
 func recoverAsides(root string, entries []manifest.RealizedEntry) {
 	for _, e := range entries {
 		path := filepath.Join(root, e.RelativePath)
+		// A tree set aside comes back with its archive's copy; without that
+		// copy the update finished, and the tree is the old release's.
 		if unpacked := bintree.UnpackedDir(path); exists(unpacked + asideSuffix) {
-			if err := os.RemoveAll(unpacked); err == nil {
+			if !exists(path + asideSuffix) {
+				if err := os.RemoveAll(unpacked + asideSuffix); err != nil {
+					slog.Warn("removing the previous unpacked tree", "id", e.ID, "error", err)
+				}
+			} else if err := os.RemoveAll(unpacked); err == nil {
 				if err := os.Rename(unpacked+asideSuffix, unpacked); err != nil {
 					slog.Warn("restoring the previous unpacked tree", "id", e.ID, "error", err)
 				}

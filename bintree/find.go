@@ -140,8 +140,9 @@ func extractBareGz(archivePath, destDir, toolName string) error {
 // findMatchingBinary walks dir for an executable named name, preferring one
 // nested in a tree over one directly in dir. The walk of bin/ skips the
 // platform directories (a Linux run must never find the macOS llama-server),
-// and every walk skips unpacks still being written and directories it cannot
-// read.
+// and every walk skips unpacks still being written, the old release's tree an
+// update set aside (<archive>.unpacked.svalbard-old), and directories it
+// cannot read.
 func findMatchingBinary(dir, name string) (string, error) {
 	var direct, nested string
 	walkingBin := filepath.Base(dir) == "bin"
@@ -152,8 +153,8 @@ func findMatchingBinary(dir, name string) (string, error) {
 			}
 			return err
 		}
-		if d.IsDir() && filepath.Dir(path) == dir && ((walkingBin && platformDirs[d.Name()]) || isPartialDir(d.Name())) {
-			return filepath.SkipDir
+		if d.IsDir() && filepath.Dir(path) == dir && ((walkingBin && platformDirs[d.Name()]) || isPartialDir(d.Name()) || strings.Contains(d.Name(), UnpackedSuffix+".")) {
+			return filepath.SkipDir // the last also skips an update's set-aside tree
 		}
 		if d.IsDir() || d.Name() != name || !isExecutable(path) {
 			return nil

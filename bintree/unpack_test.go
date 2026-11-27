@@ -288,7 +288,9 @@ func TestRepairLegacyConvertsFlatTreesOnce(t *testing.T) {
 	})
 	ripgrep := filepath.Join(bin, "ripgrep.tar.gz")
 	writeTarGz(t, ripgrep, []entry{{name: "ripgrep-15/rg", body: "rg"}})
-	fresh := filepath.Join(bin, "fzf.tar.gz") // never unpacked: nothing to repair
+	// Never unpacked flat, and it has no top directory: unpacked once all the
+	// same, so it is never read again.
+	fresh := filepath.Join(bin, "fzf.tar.gz")
 	writeTarGz(t, fresh, []entry{{name: "fzf", body: "fzf"}})
 	// The flat trees: Linux stopped at the link, so llama-server is missing.
 	os.MkdirAll(filepath.Join(bin, "llama-b1"), 0o755)
@@ -300,7 +302,7 @@ func TestRepairLegacyConvertsFlatTreesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(converted, ",") != strings.Join([]string{llama, ripgrep}, ",") {
+	if strings.Join(converted, ",") != strings.Join([]string{fresh, llama, ripgrep}, ",") {
 		t.Fatalf("converted = %v", converted)
 	}
 	assertFile(t, filepath.Join(UnpackedDir(llama), "llama-b1", "llama-server"), "server")
@@ -308,7 +310,7 @@ func TestRepairLegacyConvertsFlatTreesOnce(t *testing.T) {
 	assertFile(t, filepath.Join(UnpackedDir(ripgrep), "ripgrep-15", "rg"), "rg")
 	assertMissing(t, filepath.Join(bin, "llama-b1"))
 	assertMissing(t, filepath.Join(bin, "ripgrep-15"))
-	assertMissing(t, UnpackedDir(fresh))
+	assertFile(t, filepath.Join(UnpackedDir(fresh), "fzf"), "fzf")
 
 	if again, err := RepairLegacy([]string{llama, ripgrep, fresh}); err != nil || len(again) != 0 {
 		t.Fatalf("second repair = %v, %v; want nothing", again, err)
@@ -507,4 +509,55 @@ func TestUnpackRemovesAppleDoubleFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertMissing(t, filepath.Join(UnpackedDir(archive), "tool", "._prog"))
+}
+
+// A directory beside the archive that holds anything the archive does not is
+// not the archive's flat tree, whatever its name.
+func TestRepairLegacyKeepsADirectoryWithForeignFiles(t *testing.T) {
+	stubImports(t, nil)
+	bin := filepath.Join(t.TempDir(), "bin", "linux-arm64")
+	os.MkdirAll(bin, 0o755)
+	archive := filepath.Join(bin, "tool-1.0.tar.gz")
+	writeTarGz(t, archive, []entry{{name: "tool/tool", body: "t"}})
+	os.MkdirAll(filepath.Join(bin, "tool"), 0o755)
+	os.WriteFile(filepath.Join(bin, "tool", "tool"), []byte("t"), 0o755)
+	os.WriteFile(filepath.Join(bin, "tool", "._tool"), []byte("mac"), 0o644)
+	os.WriteFile(filepath.Join(bin, "tool", "notes.txt"), []byte("mine"), 0o644)
+	if _, err := RepairLegacy([]string{archive}); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, filepath.Join(bin, "tool", "notes.txt"), "mine")
+	assertFile(t, filepath.Join(UnpackedDir(archive), "tool", "tool"), "t")
+}
+
+// A flat tree made again beside an archive that has its tree (by an older
+// CLI or runtime) goes on the next apply; an archive with a tree is not read
+// for a directory whose name does not begin its file name.
+func TestRepairLegacyRemovesAFlatTreeBesideAnUnpackedOne(t *testing.T) {
+	stubImports(t, nil)
+	bin := filepath.Join(t.TempDir(), "bin", "linux-arm64")
+	os.MkdirAll(bin, 0o755)
+	llama := filepath.Join(bin, "llama-b1-bin.tar.gz")
+	writeTarGz(t, llama, []entry{{name: "llama-b1/llama-server", body: "s"}})
+	os.MkdirAll(filepath.Join(UnpackedDir(llama), "llama-b1"), 0o755)
+	os.WriteFile(filepath.Join(UnpackedDir(llama), "llama-b1", "llama-server"), []byte("s"), 0o755)
+	os.MkdirAll(filepath.Join(bin, "llama-b1"), 0o755)
+	os.WriteFile(filepath.Join(bin, "llama-b1", "llama-server"), []byte("s"), 0o755)
+	// Not an archive any more, but with a tree: reading it would fail.
+	broken := filepath.Join(bin, "other.tar.gz")
+	os.WriteFile(broken, []byte("not gzip"), 0o644)
+	os.MkdirAll(UnpackedDir(broken), 0o755)
+	os.MkdirAll(filepath.Join(bin, "removed-recipe"), 0o755)
+
+	converted, err := RepairLegacy([]string{llama, broken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(converted, ",") != llama {
+		t.Fatalf("converted = %v", converted)
+	}
+	assertMissing(t, filepath.Join(bin, "llama-b1"))
+	if _, err := os.Stat(filepath.Join(bin, "removed-recipe")); err != nil {
+		t.Fatalf("an unclaimed directory was removed: %v", err)
+	}
 }

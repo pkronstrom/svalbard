@@ -64,3 +64,14 @@ func TestFindGetsPastABadArchiveAndAnUnreadableDirectory(t *testing.T) {
 		t.Fatalf("Find = %s, want %s", got, want)
 	}
 }
+
+// During an update the old release's tree waits as
+// <archive>.unpacked.svalbard-old; nothing resolves from it.
+func TestFindSkipsATreeSetAsideByAnUpdate(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin", "linux-arm64")
+	writeProgram(t, filepath.Join(bin, "llama-b1.tar.gz.unpacked.svalbard-old", "llama-b1", "llama-server"), "old")
+	if got, err := Find("llama-server", root, "linux-arm64"); err == nil {
+		t.Fatalf("Find = %s, want not found", got)
+	}
+}

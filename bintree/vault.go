@@ -42,6 +42,9 @@ func InPlatformBin(path string) bool {
 // RemoveUnpacked removes the archive's .unpacked directory and what an
 // unpack of it that was stopped left. Both belong to the archive alone.
 func RemoveUnpacked(archive string) error {
+	if !IsArchive(filepath.Base(archive)) {
+		return nil
+	}
 	if err := os.RemoveAll(UnpackedDir(archive)); err != nil {
 		return err
 	}
@@ -77,7 +80,7 @@ func RemoveLegacyTrees(archive, listFrom string) error {
 	if !IsArchive(filepath.Base(archive)) || !InPlatformBin(archive) {
 		return nil
 	}
-	tops, err := topDirs(listFrom)
+	listing, err := listArchive(listFrom)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -85,65 +88,106 @@ func RemoveLegacyTrees(archive, listFrom string) error {
 		return err
 	}
 	dir := filepath.Dir(archive)
-	for _, name := range tops {
-		if err := removeLegacyDir(dir, name); err != nil {
+	for _, name := range listing.tops {
+		if _, err := removeLegacyDir(dir, name, listing.entries); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func removeLegacyDir(dir, name string) error {
+// removeLegacyDir removes dir/name if it is what an older drive runtime
+// unpacked from the archive listed in entries: every file in it is an entry
+// of the archive, or the ._ file macOS wrote beside one. A directory holding
+// anything else is left alone, and so is a name the current layout uses.
+func removeLegacyDir(dir, name string, entries map[string]bool) (bool, error) {
 	target, ok := entryPath(dir, name)
-	if !ok || platformDirs[name] || strings.HasSuffix(name, UnpackedSuffix) || isPartialDir(name) {
-		return nil
+	if !ok || platformDirs[name] || strings.Contains(name, UnpackedSuffix) || isPartialDir(name) {
+		return false, nil
 	}
-	if info, err := os.Lstat(target); err == nil && info.IsDir() {
-		return os.RemoveAll(target)
+	if info, err := os.Lstat(target); err != nil || !info.IsDir() {
+		return false, nil
 	}
-	return nil
+	foreign := false
+	_ = filepath.WalkDir(target, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			foreign = true
+			return filepath.SkipAll
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, p)
+		rel = filepath.ToSlash(rel)
+		base := path.Base(rel)
+		if entries[rel] || (strings.HasPrefix(base, "._") && entries[path.Join(path.Dir(rel), base[2:])]) {
+			return nil
+		}
+		foreign = true
+		return filepath.SkipAll
+	})
+	if foreign {
+		return false, nil
+	}
+	return true, os.RemoveAll(target)
 }
 
-// topDirs lists the first component of each path in the archive that is a
-// directory.
-func topDirs(archive string) ([]string, error) {
+// archiveListing is what an archive holds: the first component of each of
+// its paths that is a directory, and every path (files, links, directories).
+type archiveListing struct {
+	tops    []string
+	entries map[string]bool
+}
+
+func listArchive(archive string) (archiveListing, error) {
 	tops := map[string]bool{}
-	top := func(name string, isDir bool) {
-		first, _, nested := strings.Cut(strings.TrimPrefix(path.Clean(name), "./"), "/")
-		if (nested || isDir) && first != "." && first != ".." {
+	entries := map[string]bool{}
+	add := func(name string, isDir bool) {
+		clean := strings.TrimPrefix(path.Clean(name), "./")
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+			return
+		}
+		entries[clean] = true
+		if first, _, nested := strings.Cut(clean, "/"); nested || isDir {
 			tops[first] = true
 		}
 	}
 	links, err := walkArchive(archive, func(name string, _ io.Reader, _ os.FileMode) error {
-		top(name, false)
+		add(name, false)
 		return nil
 	}, func(name string) error {
-		top(name, true)
+		add(name, true)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return archiveListing{}, err
 	}
 	for _, link := range links {
-		top(link.Name, false)
+		add(link.Name, false)
 	}
-	names := make([]string, 0, len(tops))
+	listing := archiveListing{entries: entries}
 	for name := range tops {
-		names = append(names, name)
+		listing.tops = append(listing.tops, name)
 	}
-	sort.Strings(names)
-	return names, nil
+	sort.Strings(listing.tops)
+	return listing, nil
 }
 
 // RepairLegacy converts the trees a drive runtime from before .unpacked
 // unpacked flat beside binary archives in bin/<platform>/: on exFAT those of
 // an archive with links hold macOS's XSym files, which Linux reads as text,
-// or stop at the first link Linux could not create. Each archive with such a
-// tree is unpacked into <archive>.unpacked, links resolved, and the flat tree
-// removed, so an existing stick heals on its next apply without an update.
-// Archives are read only when their directory holds a directory that could
-// be such a tree, and each is converted once. It returns the archives
-// converted.
+// or stop at the first link Linux could not create. It returns the archives
+// converted, so an existing stick heals on its next apply without an update.
+//
+// It acts only in a directory that holds a directory no current layout put
+// there. Each archive there without a tree is unpacked into
+// <archive>.unpacked, once: that runtime unpacked every archive of the
+// directory at its first miss, and an archive left unread would be read again
+// on every apply. A flat tree beside an archive that already has its tree
+// (one an older CLI or runtime made again) is removed too; such an archive is
+// read only when a candidate's name begins its file name, as every flat tree
+// in the catalog's archives does (llama-b12359/, pi/, kiwix-tools_.../). A
+// directory goes only if all it holds came from the archive.
 func RepairLegacy(archives []string) ([]string, error) {
 	byDir := map[string][]string{}
 	for _, archive := range archives {
@@ -162,38 +206,59 @@ func RepairLegacy(archives []string) ([]string, error) {
 		}
 		sort.Strings(list)
 		for _, archive := range list {
-			if _, err := os.Stat(UnpackedDir(archive)); err == nil {
+			_, statErr := os.Stat(UnpackedDir(archive))
+			hasTree := statErr == nil
+			if hasTree && !prefixOfAny(candidates, filepath.Base(archive)) {
 				continue
 			}
-			tops, err := topDirs(archive)
+			listing, err := listArchive(archive)
 			if err != nil {
 				if os.IsNotExist(err) {
 					continue
 				}
 				return converted, err
 			}
-			var legacy []string
-			for _, name := range tops {
-				if candidates[name] {
-					legacy = append(legacy, name)
+			if !hasTree {
+				if _, err := Unpack(archive); err != nil {
+					return converted, fmt.Errorf("%s: %w", filepath.Base(archive), err)
 				}
+				converted = append(converted, archive)
 			}
-			if len(legacy) == 0 {
-				continue
-			}
-			if _, err := Unpack(archive); err != nil {
-				return converted, fmt.Errorf("%s: %w", filepath.Base(archive), err)
-			}
-			for _, name := range legacy {
-				if err := removeLegacyDir(dir, name); err != nil {
+			for _, name := range listing.tops {
+				if !candidates[name] {
+					continue
+				}
+				removed, err := removeLegacyDir(dir, name, listing.entries)
+				if err != nil {
 					return converted, err
 				}
+				if removed && hasTree {
+					converted = append(converted, archive)
+				}
 			}
-			converted = append(converted, archive)
 		}
 	}
 	sort.Strings(converted)
-	return converted, nil
+	return slicesCompact(converted), nil
+}
+
+func prefixOfAny(candidates map[string]bool, filename string) bool {
+	for name := range candidates {
+		if strings.HasPrefix(filename, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func slicesCompact(sorted []string) []string {
+	out := sorted[:0]
+	for i, s := range sorted {
+		if i == 0 || s != sorted[i-1] {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // legacyCandidates are the directories in dir that no current layout put
@@ -206,7 +271,7 @@ func legacyCandidates(dir string) map[string]bool {
 	candidates := map[string]bool{}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() && !strings.HasSuffix(name, UnpackedSuffix) && !isPartialDir(name) && !strings.HasPrefix(name, ".") {
+		if entry.IsDir() && !strings.Contains(name, UnpackedSuffix) && !isPartialDir(name) && !strings.HasPrefix(name, ".") {
 			candidates[name] = true
 		}
 	}
