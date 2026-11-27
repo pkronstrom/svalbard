@@ -17,6 +17,20 @@
       <strong>Svalbard</strong>
       <small id="vault">Drive</small>
     </a>
+    <nav class="work-nav" id="work-nav" aria-label="Workspace">
+      <a href="#overview" class="work-tab top-home" aria-current="page" aria-label="Catalog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2m3 0h9M5 12h2m3 0h9M5 19h2m3 0h9"/></svg>
+        <span class="tab-label" aria-hidden="true">Catalog</span>
+      </a>
+      <a href="#search" class="work-tab" id="search-nav" hidden aria-label="Search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+        <span class="tab-label" aria-hidden="true">Search</span>
+      </a>
+      <a href="#terminal" class="work-tab" aria-label="Terminal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6 9 3 3-3 3m6 0h4"/></svg>
+        <span class="tab-label" aria-hidden="true">Terminal</span>
+      </a>
+    </nav>
     <label class="filter">
       <span class="lens" aria-hidden="true"></span>
       <input id="filter" type="search" placeholder="Filter sidebar" aria-label="Filter sidebar" disabled>
@@ -33,6 +47,7 @@
       </section>
       <p id="filter-status" class="quiet" role="status" hidden></p>
     </nav>
+    <span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span>
   </aside>
   <button type="button" id="dismiss-sidebar" class="sidebar-scrim" aria-label="Close drive index" tabindex="-1"></button>
 
@@ -40,23 +55,8 @@
     <header class="top">
       <div class="top-location">
         <button type="button" id="menu" class="button quiet-button mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Open drive index">Index</button>
-        <nav class="work-nav" id="work-nav" aria-label="Workspace">
-          <a href="#overview" class="work-tab top-home" aria-current="page" aria-label="Catalog">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2m3 0h9M5 12h2m3 0h9M5 19h2m3 0h9"/></svg>
-            <span class="tab-label" aria-hidden="true">Catalog</span>
-          </a>
-          <a href="#search" class="work-tab" id="search-nav" hidden aria-label="Search">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
-            <span class="tab-label" aria-hidden="true">Search</span>
-          </a>
-          <a href="#terminal" class="work-tab" aria-label="Terminal">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6 9 3 3-3 3m6 0h4"/></svg>
-            <span class="tab-label" aria-hidden="true">Terminal</span>
-          </a>
-        </nav>
       </div>
       <span id="location" hidden></span>
-      <span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span>
     </header>
 
     <div id="viewport" class="viewport">

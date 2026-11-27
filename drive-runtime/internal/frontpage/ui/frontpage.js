@@ -719,7 +719,7 @@ async function runSearch() {
 byId("menu").addEventListener("click", event => {
   const open = !document.body.classList.contains("sidebar-open");
   toggleSidebar(open);
-  if (open && !event.detail) byId("filter").focus({preventScroll: true});
+  if (open && !event.detail) byId("work-nav").querySelector("a").focus({preventScroll: true});
 });
 byId("dismiss-sidebar").addEventListener("click", () => {
   toggleSidebar(false);
@@ -728,7 +728,9 @@ byId("dismiss-sidebar").addEventListener("click", () => {
 byId("work-nav").addEventListener("click", event => {
   const link = event.target.closest("a");
   if (link && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+    const fromMenu = document.body.classList.contains("sidebar-open");
     toggleSidebar(false);
+    if (fromMenu) byId("main").focus({preventScroll: true});
     window.scrollTo(0, 0);
   }
 });
