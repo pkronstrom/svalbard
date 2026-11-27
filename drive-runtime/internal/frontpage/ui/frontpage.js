@@ -22,6 +22,8 @@ let model = "";
 let route = "";
 let polling = false;
 let searchRead = 0;
+let searchRequest = 0;
+let shownQuery = "";
 
 function node(tag, css, text) {
   const element = document.createElement(tag);
@@ -131,8 +133,9 @@ function filterNavigation() {
 }
 
 function markSelection() {
+  const active = route === "search-result" ? "#search" : "#" + route;
   for (const link of byId("nav").querySelectorAll("a")) {
-    if (link.hash === "#" + route) link.setAttribute("aria-current", "page");
+    if (link.hash === active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   }
 }
@@ -196,20 +199,40 @@ async function act(item, stop = false) {
 function closeReader() {
   byId("reader").hidden = true;
   byId("viewport").classList.remove("has-reader");
-  byId("reader-frame").removeAttribute("src");
+  byId("reader-frame")?.remove();
+}
+
+function readerURL(address) {
+  try {
+    const url = new URL(address);
+    const local = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname);
+    if (local && url.origin !== location.origin && !url.username && !url.password) return url;
+  } catch {
+    // A missing or stale browser history entry has no usable address.
+  }
+  return null;
 }
 
 function showReader(label, address, kind, fromSearch = false) {
-  const url = new URL(address);
-  const local = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname);
-  if (!local || url.origin === location.origin || url.username || url.password) return false;
+  const url = readerURL(address);
+  if (!url) return false;
 
-  const frame = byId("reader-frame");
-  const pdf = url.pathname.toLowerCase().endsWith(".pdf");
-  if (kind === "documents" || pdf) frame.removeAttribute("sandbox");
-  else frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-downloads");
+  let frame = byId("reader-frame");
+  if (frame?.getAttribute("src") !== url.href) {
+    frame?.remove();
+    frame = node("iframe");
+    frame.id = "reader-frame";
+    frame.referrerPolicy = "no-referrer";
+    const pdf = url.pathname.toLowerCase().endsWith(".pdf");
+    if (kind !== "documents" && !pdf) {
+      frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-downloads");
+    }
+    frame.src = url.href;
+    // The new frame starts at the reader URL without adding an intermediate
+    // empty frame or reusing an older frame's navigation history.
+    byId("reader").append(frame);
+  }
   frame.title = label;
-  if (frame.getAttribute("src") !== url.href) frame.src = url.href;
   byId("reader").hidden = false;
   byId("reader-bar").hidden = !fromSearch;
   byId("reader-link").href = url.href;
@@ -289,19 +312,52 @@ function toggleSidebar(open) {
 
 function renderRoute() {
   if (!inventory) return;
+  const returningFromResult = route === "search-result";
+  const navigation = history.state;
   route = location.hash.slice(1) || "overview";
+  const result = route === "search-result" && inventory.hasSearch && navigation?.reader;
+  if (route === "search-result" && !result) {
+    route = "search";
+    history.replaceState(null, "", "#search");
+  }
   selection = entries.get(route);
-  if (!selection && route !== "search") route = "overview";
-  if (route === "search" && !inventory.hasSearch) route = "overview";
+  const inSearch = inventory.hasSearch && (route === "search" || Boolean(result));
+  if (!selection && !inSearch) route = "overview";
+
   ++searchRead;
   model = "";
   closeReader();
   byId("details").hidden = !selection;
   byId("overview").hidden = route !== "overview";
   byId("search-panel").hidden = route !== "search";
-  byId("location").textContent = selection?.group || (route === "search" ? "Search" : "Overview");
+  byId("location").textContent = selection?.group || (inSearch ? "Search" : "Overview");
   markSelection();
   toggleSidebar(false);
+
+  if (result) {
+    if (!showReader(result.label, result.address, result.kind, true)) {
+      history.replaceState({query: navigation.query}, "", "#search");
+      renderRoute();
+    }
+    return;
+  }
+
+  if (route === "search") {
+    const focusResult = () => {
+      if (returningFromResult && route === "search") {
+        byId("search-results").querySelectorAll("button")[navigation?.position]?.focus();
+      }
+    };
+    if (typeof navigation?.query === "string") {
+      byId("query").value = navigation.query;
+      if (navigation.query !== shownQuery) {
+        runSearch().then(focusResult);
+      } else {
+        focusResult();
+      }
+    }
+    return;
+  }
 
   if (selection) {
     byId("item-title").textContent = selection.label;
@@ -343,7 +399,7 @@ async function refreshPages() {
   }
 }
 
-function searchResult(item) {
+function searchResult(item, position) {
   const row = node("li");
   const title = node("button", "result-link", item.title || item.label);
   title.type = "button";
@@ -356,12 +412,18 @@ function searchResult(item) {
     try {
       const link = await request("/api/read", {source: item.source, path: item.path});
       if (read !== searchRead) return;
+      const address = readerURL(link.url);
+      if (!address) throw new Error("The result has no local reader address.");
       const kind = item.source.startsWith("books/") ? "documents" : "browse";
-      if (showReader(title.textContent, link.url, kind, true)) {
-        byId("search-panel").hidden = true;
-        byId("back-to-search").focus();
-      }
+      const searchState = {query: shownQuery, position};
+      history.replaceState(searchState, "", "#search");
+      history.pushState({
+        ...searchState,
+        reader: {label: title.textContent, address: address.href, kind}
+      }, "", "#search-result");
       note(status, "");
+      renderRoute();
+      byId("back-to-search").focus();
     } catch (error) {
       note(status, error.message, true);
     } finally {
@@ -376,7 +438,12 @@ function searchResult(item) {
 
 async function runSearch() {
   ++searchRead;
-  const query = byId("query").value;
+  const query = byId("query").value.trim();
+  const submitted = ++searchRequest;
+  shownQuery = query;
+  if (location.hash === "#search" && history.state?.query !== query) {
+    history.replaceState({query}, "", "#search");
+  }
   const button = byId("search-form").querySelector("button");
   const results = byId("search-results");
   const status = byId("search-status");
@@ -385,13 +452,17 @@ async function runSearch() {
   note(status, "Searching…");
   try {
     const data = await request("/api/search", {query});
+    if (submitted !== searchRequest) return;
     results.replaceChildren(...data.hits.map(searchResult));
     results.hidden = !data.hits.length;
     note(status, data.status || (data.hits.length ? "" : "No matching articles or documents."));
   } catch (error) {
-    note(status, error.message, true);
+    if (submitted === searchRequest) {
+      shownQuery = "";
+      note(status, error.message, true);
+    }
   } finally {
-    button.disabled = false;
+    if (submitted === searchRequest) button.disabled = false;
   }
 }
 
@@ -412,9 +483,9 @@ document.querySelector(".skip").addEventListener("click", event => {
 byId("filter").addEventListener("input", filterNavigation);
 byId("refresh").addEventListener("click", refreshPages);
 byId("back-to-search").addEventListener("click", () => {
-  closeReader();
-  byId("search-panel").hidden = false;
-  byId("search-results").querySelector("button")?.focus();
+  const {query, position} = history.state || {};
+  history.pushState({query, position}, "", "#search");
+  renderRoute();
 });
 byId("home-search").addEventListener("submit", event => {
   event.preventDefault();
