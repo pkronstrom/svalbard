@@ -82,6 +82,11 @@ const warnBytes = 10 << 20
 // in single-file mode.
 const relativeFetchMessage = "relative fetch cannot work from file://; import the file instead"
 
+// packedAttr marks a script html pack wrote: library code, or a page's
+// bundle. Packing such a page again does not scan it as the page's own code
+// (library code holds addresses that load nothing).
+const packedAttr = "data-svalbard-packed"
+
 const (
 	libNamespace   = "svalbard-js"
 	emptyNamespace = "svalbard-empty"
@@ -457,7 +462,9 @@ func (p *packer) processDocument(doc *html.Node) {
 		case hasSrc && !isRemote(src) && !isInline(src):
 			p.inlineClassicScript(n, src)
 		case !hasSrc && (kind == "" || strings.Contains(strings.ToLower(kind), "javascript")):
-			p.addProblems(scanOwnSource(filepath.Base(p.opts.Page)+" (script)", textOf(n))...)
+			if _, packed := attr(n, packedAttr); !packed {
+				p.addProblems(scanOwnSource(filepath.Base(p.opts.Page)+" (script)", textOf(n))...)
+			}
 			setText(n, stripSourceMaps(textOf(n)))
 		}
 	}
@@ -471,6 +478,7 @@ func (p *packer) processDocument(doc *html.Node) {
 				collected = append(collected, css)
 			}
 			first := modules[0]
+			setAttr(first, packedAttr, "")
 			if p.opts.Dir {
 				p.files["script.js"] = []byte(js)
 				setAttr(first, "src", "./script.js")
@@ -569,7 +577,9 @@ func (p *packer) moduleEntry(n *html.Node, src string, hasSrc bool, index int) (
 		name := fmt.Sprintf("%s:%s (module script %d)", pageNamespace, filepath.Base(p.opts.Page), index)
 		code := textOf(n)
 		p.inline[name] = code
-		p.addProblems(scanOwnSource(strings.TrimPrefix(name, pageNamespace+":"), code)...)
+		if _, packed := attr(n, packedAttr); !packed {
+			p.addProblems(scanOwnSource(strings.TrimPrefix(name, pageNamespace+":"), code)...)
+		}
 		return name, true
 	}
 	if isRemote(src) {
@@ -610,6 +620,7 @@ func (p *packer) inlineClassicScript(n *html.Node, src string) {
 		}
 		p.markUsed(a, dir)
 		name = path.Join("lib", a.id, file)
+		setAttr(n, packedAttr, "")
 	} else {
 		file := p.localFile(src)
 		var err error

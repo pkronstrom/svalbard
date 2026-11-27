@@ -120,7 +120,7 @@ console.log(extra);
 	if res.Portability != "single-file" || res.Out != strings.TrimSuffix(p, ".html")+".packed.html" || res.Bytes != int64(len(out)) {
 		t.Errorf("result = %+v", res)
 	}
-	for _, want := range []string{"chartish:", "C1-MARKER", "EXTRA-MARKER", "data:image/png;base64,", "#123456", `<script type="module">`} {
+	for _, want := range []string{"chartish:", "C1-MARKER", "EXTRA-MARKER", "data:image/png;base64,", "#123456", `<script type="module" data-svalbard-packed="">`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("packed page lacks %q:\n%s", want, out)
 		}
@@ -496,5 +496,26 @@ func TestPackDirCopiesFetchedFiles(t *testing.T) {
 	_, _, err = pack(t, drive, q, true)
 	if !hasProblem(problemsOf(t, err), "missing-asset", "gone.csv") {
 		t.Errorf("a missing fetched file was not reported: %v", err)
+	}
+}
+
+// A packed page packs again: library code inlined by the first pack is not
+// scanned as the page's own (Mermaid's holds XML namespace addresses).
+func TestPackAPackedPageAgain(t *testing.T) {
+	drive := fixtureDrive(t)
+	// umdlib stands in for a library whose code holds an address.
+	p := page(t, `<html><head><script src="umdlib"></script></head><body><script type="module">import lib from "umdlib"; document.body.textContent = lib.hello();</script></body></html>`, nil)
+	res, out, err := pack(t, drive, p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, packedAttr) != 2 {
+		t.Errorf("the library script and the bundle are not marked:\n%s", out)
+	}
+	// Put an address into the inlined library code, as Mermaid has.
+	marked := strings.Replace(out, "UMD-MARKER", `UMD-MARKER" + "http://www.eclipse.org/emf/2002/Ecore`, 1)
+	again := page(t, marked, nil)
+	if _, _, err := pack(t, drive, again, false); err != nil {
+		t.Errorf("packing %s again: %v", res.Out, err)
 	}
 }
