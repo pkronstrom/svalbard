@@ -641,16 +641,24 @@ func copyFile(sourcePath, destPath string, mode os.FileMode) error {
 	}
 	defer source.Close()
 
-	dest, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	// A running launcher can still have the old executable mapped.
+	dest, err := os.CreateTemp(filepath.Dir(destPath), ".svalbard-runtime-*")
 	if err != nil {
 		return err
 	}
+	defer os.Remove(dest.Name())
 	defer dest.Close()
 
 	if _, err := io.Copy(dest, source); err != nil {
 		return err
 	}
-	return dest.Chmod(mode)
+	if err := dest.Chmod(mode); err != nil {
+		return err
+	}
+	if err := dest.Close(); err != nil {
+		return err
+	}
+	return os.Rename(dest.Name(), destPath)
 }
 
 func runScriptContents() string {

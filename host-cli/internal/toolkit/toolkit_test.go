@@ -2,6 +2,7 @@ package toolkit
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,6 +21,33 @@ type testRuntimeConfig struct {
 	Version int             `json:"version"`
 	Preset  string          `json:"preset"`
 	Groups  []testMenuGroup `json:"groups"`
+}
+
+func TestRuntimeFileReplacementPreservesOpenExecutable(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "svalbard-drive")
+	newPath := filepath.Join(dir, "new-runtime")
+	for path, contents := range map[string]string{oldPath: "running binary", newPath: "updated binary"} {
+		if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	existing, err := os.Open(oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer existing.Close()
+	if err := copyFile(newPath, oldPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	previous, err := io.ReadAll(existing)
+	if err != nil || string(previous) != "running binary" {
+		t.Fatalf("open executable changed to %q, err %v", previous, err)
+	}
+	current, err := os.ReadFile(oldPath)
+	if err != nil || string(current) != "updated binary" {
+		t.Fatalf("installed executable = %q, err %v", current, err)
+	}
 }
 
 type testMenuGroup struct {
