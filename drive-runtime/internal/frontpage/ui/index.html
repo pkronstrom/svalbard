@@ -41,9 +41,18 @@
       <div class="top-location">
         <button type="button" id="menu" class="button quiet-button mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Open drive index">Index</button>
         <nav class="work-nav" id="work-nav" aria-label="Workspace">
-          <a href="#overview" class="work-tab top-home" aria-current="page">Catalog</a>
-          <a href="#search" class="work-tab" id="search-nav" hidden>Search</a>
-          <a href="#terminal" class="work-tab">Terminal</a>
+          <a href="#overview" class="work-tab top-home" aria-current="page" aria-label="Catalog">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h2m3 0h9M5 12h2m3 0h9M5 19h2m3 0h9"/></svg>
+            <span class="tab-label" aria-hidden="true">Catalog</span>
+          </a>
+          <a href="#search" class="work-tab" id="search-nav" hidden aria-label="Search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+            <span class="tab-label" aria-hidden="true">Search</span>
+          </a>
+          <a href="#terminal" class="work-tab" aria-label="Terminal">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6 9 3 3-3 3m6 0h4"/></svg>
+            <span class="tab-label" aria-hidden="true">Terminal</span>
+          </a>
         </nav>
       </div>
       <span id="location" hidden></span>
@@ -56,31 +65,13 @@
           <h1 id="home-title">Drive catalog</h1>
           <p id="inventory-summary" class="quiet" role="status">Loading drive contents…</p>
         </header>
-        <div class="catalog-toolbar">
-          <form id="home-search" class="search-form" hidden>
-            <label for="home-query">Search articles and documents</label>
-            <div class="search-controls">
-              <input id="home-query" type="search" maxlength="500" placeholder="Search the vault" required>
-              <button class="button primary" type="submit">Search</button>
-            </div>
-          </form>
-          <div id="home-content" class="catalog-controls" role="group" aria-label="Catalog filters" hidden>
-            <label class="catalog-filter" for="overview-filter">
-              Filter items
-              <input id="overview-filter" type="search" placeholder="Name, description, or tag">
-            </label>
-            <label for="overview-type">
-              Type
-              <select id="overview-type"><option value="">All types</option></select>
-            </label>
-            <label for="overview-order">
-              View
-              <select id="overview-order">
-                <option value="grouped">Grouped by type</option>
-                <option value="name">A–Z</option>
-              </select>
-            </label>
-          </div>
+        <div id="home-content" class="catalog-controls" role="group" aria-label="Catalog filters" hidden>
+          <input id="overview-filter" class="catalog-filter" type="search" aria-label="Filter catalog by name, description, or tag" placeholder="Filter catalog…">
+          <select id="overview-type" aria-label="Content type"><option value="">All types</option></select>
+          <select id="overview-order" aria-label="Catalog order">
+            <option value="grouped">Grouped by type</option>
+            <option value="name">A–Z</option>
+          </select>
         </div>
         <p id="overview-results" class="quiet catalog-count" role="status" hidden></p>
         <div id="home-links" class="overview-list"></div>

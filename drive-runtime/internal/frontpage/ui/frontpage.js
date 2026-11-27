@@ -131,21 +131,22 @@ function itemPreview(item, css) {
   return preview;
 }
 
-function overviewRow(item) {
+function overviewRow(item, grouped) {
   const row = node("li", "overview-row");
   const type = overviewType(item);
   row.classList.toggle("compact", type === "Tools" || type === "Settings");
   const content = node("div", "overview-copy");
   const link = node("a", "overview-name", item.label);
   link.href = "#" + item.route;
-  const title = node("h2");
+  const title = node(grouped ? "h3" : "h2");
   title.append(link);
   content.append(title);
   const summary = item.summary || item.description;
   if (summary && summary !== item.label) content.append(node("p", "overview-summary", summary));
   const meta = [...((item.tags || []).slice(0, 3)), item.note].filter(Boolean);
   if (meta.length) content.append(node("p", "overview-meta", meta.join(" · ")));
-  row.append(node("p", "overview-type", type), itemPreview(item, "overview-preview"), content);
+  if (!grouped) content.prepend(node("p", "overview-type", type));
+  row.append(itemPreview(item, "overview-preview"), content);
 
   if (item.service && readerKinds.has(item.icon)) {
     const launch = node("a", "button overview-launch", overviewLaunchLabel(item.service));
@@ -177,7 +178,6 @@ function buildNavigation(data) {
   inventory = data;
   byId("vault").textContent = data.drive + (data.preset ? " · " + data.preset : "");
   byId("search-nav").hidden = !data.hasSearch;
-  byId("home-search").hidden = !data.hasSearch;
 
   data.groups.forEach((group, index) => {
     const items = group.items.filter(item => item.kind !== "search");
@@ -228,14 +228,15 @@ function renderHome() {
     resultCount ? resultCount + " of " + count + " items" : "No matching items."
   ) : "");
 
-  if (byId("overview-order").value === "grouped") {
-    const ranks = new Map(Array.from(byId("overview-type").options, (option, index) => [option.value, index]));
-    visible.sort((a, b) => ranks.get(overviewType(a)) - ranks.get(overviewType(b)));
-  }
-  if (visible.length) {
+  const grouped = byId("overview-order").value === "grouped";
+  const types = grouped ? Array.from(byId("overview-type").options, option => option.value).filter(Boolean) : [""];
+  for (const type of types) {
+    const rows = grouped ? visible.filter(item => overviewType(item) === type) : visible;
+    if (!rows.length) continue;
+    if (grouped) output.append(node("h2", "overview-heading", type));
     const list = node("ul", "overview-rows");
     list.setAttribute("role", "list");
-    list.append(...visible.map(overviewRow));
+    list.append(...rows.map(item => overviewRow(item, grouped)));
     output.append(list);
   }
 }
@@ -760,12 +761,6 @@ byId("back-to-search").addEventListener("click", () => {
   const {query, position} = history.state || {};
   history.pushState({query, position}, "", "#search");
   renderRoute();
-});
-byId("home-search").addEventListener("submit", event => {
-  event.preventDefault();
-  byId("query").value = byId("home-query").value;
-  location.hash = "search";
-  runSearch();
 });
 byId("search-form").addEventListener("submit", event => {
   event.preventDefault();
