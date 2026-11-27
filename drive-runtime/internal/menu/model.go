@@ -54,10 +54,11 @@ type Model struct {
 	theme         tui.Theme
 	searchFactory func(string) (searchSession, error)
 
-	groupSelected int
-	itemSelected  int
-	activeGroup   string
-	inGroup       bool
+	groupSelected    int
+	itemSelected     int
+	itemScrollOffset int
+	activeGroup      string
+	inGroup          bool
 
 	width         int
 	height        int
@@ -118,6 +119,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		if m.settingsActive {
 			m.scrollSettings()
+		} else if m.inGroup {
+			m.scrollGroup()
 		}
 		return m, nil
 	case tui.PaletteCloseMsg:
@@ -131,6 +134,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inGroup = true
 				m.activeGroup = group.ID
 				m.itemSelected = 0
+				m.itemScrollOffset = 0
 				return m, nil
 			}
 			for _, item := range group.Items {
@@ -139,6 +143,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.inGroup = true
 					m.activeGroup = group.ID
 					m.itemSelected = 0
+					m.itemScrollOffset = 0
 					return m, nil
 				}
 			}
@@ -270,6 +275,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inGroup = true
 				m.activeGroup = group.ID
 				m.itemSelected = 0
+				m.itemScrollOffset = 0
 				return m, nil
 			}
 
@@ -554,6 +560,9 @@ func (m *Model) SetSelected(index int) {
 		m.groupSelected = index
 	}
 	m.clampSelection()
+	if m.inGroup {
+		m.scrollGroup()
+	}
 }
 
 func (m Model) SelectedIndex() int {

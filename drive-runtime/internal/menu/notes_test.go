@@ -1,12 +1,14 @@
 package menu
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/tui"
@@ -57,6 +59,57 @@ func TestGroupRowsShowTheirNotesInOneColumn(t *testing.T) {
 		if got := strings.TrimRight(lines[start+i], " "); got != line {
 			t.Errorf("row %d = %q, want %q", i, got, line)
 		}
+	}
+}
+
+func TestGroupMenuScrollsWithTheSelection(t *testing.T) {
+	const width, height = 96, 16
+	var labels []string
+	for i := 1; i <= 50; i++ {
+		labels = append(labels, fmt.Sprintf("Archive %02d", i))
+	}
+	cfg := documentsConfig(labels...)
+	cfg.Groups[0].Items[30].Description = strings.Repeat("A long description. ", 20)
+	m := NewModel(cfg, t.TempDir())
+	m = send(m, tea.WindowSizeMsg{Width: width, Height: height})
+	m = press(m, "enter")
+	check := func(m Model) string {
+		t.Helper()
+		view := tui.StripAnsi(m.View())
+		lines := strings.Split(view, "\n")
+		if len(lines) > m.height || lines[0] != "Svalbard / Library" || !strings.Contains(lines[len(lines)-1], "Enter: open") {
+			t.Fatalf("menu overflow or lost chrome: %d lines in %d:\n%s", len(lines), m.height, view)
+		}
+		for _, line := range lines {
+			if lipgloss.Width(line) > width {
+				t.Fatalf("line would wrap in a %d-column terminal: %q", width, line)
+			}
+		}
+		item, _ := m.SelectedItem()
+		if !strings.Contains(view, "> "+item.Label) {
+			t.Fatalf("%s is selected but outside the viewport:\n%s", item.Label, view)
+		}
+		return view
+	}
+	if top := check(m); !strings.Contains(top, "↓") || strings.Contains(top, "Archive 50") {
+		t.Fatalf("initial view has no lower overflow:\n%s", top)
+	}
+	for range 51 {
+		m = press(m, "down")
+		check(m)
+	}
+	if bottom := check(m); !strings.Contains(bottom, "↑") || strings.Contains(bottom, "↓") {
+		t.Fatalf("last view does not show the upper overflow:\n%s", bottom)
+	}
+	m = send(m, tea.WindowSizeMsg{Width: width, Height: 12})
+	check(m)
+	for range 51 {
+		m = press(m, "up")
+		check(m)
+	}
+	m = press(press(press(m, "esc"), "enter"), "down")
+	if view := check(m); strings.Contains(view, "↑") {
+		t.Fatalf("reopening the group did not reset its scroll position:\n%s", view)
 	}
 }
 
