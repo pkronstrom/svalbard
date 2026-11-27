@@ -372,7 +372,10 @@ func ompPrompt(driveRoot string, ctxSize int) string {
 	}
 	if mcp.SkillsInstalled(driveRoot) {
 		prompt += buildingContext(ContextOptions{DriveRoot: driveRoot, ToolPrefix: OmpToolPrefix, Skills: true, NoIndex: !mcp.SkillsIndexed(driveRoot), Libraries: mcp.LibrariesInstalled(driveRoot)}) + "\n"
+	} else if mcp.LibrariesInstalled(driveRoot) {
+		prompt += librariesContext(ContextOptions{DriveRoot: driveRoot, ToolPrefix: OmpToolPrefix, Libraries: true, NoIndex: !mcp.SkillsIndexed(driveRoot)}) + "\n"
 	}
+
 	return prompt + stayInPlace + "\n"
 }
 

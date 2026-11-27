@@ -76,6 +76,8 @@ func DriveContext(opts ContextOptions) string {
 	b.WriteString("3. " + tool("search_read") + " reads one article. Pass a search result's `source` and `path`.\n")
 	if opts.Skills {
 		b.WriteString("\n" + buildingContext(opts) + "\n")
+	} else if opts.Libraries {
+		b.WriteString("\n" + librariesContext(opts) + "\n")
 	}
 	if opts.Wiki {
 		// The wiki is the one thing on the drive a model may write. Without
@@ -122,6 +124,20 @@ func buildingContext(opts ContextOptions) string {
 		return what + "first read a procedure: with no search index, list `" + folder + "` and read the fitting SKILL.md." + only
 	}
 	return what + "first find a procedure with `" + opts.ToolPrefix + "skill_search`, read it with `" + opts.ToolPrefix + "skill_read` and follow it." + only
+}
+
+// librariesContext is the building paragraph of a drive with JS libraries
+// and no skills: the libraries' quickstarts and the packing command.
+func librariesContext(opts ContextOptions) string {
+	const pack = " and pack the page with `svalbard-drive html pack`; never link a CDN."
+	if opts.NoIndex {
+		folder := "lib/js/*/docs/"
+		if opts.DriveRoot != "" {
+			folder = filepath.ToSlash(filepath.Join(opts.DriveRoot, "lib", "js")) + "/*/docs/"
+		}
+		return "To build a web page, read the quickstarts of the drive's JS libraries in `" + folder + "`, import them by name" + pack
+	}
+	return "To build a web page, find the drive's JS libraries with `" + opts.ToolPrefix + "skill_search` (kind library), import them by name" + pack
 }
 
 // driveContextFor is the context for a harness launched from the drive at

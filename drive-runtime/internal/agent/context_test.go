@@ -402,3 +402,15 @@ func TestDriveContextNamesHTMLPackWithLibraries(t *testing.T) {
 		t.Errorf("context without libraries names html pack:\n%s", without)
 	}
 }
+
+// A drive with JS libraries and no skills still learns to pack pages.
+func TestDriveContextLibrariesWithoutSkills(t *testing.T) {
+	text := agent.DriveContext(agent.ContextOptions{ToolPrefix: "mcp__svalbard__", Libraries: true})
+	if !strings.Contains(text, "`svalbard-drive html pack`") || !strings.Contains(text, "`mcp__svalbard__skill_search` (kind library)") {
+		t.Errorf("libraries only:\n%s", text)
+	}
+	noIndex := agent.DriveContext(agent.ContextOptions{DriveRoot: "/Volumes/S", ToolPrefix: "mcp__svalbard__", Libraries: true, NoIndex: true})
+	if strings.Contains(noIndex, "skill_search") || !strings.Contains(noIndex, "`/Volumes/S/lib/js/*/docs/`") {
+		t.Errorf("libraries only, no index:\n%s", noIndex)
+	}
+}
