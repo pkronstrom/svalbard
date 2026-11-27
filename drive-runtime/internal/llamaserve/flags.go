@@ -40,31 +40,47 @@ const (
 // users) both fail with "Context size has been exceeded" (b11840). One slot
 // queues the second request and gives each the full context.
 func ExtraFlags(modelPath string, ctxSize int) []string {
+	var flags []string
+	for _, option := range modelOptions(modelPath, ctxSize) {
+		flags = append(flags, option.flag)
+		if option.value != "" {
+			flags = append(flags, option.value)
+		}
+	}
+	return flags
+}
+
+type modelOption struct {
+	flag  string
+	value string // empty for switches that take no argument
+}
+
+func modelOptions(modelPath string, ctxSize int) []modelOption {
 	name := strings.ToLower(filepath.Base(modelPath))
 
-	flags := []string{"--ctx-size", strconv.Itoa(ctxSize), "--parallel", "1"}
+	options := []modelOption{{"--ctx-size", strconv.Itoa(ctxSize)}, {"--parallel", "1"}}
 	for _, param := range modelSampler(name) {
-		flags = append(flags, param.flag, param.value)
+		options = append(options, modelOption{param.flag, param.value})
 	}
 
 	// Qwen3.6 GGUF requires a q8_0 KV cache: q4/default desyncs its Gated
 	// DeltaNet state and corrupts long generations (Unsloth guidance). Flash
 	// attention is required for quantized V-cache and pairs with it.
 	if strings.Contains(name, "qwen3.6") || strings.Contains(name, "qwen3.8") {
-		flags = append(flags, "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0")
+		options = append(options, modelOption{"--flash-attn", "on"}, modelOption{"--cache-type-k", "q8_0"}, modelOption{"--cache-type-v", "q8_0"})
 	}
 	if strings.Contains(name, "qwen3.8") {
-		flags = append(flags, "--reasoning-effort", "medium", "--reasoning-preserve", "--jinja", "--chat-template", qwen38ChatTemplate)
+		options = append(options, modelOption{"--reasoning-effort", "medium"}, modelOption{"--reasoning-preserve", ""}, modelOption{"--jinja", ""}, modelOption{"--chat-template", qwen38ChatTemplate})
 	}
 	if strings.Contains(name, "inkling-2") {
-		flags = append(flags, "--jinja")
+		options = append(options, modelOption{"--jinja", ""})
 	}
 
 	if draft, mode, nMax, ok := packagedDraft(modelPath, name); ok {
-		flags = append(flags, "--spec-type", mode, "--spec-draft-model", draft, "--spec-draft-n-max", nMax)
+		options = append(options, modelOption{"--spec-type", mode}, modelOption{"--spec-draft-model", draft}, modelOption{"--spec-draft-n-max", nMax})
 	}
 
-	return flags
+	return options
 }
 
 type samplerParam struct {

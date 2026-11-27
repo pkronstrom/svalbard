@@ -1,4 +1,4 @@
-// Package openwebui starts Open WebUI from the drive: one llama-server model,
+// Package openwebui starts Open WebUI from the drive: a llama-server backend,
 // the drive's MCP server over Streamable HTTP, and Open WebUI itself, all on
 // localhost with every setting supplied by environment. Unless file tools are
 // off it also offers the drive's workspace folder: tools to read and write it,
@@ -248,6 +248,20 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	}
 
 	ctxSize := prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
+	var modelPreset string
+	var models []string
+	if selected == "" {
+		models, err = llamaserve.ChatModels(driveRoot)
+		if err != nil {
+			return err
+		}
+		if len(models) > 1 {
+			modelPreset, err = llamaserve.WriteRouterPresets(filepath.Join(runtimeRoot, "tmp"), filepath.Join(driveRoot, "models"), models, ctxSize)
+			if err != nil {
+				fmt.Fprintf(stdout, "Model switching unavailable, starting the default model: %v\n", err)
+			}
+		}
+	}
 
 	// The MCP listener is held from here on. The two child servers bind their
 	// own ports later, so their searches must not land on the same free port.
@@ -310,12 +324,22 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		}
 	}()
 
-	fmt.Fprintf(stdout, "Starting llama-server with %s (context %d)\n", modelName, ctxSize)
-	// The alias is the name Open WebUI's model picker shows; without it
-	// llama-server reports the model's full path.
-	llamaArgs := []string{"-m", model, "--alias", modelName, "--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", llamaPort)}
-	llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model, ctxSize)...)
+	llamaArgs := []string{"--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", llamaPort)}
+	if modelPreset != "" {
+		fmt.Fprintf(stdout, "Starting llama-server with %d switchable models (context %d)\n", len(models), ctxSize)
+		llamaArgs = append(llamaArgs, "--models-preset", modelPreset, "--models-max", "1")
+	} else {
+		fmt.Fprintf(stdout, "Starting llama-server with %s (context %d)\n", modelName, ctxSize)
+		// Keep the same model ID in saved chats and in the picker.
+		llamaArgs = append(llamaArgs, "-m", model, "--alias", modelName)
+		llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model, ctxSize)...)
+	}
 	llamaCmd := exec.CommandContext(ctx, llamaBin, llamaArgs...)
+	if modelPreset != "" {
+		// The router also scans the host's llama.cpp cache by default. Set
+		// its cache to this run's directory so only vault models appear.
+		llamaCmd.Env = append(os.Environ(), "LLAMA_CACHE="+filepath.Join(runtimeRoot, "tmp", "llama-cache"))
+	}
 	if err := start(llamaCmd, runtimeRoot, "llama-server", stdout, &wg, exited); err != nil {
 		return err
 	}

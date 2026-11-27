@@ -262,11 +262,16 @@ func TestRunHonoursTheDriveSettings(t *testing.T) {
 		t.Error("the context picker was shown although ai.context is balanced")
 	}
 	llama := readRecord(t, recordDir, "llama-server")
-	if got := llama.Args[slices.Index(llama.Args, "--ctx-size")+1]; got != "32768" {
-		t.Errorf("--ctx-size = %q, want 32768", got)
+	preset := slices.Index(llama.Args, "--models-preset")
+	if preset < 0 {
+		t.Fatalf("missing router preset: %v", llama.Args)
 	}
-	if got, want := llama.Args[slices.Index(llama.Args, "-m")+1], filepath.Join(driveRoot, "models", "Zeta-12B.gguf"); got != want {
-		t.Errorf("-m = %q, want the default model %q", got, want)
+	config, err := os.ReadFile(llama.Args[preset+1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(config), "ctx-size = 32768\n"); got != 2 {
+		t.Errorf("found context size 32768 in %d presets, want 2", got)
 	}
 	webui := readRecord(t, recordDir, "open-webui")
 	if !slices.Contains(webui.Env, "DEFAULT_MODELS=Zeta-12B") {

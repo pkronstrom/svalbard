@@ -537,6 +537,66 @@ func TestRunStartsEverythingAndStopsItOnCancel(t *testing.T) {
 	}
 }
 
+func TestRunRoutesTheInstalledChatModels(t *testing.T) {
+	driveRoot, recordDir := newFakeDrive(t, "open-webui")
+	modelDir := filepath.Join(driveRoot, "models")
+	draftDir := filepath.Join(modelDir, "draft")
+	if err := os.Mkdir(draftDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(modelDir, "Qwen3.8-27B-UD-IQ4_XS.gguf"),
+		filepath.Join(modelDir, "Inkling-2-Mini-UD-Q4_K_M.gguf"),
+		filepath.Join(modelDir, "._metadata.gguf"),
+		filepath.Join(draftDir, "mtp-Qwen3.8-27B-Q4_0.gguf"),
+		filepath.Join(draftDir, "dspark-Inkling-2-Mini-Q8_0.gguf"),
+	} {
+		if err := os.WriteFile(path, []byte("gguf"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := Run(ctx, io.Discard, driveRoot, "", func(string) error {
+		cancel()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	llama := readRecord(t, recordDir, "llama-server")
+	preset := slices.Index(llama.Args, "--models-preset")
+	if preset < 0 || !strings.Contains(strings.Join(llama.Args, " "), "--models-max 1") {
+		t.Fatalf("llama-server should route one model at a time, got %q", llama.Args)
+	}
+	if slices.Contains(llama.Args, "-m") {
+		t.Errorf("the router should not have a fixed model: %q", llama.Args)
+	}
+	raw, err := os.ReadFile(llama.Args[preset+1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := string(raw)
+	for _, line := range []string{
+		"[Inkling-2-Mini-UD-Q4_K_M]", "[Qwen3.8-27B-UD-IQ4_XS]", "[Qwen3.5-4B-Q4_K_M]",
+		"ctx-size = 8192", "parallel = 1",
+		"spec-type = draft-mtp", "spec-draft-n-max = 2",
+		"spec-type = draft-dspark", "spec-draft-n-max = 5",
+		"cache-type-k = q8_0", "chat-template-file = ",
+	} {
+		if !strings.Contains(config, line) {
+			t.Errorf("missing %q from router configuration", line)
+		}
+	}
+	if strings.Contains(config, "[._metadata]") || strings.Contains(config, "[mtp-") || strings.Contains(config, "[dspark-") {
+		t.Errorf("router exposed metadata or a drafter as a chat model:\n%s", config)
+	}
+	webui := readRecord(t, recordDir, "open-webui")
+	if !slices.Contains(webui.Env, "DEFAULT_MODELS=Inkling-2-Mini-UD-Q4_K_M") {
+		t.Error("Open WebUI lost its default model")
+	}
+}
+
 // The vault's tool server carries the wiki tools on a drive that has the
 // wiki, and its description in the chat's Tools menu says so.
 func TestRunTellsOpenWebUIAboutTheWikiOfADriveThatHasOne(t *testing.T) {
