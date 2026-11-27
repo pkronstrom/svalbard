@@ -35,12 +35,13 @@ type SearchResponse struct {
 }
 
 type Session struct {
-	driveRoot string
-	db        *sql.DB
-	eng       *engine.Engine
-	caps      Capabilities
-	info      SessionInfo
-	opener    func(string) error
+	driveRoot     string
+	db            *sql.DB
+	eng           *engine.Engine
+	caps          Capabilities
+	info          SessionInfo
+	opener        func(string) error
+	dashboardPort int
 
 	mu           sync.Mutex
 	embedBackend *SemanticBackend
@@ -106,9 +107,15 @@ func newSession(ctx context.Context, driveRoot string, opener func(string) error
 	}, nil
 }
 
-// NewSessionContext opens a search session with cancellable startup.
-func NewSessionContext(ctx context.Context, driveRoot string) (*Session, error) {
-	return newSession(ctx, driveRoot, nil)
+// NewBrowserSession opens a search session whose document server can be
+// framed by the dashboard.
+func NewBrowserSession(ctx context.Context, driveRoot string, dashboardPort int) (*Session, error) {
+	session, err := newSession(ctx, driveRoot, nil)
+	if err != nil {
+		return nil, err
+	}
+	session.dashboardPort = dashboardPort
+	return session, nil
 }
 
 func (s *Session) Info() SessionInfo {
@@ -219,7 +226,7 @@ func (s *Session) ResultURL(ctx context.Context, result Result) (string, error) 
 	// hit; kiwix-serve only knows ZIM archives.
 	if IsDocumentSource(result.Filename) {
 		if s.documents == nil {
-			server, err := startDocumentServer(s.driveRoot)
+			server, err := startDocumentServer(s.driveRoot, s.dashboardPort)
 			if err != nil {
 				return "", fmt.Errorf("serving documents: %w", err)
 			}

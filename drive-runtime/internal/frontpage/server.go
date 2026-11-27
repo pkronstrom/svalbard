@@ -27,6 +27,7 @@ var assets embed.FS
 type dashboard struct {
 	ctx      context.Context
 	root     string
+	port     int
 	inv      inventory
 	specs    map[string]serviceSpec
 	mu       sync.Mutex
@@ -67,7 +68,10 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 	defer cancel()
 
 	inv, specs := buildInventory(root, cfg)
-	d := &dashboard{ctx: ctx, root: root, inv: inv, specs: specs, jobs: make(map[string]*job)}
+	d := &dashboard{
+		ctx: ctx, root: root, port: listener.Addr().(*net.TCPAddr).Port,
+		inv: inv, specs: specs, jobs: make(map[string]*job),
+	}
 	host := listener.Addr().String()
 	server := &http.Server{
 		Handler: d.handler(host), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
@@ -125,7 +129,7 @@ func (d *dashboard) handler(host string) http.Handler {
 	mux.HandleFunc("POST /api/read", d.readResult)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-src http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -264,7 +268,7 @@ func (d *dashboard) withSearch(w http.ResponseWriter, r *http.Request, fn func(*
 	}
 	var err error
 	if d.search == nil {
-		d.search, err = search.NewSessionContext(r.Context(), d.root)
+		d.search, err = search.NewBrowserSession(r.Context(), d.root, d.port)
 	}
 	if err == nil {
 		err = fn(d.search)

@@ -42,7 +42,7 @@ func (d *dashboard) runService(ctx context.Context, spec serviceSpec, model stri
 		}
 		return "", apps.Run(ctx, io.Discard, root, spec.target, opener("Open app"))
 	case "documents":
-		return "", folder.Documents(ctx, io.Discard, root, spec.target, opener("Open documents"))
+		return "", folder.DocumentsForDashboard(ctx, io.Discard, root, spec.target, d.port, opener("Open documents"))
 	case "maps":
 		if _, err := os.Stat(filepath.Join(root, "apps", "map", "index.html")); err != nil {
 			return "", fmt.Errorf("the map viewer is missing from this drive")
@@ -52,7 +52,7 @@ func (d *dashboard) runService(ctx context.Context, spec serviceSpec, model stri
 		if _, missing := folder.WorkspaceMissing(root); missing {
 			return "The workspace folder appears when an assistant saves a file there.", nil
 		}
-		return "", folder.Workspace(ctx, io.Discard, root, opener("Browse workspace"))
+		return "", folder.WorkspaceForDashboard(ctx, io.Discard, root, d.port, opener("Browse workspace"))
 	case "open-webui":
 		if model != "" {
 			model = filepath.Join(root, "models", model)

@@ -27,6 +27,12 @@ const workspacePort = 8086
 // collection's folder or a single document, as a slash-separated path below
 // books/. It returns when ctx is done.
 func Documents(ctx context.Context, stdout io.Writer, driveRoot, rel string, opener func(string) error) error {
+	return DocumentsForDashboard(ctx, stdout, driveRoot, rel, 0, opener)
+}
+
+// DocumentsForDashboard also allows the dashboard to display the documents in
+// its reader when dashboardPort is set.
+func DocumentsForDashboard(ctx context.Context, stdout io.Writer, driveRoot, rel string, dashboardPort int, opener func(string) error) error {
 	dir := filepath.Join(driveRoot, engine.DocumentsDir)
 	local := filepath.FromSlash(rel)
 	if !filepath.IsLocal(local) {
@@ -49,13 +55,19 @@ func Documents(ctx context.Context, stdout io.Writer, driveRoot, rel string, ope
 		address += "/"
 	}
 	// Only documents: a download leaves its record beside the file.
-	return serve(ctx, stdout, "Documents", dir, workspace.Options{Serves: engine.IsDocumentFile}, listener, address, opener)
+	return serve(ctx, stdout, "Documents", dir, workspace.Options{Serves: engine.IsDocumentFile, DashboardPort: dashboardPort}, listener, address, opener)
 }
 
 // Workspace serves the drive's workspace folder and opens its listing in the
 // browser. It returns when ctx is done, or at once when the folder does not
 // exist yet.
 func Workspace(ctx context.Context, stdout io.Writer, driveRoot string, opener func(string) error) error {
+	return WorkspaceForDashboard(ctx, stdout, driveRoot, 0, opener)
+}
+
+// WorkspaceForDashboard also allows the dashboard to display workspace apps
+// in the reader when dashboardPort is set.
+func WorkspaceForDashboard(ctx context.Context, stdout io.Writer, driveRoot string, dashboardPort int, opener func(string) error) error {
 	if line, missing := WorkspaceMissing(driveRoot); missing {
 		fmt.Fprintln(stdout, line)
 		return nil
@@ -65,8 +77,12 @@ func Workspace(ctx context.Context, stdout io.Writer, driveRoot string, opener f
 		return err
 	}
 	// Spelled with "localhost", as the links the file tools give out are.
-	address := fmt.Sprintf("http://localhost:%d/", port)
-	return serve(ctx, stdout, "Workspace", filepath.Join(driveRoot, workspace.DirName), workspace.Options{}, listener, address, opener)
+	host := "localhost"
+	if dashboardPort > 0 {
+		host = "127.0.0.1"
+	}
+	address := fmt.Sprintf("http://%s:%d/", host, port)
+	return serve(ctx, stdout, "Workspace", filepath.Join(driveRoot, workspace.DirName), workspace.Options{DashboardPort: dashboardPort}, listener, address, opener)
 }
 
 // WorkspaceMissing reports whether the drive has no workspace folder yet, and

@@ -70,6 +70,7 @@ func TestDashboardServesInstalledAppsAndReapsThem(t *testing.T) {
 	if body := requestBody(t, client, workspace+"Expedition%20One/index.html", http.StatusOK); !strings.Contains(body, "Agent's app") {
 		t.Fatalf("workspace response = %q", body)
 	}
+	assertReaderFramePolicy(t, client, workspace+"Expedition%20One/index.html", origin)
 	requestBody(t, client, workspace+".draft/private.html", http.StatusNotFound)
 
 	stop()
@@ -127,6 +128,7 @@ func TestSearchOpensDocumentAtMatchingPage(t *testing.T) {
 	if body := requestBody(t, client, destination.URL, http.StatusOK); !strings.HasPrefix(body, "%PDF-1.7") {
 		t.Fatalf("document body = %q", body)
 	}
+	assertReaderFramePolicy(t, client, destination.URL, origin)
 	stop()
 	requireClosed(t, client, destination.URL)
 }
@@ -250,5 +252,18 @@ func writeFile(t *testing.T, root, rel, content string) {
 	}
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertReaderFramePolicy(t *testing.T, client *http.Client, address, origin string) {
+	t.Helper()
+	response, err := client.Get(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	policy := response.Header.Get("Content-Security-Policy")
+	if !strings.HasSuffix(policy, "frame-ancestors "+origin) {
+		t.Fatalf("reader policy = %q; want framing limited to %s", policy, origin)
 	}
 }

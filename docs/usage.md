@@ -25,7 +25,7 @@ svalbard index --vault /Volumes/MyDrive
 cd /Volumes/MyDrive && ./run
 ```
 
-Run `./run web` from the vault for a browser dashboard. The dashboard lists installed actions, opens archives and web apps, and discovers HTML pages under the vault's `workspace/`. **Wiki** opens the SilverBullet Markdown editor when installed. **Serve Everything** starts the vault's available services and provides a local link to browse drive files. **Share on Local Network** starts the file server on the network. Use `./run web --no-open` to print the dashboard URL without opening a browser. Use Ctrl+C to stop the dashboard and its services.
+Run `./run web` from the vault for a browser dashboard. The sidebar lists installed actions and HTML pages under the vault's `workspace/`. Select an archive, document, or local web app to open it in the main pane. **Wiki** opens the SilverBullet Markdown editor when installed. **Serve Everything** starts the vault's available services and provides a local link to browse drive files. **Share on Local Network** starts the file server on the network. Use `./run web --no-open` to print the dashboard URL without opening a browser. Use Ctrl+C to stop the dashboard and its services.
 
 Everything the wizard and the TUI screens do has a command, so scripts and agents never need the TUI:
 

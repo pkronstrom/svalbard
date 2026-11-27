@@ -74,12 +74,12 @@ type documentServer struct {
 	done   chan struct{}
 }
 
-func startDocumentServer(driveRoot string) (*documentServer, error) {
+func startDocumentServer(driveRoot string, dashboardPort int) (*documentServer, error) {
 	dir := filepath.Join(driveRoot, engine.DocumentsDir)
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("the drive has no %s folder", engine.DocumentsDir)
 	}
-	folder, err := workspace.OpenWith(dir, workspace.Options{Serves: engine.IsDocumentFile})
+	folder, err := workspace.OpenWith(dir, workspace.Options{Serves: engine.IsDocumentFile, DashboardPort: dashboardPort})
 	if err != nil {
 		return nil, err
 	}

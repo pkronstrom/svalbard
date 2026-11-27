@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,8 +97,8 @@ func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- cmd.Wait(); close(waitCh) }()
 
-	url := fmt.Sprintf("http://localhost:%d", port)
-	if err := waitHealthy(ctx, url, waitCh); err != nil {
+	address := fmt.Sprintf("http://localhost:%d", port)
+	if err := waitHealthy(ctx, address, waitCh); err != nil {
 		// On a timeout or cancellation, reap the process before reading
 		// the output that its stderr copier owns until Wait returns.
 		cancel()
@@ -109,10 +110,15 @@ func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return fmt.Errorf("kiwix-serve failed: %w", err)
 	}
 
-	if err := opener(url); err != nil {
-		fmt.Fprintf(stdout, "  Open: %s\n", url)
+	if ephemeral && selected != "" {
+		book := strings.TrimSuffix(selected, filepath.Ext(selected))
+		viewer := url.URL{Path: "/viewer", Fragment: book}
+		address += viewer.String()
 	}
-	fmt.Fprintf(stdout, "Kiwix: %s\n", url)
+	if err := opener(address); err != nil {
+		fmt.Fprintf(stdout, "  Open: %s\n", address)
+	}
+	fmt.Fprintf(stdout, "Kiwix: %s\n", address)
 
 	select {
 	case <-ctx.Done():

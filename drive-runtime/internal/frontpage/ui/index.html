@@ -3,68 +3,107 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#102a2e">
+  <meta name="theme-color" content="#f0f3ee">
   <title>Svalbard Drive</title>
   <link rel="icon" href="/favicon.png" type="image/png">
   <link rel="stylesheet" href="/style.css">
   <script src="/frontpage.js" defer></script>
 </head>
 <body>
-  <a class="skip" href="#main">Skip to drive</a>
-  <header class="top">
-    <div class="top-inner">
-      <a class="brand" href="/" aria-label="Svalbard Drive home"><span class="mark" aria-hidden="true">✦</span> Svalbard<span class="brand-drive">Drive</span></a>
-      <nav id="nav" aria-label="Drive sections"></nav>
-      <span class="local" id="connection"><i aria-hidden="true"></i> Local session</span>
-    </div>
-  </header>
-  <main id="main" class="shell">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <div class="eyebrow" id="vault">SVALBARD DRIVE</div>
-        <h1 id="hero-title">Your offline vault.</h1>
-        <p>Read the library, open local tools, and pick up where you left off.</p>
-        <div class="hero-links">
-          <a class="button light" href="#contents">Explore the drive <span aria-hidden="true">↓</span></a>
-          <a class="button ghost" href="#saved-apps">Saved apps <span aria-hidden="true">↗</span></a>
+  <a class="skip" href="#main">Skip to workspace</a>
+  <aside class="sidebar" id="sidebar" aria-label="Drive sidebar">
+    <a class="brand" href="#overview">
+      <span class="brand-mark" aria-hidden="true">✦</span>
+      <span><strong>Svalbard</strong><small id="vault">Drive</small></span>
+    </a>
+    <label class="filter">
+      <span class="lens" aria-hidden="true"></span>
+      <input id="filter" type="search" placeholder="Filter sidebar" aria-label="Filter sidebar" disabled>
+    </label>
+    <nav id="nav" aria-label="Drive contents">
+      <div class="nav-primary">
+        <a class="nav-link" href="#overview" aria-current="page"><span class="glyph" aria-hidden="true">⌂</span>Overview</a>
+        <a class="nav-link" href="#search" id="search-nav" hidden><span class="glyph" aria-hidden="true">⌕</span>Search the vault</a>
+      </div>
+      <div id="groups"></div>
+      <section class="group" aria-labelledby="saved-title">
+        <div class="group-title">
+          <h2 id="saved-title">Saved apps</h2>
+          <button type="button" class="icon-button" id="refresh" aria-label="Refresh saved apps" title="Refresh saved apps" disabled>↻</button>
         </div>
-      </div>
-      <div class="art" aria-hidden="true"></div>
-    </section>
+        <div id="saved-links"></div>
+        <p id="workspace-status" class="quiet" role="status"></p>
+      </section>
+      <p id="filter-status" class="quiet" role="status" hidden></p>
+    </nav>
+  </aside>
 
-    <section id="contents" aria-labelledby="contents-heading">
-      <div class="section-heading">
-        <div><h2 id="contents-heading">On this drive</h2><p id="inventory-summary"></p></div>
-        <label class="filter"><span aria-hidden="true">⌕</span><input type="search" id="filter" placeholder="Filter installed items" aria-label="Filter installed items" disabled></label>
+  <main id="main" class="main" tabindex="-1">
+    <header class="top">
+      <div class="top-location">
+        <button type="button" id="menu" class="icon-button mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Toggle sidebar">☰</button>
+        <a href="#overview" class="top-home">Drive</a>
+        <span class="divider" aria-hidden="true">/</span>
+        <span id="location">Overview</span>
       </div>
+      <span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span>
+    </header>
 
-      <section id="search-panel" class="search-panel" aria-label="Search indexed content" hidden>
-        <form id="search-form" class="search-form">
-          <label for="query">Search indexed content</label>
+    <div id="viewport" class="viewport">
+      <section id="overview" class="page overview" aria-labelledby="home-title">
+        <header class="welcome">
+          <span class="welcome-mark" aria-hidden="true">✦</span>
+          <div><h1 id="home-title">Your offline vault</h1><p id="inventory-summary" class="quiet" role="status">Loading drive contents…</p></div>
+        </header>
+        <form id="home-search" class="search-form" hidden>
+          <label for="home-query">Search articles and documents</label>
           <div class="search-controls">
-            <input id="query" type="search" placeholder="Search articles and documents" maxlength="500" required>
+            <input id="home-query" type="search" maxlength="500" placeholder="Search the vault" required>
             <button class="button primary" type="submit">Search</button>
           </div>
         </form>
-        <p id="search-status" role="status" hidden></p>
+        <div class="overview-list" id="home-content" hidden>
+          <h2>Explore the drive</h2>
+          <div id="home-links"></div>
+        </div>
+        <noscript><p>Enable JavaScript to browse this dashboard, or open <code>./run</code> in a terminal.</p></noscript>
+      </section>
+
+      <section id="search-panel" class="page" aria-labelledby="search-title" hidden>
+        <header class="page-heading"><h1 id="search-title">Search the vault</h1></header>
+        <form id="search-form" class="search-form">
+          <label for="query">Search indexed articles and documents</label>
+          <div class="search-controls">
+            <input id="query" type="search" maxlength="500" placeholder="Search the vault" required>
+            <button class="button primary" type="submit">Search</button>
+          </div>
+        </form>
+        <p id="search-status" class="quiet" role="status" hidden></p>
         <ol id="search-results" class="results" hidden></ol>
       </section>
 
-      <noscript><p>Enable JavaScript to launch content from this page. The terminal menu is available with <code>./run</code>.</p></noscript>
-      <p id="page-status" role="status">Loading drive contents…</p>
-      <div id="groups"></div>
-    </section>
+      <section id="details" class="page detail-page" aria-labelledby="item-title" hidden>
+        <header class="item-heading">
+          <div class="item-copy">
+            <p id="item-kind" class="quiet"></p>
+            <h1 id="item-title"></h1>
+            <p id="item-description" class="quiet"></p>
+          </div>
+          <div id="item-controls"></div>
+        </header>
+        <p id="item-status" role="status" hidden></p>
+        <pre id="item-output" hidden></pre>
+      </section>
 
-    <section id="saved-apps" class="saved" aria-labelledby="saved-heading">
-      <div class="section-heading">
-        <div><h2 id="saved-heading">Saved apps</h2><p>HTML pages and tools saved in <code>workspace/</code>.</p></div>
-        <button type="button" id="refresh" class="button secondary" disabled>Refresh <span aria-hidden="true">↻</span></button>
-      </div>
-      <div id="workspace-actions"></div>
-      <p id="workspace-status" role="status"></p>
-      <div id="pages" class="cards"></div>
-    </section>
+      <section id="reader" class="reader" aria-label="Content viewer" hidden>
+        <div class="reader-bar" id="reader-bar" hidden>
+          <button type="button" id="back-to-search" class="button quiet-button">← Results</button>
+          <strong id="reader-title"></strong>
+          <a id="reader-link" class="button secondary" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a>
+        </div>
+        <iframe id="reader-frame" title="Drive content" referrerpolicy="no-referrer"></iframe>
+      </section>
+    </div>
   </main>
-  <footer class="footer"><div><span>Svalbard Drive</span><span>Stop the launcher with <kbd>Ctrl</kbd> + <kbd>C</kbd> in the terminal.</span></div></footer>
 </body>
 </html>

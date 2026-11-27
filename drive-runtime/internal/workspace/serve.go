@@ -24,7 +24,7 @@ import (
 const contentSecurityPolicy = "default-src 'none'; " +
 	"script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; " +
 	"img-src data: blob: 'self'; font-src data: 'self'; media-src data: blob: 'self'; " +
-	"form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+	"form-action 'none'; base-uri 'none'; frame-ancestors "
 
 // URL is the address of rel below base, the root URL Serve answers on.
 func URL(base, rel string) string {
@@ -65,9 +65,13 @@ func (w *Workspace) Serve(ctx context.Context, listener net.Listener) error {
 
 func (w *Workspace) handler(port int) http.Handler {
 	hosts := []string{fmt.Sprintf("127.0.0.1:%d", port), fmt.Sprintf("localhost:%d", port)}
+	frameAncestor := "'none'"
+	if w.opts.DashboardPort > 0 && w.opts.DashboardPort <= 65535 {
+		frameAncestor = fmt.Sprintf("http://127.0.0.1:%d", w.opts.DashboardPort)
+	}
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		header := rw.Header()
-		header.Set("Content-Security-Policy", contentSecurityPolicy)
+		header.Set("Content-Security-Policy", contentSecurityPolicy+frameAncestor)
 		header.Set("X-Content-Type-Options", "nosniff")
 		header.Set("Referrer-Policy", "no-referrer")
 		// Another site's page must not embed a workspace file. Open WebUI is

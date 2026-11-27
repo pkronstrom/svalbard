@@ -46,6 +46,9 @@ type Options struct {
 	// it accepts; folders are always shown. Nil serves every file. It does
 	// not limit the other methods.
 	Serves func(name string) bool
+	// DashboardPort allows just the dashboard on 127.0.0.1 at this port to
+	// frame files. By default the content is only available standalone.
+	DashboardPort int
 }
 
 // Open creates the folder dir if it is missing and opens it as the drive's
