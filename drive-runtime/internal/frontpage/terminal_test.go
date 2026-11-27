@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,51 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"golang.org/x/net/websocket"
 )
+
+func TestTerminalOpensActivatedSBShell(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	root := filepath.Join(t.TempDir(), "Drive $TERM's files")
+	writeFile(t, root, "run", "#!/bin/sh\nprintf 'SB_RESULT: %s %s\\n' \"$DRIVE_ROOT\" \"$1\"\n")
+	if err := os.Chmod(filepath.Join(root, "run"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	client, address, _ := startDashboardLink(t, root, config.RuntimeConfig{
+		Groups: []config.MenuGroup{{Label: "Tools", Items: []config.MenuItem{{
+			ID: "activate-shell", Label: "Activate sb Shell", Action: config.BuiltinAction("activate-shell", nil),
+		}}}},
+	})
+	origin, key, _ := strings.Cut(address, "/#terminal-key=")
+	body := requestBody(t, client, origin+"/api/inventory", http.StatusOK)
+	if !strings.Contains(body, `"terminalMode":"sb"`) || strings.Contains(body, `"command":"./run"`) {
+		t.Fatalf("expected an activated shell, got %s", body)
+	}
+	cfg, err := websocket.NewConfig("ws"+strings.TrimPrefix(origin, "http")+"/api/terminal?mode=sb", origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Protocol = []string{terminalProtocol, key}
+	socket, err := websocket.DialConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer socket.Close()
+	_ = socket.SetDeadline(time.Now().Add(5 * time.Second))
+	if err := websocket.Message.Send(socket, []byte("sb settings\r")); err != nil {
+		t.Fatal(err)
+	}
+	want := "SB_RESULT: " + root + " settings"
+	var output bytes.Buffer
+	for !strings.Contains(output.String(), want) {
+		var frame []byte
+		if err := websocket.Message.Receive(socket, &frame); err != nil {
+			t.Fatalf("waiting for the sb wrapper: %v. Output was %q", err, &output)
+		}
+		output.Write(frame)
+		if err := websocket.Message.Send(socket, `{"type":"ack"}`); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestTerminalRequiresPrivateLaunchLink(t *testing.T) {
 	root := t.TempDir()

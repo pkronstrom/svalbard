@@ -12,6 +12,23 @@ import (
 )
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
+	cmd, cleanup, err := Prepare(ctx, driveRoot)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	fmt.Fprintf(stdout, "Activated sb shell for %s\n", driveRoot)
+	fmt.Fprintln(stdout, "Use `sb`, `sb search`, `sb chat`, `sb opencode`, or `sb goose`. Exit the shell to leave.")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// Prepare sets up an interactive sb shell. The caller provides its terminal
+// and releases the temporary launcher and startup files after the shell exits.
+func Prepare(ctx context.Context, driveRoot string) (*exec.Cmd, func(), error) {
 	shellPath := os.Getenv("SHELL")
 	if shellPath == "" {
 		shellPath = "/bin/sh"
@@ -19,32 +36,29 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
 
 	tempDir, err := os.MkdirTemp("", "svalbard-shell-")
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	defer os.RemoveAll(tempDir)
+	cleanup := func() { _ = os.RemoveAll(tempDir) }
 
 	sbPath := filepath.Join(tempDir, "sb")
-	content := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\nexport DRIVE_ROOT=%q\nexec %q \"$@\"\n", driveRoot, filepath.Join(driveRoot, "run"))
+	content := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\nexport DRIVE_ROOT=%s\nexec %s \"$@\"\n",
+		shellSingleQuote(driveRoot), shellSingleQuote(filepath.Join(driveRoot, "run")))
 	if err := os.WriteFile(sbPath, []byte(content), 0o755); err != nil {
-		return err
+		cleanup()
+		return nil, nil, err
 	}
-
-	fmt.Fprintf(stdout, "Activated sb shell for %s\n", driveRoot)
-	fmt.Fprintln(stdout, "Use `sb`, `sb search`, `sb chat`, `sb opencode`, or `sb goose`. Exit the shell to leave.")
 
 	cmd, extraEnv, err := newInteractiveShellCommand(ctx, shellPath, tempDir)
 	if err != nil {
-		return err
+		cleanup()
+		return nil, nil, err
 	}
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.Env = MergeEnvironment(os.Environ(), map[string]string{
 		"DRIVE_ROOT": driveRoot,
 		"PATH":       tempDir + string(os.PathListSeparator) + os.Getenv("PATH"),
 	})
 	cmd.Env = MergeEnvironment(cmd.Env, envMap(extraEnv))
-	return cmd.Run()
+	return cmd, cleanup, nil
 }
 
 func newInteractiveShellCommand(ctx context.Context, shellPath, tempDir string) (*exec.Cmd, []string, error) {

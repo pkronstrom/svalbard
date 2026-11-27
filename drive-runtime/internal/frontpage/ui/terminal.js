@@ -1,7 +1,7 @@
 import {Terminal} from "./vendor/xterm/xterm.mjs";
 import {FitAddon} from "./vendor/xterm/addon-fit.mjs";
 
-export function openShell(target, key, prefill, onConnection) {
+export function openShell(target, key, mode, prefill, onConnection) {
   target.hidden = false;
   const term = new Terminal({
     fontFamily: "ui-monospace, Menlo, monospace",
@@ -16,7 +16,8 @@ export function openShell(target, key, prefill, onConnection) {
   term.open(target);
   term.textarea?.setAttribute("aria-label", "Drive terminal input");
 
-  const socket = new WebSocket("ws://" + location.host + "/api/terminal", ["svalbard-terminal", key]);
+  const address = "ws://" + location.host + "/api/terminal" + (mode === "sb" ? "?mode=sb" : "");
+  const socket = new WebSocket(address, ["svalbard-terminal", key]);
   socket.binaryType = "arraybuffer";
   const encoder = new TextEncoder();
   const send = data => {

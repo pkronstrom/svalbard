@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/shell"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 )
@@ -32,6 +33,11 @@ func (d *dashboard) serveTerminal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "A terminal requires a WebSocket connection.", http.StatusBadRequest)
 		return
 	}
+	mode := r.URL.Query().Get("mode")
+	if mode != "" && mode != "sb" {
+		http.Error(w, "Unknown terminal mode.", http.StatusBadRequest)
+		return
+	}
 	d.mu.Lock()
 	if d.ctx.Err() != nil {
 		d.mu.Unlock()
@@ -46,7 +52,7 @@ func (d *dashboard) serveTerminal(w http.ResponseWriter, r *http.Request) {
 			cfg.Protocol = []string{terminalProtocol}
 			return nil
 		},
-		Handler: d.runTerminal,
+		Handler: func(socket *websocket.Conn) { d.runTerminal(socket, mode == "sb") },
 	}
 	server.ServeHTTP(w, r)
 }
@@ -63,14 +69,25 @@ var terminalFrames = websocket.Codec{
 	},
 }
 
-func (d *dashboard) runTerminal(socket *websocket.Conn) {
+func (d *dashboard) runTerminal(socket *websocket.Conn, activate bool) {
 	ctx, cancel := context.WithCancel(d.ctx)
 	defer cancel()
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
+	var cmd *exec.Cmd
+	if activate {
+		activated, cleanup, err := shell.Prepare(ctx, d.root)
+		if err != nil {
+			reportTerminalError(socket, err)
+			return
+		}
+		defer cleanup()
+		cmd = activated
+	} else {
+		shellPath := os.Getenv("SHELL")
+		if shellPath == "" {
+			shellPath = "/bin/sh"
+		}
+		cmd = exec.CommandContext(ctx, shellPath, "-i")
 	}
-	cmd := exec.CommandContext(ctx, shell, "-i")
 	cmd.Dir = d.root
 	cmd.Env = append(cmd.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
 	screen, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
@@ -82,8 +99,7 @@ func (d *dashboard) runTerminal(socket *websocket.Conn) {
 		}
 	}
 	if err != nil {
-		_ = socket.SetWriteDeadline(time.Now().Add(2 * time.Second))
-		_ = websocket.Message.Send(socket, []byte(fmt.Sprintf("Could not start the local shell: %v\r\n", err)))
+		reportTerminalError(socket, err)
 		return
 	}
 	socket.MaxPayloadBytes = 64 << 10
@@ -126,6 +142,11 @@ func (d *dashboard) runTerminal(socket *websocket.Conn) {
 			return
 		}
 	}
+}
+
+func reportTerminalError(socket *websocket.Conn, err error) {
+	_ = socket.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	_ = websocket.Message.Send(socket, []byte(fmt.Sprintf("Could not start the local shell: %v\r\n", err)))
 }
 
 func pollableTerminal(screen *os.File) (*os.File, error) {

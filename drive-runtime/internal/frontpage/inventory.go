@@ -31,19 +31,20 @@ type group struct {
 }
 
 type entry struct {
-	Label       string        `json:"label"`
-	Description string        `json:"description,omitempty"`
-	Subheader   string        `json:"subheader,omitempty"`
-	Note        string        `json:"note,omitempty"`
-	Kind        string        `json:"kind"`
-	Icon        string        `json:"icon"`
-	Service     string        `json:"service,omitempty"`
-	Command     string        `json:"command,omitempty"`
-	Terminal    bool          `json:"terminal,omitempty"`
-	RecipeID    string        `json:"recipeId,omitempty"`
-	Summary     string        `json:"summary,omitempty"`
-	Tags        []string      `json:"tags,omitempty"`
-	Image       *previewImage `json:"image,omitempty"`
+	Label        string        `json:"label"`
+	Description  string        `json:"description,omitempty"`
+	Subheader    string        `json:"subheader,omitempty"`
+	Note         string        `json:"note,omitempty"`
+	Kind         string        `json:"kind"`
+	Icon         string        `json:"icon"`
+	Service      string        `json:"service,omitempty"`
+	Command      string        `json:"command,omitempty"`
+	Terminal     bool          `json:"terminal,omitempty"`
+	TerminalMode string        `json:"terminalMode,omitempty"`
+	RecipeID     string        `json:"recipeId,omitempty"`
+	Summary      string        `json:"summary,omitempty"`
+	Tags         []string      `json:"tags,omitempty"`
+	Image        *previewImage `json:"image,omitempty"`
 }
 
 type model struct {
@@ -109,6 +110,10 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 			case "settings":
 				view.Command = "./run settings"
 				view.Terminal = true
+			case "activate-shell":
+				view.Command = ""
+				view.Terminal = true
+				view.TerminalMode = "sb"
 			case "chat":
 				modelLabels[filepath.Base(action.Args["model"])] = item.Label
 			case "open-webui":

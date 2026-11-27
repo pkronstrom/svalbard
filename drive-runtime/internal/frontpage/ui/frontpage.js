@@ -31,9 +31,7 @@ let queuedLaunch;
 const shellItem = {label: "Terminal", group: "Tools", icon: "terminal", terminal: true,
   description: "Open your shell in the vault folder."};
 const terminalKey = readTerminalKey();
-let shellSession;
-let previousShell;
-let loadingShell = false;
+const terminals = {regular: {}, sb: {}};
 
 function node(tag, css, text) {
   const element = document.createElement(tag);
@@ -407,42 +405,58 @@ function readTerminalKey() {
   }
 }
 
+function selectedTerminal() {
+  return terminals[selection?.terminalMode === "sb" ? "sb" : "regular"];
+}
+
 function renderTerminal() {
+  const state = selectedTerminal();
   const command = byId("terminal-command");
+  const start = byId("terminal-start");
   command.textContent = selection?.command || "";
-  command.hidden = !command.textContent || Boolean(shellSession);
-  byId("terminal-start").hidden = Boolean(shellSession);
-  byId("terminal-start").disabled = !terminalKey || loadingShell;
-  byId("terminal-stop").hidden = !shellSession;
-  byId("terminal-paste").hidden = !shellSession || !selection?.command;
-  if (!terminalKey) note(byId("terminal-status"), "Open the private link printed by ./run web to use the terminal.");
+  command.hidden = !command.textContent || Boolean(state.session);
+  start.textContent = state === terminals.sb ? "Start sb shell" : "Start terminal";
+  start.hidden = Boolean(state.session);
+  start.disabled = !terminalKey || state.loading;
+  byId("terminal-stop").hidden = !state.session;
+  byId("terminal-paste").hidden = !state.session || !selection?.command;
+  for (const terminal of Object.values(terminals)) {
+    if (terminal.screen) terminal.screen.hidden = state !== terminal;
+  }
+  const message = terminalKey ? state.message : "Open the private link printed by ./run web to use the terminal.";
+  note(byId("terminal-status"), message || "", state.failed);
 }
 
 async function startTerminal() {
-  if (!terminalKey || loadingShell || shellSession) return;
+  const state = selectedTerminal();
+  if (!terminalKey || state.loading || state.session) return;
+  const mode = selection?.terminalMode;
   const prefill = selection?.command || "";
-  const status = byId("terminal-status");
-  loadingShell = true;
+  state.loading = true;
+  state.failed = false;
+  state.message = "Connecting…";
   renderTerminal();
-  note(status, "Connecting…");
   try {
     const {openShell} = await import("/terminal.js");
-    previousShell?.dispose();
-    previousShell = undefined;
-    shellSession = openShell(byId("terminal-screen"), terminalKey, prefill, connected => {
-      if (connected) {
-        note(status, "");
-      } else {
-        previousShell = shellSession;
-        shellSession = undefined;
-        note(status, "Terminal disconnected. Start a new terminal to continue.");
-        renderTerminal();
+    state.previous?.dispose();
+    state.previous = undefined;
+    if (!state.screen) {
+      state.screen = node("div", "terminal-screen");
+      byId("terminal-screens").append(state.screen);
+    }
+    state.session = openShell(state.screen, terminalKey, mode, prefill, connected => {
+      state.message = connected ? "" : "Terminal disconnected.";
+      if (!connected) {
+        state.previous = state.session;
+        state.session = undefined;
       }
+      renderTerminal();
     });
   } catch (error) {
-    note(status, error.message, true);
+    state.message = error.message;
+    state.failed = true;
   } finally {
-    loadingShell = false;
+    state.loading = false;
     renderTerminal();
   }
 }
@@ -715,9 +729,11 @@ byId("overview-filter").addEventListener("input", renderHome);
 byId("overview-type").addEventListener("change", renderHome);
 byId("overview-order").addEventListener("change", renderHome);
 byId("terminal-start").addEventListener("click", startTerminal);
-byId("terminal-stop").addEventListener("click", () => shellSession?.disconnect());
-byId("terminal-paste").addEventListener("click", () => shellSession?.paste(selection.command));
-window.addEventListener("pagehide", () => shellSession?.disconnect());
+byId("terminal-stop").addEventListener("click", () => selectedTerminal().session?.disconnect());
+byId("terminal-paste").addEventListener("click", () => selectedTerminal().session?.paste(selection.command));
+window.addEventListener("pagehide", () => {
+  for (const state of Object.values(terminals)) state.session?.disconnect();
+});
 byId("stop-search-reader").addEventListener("click", stopSearchReader);
 byId("refresh").addEventListener("click", refreshPages);
 byId("back-to-search").addEventListener("click", () => {
