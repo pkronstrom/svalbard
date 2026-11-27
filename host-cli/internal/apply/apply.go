@@ -46,6 +46,8 @@ type ProgressEvent struct {
 	Message    string `json:"message,omitempty"`
 	Downloaded int64  `json:"downloaded,omitempty"`
 	Total      int64  `json:"total,omitempty"`
+	ItemsDone  int    `json:"items_done,omitempty"`
+	ItemsTotal int    `json:"items_total,omitempty"`
 	Error      string `json:"error,omitempty"`
 }
 
@@ -243,6 +245,11 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	for _, job := range repairs {
 		reported = append(reported, job.id)
 	}
+	pendingReports := make(map[string]struct{}, len(reported))
+	for _, id := range reported {
+		pendingReports[id] = struct{}{}
+	}
+	itemsTotal := len(pendingReports)
 
 	allJobs := append(httpJobs, buildJobs...)
 	// Python packages are materialized by their venv aggregate rather than a
@@ -301,7 +308,13 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 				}
 				recordCollection(root, m.Realized.Entries, cat, res.id)
 				for _, id := range plannedIDsCoveredBy(res.entries, reported) {
-					progress(ProgressEvent{ID: id, Status: tui.StatusDone})
+					if _, pending := pendingReports[id]; !pending {
+						continue
+					}
+					delete(pendingReports, id)
+					progress(ProgressEvent{
+						ID: id, Status: tui.StatusDone, ItemsDone: itemsTotal - len(pendingReports), ItemsTotal: itemsTotal,
+					})
 				}
 			}()
 		}
