@@ -45,6 +45,8 @@ type ContextOptions struct {
 	// Libraries: a js-lib recipe is installed, so pages are packed with the
 	// drive's libraries.
 	Libraries bool
+	// WebSearch is the optional network tool enabled at launch.
+	WebSearch bool
 }
 
 // DriveContext is the context file of a shell harness on the drive: what a
@@ -66,7 +68,13 @@ func DriveContext(opts ContextOptions) string {
 
 	var b strings.Builder
 	b.WriteString("# Svalbard offline drive\n\n")
-	b.WriteString("You run from a Svalbard USB drive" + where + ". There is no internet. Do not try curl, wget, git clone, pip install, npm install or any other download.\n\n")
+	b.WriteString("You run from a Svalbard USB drive" + where + ". ")
+	if opts.WebSearch {
+		b.WriteString(webSearchContext(opts.ToolPrefix) + " ")
+	} else {
+		b.WriteString("There is no internet. ")
+	}
+	b.WriteString("Do not try curl, wget, git clone, pip install, npm install or any other download.\n\n")
 	b.WriteString("The drive has an offline library: reference archives, SQLite databases and maps. For a factual question, look it up with the " + tools + " tools instead of guessing:\n\n")
 	b.WriteString("1. " + tool("vault_sources") + " lists the drive's content sources.\n")
 	// How to word a query and how a long article continues is in the tools'
@@ -97,6 +105,10 @@ func DriveContext(opts ContextOptions) string {
 	b.WriteString("- `./run` on the drive is an interactive menu for the user. Do not run it.\n")
 	b.WriteString("- " + stayInPlace + "\n")
 	return b.String()
+}
+
+func webSearchContext(toolPrefix string) string {
+	return "Use `" + toolPrefix + "web_search` for current public information or when asked to search online. Only send public keywords and cite returned URLs."
 }
 
 // stayInPlace keeps a harness's shell where it belongs. Nothing confines it:
@@ -143,7 +155,7 @@ func librariesContext(opts ContextOptions) string {
 // driveContextFor is the context for a harness launched from the drive at
 // driveRoot with a model of ctxSize tokens, with the areas that drive has
 // installed now and its MCP server offers at that size.
-func driveContextFor(driveRoot, toolPrefix string, ctxSize int) string {
+func driveContextFor(driveRoot, toolPrefix string, ctxSize int, webSearch bool) string {
 	hasWiki := mcp.WikiOffered(driveRoot, ctxSize)
 	return DriveContext(ContextOptions{
 		DriveRoot:  driveRoot,
@@ -153,6 +165,7 @@ func driveContextFor(driveRoot, toolPrefix string, ctxSize int) string {
 		Skills:     mcp.SkillsInstalled(driveRoot),
 		NoIndex:    !mcp.SkillsIndexed(driveRoot),
 		Libraries:  mcp.LibrariesInstalled(driveRoot),
+		WebSearch:  webSearch,
 	})
 }
 

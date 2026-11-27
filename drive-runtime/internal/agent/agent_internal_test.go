@@ -37,7 +37,7 @@ func TestUpsertGooseExtensionYAMLPreservesExistingExtensions(t *testing.T) {
 name: test
 `
 
-	updated := upsertGooseExtensionYAML(existing, gooseExtensionBlock("/bin/svalbard-drive", "/tmp/drive", 32768))
+	updated := upsertGooseExtensionYAML(existing, gooseExtensionBlock("/bin/svalbard-drive", driveMCPArgs("/tmp/drive", 32768, false)))
 
 	if !strings.Contains(updated, "  developer:") {
 		t.Fatalf("updated config lost existing extension:\n%s", updated)
@@ -107,7 +107,7 @@ func piPromptTokens(t *testing.T, driveRoot string, ctxSize int) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chars := len(driveContextFor(driveRoot, PiToolPrefix, ctxSize)) + len(definitions)
+	chars := len(driveContextFor(driveRoot, PiToolPrefix, ctxSize, false)) + len(definitions)
 	return piOwnTokens + int(float64(chars)/promptCharsPerToken)
 }
 

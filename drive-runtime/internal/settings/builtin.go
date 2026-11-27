@@ -13,6 +13,8 @@ import (
 const (
 	KeyDefaultModel = "ai.default_model"
 	KeyContext      = "ai.context"
+	KeyWebSearch    = "ai.web_search"
+	KeyWebSearchURL = "ai.web_search_url"
 )
 
 // Ask is the choice that leaves a built-in setting to be decided at launch.
@@ -68,6 +70,14 @@ func builtinGroups(driveRoot string) []Group {
 					"512k":      "high memory",
 					"model-max": "model limit, highest memory",
 				},
+			},
+			{
+				Owner: "ai", Name: "web_search", Type: TypeBool, Default: false,
+				Label: "Web search", Description: "Allow assistants to send public search queries to DuckDuckGo or your SearXNG server. Applies on the next launch.",
+			},
+			{
+				Owner: "ai", Name: "web_search_url", Type: TypeText, Default: "",
+				Label: "SearXNG URL", Description: "Optional server with JSON search enabled. Leave empty to use DuckDuckGo.",
 			},
 		},
 	}}

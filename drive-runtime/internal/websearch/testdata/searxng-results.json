@@ -1,0 +1,27 @@
+{
+  "query": "snow & ice",
+  "number_of_results": 0,
+  "results": [
+    {
+      "title": "Glacier <b>research</b>",
+      "url": "https://example.org/research",
+      "content": "A &amp; B observations from the <strong>Arctic</strong>."
+    },
+    {
+      "title": "Unsafe",
+      "url": "javascript:alert(1)",
+      "content": "Ignore this description."
+    },
+    {
+      "title": "Private",
+      "url": "https://api.localhost/search",
+      "content": "This is a local service."
+    },
+    {
+      "title": "Ice forecast",
+      "url": "http://example.net/forecast",
+      "content": null
+    }
+  ],
+  "unresponsive_engines": [["some engine", "timeout"]]
+}

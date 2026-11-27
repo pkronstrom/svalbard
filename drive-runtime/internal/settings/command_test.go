@@ -35,6 +35,8 @@ func TestCommandListsEverySettingGrouped(t *testing.T) {
 	want := `Local AI
   ai.default_model           ask
   ai.context               * balanced
+  ai.web_search              off
+  ai.web_search_url
 
 Open WebUI
   open-webui.open_browser  * off

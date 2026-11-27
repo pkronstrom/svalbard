@@ -172,7 +172,7 @@ func TestDriveCapabilitiesGateSkills(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(without, "skills", "by-hand", "a"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if names := DriveToolNames(without, 0); slices.Contains(names, "skill_search") || slices.Contains(names, "skill_read") {
+	if names := DriveToolNames(without, DriveOptions{}); slices.Contains(names, "skill_search") || slices.Contains(names, "skill_read") {
 		t.Errorf("tools without a skills recipe = %v", names)
 	}
 	srv := NewDriveServer(without, DriveOptions{})
@@ -191,7 +191,7 @@ func TestDriveCapabilitiesGateSkills(t *testing.T) {
 	} {
 		with := t.TempDir()
 		writeRecipes(with, recipes)
-		names := DriveToolNames(with, 0)
+		names := DriveToolNames(with, DriveOptions{})
 		if !slices.Contains(names, "skill_search") || !slices.Contains(names, "skill_read") || len(names) != 11 {
 			t.Errorf("%s: tools = %v, want the nine drive tools and the two skill tools", recipes, names)
 		}

@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"os"
 	"path"
@@ -97,6 +98,7 @@ const (
 
 type packer struct {
 	opts    Options
+	scope   *workspacePack
 	pageDir string
 	libs    *libraries
 	// used records the library packages bundled: archive id and package
@@ -155,52 +157,90 @@ func Pack(ctx context.Context, opts Options) (Result, error) {
 			return Result{}, err
 		}
 	}
-	libs, err := loadLibraries(opts.DriveRoot)
+	p, err := newPacker(opts, filepath.Dir(page), nil)
 	if err != nil {
 		return Result{}, err
 	}
-	defer libs.close()
-	p := &packer{opts: opts, pageDir: filepath.Dir(page), libs: libs, used: map[string]usedPackage{}, files: map[string][]byte{}, inline: map[string]string{}, packedFiles: map[string]bool{}, warnings: libs.warnings}
+	defer p.libs.close()
+	output, err := p.render(ctx, source)
+	if err != nil {
+		return Result{}, err
+	}
+	return p.write(output)
+}
 
+func newPacker(opts Options, pageDir string, scope *workspacePack) (*packer, error) {
+	var limits *workspaceLimits
+	if scope != nil {
+		limits = scope.limits
+	}
+	libs, err := loadLibraries(opts.DriveRoot, limits)
+	if err != nil {
+		return nil, err
+	}
+	return &packer{opts: opts, scope: scope, pageDir: pageDir, libs: libs, used: map[string]usedPackage{}, files: map[string][]byte{}, inline: map[string]string{}, packedFiles: map[string]bool{}, warnings: libs.warnings}, nil
+}
+
+func (p *packer) render(ctx context.Context, source []byte) ([]byte, error) {
 	doc, err := html.Parse(bytes.NewReader(source))
 	if err != nil {
-		return Result{}, fmt.Errorf("reading %s: %w", filepath.Base(page), err)
+		return nil, fmt.Errorf("reading %s: %w", filepath.Base(p.opts.Page), err)
 	}
 	if err := ctx.Err(); err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	p.processDocument(doc)
 	if err := ctx.Err(); err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	p.checkPortability()
 
 	var buf bytes.Buffer
-	if err := html.Render(&buf, doc); err != nil {
-		return Result{}, err
+	var outputWriter io.Writer = &buf
+	if p.scope != nil {
+		p.problems = append(p.problems, checkPreview(doc)...)
+		outputWriter = &limitedOutput{buffer: &buf}
+	}
+	if p.scope != nil {
+		if len(p.problems) > 0 {
+			return nil, &ProblemsError{Problems: dedupe(p.problems)}
+		}
+		if err := p.scope.limits.failure(); err != nil {
+			return nil, err
+		}
+	}
+	if err := html.Render(outputWriter, doc); err != nil {
+		return nil, err
 	}
 	notice, unlicensed := p.licenseNotice()
 	if bundled := p.libraryNames(); len(bundled) > 0 {
 		p.notices = append(p.notices, "bundled: "+strings.Join(bundled, ", "))
 	}
 	if notice != "" {
-		buf.WriteString("\n<!-- " + notice + "\n-->\n")
+		if _, err := io.WriteString(outputWriter, "\n<!-- "+notice+"\n-->\n"); err != nil {
+			return nil, err
+		}
 	}
 	for _, name := range unlicensed {
 		p.warnings = append(p.warnings, name+" has no licence text in the drive's archive; the page names its licence only")
 	}
+	if p.scope != nil {
+		if err := p.scope.limits.failure(); err != nil {
+			return nil, err
+		}
+	}
 	output := buf.Bytes()
 	p.problems = append(p.problems, Check(output)...)
-	if opts.Dir {
+	if p.opts.Dir {
 		if js, ok := p.files["script.js"]; ok {
 			p.problems = append(p.problems, CheckScript("script.js", string(js))...)
 		}
 		p.problems = p.copyTargets(p.problems)
 	}
 	if len(p.problems) > 0 {
-		return Result{}, &ProblemsError{Problems: dedupe(p.problems)}
+		return nil, &ProblemsError{Problems: dedupe(p.problems)}
 	}
-	return p.write(output)
+	return output, ctx.Err()
 }
 
 // packMarker marks a folder html pack wrote, which a later pack may replace.
@@ -436,25 +476,29 @@ func (p *packer) localFile(ref string) string {
 
 func (p *packer) processDocument(doc *html.Node) {
 	var scripts, links, styles, assets []*html.Node
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode {
-			switch n.DataAtom {
-			case atom.Script:
-				scripts = append(scripts, n)
-			case atom.Link:
-				links = append(links, n)
-			case atom.Style:
-				styles = append(styles, n)
-			case atom.Img, atom.Source, atom.Audio, atom.Video, atom.Input, atom.Track:
-				assets = append(assets, n)
-			}
+	for n := range doc.Descendants() {
+		if n.Type != html.ElementNode {
+			continue
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+		var group *[]*html.Node
+		switch n.DataAtom {
+		case atom.Script:
+			group = &scripts
+		case atom.Link:
+			group = &links
+		case atom.Style:
+			group = &styles
+		case atom.Img, atom.Source, atom.Audio, atom.Video, atom.Input, atom.Track:
+			group = &assets
 		}
+		if group == nil {
+			continue
+		}
+		if p.scope != nil && p.scope.limits.step() != nil {
+			return
+		}
+		*group = append(*group, n)
 	}
-	walk(doc)
 
 	var collected []string // stylesheets imported by modules
 	// Module scripts are deferred and run in order, so one bundle that
@@ -474,7 +518,7 @@ func (p *packer) processDocument(doc *html.Node) {
 		case hasSrc && !isRemote(src) && !isInline(src):
 			p.inlineClassicScript(n, src)
 		case !hasSrc && (kind == "" || strings.Contains(strings.ToLower(kind), "javascript")):
-			if _, packed := attr(n, packedAttr); !packed {
+			if _, packed := attr(n, packedAttr); !packed || p.scope != nil {
 				p.addProblems(scanOwnSource(filepath.Base(p.opts.Page)+" (script)", textOf(n))...)
 			}
 			setText(n, stripSourceMaps(textOf(n)))
@@ -589,7 +633,7 @@ func (p *packer) moduleEntry(n *html.Node, src string, hasSrc bool, index int) (
 		name := fmt.Sprintf("%s:%s (module script %d)", pageNamespace, filepath.Base(p.opts.Page), index)
 		code := textOf(n)
 		p.inline[name] = code
-		if _, packed := attr(n, packedAttr); !packed {
+		if _, packed := attr(n, packedAttr); !packed || p.scope != nil {
 			p.addProblems(scanOwnSource(strings.TrimPrefix(name, pageNamespace+":"), code)...)
 		}
 		return name, true
@@ -597,6 +641,18 @@ func (p *packer) moduleEntry(n *html.Node, src string, hasSrc bool, index int) (
 	if isRemote(src) {
 		p.problem("remote-resource", "<script type=module src=%q> loads from the network; import the library by name instead (skill_search kind=library lists them)", src)
 		return "", false
+	}
+	if p.scope != nil {
+		if isPreviewScriptURL(src) {
+			p.problem("workspace-preview", "<script> data or blob URLs are blocked by the workspace preview. Use an inline script or a local file")
+			return "", false
+		}
+		file, err := p.scope.reference(p.pageDir, src)
+		if err != nil {
+			p.problem("missing-asset", "<script type=module src=%q>: %v", src, err)
+			return "", false
+		}
+		return workspaceNamespace + ":" + file, true
 	}
 	file := p.localFile(src)
 	if _, err := os.Stat(file); err != nil {
@@ -615,9 +671,20 @@ func (p *packer) moduleEntry(n *html.Node, src string, hasSrc bool, index int) (
 func (p *packer) inlineClassicScript(n *html.Node, src string) {
 	var data []byte
 	var name string
+	file := p.localFile(src)
+	var lookupErr error
+	if p.scope == nil {
+		_, lookupErr = os.Stat(file)
+	} else {
+		file, lookupErr = p.scope.reference(p.pageDir, src)
+		if lookupErr != nil {
+			p.problem("missing-asset", "<script src=%q>: %v", src, lookupErr)
+			return
+		}
+		data, lookupErr = p.scope.read(file)
+	}
 	// A file beside the page wins: "app.js" names a file before a package.
-	_, statErr := os.Stat(p.localFile(src))
-	if isBare(src) && statErr != nil {
+	if isBare(src) && (p.scope == nil && lookupErr != nil || errors.Is(lookupErr, os.ErrNotExist)) {
 		pkg, sub := splitSpecifier(src)
 		a, err := p.libs.owner(pkg)
 		if err != nil {
@@ -637,17 +704,24 @@ func (p *packer) inlineClassicScript(n *html.Node, src string) {
 		name = path.Join("lib", a.id, file)
 		setAttr(n, packedAttr, "")
 	} else {
-		file := p.localFile(src)
-		var err error
-		if data, err = os.ReadFile(file); err != nil {
-			p.problem("missing-asset", "<script src=%q>: %s is not there", src, file)
-			return
+		if p.scope != nil {
+			if lookupErr != nil {
+				p.problem("missing-asset", "<script src=%q>: %v", src, lookupErr)
+				return
+			}
+			name = file
+		} else {
+			var err error
+			if data, err = os.ReadFile(file); err != nil {
+				p.problem("missing-asset", "<script src=%q>: %s is not there", src, file)
+				return
+			}
+			rel, err := filepath.Rel(p.pageDir, file)
+			if err != nil || strings.HasPrefix(rel, "..") {
+				rel = filepath.Base(file)
+			}
+			name = filepath.ToSlash(rel)
 		}
-		rel, err := filepath.Rel(p.pageDir, file)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			rel = filepath.Base(file)
-		}
-		name = filepath.ToSlash(rel)
 		p.addProblems(scanOwnSource(name, string(data))...)
 	}
 	data = []byte(stripSourceMaps(string(data)))
@@ -664,10 +738,24 @@ func (p *packer) inlineClassicScript(n *html.Node, src string) {
 // output copies it there.
 func (p *packer) embedAsset(ref string) (string, bool) {
 	file := p.localFile(ref)
-	data, err := os.ReadFile(file)
-	if err != nil {
-		p.problem("missing-asset", "%s is referenced but not there (%s)", ref, file)
-		return "", false
+	var data []byte
+	if p.scope != nil {
+		var err error
+		file, err = p.scope.reference(p.pageDir, ref)
+		if err == nil {
+			data, err = p.scope.read(file)
+		}
+		if err != nil {
+			p.problem("missing-asset", "%s: %v", ref, err)
+			return "", false
+		}
+	} else {
+		var err error
+		data, err = os.ReadFile(file)
+		if err != nil {
+			p.problem("missing-asset", "%s is referenced but not there (%s)", ref, file)
+			return "", false
+		}
 	}
 	if p.opts.Dir {
 		rel, err := filepath.Rel(p.pageDir, file)
@@ -722,7 +810,7 @@ func (p *packer) loaders() map[string]api.Loader {
 		asset, binary = api.LoaderFile, api.LoaderFile
 	}
 	return map[string]api.Loader{
-		".js": api.LoaderJS, ".mjs": api.LoaderJS, ".cjs": api.LoaderJS, ".jsx": api.LoaderJSX, ".ts": api.LoaderTS,
+		".js": api.LoaderJS, ".mjs": api.LoaderJS, ".cjs": api.LoaderJS, ".jsx": api.LoaderJSX, ".ts": api.LoaderTS, ".tsx": api.LoaderTSX,
 		".json": api.LoaderJSON, ".geojson": api.LoaderJSON, ".topojson": api.LoaderJSON,
 		".css": api.LoaderCSS,
 		".csv": api.LoaderText, ".tsv": api.LoaderText, ".txt": api.LoaderText, ".md": api.LoaderText, ".xml": api.LoaderText, ".gpx": api.LoaderText, ".kml": api.LoaderText,
@@ -734,7 +822,7 @@ func (p *packer) loaders() map[string]api.Loader {
 }
 
 func (p *packer) buildOptions() api.BuildOptions {
-	return api.BuildOptions{
+	opts := api.BuildOptions{
 		Bundle:            true,
 		Write:             false,
 		Platform:          api.PlatformBrowser,
@@ -750,6 +838,13 @@ func (p *packer) buildOptions() api.BuildOptions {
 		Plugins:           []api.Plugin{p.plugin()},
 		LogLevel:          api.LogLevelSilent,
 	}
+	if p.scope != nil {
+		opts.AbsWorkingDir = filepath.VolumeName(p.scope.ws.Dir()) + string(filepath.Separator)
+		opts.Outdir = filepath.Join(opts.AbsWorkingDir, ".svalbard-pack")
+		opts.TsconfigRaw = "{}"
+		opts.Sourcemap = api.SourceMapNone
+	}
+	return opts
 }
 
 // buildErrors turns esbuild's messages into problems.
@@ -781,7 +876,7 @@ func (p *packer) bundleModule(code, resolveDir, name string) (js, css string, ok
 	opts := p.buildOptions()
 	opts.Stdin = &api.StdinOptions{Contents: code, ResolveDir: resolveDir, Sourcefile: name, Loader: api.LoaderJS}
 	opts.Format = api.FormatESModule
-	result := api.Build(opts)
+	result := p.build(opts)
 	if len(result.Errors) > 0 {
 		p.buildErrors(name, result.Errors)
 		return "", "", false
@@ -805,7 +900,7 @@ func (p *packer) bundleModule(code, resolveDir, name string) (js, css string, ok
 func (p *packer) bundleCSS(css, where string) (string, bool) {
 	opts := p.buildOptions()
 	opts.Stdin = &api.StdinOptions{Contents: css, ResolveDir: p.pageDir, Sourcefile: where, Loader: api.LoaderCSS}
-	result := api.Build(opts)
+	result := p.build(opts)
 	if len(result.Errors) > 0 {
 		p.buildErrors(where, result.Errors)
 		return "", false
@@ -832,6 +927,17 @@ func (p *packer) plugin() api.Plugin {
 		build.OnResolve(api.OnResolveOptions{Filter: `.*`, Namespace: libNamespace}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
 			return p.resolveInArchive(args)
 		})
+		build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: libNamespace}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+			return p.load(args.Path)
+		})
+		build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: emptyNamespace}, func(api.OnLoadArgs) (api.OnLoadResult, error) {
+			empty := ""
+			return api.OnLoadResult{Contents: &empty, Loader: api.LoaderJS}, nil
+		})
+		if p.scope != nil {
+			p.setupWorkspacePlugin(build)
+			return
+		}
 		build.OnResolve(api.OnResolveOptions{Filter: "^" + pageNamespace + ":"}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
 			return api.OnResolveResult{Path: args.Path, Namespace: pageNamespace}, nil
 		})
@@ -867,13 +973,6 @@ func (p *packer) plugin() api.Plugin {
 				return a.resolvePackage("node_modules/"+pkg, sub, args.Kind == api.ResolveJSRequireCall)
 			})
 		})
-		build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: libNamespace}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
-			return p.load(args.Path)
-		})
-		build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: emptyNamespace}, func(api.OnLoadArgs) (api.OnLoadResult, error) {
-			empty := ""
-			return api.OnLoadResult{Contents: &empty, Loader: api.LoaderJS}, nil
-		})
 	}}
 }
 
@@ -907,7 +1006,14 @@ func (p *packer) resolveInArchive(args api.OnResolveArgs) (api.OnResolveResult, 
 	}
 	spec, _, _ := strings.Cut(args.Path, "?")
 	spec, _, _ = strings.Cut(spec, "#")
-	if strings.HasPrefix(strings.ToLower(spec), "data:") {
+	if p.scope != nil {
+		if err := p.scope.limits.ctx.Err(); err != nil {
+			return api.OnResolveResult{}, err
+		}
+		if isPreviewScriptURL(spec) {
+			return previewImport(args)
+		}
+	} else if strings.HasPrefix(strings.ToLower(spec), "data:") {
 		return api.OnResolveResult{Path: args.Path, External: true}, nil
 	}
 	from := path.Dir(importer)
@@ -956,6 +1062,11 @@ func (p *packer) load(virtual string) (api.OnLoadResult, error) {
 		loader = api.LoaderJS
 	}
 	contents := string(data)
+	if p.scope != nil {
+		if err := checkWorkspaceJS(virtual, contents, loader); err != nil {
+			return api.OnLoadResult{}, err
+		}
+	}
 	return api.OnLoadResult{Contents: &contents, Loader: loader}, nil
 }
 
@@ -977,7 +1088,11 @@ func (p *packer) checkPortability() {
 		}
 		switch lib.portability {
 		case "served", "directory":
-			p.problem("served-library", "%s is measured %q: it does not work from a single file opened by double-click. Pack with --dir and open the folder through the drive's server", pkg, lib.portability)
+			if p.scope != nil {
+				p.problem("served-library", "%s needs the drive's server. Choose a library that supports a single-file HTML page", pkg)
+			} else {
+				p.problem("served-library", "%s is measured %q: it does not work from a single file opened by double-click. Pack with --dir and open the folder through the drive's server", pkg, lib.portability)
+			}
 		}
 	}
 }

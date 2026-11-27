@@ -86,16 +86,21 @@ func TestBuiltinsWorkWithoutSchemaOrValuesFile(t *testing.T) {
 	root := newDrive(t, "")
 	store := mustOpen(t, root)
 
-	if got, want := store.Keys(), []string{"ai.default_model", "ai.context"}; !reflect.DeepEqual(got, want) {
+	if got, want := store.Keys(), []string{"ai.default_model", "ai.context", "ai.web_search", "ai.web_search_url"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Keys() = %v, want %v", got, want)
 	}
 	if group := store.Groups()[0]; group.Owner != "ai" || group.Label != "Local AI" {
 		t.Errorf("group = %q %q, want ai / Local AI", group.Owner, group.Label)
 	}
-	for _, key := range store.Keys() {
+	for _, key := range []string{KeyDefaultModel, KeyContext} {
 		if got := store.String(key); got != Ask {
 			t.Errorf("%s = %q, want the default %q", key, got, Ask)
 		}
+	}
+	if store.Bool(KeyWebSearch) || store.String(KeyWebSearchURL) != "" {
+		t.Fatal("Web search must be off without explicit settings")
+	}
+	for _, key := range store.Keys() {
 		if store.Changed(key) {
 			t.Errorf("%s reported as changed with no values file", key)
 		}
@@ -155,7 +160,7 @@ func TestSchemaFileCannotTakeOverABuiltinOwner(t *testing.T) {
 			{"name":"Bad-Name","type":"bool","default":false,"label":"L","description":"D"},
 			{"name":"bad_default","type":"choice","default":"z","choices":["a"],"label":"L","description":"D"}]}]}`)
 	store := mustOpen(t, root)
-	if got, want := store.Keys(), []string{"ai.default_model", "ai.context", "tool.ok"}; !reflect.DeepEqual(got, want) {
+	if got, want := store.Keys(), []string{"ai.default_model", "ai.context", "ai.web_search", "ai.web_search_url", "tool.ok"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Keys() = %v, want %v", got, want)
 	}
 	if context, _ := store.Lookup(KeyContext); context.Type != TypeChoice {
@@ -166,8 +171,8 @@ func TestSchemaFileCannotTakeOverABuiltinOwner(t *testing.T) {
 func TestUnreadableSchemaFileLeavesBuiltinsWorking(t *testing.T) {
 	root := newDrive(t, `{"version": 1, "groups": [`)
 	store := mustOpen(t, root)
-	if got := len(store.Keys()); got != 2 {
-		t.Fatalf("Keys() = %v, want the two built-ins", store.Keys())
+	if got := len(store.Keys()); got != 4 {
+		t.Fatalf("Keys() = %v, want the four built-ins", store.Keys())
 	}
 	problems := store.Problems()
 	if len(problems) != 1 || !strings.Contains(problems[0], schemaFile) || !strings.Contains(problems[0], "svalbard apply") {
@@ -261,7 +266,7 @@ func TestSetRejectsBadValuesNamingWhatIsValid(t *testing.T) {
 		{"radio-tool.gain", "loud", `"loud" is not a number (1 to 10)`},
 		{"radio-tool.gain", "11", "11 is outside 1 to 10"},
 		{"radio-tool.station", "two\nlines", "more than one line"},
-		{"radio-tool.volume", "3", `unknown setting "radio-tool.volume"; settings on this drive: ai.default_model, ai.context, open-webui.open_browser`},
+		{"radio-tool.volume", "3", `unknown setting "radio-tool.volume"; settings on this drive: ai.default_model, ai.context, ai.web_search, ai.web_search_url, open-webui.open_browser`},
 	} {
 		err := store.Set(tc.key, tc.value)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

@@ -19,6 +19,8 @@ type ActionDef struct {
 	Params []ParamDef `json:"params"`
 	// Writes marks an action that changes files; the rest are read-only.
 	Writes bool `json:"writes,omitempty"`
+	// OpenWorld marks actions that contact systems outside the vault.
+	OpenWorld bool `json:"open_world,omitempty"`
 }
 
 // ActionResult carries tool output. Errors use the error return only.

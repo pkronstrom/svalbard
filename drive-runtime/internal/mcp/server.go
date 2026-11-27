@@ -19,6 +19,7 @@ import (
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/websearch"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/wiki"
 )
 
@@ -65,7 +66,7 @@ func (s *Server) buildActionTool(cap Capability, action ActionDef) gomcp.Tool {
 		gomcp.WithReadOnlyHintAnnotation(!action.Writes),
 		gomcp.WithDestructiveHintAnnotation(action.Writes),
 		gomcp.WithIdempotentHintAnnotation(!action.Writes),
-		gomcp.WithOpenWorldHintAnnotation(false),
+		gomcp.WithOpenWorldHintAnnotation(action.OpenWorld),
 	}
 
 	for _, param := range action.Params {
@@ -121,6 +122,8 @@ type DriveOptions struct {
 	// Stdio: the client started the server as its own process, so it is on
 	// this computer and can open a file on the drive by its whole path.
 	Stdio bool
+	// WebSearch is passed only by launch paths with a valid local opt-in.
+	WebSearch *websearch.Search
 }
 
 // NewDriveServer creates the drive's MCP server: its capabilities and, on a
@@ -153,6 +156,9 @@ func DriveCapabilities(driveRoot string, opts DriveOptions) []Capability {
 	)
 	if wikiInstalled(meta) && !smallContext(opts.Context) {
 		caps = append(caps, NewWikiCapability(driveRoot))
+	}
+	if opts.WebSearch != nil {
+		caps = append(caps, NewWebCapability(opts.WebSearch))
 	}
 	return caps
 }
@@ -255,9 +261,9 @@ func wikiInstalled(meta DriveMetadata) bool {
 // DriveToolNames lists the tool names the drive's MCP server registers for a
 // model with a context window of ctxSize tokens, for clients that only enable
 // tools named up front.
-func DriveToolNames(driveRoot string, ctxSize int) []string {
+func DriveToolNames(driveRoot string, opts DriveOptions) []string {
 	var names []string
-	for _, cap := range DriveCapabilities(driveRoot, DriveOptions{Context: ctxSize}) {
+	for _, cap := range DriveCapabilities(driveRoot, opts) {
 		for _, action := range cap.Actions() {
 			names = append(names, toolName(cap.Tool(), action.Name))
 		}

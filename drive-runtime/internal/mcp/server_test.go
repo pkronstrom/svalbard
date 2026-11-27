@@ -154,7 +154,7 @@ func TestDriveServerHasTheVaultToolsAndNoFileTools(t *testing.T) {
 	if !slices.Equal(names, want) {
 		t.Errorf("drive tools = %v, want %v", names, want)
 	}
-	listed := DriveToolNames(root, 0)
+	listed := DriveToolNames(root, DriveOptions{})
 	slices.Sort(listed)
 	if !slices.Equal(listed, want) {
 		t.Errorf("DriveToolNames() = %v, want %v", listed, want)
@@ -199,7 +199,7 @@ func TestSmallContextOffersNoWikiAndShorterReads(t *testing.T) {
 			t.Errorf("context %d: tools = %v, want the search and skill tools", tc.context, names)
 		}
 		// Launchers that enable tools by name get the same list.
-		listed := DriveToolNames(root, tc.context)
+		listed := DriveToolNames(root, DriveOptions{Context: tc.context})
 		slices.Sort(listed)
 		if !slices.Equal(listed, names) {
 			t.Errorf("context %d: DriveToolNames() = %v, want %v", tc.context, listed, names)

@@ -48,6 +48,8 @@ const (
 	// They are a tool server of their own so a chat can switch them off and
 	// keep vault search.
 	filesServerID = "workspace"
+	webServerID   = "web"
+	webMCPPath    = "/web/mcp"
 
 	// These two are declared by the open-webui recipe.
 	settingOpenBrowser = recipeID + ".open_browser"
@@ -63,15 +65,19 @@ type Launch struct {
 	RuntimeRoot string // <drive>/.svalbard/runtime/open-webui
 	// BytecodeDir is where Python writes compiled modules, on this computer;
 	// empty writes none.
-	BytecodeDir string
-	SecretKey   string
-	ModelName   string // id llama-server reports for the model
-	ContextSize int    // token limit configured on llama-server
-	LlamaURL    string // OpenAI-compatible base URL, ending in /v1
-	MCPURL      string // Streamable HTTP endpoint of the drive's MCP server
-	Wiki        bool   // the drive's MCP server offers the wiki tools
-	FilesURL    string // Streamable HTTP endpoint of the file tools; empty when they are off
-	Port        int
+	BytecodeDir       string
+	SecretKey         string
+	ModelName         string // id llama-server reports for the model
+	ContextSize       int    // token limit configured on llama-server
+	LlamaURL          string // OpenAI-compatible base URL, ending in /v1
+	MCPURL            string // Streamable HTTP endpoint of the drive's MCP server
+	Wiki              bool   // the drive's MCP server offers the wiki tools
+	FilesURL          string // Streamable HTTP endpoint of the file tools; empty when they are off
+	WebSearchURL      string
+	WebSearchProvider string
+	PDFUploadURL      string
+	PDFUploadToken    string
+	Port              int
 }
 
 // Environment returns everything Open WebUI needs from its environment. It is
@@ -95,6 +101,14 @@ func Environment(l Launch) map[string]string {
 	if l.FilesURL != "" {
 		toolServers = append(toolServers, toolServer(filesServerID, "Svalbard files", "Read and save files in the drive's workspace folder", l.FilesURL))
 		toolIDs = append(toolIDs, "server:mcp:"+filesServerID)
+	}
+	if l.WebSearchURL != "" {
+		toolServers = append(toolServers, toolServer(webServerID, "Web search ("+l.WebSearchProvider+")", "Send public web search queries to "+l.WebSearchProvider, l.WebSearchURL))
+		toolIDs = append(toolIDs, "server:mcp:"+webServerID)
+	}
+	capabilities := map[string]any{
+		"file_upload": true, "vision": false,
+		"web_search": false, "code_interpreter": false, "image_generation": false, "memory": false,
 	}
 	// Summarization is another request within the same model context. Leave
 	// room for its prompt and for vault tool results added during a turn.
@@ -139,10 +153,7 @@ func Environment(l Launch) map[string]string {
 		"TOOL_SERVER_CONNECTIONS": mustJSON(toolServers),
 		"DEFAULT_MODEL_METADATA": mustJSON(map[string]any{
 			// Projector-enabled models override this through the model list.
-			"capabilities": map[string]any{
-				"file_upload": true, "vision": false,
-				"web_search": false, "code_interpreter": false, "image_generation": false, "memory": false,
-			},
+			"capabilities": capabilities,
 			// Tool servers listed here are switched on in a new chat.
 			"toolIds":      toolIDs,
 			"builtinTools": builtinTools(),
@@ -158,8 +169,20 @@ func Environment(l Launch) map[string]string {
 		"ENABLE_SEARCH_QUERY_GENERATION":    "False",
 		"ENABLE_IMAGE_PROMPT_GENERATION":    "False",
 
-		// Slim has no vector store, so attached text goes into the context whole.
+		// Store extracted text without building a vector index.
 		"BYPASS_EMBEDDING_AND_RETRIEVAL": "True",
+	}
+	if l.PDFUploadURL != "" {
+		// Native browser chats can page through stored text without an
+		// embedding model. Keep that path for both PDFs and old text files.
+		env["CONTENT_EXTRACTION_ENGINE"] = "external"
+		env["EXTERNAL_DOCUMENT_LOADER_URL"] = l.PDFUploadURL
+		env["EXTERNAL_DOCUMENT_LOADER_API_KEY"] = l.PDFUploadToken
+		env["RAG_FILE_MAX_SIZE"] = strconv.Itoa(pdfUploadLimitMiB)
+		env["VIEW_FILE_DEFAULT_MAX_CHARS"] = strconv.Itoa(min(l.ContextSize/4, 10000))
+		env["DEFAULT_INTERFACE_SETTINGS"] = mustJSON(map[string]string{
+			"system": "For files attached to this chat, read the stored text with view_file, or use grep_chat_files for keywords. Cite the labeled PDF page when available.",
+		})
 	}
 	// Bytecode stays off the stick, where up to 8,311 compiled modules took
 	// 1.10 GB at 128 KB clusters.
@@ -215,7 +238,11 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if opener == nil {
 		opener = browser.Open
 	}
-	launcher, err := resolveLauncher(driveRoot)
+	platformName, err := platform.Detect()
+	if err != nil {
+		return err
+	}
+	launcher, err := resolveLauncher(driveRoot, platformName)
 	if err != nil {
 		return err
 	}
@@ -317,6 +344,18 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		wg.Wait()
 	}()
 	exited := make(chan error, 5)
+	var pdfURL, pdfToken string
+	uploads, err := startPDFUploads(ctx, driveRoot, platformName, ctxSize)
+	if err != nil {
+		fmt.Fprintln(stdout, "PDF uploads are off:", err)
+	} else {
+		pdfURL, pdfToken = uploads.URL, uploads.Token
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-uploads.done
+		}()
+	}
 
 	webuiBackend := llamaRoot
 	if len(visionModels) > 0 {
@@ -340,9 +379,23 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 
 	mcpServer := mcp.NewDriveServer(driveRoot, mcp.DriveOptions{Context: ctxSize})
 	mcpServers := map[string]*mcp.Server{mcp.StreamableHTTPPath: mcpServer}
+	var webURL, webProvider string
+	web, err := mcp.WebSearchForSettings(prefs)
+	if err != nil {
+		fmt.Fprintln(stdout, "Web search is off:", err)
+	} else if web != nil {
+		webProvider = web.Provider()
+		webURL = fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, webMCPPath)
+		mcpServers[webMCPPath] = mcp.NewServer(mcp.NewWebCapability(web))
+		fmt.Fprintf(stdout, "Web search is enabled. Public search queries go to %s.\n", webProvider)
+	}
 	filesURL := ""
 	if files != nil {
-		mcpServers[mcp.FilesStreamableHTTPPath] = mcp.NewServer(mcp.NewFilesCapability(files.workspace, files.url))
+		capability := mcp.NewFilesCapability(files.workspace, files.url)
+		if mcp.LibrariesInstalled(driveRoot) {
+			capability = capability.WithHTMLPacking(driveRoot)
+		}
+		mcpServers[mcp.FilesStreamableHTTPPath] = mcp.NewServer(capability)
 		filesURL = fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.FilesStreamableHTTPPath)
 		wg.Add(1)
 		go func() {
@@ -355,7 +408,11 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer mcpServer.Close()
+		defer func() {
+			for _, server := range mcpServers {
+				_ = server.Close()
+			}
+		}()
 		if err := mcp.ServeStreamableHTTP(ctx, mcpListener, mcpServers); err != nil {
 			exited <- fmt.Errorf("MCP server stopped: %w", err)
 		}
@@ -385,16 +442,20 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	webuiCmd := exec.CommandContext(ctx, launcher, "serve", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port))
 	webuiCmd.Dir = runtimeRoot
 	webuiCmd.Env = append(hostEnvironment(), platform.EnvList(Environment(Launch{
-		RuntimeRoot: runtimeRoot,
-		BytecodeDir: bytecodeDir(),
-		SecretKey:   secret,
-		ModelName:   modelName,
-		ContextSize: ctxSize,
-		LlamaURL:    webuiBackend + "/v1",
-		MCPURL:      fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
-		Wiki:        mcp.WikiOffered(driveRoot, ctxSize),
-		FilesURL:    filesURL,
-		Port:        port,
+		RuntimeRoot:       runtimeRoot,
+		BytecodeDir:       bytecodeDir(),
+		SecretKey:         secret,
+		ModelName:         modelName,
+		ContextSize:       ctxSize,
+		LlamaURL:          webuiBackend + "/v1",
+		MCPURL:            fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
+		Wiki:              mcp.WikiOffered(driveRoot, ctxSize),
+		FilesURL:          filesURL,
+		WebSearchURL:      webURL,
+		WebSearchProvider: webProvider,
+		PDFUploadURL:      pdfURL,
+		PDFUploadToken:    pdfToken,
+		Port:              port,
 	}))...)
 	if err := start(webuiCmd, runtimeRoot, recipeID, stdout, &wg, exited); err != nil {
 		return err
@@ -494,11 +555,7 @@ func stopped(ctx context.Context, err error) error {
 // resolveLauncher returns the wrapper the python-package build wrote for this
 // platform. PATH is not searched: a host install would be a different version
 // with the full dependency set.
-func resolveLauncher(driveRoot string) (string, error) {
-	platformName, err := platform.Detect()
-	if err != nil {
-		return "", err
-	}
+func resolveLauncher(driveRoot, platformName string) (string, error) {
 	launcher := filepath.Join(driveRoot, "bin", platformName, recipeID)
 	if info, err := os.Stat(launcher); err != nil || info.IsDir() {
 		return "", fmt.Errorf("Open WebUI is not installed for %s", platformName)

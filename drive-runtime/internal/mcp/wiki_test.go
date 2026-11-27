@@ -172,7 +172,7 @@ func TestWikiToolsAreRegisteredOnlyWhenTheWikiIsInstalled(t *testing.T) {
 		t.Errorf("tools with the wiki = %v\nwant %v", got, want)
 	}
 	// Launchers that enable tools by name read this list.
-	listed := DriveToolNames(with, 0)
+	listed := DriveToolNames(with, DriveOptions{})
 	slices.Sort(listed)
 	if !slices.Equal(listed, want) {
 		t.Errorf("DriveToolNames() = %v\nwant %v", listed, want)
