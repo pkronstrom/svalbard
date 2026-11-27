@@ -404,6 +404,15 @@ func TestRunStartsEverythingAndStopsItOnCancel(t *testing.T) {
 	if got, want := env["OPENAI_API_BASE_URL"], "http://127.0.0.1:"+llamaPort+"/v1"; got != want {
 		t.Errorf("OPENAI_API_BASE_URL = %q, want %q", got, want)
 	}
+	for key, want := range map[string]string{
+		"ENABLE_CONTEXT_COMPACTION":          "True",
+		"CONTEXT_COMPACTION_TOKEN_THRESHOLD": "5734",
+		"CONTEXT_COMPACTION_TOKEN_CAP":       "5734",
+	} {
+		if got := env[key]; got != want {
+			t.Errorf("env[%q] = %q, want %q for an 8192-token context", key, got, want)
+		}
+	}
 	if got, want := env["HOME"], filepath.Join(runtimeRoot, "home"); got != want {
 		t.Errorf("HOME = %q, want %q", got, want)
 	}

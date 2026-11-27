@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -64,6 +65,7 @@ type Launch struct {
 	BytecodeDir string
 	SecretKey   string
 	ModelName   string // id llama-server reports for the model
+	ContextSize int    // token limit configured on llama-server
 	LlamaURL    string // OpenAI-compatible base URL, ending in /v1
 	MCPURL      string // Streamable HTTP endpoint of the drive's MCP server
 	Wiki        bool   // the drive's MCP server offers the wiki tools
@@ -93,6 +95,9 @@ func Environment(l Launch) map[string]string {
 		toolServers = append(toolServers, toolServer(filesServerID, "Svalbard files", "Read and save files in the drive's workspace folder", l.FilesURL))
 		toolIDs = append(toolIDs, "server:mcp:"+filesServerID)
 	}
+	// Summarization is another request within the same model context. Leave
+	// room for its prompt and for vault tool results added during a turn.
+	compactionThreshold := strconv.Itoa(l.ContextSize * 7 / 10)
 	env := map[string]string{
 		// State. STATIC_DIR is rewritten on every start and would otherwise be
 		// inside the installed package; the temporary directory holds uploads
@@ -123,7 +128,10 @@ func Environment(l Launch) map[string]string {
 		"OPENAI_API_CONFIGS": mustJSON(map[string]any{"0": map[string]any{
 			"enable": true, "provider": "llama.cpp", "connection_type": "local", "auth_type": "none",
 		}}),
-		"DEFAULT_MODELS": l.ModelName,
+		"DEFAULT_MODELS":                     l.ModelName,
+		"ENABLE_CONTEXT_COMPACTION":          "True",
+		"CONTEXT_COMPACTION_TOKEN_THRESHOLD": compactionThreshold,
+		"CONTEXT_COMPACTION_TOKEN_CAP":       compactionThreshold,
 		// A model still loading from a slow drive answers the list late.
 		"AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST": "30",
 
@@ -320,6 +328,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		BytecodeDir: bytecodeDir(),
 		SecretKey:   secret,
 		ModelName:   modelName,
+		ContextSize: ctxSize,
 		LlamaURL:    llamaRoot + "/v1",
 		MCPURL:      fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
 		Wiki:        mcp.WikiOffered(driveRoot, ctxSize),
