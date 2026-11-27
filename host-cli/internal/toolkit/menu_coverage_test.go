@@ -52,7 +52,7 @@ var supportOnlyRecipes = map[string][]string{
 	"builds the Python environment during apply":           {"uv"},
 	"PlatformIO itself: the Embedded Dev Shell runs it":    {"platformio-core", "espidf-python"},
 	"Python libraries the AI clients' document skills run": {"py-docs"},
-	"dependency of the map viewer, which has its own rows": {"go-pmtiles", "dufs"},
+	"dependency of the map viewer, which has its own rows": {"go-pmtiles", "dufs", "maplibre-vendor"},
 	// Command-line tools: launching them from the menu is a later phase.
 	noEntryYet: {
 		"7z", "age", "caido", "chisel", "duckdb", "feroxbuster", "ffuf", "fzf", "gobuster", "httpx", "jq", "katana",

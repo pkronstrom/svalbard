@@ -250,3 +250,29 @@ func TestMenuOffersTheWorkspaceWithOpenWebUI(t *testing.T) {
 		t.Errorf("apps = %v", apps)
 	}
 }
+
+func TestMapLibrariesStayOffTheMenu(t *testing.T) {
+	cat, err := catalog.NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := []manifest.RealizedEntry{
+		{ID: "maplibre-vendor", Type: "app", RelativePath: "apps/maplibre-vendor"},
+		{ID: "mml-map-sheets", Type: "app", RelativePath: "apps/mml-map-sheets"},
+	}
+	recipes := map[string]catalog.Item{}
+	for _, entry := range entries {
+		recipe, ok := cat.RecipeByID(entry.ID)
+		if !ok {
+			t.Fatalf("missing recipe %s", entry.ID)
+		}
+		recipes[entry.ID] = recipe
+	}
+	rows := generatedMenu(t, entries, recipes)
+	if vendor := rowsByID(rows, "maplibre-vendor"); len(vendor) != 0 {
+		t.Errorf("vendor files offered as a standalone app: %+v", vendor)
+	}
+	if sheets := oneRow(t, rows, "mml-map-sheets"); sheets.Group != "maps" || sheets.Action != "apps" {
+		t.Errorf("map sheets must open their page from Maps: %+v", sheets)
+	}
+}

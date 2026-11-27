@@ -5,6 +5,12 @@ tags: [basemap, topo, printable]
 depth: overview
 size_gb: 0.02
 description: MML overview and regional map sheets as PNG images — viewable on any phone
+menu:
+  group: maps
+  subheader: Map sheets
+  label: MML map sheets
+  description: Open printable Finland and Uusimaa maps from the National Land Survey
+  aliases: [map-sheets]
 strategy: build
 
 build:

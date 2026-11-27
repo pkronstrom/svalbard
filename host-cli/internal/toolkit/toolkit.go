@@ -437,6 +437,9 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 		actionID := td.ActionID
 
 		if m, ok := menus[e.ID]; ok {
+			if m.Hidden {
+				continue
+			}
 			if m.Group != "" {
 				group = m.Group
 			}

@@ -152,6 +152,7 @@ type LicenseSpec struct {
 
 // MenuSpec defines how a recipe appears in the user-facing menu.
 type MenuSpec struct {
+	Hidden      bool     `yaml:"hidden,omitempty"`
 	Group       string   `yaml:"group"`
 	Subheader   string   `yaml:"subheader"`
 	Label       string   `yaml:"label"`
