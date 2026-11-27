@@ -50,9 +50,9 @@ button:disabled { cursor: wait; opacity: .65; }
 .masthead, .top, .sidebar, .page { width: 100%; max-width: 1360px; margin-inline: auto; }
 .masthead {
   display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between;
-  gap: 5px 24px; padding: clamp(18px, 3vw, 44px) var(--page-inset) 12px;
+  gap: 5px 24px; padding: 12px var(--page-inset) 10px;
 }
-.nameplate { font: 490 clamp(4.1rem, 10.5vw, 9.8rem)/.82 var(--serif); letter-spacing: -.065em; text-decoration: none; }
+.nameplate { font: 490 clamp(2rem, 3vw, 2.8rem)/1 var(--serif); letter-spacing: -.04em; text-decoration: none; }
 #vault { color: var(--muted); font: italic 1.16rem/1.3 Georgia, serif; overflow-wrap: anywhere; }
 .sidebar { padding: 12px var(--page-inset) 20px; border-bottom: 1px solid var(--rule); }
 .sidebar .filter { max-width: 24rem; margin: 0 0 14px; }
@@ -420,6 +420,5 @@ input::placeholder { color: var(--muted); opacity: 1; }
   .overview-row.compact .overview-preview { display: none; }
 }
 @media (max-width: 740px) {
-  .masthead { padding-bottom: 10px; }
   .work-tab, .top .mobile-menu { padding-inline: 8px; }
 }
