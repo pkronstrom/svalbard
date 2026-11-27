@@ -1,11 +1,14 @@
-// Package binarytree unpacks a binary recipe's archive on the vault when the
-// archive holds links, so that no stick has to create one at first use.
+// Package bintree unpacks and finds the programs of binary recipes, the same
+// way for the host CLI and the drive runtime: each archive in bin/<platform>/
+// is unpacked into <archive>.unpacked beside it, with plain files and
+// directories only.
 //
 // exFAT, which every USB stick uses, has no symlinks: Linux cannot create one
 // there, and macOS writes a small XSym file that only macOS reads as a link.
-// The drive runtime unpacks other archives at first use into the same
-// <archive>.unpacked directory, and turns links into copies when it does.
-package binarytree
+// Apply unpacks an archive that holds links (Prepare); the drive runtime and
+// the host's semantic index unpack the others when a program in them is first
+// asked for (Find).
+package bintree
 
 import (
 	"archive/tar"
@@ -19,8 +22,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
+	"time"
 )
 
 // UnpackedSuffix names the directory beside an archive that holds its tree.
@@ -61,203 +64,6 @@ func IsArchive(name string) bool {
 		}
 	}
 	return false
-}
-
-// Prepare readies the tree of a binary archive just written to the vault. An
-// earlier tree is removed: it belongs to the archive this one replaced, which
-// may have had the same name. An archive with links is unpacked now; one
-// without is left to the drive runtime. It returns what happened to each link,
-// one line per link, for the log.
-func Prepare(archive string) ([]string, error) {
-	if !IsArchive(filepath.Base(archive)) {
-		return nil, nil
-	}
-	if err := RemoveUnpacked(archive); err != nil {
-		return nil, err
-	}
-	links, err := readLinks(archive)
-	if err != nil || len(links) == 0 {
-		return nil, err
-	}
-	return unpack(archive)
-}
-
-// platformDirs are the directories of bin/ that hold one platform's binaries.
-var platformDirs = map[string]bool{"macos-arm64": true, "macos-x86_64": true, "linux-arm64": true, "linux-x86_64": true}
-
-// InPlatformBin reports whether path is a file directly in bin/<platform>/,
-// where binary recipes keep their archives and nothing else is unpacked.
-func InPlatformBin(path string) bool {
-	dir := filepath.Dir(path)
-	return platformDirs[filepath.Base(dir)] && filepath.Base(filepath.Dir(dir)) == "bin"
-}
-
-// RemoveUnpacked removes the archive's .unpacked directory and what an
-// unpack of it that was stopped left. Both belong to the archive alone.
-func RemoveUnpacked(archive string) error {
-	if err := os.RemoveAll(UnpackedDir(archive)); err != nil {
-		return err
-	}
-	partials, _ := filepath.Glob(archive + partialMarker + "*")
-	for _, partial := range partials {
-		if err := os.RemoveAll(partial); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// RemoveTrees removes everything unpacked from a binary archive before the
-// archive goes: RemoveUnpacked, then RemoveLegacyTrees.
-func RemoveTrees(archive string) error {
-	if err := RemoveUnpacked(archive); err != nil {
-		return err
-	}
-	return RemoveLegacyTrees(archive, archive)
-}
-
-// RemoveLegacyTrees removes the top-level directories that a drive runtime
-// from before .unpacked unpacked beside archive, as listed in listFrom (the
-// archive, or its set-aside copy during an update). Otherwise the old release
-// would still be found after an update. It acts only on an archive in
-// bin/<platform>/: datasets, GeoPackages and toolchains are archives too, and
-// the directories beside them are not theirs. Top-level files are left: two
-// archives may both hold a LICENSE there.
-func RemoveLegacyTrees(archive, listFrom string) error {
-	if !IsArchive(filepath.Base(archive)) || !InPlatformBin(archive) {
-		return nil
-	}
-	tops, err := topDirs(listFrom)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	dir := filepath.Dir(archive)
-	for _, name := range tops {
-		if err := removeLegacyDir(dir, name); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func removeLegacyDir(dir, name string) error {
-	target, ok := entryPath(dir, name)
-	if !ok || platformDirs[name] || strings.HasSuffix(name, UnpackedSuffix) || isPartialDir(name) {
-		return nil
-	}
-	if info, err := os.Lstat(target); err == nil && info.IsDir() {
-		return os.RemoveAll(target)
-	}
-	return nil
-}
-
-// topDirs lists the first component of each path in the archive that is a
-// directory.
-func topDirs(archive string) ([]string, error) {
-	tops := map[string]bool{}
-	top := func(name string, isDir bool) {
-		first, _, nested := strings.Cut(strings.TrimPrefix(path.Clean(name), "./"), "/")
-		if (nested || isDir) && first != "." && first != ".." {
-			tops[first] = true
-		}
-	}
-	links, err := walkArchive(archive, func(name string, _ io.Reader, _ os.FileMode) error {
-		top(name, false)
-		return nil
-	}, func(name string) error {
-		top(name, true)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	for _, link := range links {
-		top(link.Name, false)
-	}
-	names := make([]string, 0, len(tops))
-	for name := range tops {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names, nil
-}
-
-// RepairLegacy converts the trees a drive runtime from before .unpacked
-// unpacked flat beside binary archives in bin/<platform>/: on exFAT those of
-// an archive with links hold macOS's XSym files, which Linux reads as text,
-// or stop at the first link Linux could not create. Each archive with such a
-// tree is unpacked into <archive>.unpacked, links resolved, and the flat tree
-// removed, so an existing stick heals on its next apply without an update.
-// Archives are read only when their directory holds a directory that could
-// be such a tree, and each is converted once. It returns the archives
-// converted.
-func RepairLegacy(archives []string) ([]string, error) {
-	byDir := map[string][]string{}
-	for _, archive := range archives {
-		if IsArchive(filepath.Base(archive)) && InPlatformBin(archive) {
-			byDir[filepath.Dir(archive)] = append(byDir[filepath.Dir(archive)], archive)
-		}
-	}
-	var converted []string
-	for dir, list := range byDir {
-		candidates := legacyCandidates(dir)
-		if len(candidates) == 0 {
-			continue
-		}
-		sort.Strings(list)
-		for _, archive := range list {
-			if _, err := os.Stat(UnpackedDir(archive)); err == nil {
-				continue
-			}
-			tops, err := topDirs(archive)
-			if err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				return converted, err
-			}
-			var legacy []string
-			for _, name := range tops {
-				if candidates[name] {
-					legacy = append(legacy, name)
-				}
-			}
-			if len(legacy) == 0 {
-				continue
-			}
-			if _, err := unpack(archive); err != nil {
-				return converted, fmt.Errorf("%s: %w", filepath.Base(archive), err)
-			}
-			for _, name := range legacy {
-				if err := removeLegacyDir(dir, name); err != nil {
-					return converted, err
-				}
-			}
-			converted = append(converted, archive)
-		}
-	}
-	sort.Strings(converted)
-	return converted, nil
-}
-
-// legacyCandidates are the directories in dir that no current layout put
-// there.
-func legacyCandidates(dir string) map[string]bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	candidates := map[string]bool{}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() && !strings.HasSuffix(name, UnpackedSuffix) && !isPartialDir(name) && !strings.HasPrefix(name, ".") {
-			candidates[name] = true
-		}
-	}
-	return candidates
 }
 
 // archiveLink is a symlink or hard link from an archive. Target is relative
@@ -358,16 +164,26 @@ func walkZip(archive string, file func(string, io.Reader, os.FileMode) error, di
 	return links, nil
 }
 
-// unpack writes the archive's tree to <archive>.unpacked with plain files
-// and directories only:
+// Unpack writes the archive's tree to <archive>.unpacked with plain files
+// and directories only, and returns what happened to each link, one line per
+// link, for the log:
 //   - a link to a shared library that no program or library in the archive
-//     loads by that name (libllama.so, the name only a compiler uses) is left out
+//     loads by that name (libllama.so, the name only a compiler uses) is left
+//     out, unless a program in the archive could not be read
 //   - a library whose own name nothing loads (libllama.so.1.0.0) takes the
 //     name that is loaded (libllama.so.1) instead of being copied to it
+//   - a link to a program in another directory (bin/npm ->
+//     ../lib/npm/bin/npm-cli.js) becomes a script that runs it where it is,
+//     so what it finds beside itself stays the same
 //   - any other link to a file or directory becomes a copy of it
 //   - a link out of the archive or to nothing is left out
-func unpack(archive string) ([]string, error) {
+//
+// The tree is written under a .partial- name and renamed when complete, so a
+// run that stops halfway leaves nothing that resolves; another run that
+// finished the same archive first wins.
+func Unpack(archive string) ([]string, error) {
 	dir, base := filepath.Split(archive)
+	removeStalePartials(dir, base)
 	tmp, err := os.MkdirTemp(dir, base+partialMarker)
 	if err != nil {
 		return nil, err
@@ -378,12 +194,16 @@ func unpack(archive string) ([]string, error) {
 	}
 
 	var files []string
+	// Each file's mode in the archive: every file is written executable, as
+	// the drive runtime always did, but only a program gets a script.
+	modes := map[string]os.FileMode{}
 	links, err := walkArchive(archive, func(name string, r io.Reader, mode os.FileMode) error {
 		target, ok := entryPath(tmp, name)
 		if !ok {
 			return nil
 		}
 		files = append(files, target)
+		modes[target] = mode
 		return writeFile(target, r, mode|0o111)
 	}, func(name string) error {
 		if target, ok := entryPath(tmp, name); ok {
@@ -395,24 +215,54 @@ func unpack(archive string) ([]string, error) {
 		return nil, err
 	}
 	loaded := map[string]bool{}
+	unreadable := false
 	for _, file := range files {
-		for _, lib := range importedLibraries(file) {
+		libs, failed := importedLibraries(file)
+		unreadable = unreadable || failed
+		for _, lib := range libs {
 			loaded[path.Base(lib)] = true
 		}
 	}
-	report, err := resolveLinks(tmp, links, loaded)
+	if unreadable {
+		// What that program loads is unknown, so every link is kept.
+		loaded = map[string]bool{}
+	}
+	report, err := resolveLinks(tmp, links, loaded, modes)
 	if err != nil {
 		return nil, err
 	}
 	removeAppleDouble(tmp)
 	if err := os.Rename(tmp, UnpackedDir(archive)); err != nil {
+		if _, statErr := os.Stat(UnpackedDir(archive)); statErr == nil {
+			return report, nil
+		}
 		return nil, err
 	}
 	_ = os.Remove(filepath.Join(dir, "._"+base+UnpackedSuffix))
 	return report, nil
 }
 
-func resolveLinks(root string, links []archiveLink, loaded map[string]bool) ([]string, error) {
+// removeStalePartials removes what an unpack of the archive that was stopped
+// (a kill, a pulled stick) left in dir; a younger one may still be writing.
+func removeStalePartials(dir, base string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), base+partialMarker) || !isPartialDir(entry.Name()) {
+			continue
+		}
+		if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > staleAfter {
+			_ = os.RemoveAll(filepath.Join(dir, entry.Name()))
+		}
+	}
+}
+
+// staleAfter is how old a .partial- directory is when nothing writes it any more.
+const staleAfter = time.Hour
+
+func resolveLinks(root string, links []archiveLink, loaded map[string]bool, modes map[string]os.FileMode) ([]string, error) {
 	byName := make(map[string]archiveLink, len(links))
 	for _, link := range links {
 		byName[path.Clean(link.Name)] = link
@@ -447,6 +297,11 @@ func resolveLinks(root string, links []archiveLink, loaded map[string]bool) ([]s
 			report = append(report, fmt.Sprintf("%s: copy of directory %s", name, resolved))
 		case sharedLibrary(path.Base(name)) && len(loaded) > 0 && !loaded[path.Base(name)]:
 			report = append(report, fmt.Sprintf("%s: left out, nothing in the archive loads it", name))
+		case modes[source]&0o111 != 0 && !sharedLibrary(path.Base(resolved)) && filepath.Dir(source) != filepath.Dir(dest):
+			if err := writeFile(dest, strings.NewReader(runScript(dest, source)), 0o755); err != nil {
+				return nil, err
+			}
+			report = append(report, fmt.Sprintf("%s: script that runs %s", name, resolved))
 		default:
 			if _, seen := byFile[source]; !seen {
 				fileOrder = append(fileOrder, source)
@@ -484,6 +339,13 @@ func resolveLinks(root string, links []archiveLink, loaded map[string]bool) ([]s
 		}
 	}
 	return report, nil
+}
+
+// runScript is a script at dest that runs the program at source, found
+// relative to the script itself; a link to the script still finds it.
+func runScript(dest, source string) string {
+	rel, _ := filepath.Rel(filepath.Dir(dest), source)
+	return "#!/bin/sh\nself=$(realpath -- \"$0\" 2>/dev/null) || self=$0\nexec \"$(dirname -- \"$self\")/" + filepath.ToSlash(rel) + "\" \"$@\"\n"
 }
 
 func relTo(root, p string) string {
@@ -535,29 +397,81 @@ func sharedLibrary(name string) bool {
 }
 
 // importedLibraries lists the shared libraries an ELF or Mach-O file loads,
-// as written in it (libllama.so.1, @rpath/libllama.1.dylib). Anything else
-// loads nothing.
-var importedLibraries = func(file string) []string {
-	if f, err := elf.Open(file); err == nil {
-		defer f.Close()
-		libs, _ := f.ImportedLibraries()
-		return libs
+// as written in it (libllama.so.1, @rpath/libllama.1.dylib), and whether the
+// file is one of those but could not be read. Anything else loads nothing.
+var importedLibraries = func(file string) ([]string, bool) {
+	f, err := os.Open(file)
+	if err != nil {
+		return nil, false
 	}
-	if f, err := macho.Open(file); err == nil {
-		defer f.Close()
-		libs, _ := f.ImportedLibraries()
-		return libs
+	magic := make([]byte, 4)
+	_, err = io.ReadFull(f, magic)
+	f.Close()
+	if err != nil {
+		return nil, false
 	}
-	if f, err := macho.OpenFat(file); err == nil {
-		defer f.Close()
-		var libs []string
-		for _, arch := range f.Arches {
-			more, _ := arch.ImportedLibraries()
-			libs = append(libs, more...)
+	switch {
+	case string(magic) == elf.ELFMAG:
+		ef, err := elf.Open(file)
+		if err != nil {
+			return nil, true
 		}
-		return libs
+		defer ef.Close()
+		libs, err := ef.ImportedLibraries()
+		return libs, err != nil
+	case machoMagic(magic):
+		if mf, err := macho.Open(file); err == nil {
+			defer mf.Close()
+			return machoLibraries(mf), false
+		}
+		ff, err := macho.OpenFat(file)
+		if err != nil {
+			return nil, true
+		}
+		defer ff.Close()
+		var libs []string
+		for _, arch := range ff.Arches {
+			libs = append(libs, machoLibraries(arch.File)...)
+		}
+		return libs, false
 	}
-	return nil
+	return nil, false
+}
+
+func machoMagic(magic []byte) bool {
+	for _, m := range []uint32{macho.Magic32, macho.Magic64, macho.MagicFat} {
+		be := []byte{byte(m >> 24), byte(m >> 16), byte(m >> 8), byte(m)}
+		le := []byte{be[3], be[2], be[1], be[0]}
+		if string(magic) == string(be) || string(magic) == string(le) {
+			return true
+		}
+	}
+	return false
+}
+
+// machoLibraries reads every load command that names a library: plain,
+// weak, re-exported, upward and lazy. debug/macho reads only the plain one.
+func machoLibraries(f *macho.File) []string {
+	var libs []string
+	for _, load := range f.Loads {
+		raw := load.Raw()
+		if len(raw) < 12 {
+			continue
+		}
+		switch f.ByteOrder.Uint32(raw[0:4]) {
+		case 0xc, 0x80000018, 0x8000001f, 0x80000023, 0x20:
+			offset := f.ByteOrder.Uint32(raw[8:12])
+			if int(offset) >= len(raw) {
+				continue
+			}
+			name := raw[offset:]
+			if end := strings.IndexByte(string(name), 0); end >= 0 {
+				name = name[:end]
+			}
+			libs = append(libs, string(name))
+		}
+	}
+	return libs
 }
 
 // entryPath is where an archive entry goes under root, or false for a name

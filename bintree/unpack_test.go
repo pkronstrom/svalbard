@@ -1,20 +1,25 @@
-package binarytree
+package bintree
 
 import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"debug/elf"
+	"encoding/binary"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 type entry struct {
 	name, body, link string
 	flag             byte
+	mode             int64 // 0755 when unset
 }
 
 func writeTarGz(t *testing.T, path string, entries []entry) {
@@ -27,7 +32,11 @@ func writeTarGz(t *testing.T, path string, entries []entry) {
 		if flag == 0 {
 			flag = tar.TypeReg
 		}
-		hdr := &tar.Header{Name: e.name, Typeflag: flag, Linkname: e.link, Mode: 0o755}
+		mode := e.mode
+		if mode == 0 {
+			mode = 0o755
+		}
+		hdr := &tar.Header{Name: e.name, Typeflag: flag, Linkname: e.link, Mode: mode}
 		if flag == tar.TypeReg {
 			hdr.Size = int64(len(e.body))
 		}
@@ -54,7 +63,7 @@ func writeTarGz(t *testing.T, path string, entries []entry) {
 func stubImports(t *testing.T, imports map[string][]string) {
 	t.Helper()
 	saved := importedLibraries
-	importedLibraries = func(file string) []string { return imports[filepath.Base(file)] }
+	importedLibraries = func(file string) ([]string, bool) { return imports[filepath.Base(file)], false }
 	t.Cleanup(func() { importedLibraries = saved })
 }
 
@@ -168,11 +177,11 @@ func TestImportedLibrariesReadsMachO(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("needs a Mach-O program")
 	}
-	libs := importedLibraries("/bin/ls")
+	libs, _ := importedLibraries("/bin/ls")
 	if !slices.ContainsFunc(libs, func(lib string) bool { return filepath.Base(lib) == "libSystem.B.dylib" }) {
 		t.Fatalf("importedLibraries(/bin/ls) = %v, want libSystem.B.dylib", libs)
 	}
-	if libs := importedLibraries("/etc/hosts"); len(libs) != 0 {
+	if libs, failed := importedLibraries("/etc/hosts"); len(libs) != 0 || failed {
 		t.Fatalf("importedLibraries(/etc/hosts) = %v, want none", libs)
 	}
 }
@@ -322,4 +331,180 @@ func TestPrepareResolvesLinksThroughDirectoryLinks(t *testing.T) {
 	}
 	assertFile(t, filepath.Join(UnpackedDir(archive), "bin", "libz.so.1"), "z")
 	assertFile(t, filepath.Join(UnpackedDir(archive), "lib64", "libz.so.1.2"), "z")
+}
+
+// minimalELF is a shared object that loads needed, enough for debug/elf to
+// read its DT_NEEDED entry.
+func minimalELF(needed string) []byte {
+	le := binary.LittleEndian
+	dynstr := append(append([]byte{0}, needed...), 0)
+	shstr := []byte("\x00.dynstr\x00.dynamic\x00.shstrtab\x00")
+	const dynstrOff = 64
+	dynOff := (dynstrOff + len(dynstr) + 7) &^ 7
+	dyn := make([]byte, 32)
+	le.PutUint64(dyn[0:], uint64(elf.DT_NEEDED))
+	le.PutUint64(dyn[8:], 1) // the name's offset in .dynstr
+	shstrOff := dynOff + len(dyn)
+	shOff := (shstrOff + len(shstr) + 7) &^ 7
+	out := make([]byte, shOff+4*64)
+	copy(out, []byte{0x7f, 'E', 'L', 'F', 2, 1, 1})
+	le.PutUint16(out[16:], uint16(elf.ET_DYN))
+	le.PutUint16(out[18:], uint16(elf.EM_X86_64))
+	le.PutUint32(out[20:], 1)
+	le.PutUint64(out[40:], uint64(shOff))
+	le.PutUint16(out[52:], 64) // header size
+	le.PutUint16(out[58:], 64) // section header size
+	le.PutUint16(out[60:], 4)  // sections
+	le.PutUint16(out[62:], 3)  // .shstrtab
+	copy(out[dynstrOff:], dynstr)
+	copy(out[dynOff:], dyn)
+	copy(out[shstrOff:], shstr)
+	section := func(i int, name uint32, typ elf.SectionType, off, size int, link uint32, entsize uint64) {
+		h := out[shOff+i*64:]
+		le.PutUint32(h[0:], name)
+		le.PutUint32(h[4:], uint32(typ))
+		le.PutUint64(h[24:], uint64(off))
+		le.PutUint64(h[32:], uint64(size))
+		le.PutUint32(h[40:], link)
+		le.PutUint64(h[48:], 1)
+		le.PutUint64(h[56:], entsize)
+	}
+	section(1, 1, elf.SHT_STRTAB, dynstrOff, len(dynstr), 0, 0)
+	section(2, 9, elf.SHT_DYNAMIC, dynOff, len(dyn), 1, 16)
+	section(3, 18, elf.SHT_STRTAB, shstrOff, len(shstr), 0, 0)
+	return out
+}
+
+// The ELF side of the rule, with the real reader: the link nothing loads is
+// left out and the library takes the name the program loads.
+func TestUnpackReadsWhatAnELFProgramLoads(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "tool.tar.gz")
+	writeTarGz(t, archive, []entry{
+		{name: "tool/prog", body: string(minimalELF("libfoo.so.1"))},
+		{name: "tool/libfoo.so", link: "libfoo.so.1", flag: tar.TypeSymlink},
+		{name: "tool/libfoo.so.1", link: "libfoo.so.1.0", flag: tar.TypeSymlink},
+		{name: "tool/libfoo.so.1.0", body: "foo"},
+	})
+	if libs, failed := importedLibraries(writeTemp(t, minimalELF("libfoo.so.1"))); failed || strings.Join(libs, ",") != "libfoo.so.1" {
+		t.Fatalf("importedLibraries = %v, %v", libs, failed)
+	}
+	if _, err := Unpack(archive); err != nil {
+		t.Fatal(err)
+	}
+	tree := filepath.Join(UnpackedDir(archive), "tool")
+	assertFile(t, filepath.Join(tree, "libfoo.so.1"), "foo")
+	assertMissing(t, filepath.Join(tree, "libfoo.so"))
+	assertMissing(t, filepath.Join(tree, "libfoo.so.1.0"))
+}
+
+// A file that claims to be a program but cannot be read may load anything,
+// so no link is left out.
+func TestUnpackKeepsEveryLinkWhenAProgramCannotBeRead(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "tool.tar.gz")
+	writeTarGz(t, archive, []entry{
+		{name: "tool/prog", body: string(minimalELF("libfoo.so.1"))},
+		{name: "tool/broken", body: "\x7fELF\x02\x01 not really"},
+		{name: "tool/libfoo.so", link: "libfoo.so.1", flag: tar.TypeSymlink},
+		{name: "tool/libfoo.so.1", body: "foo"},
+	})
+	if _, err := Unpack(archive); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, filepath.Join(UnpackedDir(archive), "tool", "libfoo.so"), "foo")
+}
+
+func writeTemp(t *testing.T, data []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "obj")
+	if err := os.WriteFile(path, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A link to a program in another directory becomes a script that runs it
+// where it is, so it still finds what lies beside it (bin/npm ->
+// ../lib/npm/cli.js requires ../lib/...).
+func TestUnpackRunsAProgramLinkedFromAnotherDirectoryInPlace(t *testing.T) {
+	stubImports(t, nil)
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "node.tar.gz")
+	writeTarGz(t, archive, []entry{
+		{name: "node/lib/npm/cli.sh", body: "#!/bin/sh\necho \"$(dirname \"$0\") $*\"\n"},
+		{name: "node/bin/npm", link: "../lib/npm/cli.sh", flag: tar.TypeSymlink},
+		{name: "node/share/data.txt", body: "data", mode: 0o644},
+		{name: "node/bin/data.txt", link: "../share/data.txt", flag: tar.TypeSymlink},
+	})
+	// Data has no exec bit in the archive.
+	if _, err := Unpack(archive); err != nil {
+		t.Fatal(err)
+	}
+	root := UnpackedDir(archive)
+	out, err := exec.Command(filepath.Join(root, "node", "bin", "npm"), "install").CombinedOutput()
+	if err != nil {
+		t.Fatalf("bin/npm: %v\n%s", err, out)
+	}
+	ranIn, args, _ := strings.Cut(strings.TrimSpace(string(out)), " ")
+	got, _ := filepath.EvalSymlinks(ranIn)
+	want, _ := filepath.EvalSymlinks(filepath.Join(root, "node", "lib", "npm"))
+	if got != want || args != "install" {
+		t.Fatalf("bin/npm ran as %q, want in %s with install", out, want)
+	}
+	assertFile(t, filepath.Join(root, "node", "bin", "data.txt"), "data")
+}
+
+// A library renamed to the name programs load may land in a directory that
+// holds nothing else yet.
+func TestUnpackRenamesALibraryIntoANewDirectory(t *testing.T) {
+	stubImports(t, map[string][]string{"prog": {"libx.so.1"}})
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "tool.tar.gz")
+	writeTarGz(t, archive, []entry{
+		{name: "bin/prog", body: "p"},
+		{name: "real/libx.so.1.0", body: "x"},
+		{name: "lib/libx.so.1", link: "../real/libx.so.1.0", flag: tar.TypeSymlink},
+	})
+	if _, err := Unpack(archive); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, filepath.Join(UnpackedDir(archive), "lib", "libx.so.1"), "x")
+}
+
+// An unpack stopped more than an hour ago is swept; a younger one may still
+// be writing and stays.
+func TestUnpackSweepsOnlyStalePartials(t *testing.T) {
+	stubImports(t, nil)
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "tool.tar.gz")
+	writeTarGz(t, archive, []entry{{name: "tool", body: "t"}})
+	stale, young := archive+partialMarker+"1", archive+partialMarker+"2"
+	os.MkdirAll(stale, 0o755)
+	os.MkdirAll(young, 0o755)
+	old := time.Now().Add(-2 * staleAfter)
+	os.Chtimes(stale, old, old)
+	if _, err := Unpack(archive); err != nil {
+		t.Fatal(err)
+	}
+	assertMissing(t, stale)
+	if _, err := os.Stat(young); err != nil {
+		t.Fatalf("young partial removed: %v", err)
+	}
+}
+
+// macOS writes a ._ file beside each file this computer creates on exFAT;
+// the unpack removes those beside its own files.
+func TestUnpackRemovesAppleDoubleFiles(t *testing.T) {
+	stubImports(t, nil)
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "tool.tar.gz")
+	writeTarGz(t, archive, []entry{
+		{name: "tool/prog", body: "p"},
+		{name: "tool/._prog", body: "\x00\x05\x16\x07"},
+	})
+	if _, err := Unpack(archive); err != nil {
+		t.Fatal(err)
+	}
+	assertMissing(t, filepath.Join(UnpackedDir(archive), "tool", "._prog"))
 }
