@@ -283,3 +283,42 @@ func TestRunHonoursTheDriveSettings(t *testing.T) {
 		t.Fatal("Run() did not return after cancellation")
 	}
 }
+
+func TestRunForBrowserPublishesLinkWithTerminalAutoOpenDisabled(t *testing.T) {
+	driveRoot, _ := newFakeDrive(t, "open-webui")
+	writeDriveFile(t, driveRoot, "settings.schema.json", recipeSchema)
+	writeDriveFile(t, driveRoot, "settings.json", `{"open-webui": {"open_browser": false, "file_tools": false}}`)
+	pickContext = func(int) int {
+		t.Error("browser launch tried to show the terminal context picker")
+		return 4096
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready, done := make(chan string, 1), make(chan error, 1)
+	go func() {
+		done <- RunForBrowser(ctx, &syncBuffer{}, driveRoot, "", func(url string) error {
+			ready <- url
+			return nil
+		})
+	}()
+	select {
+	case address := <-ready:
+		if !strings.HasPrefix(address, "http://localhost:") {
+			t.Errorf("browser link = %q", address)
+		}
+	case err := <-done:
+		t.Fatalf("Open WebUI failed before returning a link: %v", err)
+	case <-time.After(15 * time.Second):
+		t.Fatal("Open WebUI did not return a link")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Error(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Open WebUI did not stop")
+	}
+}

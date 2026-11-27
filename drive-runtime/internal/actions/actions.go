@@ -28,6 +28,7 @@ const (
 	NativeAppsSubcommand     = "__native-apps"
 	NativeMapsSubcommand     = "__native-maps"
 	NativeChatSubcommand     = "__native-chat"
+	NativeWebSubcommand      = "__native-web"
 	NativeWebUISubcommand    = "__native-open-webui"
 	NativeWikiSubcommand     = "__native-wiki"
 	NativeDocsSubcommand     = "__native-documents"
@@ -67,6 +68,7 @@ var nativeActionSpecs = []nativeActionSpec{
 	{actionID: "apps", subcommand: NativeAppsSubcommand, args: []nativeArgument{{name: "app", required: true}}},
 	{actionID: "maps", subcommand: NativeMapsSubcommand},
 	{actionID: "chat", subcommand: NativeChatSubcommand, args: []nativeArgument{{name: "model"}}},
+	{actionID: "web", subcommand: NativeWebSubcommand},
 	{actionID: "open-webui", subcommand: NativeWebUISubcommand, args: []nativeArgument{{name: "model"}}},
 	{actionID: "wiki", subcommand: NativeWikiSubcommand},
 	{actionID: "documents", subcommand: NativeDocsSubcommand, args: []nativeArgument{{name: "path", required: true}}},

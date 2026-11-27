@@ -17,6 +17,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/netutil"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/server"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/workspace"
 )
 
 type SessionInfo struct {
@@ -105,6 +106,11 @@ func newSession(ctx context.Context, driveRoot string, opener func(string) error
 	}, nil
 }
 
+// NewSessionContext opens a search session with cancellable startup.
+func NewSessionContext(ctx context.Context, driveRoot string) (*Session, error) {
+	return newSession(ctx, driveRoot, nil)
+}
+
 func (s *Session) Info() SessionInfo {
 	return s.info
 }
@@ -186,17 +192,27 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 }
 
 func (s *Session) OpenResult(result Result) error {
+	address, err := s.ResultURL(context.Background(), result)
+	if err != nil {
+		return err
+	}
+	return s.opener(address)
+}
+
+// ResultURL starts the appropriate reader if needed and returns the URL for a
+// result. Its servers stay available until the session closes.
+func (s *Session) ResultURL(ctx context.Context, result Result) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// A document inside an archive is served by kiwix-serve, as the
 	// archive's pages are, and opens at the page of the hit.
 	if engine.IsEmbeddedSource(result.Filename) {
-		if err := s.ensureKiwix(context.Background()); err != nil {
-			return err
+		if err := s.ensureKiwix(ctx); err != nil {
+			return "", err
 		}
 		page, _ := engine.PageNumber(result.Path)
-		return s.opener(embeddedURL(fmt.Sprintf("http://localhost:%d", s.kiwixPort), result.Filename, page))
+		return embeddedURL(fmt.Sprintf("http://localhost:%d", s.kiwixPort), result.Filename, page), nil
 	}
 
 	// A document opens in the browser's own PDF viewer at the page of the
@@ -205,21 +221,20 @@ func (s *Session) OpenResult(result Result) error {
 		if s.documents == nil {
 			server, err := startDocumentServer(s.driveRoot)
 			if err != nil {
-				return fmt.Errorf("serving documents: %w", err)
+				return "", fmt.Errorf("serving documents: %w", err)
 			}
 			s.documents = server
 		}
 		page, _ := engine.PageNumber(result.Path)
-		return s.opener(s.documents.pageURL(result.Filename, page))
+		return s.documents.pageURL(result.Filename, page), nil
 	}
 
-	if err := s.ensureKiwix(context.Background()); err != nil {
-		return err
+	if err := s.ensureKiwix(ctx); err != nil {
+		return "", err
 	}
 	book := strings.TrimSuffix(result.Filename, ".zim")
-	path := strings.TrimLeft(result.Path, "/")
-	url := fmt.Sprintf("http://localhost:%d/content/%s/%s", s.kiwixPort, book, path)
-	return s.opener(url)
+	article := strings.TrimLeft(result.Path, "/")
+	return workspace.URL(fmt.Sprintf("http://localhost:%d/content", s.kiwixPort), book+"/"+article), nil
 }
 
 func (s *Session) Close() error {

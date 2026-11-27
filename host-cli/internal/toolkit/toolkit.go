@@ -301,6 +301,9 @@ type builtinCapability struct {
 }
 
 var builtinCapabilities = []builtinCapability{
+	{ID: "drive-frontpage", Group: "tools", Subheader: "Drive", Label: "Open Browser Dashboard",
+		Description: "Browse and launch installed content from the browser.", Order: 490, ActionID: "web",
+		Aliases: []string{"web"}},
 	// Search
 	{ID: "search-all", Group: "search", Label: "Search all content",
 		Description: "Query the on-drive search index.", Order: 100, ActionID: "search",

@@ -270,6 +270,7 @@ func TestFullCatalogMenuHasNoDeadRowsAndUniqueRunNames(t *testing.T) {
 
 	// The names this work promises.
 	for name, id := range map[string]string{
+		"web":                      "drive-frontpage",
 		"workspace":                "workspace",
 		"who-basic-emergency-care": "who-basic-emergency-care",
 		"wiki":                     wikiRecipeID,

@@ -379,14 +379,13 @@ func TestGenerateToolsAlwaysPresent(t *testing.T) {
 	if cfg.Groups[1].ID != "settings" {
 		t.Errorf("expected settings group, got %q", cfg.Groups[1].ID)
 	}
-	// With no entries: activate-shell, mcp-serve, inspect are always present.
-	// verify-checksums is conditional (needs checksums), serve/share conditional (needs services).
-	if len(cfg.Groups[0].Items) != 3 {
-		var ids []string
-		for _, it := range cfg.Groups[0].Items {
-			ids = append(ids, it.ID)
-		}
-		t.Errorf("tools items = %d (%v), want 3", len(cfg.Groups[0].Items), ids)
+	var ids []string
+	for _, it := range cfg.Groups[0].Items {
+		ids = append(ids, it.ID)
+	}
+	want := []string{"mcp-serve", "drive-frontpage", "inspect-drive", "activate-shell"}
+	if strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Errorf("tools items = %v, want %v", ids, want)
 	}
 }
 

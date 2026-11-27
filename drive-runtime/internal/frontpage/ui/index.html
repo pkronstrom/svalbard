@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a2e">
+  <title>Svalbard Drive</title>
+  <link rel="icon" href="/favicon.png" type="image/png">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/frontpage.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to drive</a>
+  <header class="top">
+    <div class="top-inner">
+      <a class="brand" href="/" aria-label="Svalbard Drive home"><span class="mark" aria-hidden="true">✦</span> Svalbard<span class="brand-drive">Drive</span></a>
+      <nav id="nav" aria-label="Drive sections"></nav>
+      <span class="local" id="connection"><i aria-hidden="true"></i> Local session</span>
+    </div>
+  </header>
+  <main id="main" class="shell">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <div class="eyebrow" id="vault">SVALBARD DRIVE</div>
+        <h1 id="hero-title">Your offline vault.</h1>
+        <p>Read the library, open local tools, and pick up where you left off.</p>
+        <div class="hero-links">
+          <a class="button light" href="#contents">Explore the drive <span aria-hidden="true">↓</span></a>
+          <a class="button ghost" href="#saved-apps">Saved apps <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+      <div class="art" aria-hidden="true"></div>
+    </section>
+
+    <section id="contents" aria-labelledby="contents-heading">
+      <div class="section-heading">
+        <div><h2 id="contents-heading">On this drive</h2><p id="inventory-summary"></p></div>
+        <label class="filter"><span aria-hidden="true">⌕</span><input type="search" id="filter" placeholder="Filter installed items" aria-label="Filter installed items" disabled></label>
+      </div>
+
+      <section id="search-panel" class="search-panel" aria-label="Search indexed content" hidden>
+        <form id="search-form" class="search-form">
+          <label for="query">Search indexed content</label>
+          <div class="search-controls">
+            <input id="query" type="search" placeholder="Search articles and documents" maxlength="500" required>
+            <button class="button primary" type="submit">Search</button>
+          </div>
+        </form>
+        <p id="search-status" role="status" hidden></p>
+        <ol id="search-results" class="results" hidden></ol>
+      </section>
+
+      <noscript><p>Enable JavaScript to launch content from this page. The terminal menu is available with <code>./run</code>.</p></noscript>
+      <p id="page-status" role="status">Loading drive contents…</p>
+      <div id="groups"></div>
+    </section>
+
+    <section id="saved-apps" class="saved" aria-labelledby="saved-heading">
+      <div class="section-heading">
+        <div><h2 id="saved-heading">Saved apps</h2><p>HTML pages and tools saved in <code>workspace/</code>.</p></div>
+        <button type="button" id="refresh" class="button secondary" disabled>Refresh <span aria-hidden="true">↻</span></button>
+      </div>
+      <div id="workspace-actions"></div>
+      <p id="workspace-status" role="status"></p>
+      <div id="pages" class="cards"></div>
+    </section>
+  </main>
+  <footer class="footer"><div><span>Svalbard Drive</span><span>Stop the launcher with <kbd>Ctrl</kbd> + <kbd>C</kbd> in the terminal.</span></div></footer>
+</body>
+</html>

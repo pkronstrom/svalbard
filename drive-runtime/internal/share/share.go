@@ -11,6 +11,11 @@ import (
 )
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
+	return RunWithURL(ctx, stdout, driveRoot, nil)
+}
+
+// RunWithURL runs the LAN server and reports its address once it is listening.
+func RunWithURL(ctx context.Context, stdout io.Writer, driveRoot string, ready func(string)) error {
 	listener, port, err := netutil.Listen("0.0.0.0", 8080)
 	if err != nil {
 		return err
@@ -31,11 +36,14 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot string) error {
 		errCh <- nil
 	}()
 
-	ip := lanIP()
+	address := fmt.Sprintf("http://%s:%d", lanIP(), port)
+	if ready != nil {
+		ready(address)
+	}
 	fmt.Fprintln(stdout, "Sharing drive on local network")
 	fmt.Fprintln(stdout, "==============================")
 	fmt.Fprintln(stdout)
-	fmt.Fprintf(stdout, "  http://%s:%d\n", ip, port)
+	fmt.Fprintf(stdout, "  %s\n", address)
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, "  Tell others to open this address in their browser.")
 

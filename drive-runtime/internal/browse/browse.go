@@ -50,6 +50,15 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if opener == nil {
 		opener = browser.Open
 	}
+	return run(ctx, stdout, driveRoot, selected, opener, false)
+}
+
+// RunForBrowser starts a browser-managed archive reader on an ephemeral port.
+func RunForBrowser(ctx context.Context, stdout io.Writer, driveRoot, selected string, ready func(string) error) error {
+	return run(ctx, stdout, driveRoot, selected, ready, true)
+}
+
+func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, opener func(string) error, ephemeral bool) error {
 	targets, err := ResolveTargets(driveRoot, selected)
 	if err != nil {
 		return err
@@ -58,11 +67,22 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if err != nil {
 		return fmt.Errorf("kiwix-serve not found")
 	}
-	port, err := netutil.FindAvailablePort("127.0.0.1", 8080)
+	var port int
+	if ephemeral {
+		var release func()
+		port, release, err = netutil.ReserveEphemeralPort("127.0.0.1")
+		if err == nil {
+			defer release()
+		}
+	} else {
+		port, err = netutil.FindAvailablePort("127.0.0.1", 8080)
+	}
 	if err != nil {
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	args := buildKiwixArgs(port, targets)
 	var stderrBuf strings.Builder
 	cmd := exec.CommandContext(ctx, kiwixBin, args...)
@@ -74,11 +94,14 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 
 	// Wait for kiwix-serve to be ready before opening the browser.
 	waitCh := make(chan error, 1)
-	go func() { waitCh <- cmd.Wait() }()
+	go func() { waitCh <- cmd.Wait(); close(waitCh) }()
 
 	url := fmt.Sprintf("http://localhost:%d", port)
 	if err := waitHealthy(ctx, url, waitCh); err != nil {
-		// Process already exited — include its output in the error.
+		// On a timeout or cancellation, reap the process before reading
+		// the output that its stderr copier owns until Wait returns.
+		cancel()
+		<-waitCh
 		detail := strings.TrimSpace(stderrBuf.String())
 		if detail != "" {
 			return fmt.Errorf("kiwix-serve failed: %s", detail)
@@ -124,10 +147,22 @@ func waitHealthy(ctx context.Context, url string, exitCh <-chan error) error {
 			// Any HTTP response means the server is listening. kiwix-serve
 			// redirects "/" to "/ROOT/..." on multi-ZIM setups (302), so we
 			// can't require StatusOK — we just need "responds at all".
-			resp, err := client.Get(url)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				return err
+			}
+			resp, err := client.Do(req)
 			if err == nil {
 				resp.Body.Close()
-				return nil
+				select {
+				case err := <-exitCh:
+					if err != nil {
+						return err
+					}
+					return fmt.Errorf("kiwix-serve exited during startup")
+				default:
+					return nil
+				}
 			}
 		}
 	}

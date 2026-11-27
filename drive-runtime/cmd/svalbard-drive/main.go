@@ -125,6 +125,9 @@ func run() error {
 	}
 
 	if len(os.Args) > 1 {
+		if os.Args[1] == "web" || os.Args[1] == actions.NativeWebSubcommand {
+			return runFrontpage(cfg, driveRoot, os.Args[2:])
+		}
 		invocation, known, err := actions.DecodeNativeInvocation(os.Args[1:])
 		if err != nil {
 			return err

@@ -278,6 +278,10 @@ func TestSessionOpensResultAndClosesKiwix(t *testing.T) {
 	if !strings.Contains(opened, "/content/wiki/Water_purification") {
 		t.Errorf("opened URL = %q", opened)
 	}
+	escaped, err := session.ResultURL(context.Background(), Result{Filename: "wiki.zim", Path: "/Water #1?/50%_guide"})
+	if err != nil || !strings.HasSuffix(escaped, "/content/wiki/Water%20%231%3F/50%25_guide") {
+		t.Fatalf("escaped result = %q, %v", escaped, err)
+	}
 	server := session.kiwixServer
 	if err := session.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)

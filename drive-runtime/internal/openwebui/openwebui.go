@@ -206,6 +206,22 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if opener == nil {
 		opener = browser.Open
 	}
+	return run(ctx, stdout, driveRoot, selected, pickContext, func(prefs *settings.Store, url string) error {
+		if opensBrowser(prefs) {
+			return opener(url)
+		}
+		return nil
+	})
+}
+
+// RunForBrowser publishes the ready URL to the dashboard and uses Auto when
+// the user's context setting would otherwise prompt in the terminal.
+func RunForBrowser(ctx context.Context, stdout io.Writer, driveRoot, selected string, ready func(string) error) error {
+	return run(ctx, stdout, driveRoot, selected, func(auto int) int { return auto },
+		func(_ *settings.Store, url string) error { return ready(url) })
+}
+
+func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, pick func(int) int, ready func(*settings.Store, string) error) error {
 	launcher, err := resolveLauncher(driveRoot)
 	if err != nil {
 		return err
@@ -239,7 +255,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return err
 	}
 
-	ctxSize := prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
+	ctxSize := prefs.ContextSize(llamaserve.ContextForHost(), pick)
 
 	// The MCP listener is held from here on. The two child servers bind their
 	// own ports later, so their searches must not land on the same free port.
@@ -340,10 +356,8 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	}
 
 	url := fmt.Sprintf("http://localhost:%d", port)
-	if opensBrowser(prefs) {
-		if err := opener(url); err != nil {
-			fmt.Fprintf(stdout, "  Open: %s\n", url)
-		}
+	if err := ready(prefs, url); err != nil {
+		fmt.Fprintf(stdout, "  Open: %s\n", url)
 	}
 	fmt.Fprintf(stdout, "Open WebUI: %s\n", url)
 	if files != nil {

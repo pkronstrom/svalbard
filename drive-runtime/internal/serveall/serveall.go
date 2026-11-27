@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/binary"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
@@ -44,6 +45,16 @@ func PlanServices(driveRoot string, binaries map[string]string) []Service {
 }
 
 func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
+	return run(ctx, stdout, driveRoot, bind, nil, nil)
+}
+
+// RunForBrowser starts the same services on loopback. It reports child
+// servers once they answer and lets the dashboard share a single wiki.
+func RunForBrowser(ctx context.Context, driveRoot string, ready func(string, string), openWiki func(context.Context) (string, <-chan struct{}, func(), error)) error {
+	return run(ctx, io.Discard, driveRoot, "127.0.0.1", ready, openWiki)
+}
+
+func run(ctx context.Context, stdout io.Writer, driveRoot, bind string, ready func(string, string), openWiki func(context.Context) (string, <-chan struct{}, func(), error)) error {
 	if bind == "" {
 		bind = "127.0.0.1"
 	}
@@ -59,89 +70,174 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, bind string) error {
 	}
 	plan := PlanServices(driveRoot, binaries)
 
-	var commands []*exec.Cmd
-	var servers []*http.Server
-
-	if binaries["kiwix-serve"] != "" && hasMatchingFiles(filepath.Join(driveRoot, "zim"), ".zim") {
-		port, err := netutil.FindAvailablePort(bind, 8080)
-		if err != nil {
-			return err
+	ctx, cancel := context.WithCancel(ctx)
+	var children sync.WaitGroup
+	var releasePorts []func()
+	failures := make(chan error, 2)
+	defer func() {
+		cancel()
+		children.Wait()
+		for _, release := range releasePorts {
+			release()
 		}
-		zims, _ := searchserver.ZIMFiles(driveRoot)
-		args := []string{"--port", fmt.Sprintf("%d", port), "--address", bind}
-		args = append(args, zims...)
-		cmd := exec.CommandContext(ctx, binaries["kiwix-serve"], args...)
-		cmd.Stdout = stdout
-		cmd.Stderr = stdout
+	}()
+	publish := func(label, url string) {
+		if ready != nil {
+			ready(label, url)
+		}
+	}
+	childPort := func(preferred int) (int, func(), error) {
+		if ready != nil {
+			return netutil.ReserveEphemeralPort(bind)
+		}
+		port, err := netutil.FindAvailablePort(bind, preferred)
+		return port, func() {}, err
+	}
+	start := func(cmd *exec.Cmd, label, url, healthPath string) error {
+		cmd.Stdout, cmd.Stderr = stdout, stdout
 		if err := cmd.Start(); err != nil {
 			return err
 		}
-		commands = append(commands, cmd)
-		fmt.Fprintf(stdout, "Kiwix:  http://%s:%d\n", bind, port)
+		children.Go(func() { watchChild(ctx, cmd, label, url, healthPath, ready, failures) })
+		return nil
+	}
+
+	if binaries["kiwix-serve"] != "" && hasMatchingFiles(filepath.Join(driveRoot, "zim"), ".zim") {
+		port, release, err := childPort(8080)
+		if err != nil {
+			return err
+		}
+		releasePorts = append(releasePorts, release)
+		zims, _ := searchserver.ZIMFiles(driveRoot)
+		args := []string{"--port", fmt.Sprintf("%d", port), "--address", bind}
+		args = append(args, zims...)
+		url := fmt.Sprintf("http://%s:%d", bind, port)
+		if err := start(exec.CommandContext(ctx, binaries["kiwix-serve"], args...), "Kiwix", url, "/"); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "Kiwix:  %s\n", url)
 	}
 
 	if binaries["llama-server"] != "" {
 		model, err := firstChatModel(driveRoot)
 		if err == nil {
-			port, err := netutil.FindAvailablePort(bind, 8082)
+			port, release, err := childPort(8082)
 			if err != nil {
 				return err
 			}
+			releasePorts = append(releasePorts, release)
 			llamaArgs := []string{"-m", model, "--port", fmt.Sprintf("%d", port), "--host", bind}
 			llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model, llamaserve.ContextForHost())...)
-			cmd := exec.CommandContext(ctx, binaries["llama-server"], llamaArgs...)
-			cmd.Stdout = stdout
-			cmd.Stderr = stdout
-			if err := cmd.Start(); err != nil {
+			url := fmt.Sprintf("http://%s:%d", bind, port)
+			if err := start(exec.CommandContext(ctx, binaries["llama-server"], llamaArgs...), "Model server", url, "/health"); err != nil {
 				return err
 			}
-			commands = append(commands, cmd)
-			fmt.Fprintf(stdout, "LLM:    http://%s:%d\n", bind, port)
+			fmt.Fprintf(stdout, "LLM:    %s\n", url)
 		}
 	}
 
-	filePort, err := netutil.FindAvailablePort(bind, 8083)
+	listener, filePort, err := netutil.Listen(bind, 8083)
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", bind, filePort))
-	if err != nil {
-		return err
-	}
+	defer listener.Close()
 	server := &http.Server{Handler: http.FileServer(http.Dir(driveRoot))}
-	servers = append(servers, server)
+	defer server.Close()
 	go func() {
 		_ = server.Serve(listener)
 	}()
-	fmt.Fprintf(stdout, "Files:  http://%s:%d\n", bind, filePort)
+	filesURL := fmt.Sprintf("http://%s:%d", bind, filePort)
+	fmt.Fprintf(stdout, "Files:  %s\n", filesURL)
+	publish("Browse drive files", filesURL)
 	if containsService(plan, "map") {
-		fmt.Fprintf(stdout, "Map:    http://%s:%d/apps/map/\n", bind, filePort)
+		fmt.Fprintf(stdout, "Map:    %s/apps/map/\n", filesURL)
+		publish("Map", filesURL+"/apps/map/")
 	}
 
 	if containsService(plan, "wiki") {
-		// Whatever the other services bind, the wiki stays on this computer:
-		// anyone who can reach it can write it. Its pages are files on the
-		// drive, which Files above shares read-only like the rest.
-		instance, err := wiki.Start(ctx, driveRoot, settings.OpenForAction(driveRoot, stdout))
+		// The wiki remains on loopback even when the other services bind
+		// elsewhere. Anyone who can reach its editor can write to it.
+		if openWiki == nil {
+			openWiki = func(ctx context.Context) (string, <-chan struct{}, func(), error) {
+				instance, err := wiki.Start(ctx, driveRoot, settings.OpenForAction(driveRoot, stdout))
+				if err != nil {
+					return "", nil, nil, err
+				}
+				return instance.URL, nil, instance.Close, nil
+			}
+		}
+		address, exited, release, err := openWiki(ctx)
 		if err != nil {
-			// The other services are worth having without it.
 			fmt.Fprintf(stdout, "Wiki:   not started: %v\n", err)
 		} else {
-			defer instance.Close()
-			fmt.Fprintf(stdout, "Wiki:   %s (local only)\n", instance.URL)
+			defer release()
+			fmt.Fprintf(stdout, "Wiki:   %s (local only)\n", address)
+			publish("Wiki (local only)", address)
+			if exited != nil {
+				children.Go(func() {
+					select {
+					case <-exited:
+						publish("Wiki (local only)", "")
+					case <-ctx.Done():
+					}
+				})
+			}
 		}
 	}
 
-	<-ctx.Done()
-	for _, server := range servers {
-		_ = server.Close()
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-failures:
+		return err
 	}
-	for _, cmd := range commands {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
+}
+
+func watchChild(ctx context.Context, cmd *exec.Cmd, label, url, healthPath string, ready func(string, string), failures chan<- error) {
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	if ready == nil {
+		<-exited
+		return
+	}
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	probe := ticker.C
+	client := &http.Client{
+		Timeout:       time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	defer client.CloseIdleConnections()
+	for {
+		select {
+		case <-ctx.Done():
+			<-exited
+			return
+		case err := <-exited:
+			if ctx.Err() == nil {
+				if err == nil {
+					err = fmt.Errorf("process exited")
+				}
+				failures <- fmt.Errorf("%s stopped: %w", label, err)
+			}
+			return
+		case <-probe:
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+healthPath, nil)
+			if err != nil {
+				continue
+			}
+			response, err := client.Do(req)
+			if err != nil {
+				continue
+			}
+			response.Body.Close()
+			if response.StatusCode >= 200 && response.StatusCode < 400 {
+				ready(label, url)
+				ticker.Stop()
+				probe = nil
+			}
 		}
 	}
-	return nil
 }
 
 func containsService(plan []Service, name string) bool {
