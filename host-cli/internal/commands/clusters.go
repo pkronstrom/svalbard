@@ -39,7 +39,8 @@ func ClusterSize(dir string) (int64, error) {
 	}
 	f, err := os.CreateTemp(dir, ".svalbard-cluster-*")
 	if err != nil {
-		return 0, err
+		// A disk this user cannot write: the smallest file already there.
+		return smallestAllocation(dir)
 	}
 	defer os.Remove(f.Name())
 	_, err = f.Write([]byte{0})
@@ -58,6 +59,29 @@ func ClusterSize(dir string) (int64, error) {
 		return 0, err
 	}
 	return allocatedBytes(info), nil
+}
+
+// smallestAllocation is the least space a file directly in dir takes, the
+// cluster size when one of them is smaller than a cluster.
+func smallestAllocation(dir string) (int64, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, err
+	}
+	var smallest int64
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if allocated := allocatedBytes(info); allocated > 0 && (smallest == 0 || allocated < smallest) {
+			smallest = allocated
+		}
+	}
+	if smallest == 0 {
+		return 0, fmt.Errorf("cannot measure the cluster size of %s", dir)
+	}
+	return smallest, nil
 }
 
 func allocatedBytes(info fs.FileInfo) int64 {

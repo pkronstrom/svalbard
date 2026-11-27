@@ -108,3 +108,22 @@ func TestMeasureVaultAndStatusShowContentBesideAllocated(t *testing.T) {
 		t.Errorf("status lacks %q:\n%s", want, buf.String())
 	}
 }
+
+// A disk the user cannot write is measured by the smallest file already on it.
+func TestClusterSizeOfAnUnwritableDirectory(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root writes anywhere")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "manifest.yaml"), []byte("small"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	size, err := ClusterSize(dir)
+	if err != nil || size < 512 {
+		t.Fatalf("ClusterSize = %d, %v", size, err)
+	}
+}
