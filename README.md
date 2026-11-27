@@ -8,7 +8,7 @@
 
 Build the drive while you’re online. Everything on it then works offline.
 
-> **Alpha (v0.6.0).** Svalbard is under active development. Presets, datasets and curation still change, so expect rough edges.
+> **Alpha (v0.7.0).** Svalbard is under active development. Presets, datasets and curation still change, so expect rough edges.
 
 ## Ask the drive
 
@@ -40,6 +40,12 @@ The assistant can also write things and save them in the drive’s `workspace/` 
 
 The calculator is one HTML file that opens in any browser. JSCAD runs from the drive’s **Apps** menu. The firmware builds offline with the PlatformIO toolchain in the `esp32-dev` pack (`./run embedded`); flashing needs the board plugged in.
 
+> Make a world map of population by country, with a chart of the ten largest, from the data on the drive.
+
+> Make a parametric spur gear I can export as STL.
+
+With the AI clients come **skills**: short, tested procedures for dashboards, maps, diagrams, CAD parts, spreadsheets, PDFs, Word and PowerPoint files, research and firmware. The assistant finds them with `skill_search` and follows their steps. The JavaScript libraries they use (Chart.js, D3, Three.js, JSCAD, MapLibre and others) are pinned on the drive, and `svalbard-drive html pack` bundles a page and its libraries into one file that opens offline by double-click. Both prompts above produced such a file on Qwen3.8 27B and on Qwen3.5 4B.
+
 ### What a session looks like
 
 Here a local Qwen3.5 4B model was asked how paper is made and how CARDIAC, a computer made of cardboard, works. It searched Wikiciv and Permacomputing, read both articles, and saved an interactive page that cites them.
@@ -48,7 +54,7 @@ Here a local Qwen3.5 4B model was asked how paper is made and how CARDIAC, a com
 
 ![The generated page opened as a local HTML file.](docs/offline-paper-visualization.webp)
 
-The screenshots were captured on an Apple Silicon Mac with the vault on its internal SSD. To work this way, add the **Open WebUI** recipe, new in v0.6.0, and enable its file tools so the assistant can write to the vault’s `workspace/` folder.
+The screenshots were captured on an Apple Silicon Mac with the vault on its internal SSD. To work this way, add the **Open WebUI** recipe and enable its file tools so the assistant can write to the vault’s `workspace/` folder.
 
 ## Explore the drive yourself
 
@@ -72,7 +78,7 @@ Download the host binary for your Mac or Linux computer, extract it, and put `sv
 
 ### Prepare the drive
 
-1. **Choose a destination.** Run `svalbard init` to open the guided setup. Pick a folder or mounted drive and the platforms you’ll use it on.
+1. **Choose a destination.** Run `svalbard init` to open the guided setup. Pick a folder or mounted drive and the platforms you’ll use it on. A USB stick works best formatted as exFAT with small clusters (4 KB): large clusters waste gigabytes on the many small files of Python apps, and `init` warns when a stick uses them. [Preparing a stick](docs/usage.md)
 2. **Choose the contents.** Start with a capacity preset, review its contents, then add or remove items. To ask questions like the ones above, add Open WebUI and a model that fits your computer’s memory; the screenshots use Qwen3.5 4B, which runs on an 8 GB machine. Keep the suggested dependencies and keyword indexing.
 3. **Apply while online.** Let the downloads and selected indexing finish. The vault keeps both your selections and a record of what was installed. Reopen it later to change its contents.
 
@@ -99,7 +105,7 @@ To repeat a setup, copy a built-in preset with `svalbard preset copy default-32 
 
 ### Your own documents
 
-List your own PDFs in a collection file under `~/.config/svalbard/recipes/`: links, single files or whole folders. Add the collection like any recipe. Svalbard downloads or copies the documents into the vault’s `books/` folder and indexes their pages, so **Search** and the assistant can find, read and cite them. The vault keeps a copy of the collection file, so you can still update it from another computer. [Document collections](docs/usage.md#your-own-documents)
+List your own PDFs in a collection file under `~/.config/svalbard/recipes/`: links, single files or whole folders. Add the collection like any recipe. Svalbard downloads or copies the documents into the vault’s `books/` folder and indexes their pages, so **Search** and the assistant can find, read and cite them. The vault keeps a copy of the collection file, so you can still update it from another computer. PDFs and EPUBs packed inside archives, such as field manuals in the zimgit collections, are indexed the same way. [Document collections](docs/usage.md#your-own-documents)
 
 ## License
 
