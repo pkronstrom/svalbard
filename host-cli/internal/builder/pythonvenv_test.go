@@ -403,7 +403,7 @@ func TestPythonCommandKeepsBytecodeOffTheStick(t *testing.T) {
 			t.Fatal(err)
 		}
 		home := map[string]string{"linux-arm64": "/home/u/.cache", "macos-arm64": "/home/u/Library/Caches"}[platform]
-		for _, tc := range []struct {
+		cases := []struct {
 			env  []string
 			want string
 		}{
@@ -411,8 +411,25 @@ func TestPythonCommandKeepsBytecodeOffTheStick(t *testing.T) {
 			{[]string{"HOME=/home/u", "PYTHONPYCACHEPREFIX=/set/by/caller"}, "prefix=/set/by/caller nowrite="},
 			{[]string{"HOME=/home/u", "PYTHONDONTWRITEBYTECODE=1"}, "prefix= nowrite=1"},
 			{nil, "prefix= nowrite=1"},
-		} {
-			if platform == "linux-arm64" && len(tc.env) == 1 {
+		}
+		if platform == "linux-arm64" {
+			cases = append(cases,
+				struct {
+					env  []string
+					want string
+				}{[]string{"XDG_CACHE_HOME=/xdg"}, "prefix=/xdg/svalbard/pycache nowrite="},
+				struct {
+					env  []string
+					want string
+				}{[]string{"HOME=/home/u", "XDG_CACHE_HOME=relative"}, "prefix= nowrite=1"})
+		} else {
+			cases = append(cases, struct {
+				env  []string
+				want string
+			}{[]string{"HOME=/tmp/u"}, "prefix= nowrite=1"})
+		}
+		for _, tc := range cases {
+			if platform == "linux-arm64" && len(tc.env) == 1 && tc.env[0] == "HOME=/home/u" {
 				tc.env = append(tc.env, "XDG_CACHE_HOME=")
 			}
 			cmd := exec.Command("/bin/sh", filepath.Join(root, "bin", platform, "py-docs"))

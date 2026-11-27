@@ -123,7 +123,7 @@ func EstimateSpace(cat *catalog.Catalog, ids, platforms []string, clusterBytes i
 		size := item.SizeGBFor(platforms)
 		e.AllocatedGB += size + float64(files)*float64(clusterBytes)/1e9
 		e.SmallGB += size + float64(files)*smallClusterBytes/1e9
-		if item.FileCount > 0 {
+		if item.FileCount > 1 { // a single file (cyberchef's zip) is no tree
 			e.Trees = append(e.Trees, id)
 			cost[id] = float64(files)
 		}

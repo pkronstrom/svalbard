@@ -19,6 +19,7 @@ func clusterCatalog(t *testing.T) *catalog.Catalog {
 		"open-webui.yaml": {Data: []byte("id: open-webui\ntype: python-package\nsize_gb: 0.58\nfile_count: 21977\n")},
 		"wiki.yaml":       {Data: []byte("id: wiki\ntype: zim\nsize_gb: 10\nurl: http://example.test/wiki.zim\n")},
 		"drawio.yaml":     {Data: []byte("id: drawio\ntype: app\nsize_gb: 0.05\n")},
+		"cyberchef.yaml":  {Data: []byte("id: cyberchef\ntype: app\nsize_gb: 0.083\nfile_count: 1\n")},
 	}
 	cat, err := catalog.LoadFromFS(recipes, fstest.MapFS{})
 	if err != nil {
@@ -32,13 +33,13 @@ func near(a, b float64) bool { return math.Abs(a-b) < 0.01 }
 func TestEstimateSpaceCountsAClusterPerFile(t *testing.T) {
 	cat := clusterCatalog(t)
 	platforms := []string{"macos-arm64", "linux-x86_64"}
-	e := EstimateSpace(cat, []string{"wiki", "open-webui", "drawio"}, platforms, 128<<10)
+	e := EstimateSpace(cat, []string{"wiki", "open-webui", "drawio", "cyberchef"}, platforms, 128<<10)
 	// Open WebUI per platform: 0.58 GB + 21,977 x 128 KB = 3.46 GB (3.20 GB
 	// measured), twice; the ZIM is one file.
-	if want := 10 + 131072/1e9 + 2*(0.58+21977*131072/1e9); !near(e.AllocatedGB, want) {
+	if want := 10.083 + 2*131072/1e9 + 2*(0.58+21977*131072/1e9); !near(e.AllocatedGB, want) {
 		t.Errorf("AllocatedGB = %.3f, want %.3f", e.AllocatedGB, want)
 	}
-	if want := 10 + 4096/1e9 + 2*(0.58+21977*4096/1e9); !near(e.SmallGB, want) {
+	if want := 10.083 + 2*4096/1e9 + 2*(0.58+21977*4096/1e9); !near(e.SmallGB, want) {
 		t.Errorf("SmallGB = %.3f, want %.3f", e.SmallGB, want)
 	}
 	if strings.Join(e.Trees, ",") != "open-webui" || strings.Join(e.Unknown, ",") != "drawio" {

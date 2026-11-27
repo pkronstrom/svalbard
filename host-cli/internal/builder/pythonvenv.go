@@ -311,16 +311,25 @@ func buildPythonVenv(root string, recipe catalog.Item, cat *catalog.Catalog, opt
 
 // bytecodeLines keep Python's compiled modules off the stick, where each is
 // one more cluster (up to 8,311 files for Open WebUI): they go to this
-// computer's cache dir, where Go's os.UserCacheDir has it, and are not written
-// without a HOME. A prefix or a no-write the caller set (Open WebUI's runtime,
-// the embedded shell) is kept.
+// computer's cache dir, by the rules of Go's os.UserCacheDir (an absolute
+// $XDG_CACHE_HOME, else $HOME/.cache on Linux; $HOME/Library/Caches on
+// macOS, never under /tmp), and are not written when there is none. A prefix
+// or a no-write the caller set (Open WebUI's runtime, the embedded shell) is
+// kept.
 func bytecodeLines(platform string) string {
-	cache := "${XDG_CACHE_HOME:-$HOME/.cache}"
+	choose := "  case \"${XDG_CACHE_HOME:-}\" in\n" +
+		"    /*) PYTHONPYCACHEPREFIX=\"$XDG_CACHE_HOME/" + bytecodeCacheDir + "\" ;;\n" +
+		"    \"\") case \"${HOME:-}\" in /*) PYTHONPYCACHEPREFIX=\"$HOME/.cache/" + bytecodeCacheDir + "\" ;; esac ;;\n" +
+		"  esac\n"
 	if strings.HasPrefix(platform, "macos-") {
-		cache = "$HOME/Library/Caches"
+		choose = "  case \"${HOME:-}\" in\n" +
+			"    /tmp|/tmp/*|/private/tmp|/private/tmp/*) ;;\n" +
+			"    /*) PYTHONPYCACHEPREFIX=\"$HOME/Library/Caches/" + bytecodeCacheDir + "\" ;;\n" +
+			"  esac\n"
 	}
 	return "if [ -z \"${PYTHONPYCACHEPREFIX:-}\" ] && [ -z \"${PYTHONDONTWRITEBYTECODE:-}\" ]; then\n" +
-		"  if [ -n \"${HOME:-}\" ]; then export PYTHONPYCACHEPREFIX=\"" + cache + "/" + bytecodeCacheDir + "\"; else export PYTHONDONTWRITEBYTECODE=1; fi\n" +
+		choose +
+		"  if [ -n \"${PYTHONPYCACHEPREFIX:-}\" ]; then export PYTHONPYCACHEPREFIX; else export PYTHONDONTWRITEBYTECODE=1; fi\n" +
 		"fi\n"
 }
 

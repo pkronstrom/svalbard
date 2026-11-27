@@ -697,4 +697,11 @@ func TestEnvironmentKeepsBytecodeOffTheDrive(t *testing.T) {
 	if got := bytecodeDir(); want != "" && got != want {
 		t.Errorf("bytecodeDir() = %q, want %q", got, want)
 	}
+	// macOS's /tmp is never a cache dir (see the PlatformIO checkpoint).
+	if runtime.GOOS == "darwin" {
+		t.Setenv("HOME", "/tmp/u")
+		if got := bytecodeDir(); got != "" {
+			t.Errorf("bytecodeDir() with HOME under /tmp = %q, want none", got)
+		}
+	}
 }
