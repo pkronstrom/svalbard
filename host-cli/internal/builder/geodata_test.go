@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -27,6 +28,9 @@ func TestVectorServiceBuildsPMTilesFromDeclaredLayers(t *testing.T) {
 		if image != BaseToolsImage || tool != "tippecanoe" {
 			t.Fatalf("tool call = %s in %s", tool, image)
 		}
+		if !slices.Contains(args, "--drop-densest-as-needed") {
+			t.Fatalf("tippecanoe args = %v, want density limit", args)
+		}
 		for index, arg := range args {
 			if arg == "-o" && index+1 < len(args) {
 				return "", os.WriteFile(args[index+1], []byte("pmtiles"), 0o644)
@@ -42,7 +46,7 @@ func TestVectorServiceBuildsPMTilesFromDeclaredLayers(t *testing.T) {
 			Config: map[string]string{
 				"service_type": "wfs", "service_url": server.URL,
 				"output_format": "application/json", "srs": "EPSG:4326",
-				"layer_name": "lipas", "max_zoom": "14",
+				"layer_name": "lipas", "max_zoom": "14", "drop_densest_as_needed": "true",
 			},
 			Layers: []catalog.BuildLayer{{Name: "source:points", Filter: "kind = 1"}},
 		},
@@ -76,6 +80,14 @@ func TestVectorStaticBuildsPMTilesFromShapefileArchive(t *testing.T) {
 	original := runToolCommand
 	t.Cleanup(func() { runToolCommand = original })
 	var calls []string
+	// macOS creates this AppleDouble companion beside extracted files on exFAT.
+	sidecar := filepath.Join(root, ".staging", "build", "protected", "source-01", "data", "._layer.shp")
+	if err := os.MkdirAll(filepath.Dir(sidecar), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sidecar, []byte("metadata"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	runToolCommand = func(_ context.Context, _, _ string, image, tool string, args []string) (string, error) {
 		if image != BaseToolsImage {
 			t.Fatalf("image = %q", image)
@@ -83,6 +95,9 @@ func TestVectorStaticBuildsPMTilesFromShapefileArchive(t *testing.T) {
 		calls = append(calls, tool)
 		switch tool {
 		case "ogr2ogr":
+			if got := filepath.Base(args[len(args)-1]); got != "layer.shp" {
+				t.Fatalf("ogr2ogr source = %q, want layer.shp", got)
+			}
 			output := args[len(args)-2]
 			return "", os.WriteFile(output, []byte(`{"type":"FeatureCollection","features":[]}`), 0o644)
 		case "tippecanoe":
