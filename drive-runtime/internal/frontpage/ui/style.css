@@ -138,11 +138,13 @@ h2 { font-size: 1rem; font-weight: 710; }
 .item-copy { flex: 1 1 215px; min-width: 0; }
 .item-preview { flex: 0 0 clamp(88px, 15vw, 155px); }
 .item-recipe { margin-top: 5px; font-size: .75rem; overflow-wrap: anywhere; }
-.terminal { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; margin-top: 20px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
-.terminal-screen { --xt-bg: #1c3029; --xt-fg: #eef6ee; --xt-padding: 9px 11px; --xt-font-family: ui-monospace, monospace; --xt-font-size: 16px; }
-.terminal-screen .xt { height: auto; min-height: 35px; max-height: min(48vh, 440px); border-radius: 5px; line-height: 1.5; }
-.terminal-screen .xt:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
-#terminal-run { min-height: 44px; }
+.terminal { display: grid; gap: 9px; margin-top: 20px; }
+.terminal-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.terminal-actions code { padding: 6px 9px; border-radius: 5px; background: var(--rail); }
+.terminal-screen { height: clamp(240px, 52vh, 550px); min-width: 0; padding: 9px; overflow: hidden; border-radius: 7px; background: #1c3029; }
+.terminal-screen > .xterm { height: 100%; }
+.terminal-screen:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+#terminal-status { font-size: .85rem; }
 .item-copy h1 { font-size: clamp(1.45rem, 3vw, 2rem); }
 .item-copy p:empty { display: none; }
 #item-kind { margin-bottom: 3px; font-size: .77rem; font-weight: 620; }

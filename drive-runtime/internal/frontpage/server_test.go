@@ -135,6 +135,13 @@ func TestSearchOpensDocumentAtMatchingPage(t *testing.T) {
 
 func startDashboard(t *testing.T, root string, cfg config.RuntimeConfig) (*http.Client, string, func()) {
 	t.Helper()
+	client, address, stop := startDashboardLink(t, root, cfg)
+	origin, _, _ := strings.Cut(address, "/#")
+	return client, origin, stop
+}
+
+func startDashboardLink(t *testing.T, root string, cfg config.RuntimeConfig) (*http.Client, string, func()) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	address, done := make(chan string, 1), make(chan error, 1)
@@ -164,7 +171,7 @@ func startDashboard(t *testing.T, root string, cfg config.RuntimeConfig) (*http.
 	t.Cleanup(client.CloseIdleConnections)
 	select {
 	case url := <-address:
-		return client, strings.TrimSuffix(url, "/"), stop
+		return client, url, stop
 	case err := <-done:
 		stopped = true
 		t.Fatalf("dashboard failed to start: %v", err)

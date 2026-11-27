@@ -28,7 +28,12 @@ let searchRead = 0;
 let searchRequest = 0;
 let shownQuery = "";
 let queuedLaunch;
-let settingsTerminal;
+const shellItem = {label: "Terminal", group: "Tools", icon: "terminal", terminal: true,
+  description: "Open your shell in the vault folder."};
+const terminalKey = readTerminalKey();
+let shellSession;
+let previousShell;
+let loadingShell = false;
 
 function node(tag, css, text) {
   const element = document.createElement(tag);
@@ -390,95 +395,55 @@ function savedAddress(item, base) {
   return new URL(path, base).href;
 }
 
-async function openSettingsTerminal(item) {
+function readTerminalKey() {
+  const hash = location.hash.slice(1);
+  const key = hash.startsWith("terminal-key=") ? hash.slice("terminal-key=".length) : "";
+  if (key) history.replaceState(null, "", location.pathname + location.search);
   try {
-    settingsTerminal ??= import("/vendor/xterminal/xterminal.esm.js").then(({default: XTerminal}) =>
-      createSettingsTerminal(XTerminal, item.command));
-    const terminal = await settingsTerminal;
-    if (selection === item) terminal.focus();
-  } catch (error) {
-    settingsTerminal = undefined;
-    if (selection === item) note(byId("item-status"), error.message, true);
+    if (key) sessionStorage.setItem("svalbard-terminal-key", key);
+    return key || sessionStorage.getItem("svalbard-terminal-key") || "";
+  } catch {
+    return key;
   }
 }
 
-function createSettingsTerminal(XTerminal, prefill) {
-  const screen = byId("terminal-screen");
-  const terminal = new XTerminal({target: screen});
-  const run = byId("terminal-run");
-  const input = screen.querySelector(".xt-stdin input");
-  const log = screen.querySelector(".xt-stdout > span");
-  screen.querySelector(".xt").tabIndex = -1;
-  input.setAttribute("aria-label", "Drive command");
-  input.enterKeyHint = "go";
-  input.maxLength = 2048;
-  log.setAttribute("role", "log");
-  log.setAttribute("aria-label", "Command output");
-
-  function prompt() {
-    terminal.write("$ ");
-    terminal.resume();
-    terminal.setInput(prefill);
-    run.disabled = false;
-  }
-
-  async function submit() {
-    if (run.disabled) return;
-    const line = input.value.trim();
-    run.disabled = true;
-    input.readOnly = true;
-    terminal.clearLast();
-    terminal.clearInput();
-    terminal.pause();
-    try {
-      const output = await settingsOutput(terminal, line);
-      // Escape text before XTerminal adds markup for line breaks and spaces.
-      terminal.writeln(XTerminal.escapeHTML(output));
-      while (log.childElementCount > 40) log.firstElementChild.remove();
-    } finally {
-      input.readOnly = false;
-      prompt();
-      if (selection?.terminal) terminal.focus();
-    }
-  }
-
-  input.addEventListener("keydown", event => {
-    // Keep native tab navigation. Submit here so settings values do not enter
-    // XTerminal's automatic echo or command history.
-    if (event.key === "Tab" || event.key === "Enter") event.stopImmediatePropagation();
-    if (event.key !== "Enter" || event.isComposing) return;
-    event.preventDefault();
-    submit();
-  }, {capture: true});
-  screen.addEventListener("click", () => {
-    if (window.getSelection()?.isCollapsed) terminal.focus();
-  });
-  run.addEventListener("click", submit);
-  prompt();
-  return terminal;
+function renderTerminal() {
+  const command = byId("terminal-command");
+  command.textContent = selection?.command || "";
+  command.hidden = !command.textContent || Boolean(shellSession);
+  byId("terminal-start").hidden = Boolean(shellSession);
+  byId("terminal-start").disabled = !terminalKey || loadingShell;
+  byId("terminal-stop").hidden = !shellSession;
+  byId("terminal-paste").hidden = !shellSession || !selection?.command;
+  if (!terminalKey) note(byId("terminal-status"), "Open the private link printed by ./run web to use the terminal.");
 }
 
-async function settingsOutput(terminal, line) {
-  const parts = line.match(/^\.\/run\s+settings(?:\s+(\S+)(?:\s+(.+))?)?$/);
-  if (!parts) return "Enter ./run settings or ./run settings --help.";
-
-  const [, key, value] = parts;
-  const args = key ? [key] : [];
-  if (value !== undefined) {
-    const quoted = value.length >= 2 && ["'", '"'].includes(value[0]) && value.at(-1) === value[0];
-    args.push(quoted ? value.slice(1, -1) : value);
-  }
-  if (value === undefined || key === "--reset") {
-    const history = terminal.history.slice(-39);
-    terminal.clearHistory();
-    terminal.history = [...history, line];
-  }
-  const echo = "$ ./run settings" + (key ? " " + key : "");
+async function startTerminal() {
+  if (!terminalKey || loadingShell || shellSession) return;
+  const prefill = selection?.command || "";
+  const status = byId("terminal-status");
+  loadingShell = true;
+  renderTerminal();
+  note(status, "Connecting…");
   try {
-    const data = await request("/api/terminal/settings", {args});
-    return echo + "\n" + data.output.trimEnd();
+    const {openShell} = await import("/terminal.js");
+    previousShell?.dispose();
+    previousShell = undefined;
+    shellSession = openShell(byId("terminal-screen"), terminalKey, prefill, connected => {
+      if (connected) {
+        note(status, "");
+      } else {
+        previousShell = shellSession;
+        shellSession = undefined;
+        note(status, "Terminal disconnected. Start a new terminal to continue.");
+        renderTerminal();
+      }
+    });
   } catch (error) {
-    return echo + "\n" + error.message;
+    note(status, error.message, true);
+  } finally {
+    loadingShell = false;
+    renderTerminal();
   }
 }
 
@@ -494,7 +459,7 @@ function renderItem() {
   note(output, "");
   if (!item.service) {
     if (item.terminal) {
-      openSettingsTerminal(item);
+      renderTerminal();
     } else if (item.command) {
       note(status, "Run this action from the drive’s terminal.");
       note(output, item.command);
@@ -561,7 +526,7 @@ function renderRoute() {
     route = "search";
     history.replaceState(null, "", "#search");
   }
-  selection = entries.get(route);
+  selection = route === "terminal" ? shellItem : entries.get(route);
   const inSearch = inventory.hasSearch && (route === "search" || Boolean(result));
   if (!selection && !inSearch) route = "overview";
 
@@ -749,6 +714,10 @@ byId("filter").addEventListener("input", filterNavigation);
 byId("overview-filter").addEventListener("input", renderHome);
 byId("overview-type").addEventListener("change", renderHome);
 byId("overview-order").addEventListener("change", renderHome);
+byId("terminal-start").addEventListener("click", startTerminal);
+byId("terminal-stop").addEventListener("click", () => shellSession?.disconnect());
+byId("terminal-paste").addEventListener("click", () => shellSession?.paste(selection.command));
+window.addEventListener("pagehide", () => shellSession?.disconnect());
 byId("stop-search-reader").addEventListener("click", stopSearchReader);
 byId("refresh").addEventListener("click", refreshPages);
 byId("back-to-search").addEventListener("click", () => {

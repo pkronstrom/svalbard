@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f0f3ee">
   <title>Svalbard Drive</title>
   <link rel="icon" href="/favicon.png" type="image/png">
-  <link rel="stylesheet" href="/vendor/xterminal/xterminal.css">
+  <link rel="stylesheet" href="/vendor/xterm/xterm.css">
   <link rel="stylesheet" href="/style.css">
   <script src="/frontpage.js" defer></script>
 </head>
@@ -25,6 +25,7 @@
       <div class="nav-primary">
         <a class="nav-link" href="#overview" aria-current="page"><span class="glyph" aria-hidden="true">⌂</span>Overview</a>
         <a class="nav-link" href="#search" id="search-nav" hidden><span class="glyph" aria-hidden="true">⌕</span>Search the vault</a>
+        <a class="nav-link" href="#terminal"><span class="glyph" aria-hidden="true">›_</span>Terminal</a>
       </div>
       <div id="groups"></div>
       <section class="group" aria-labelledby="saved-title">
@@ -114,8 +115,14 @@
         <p id="item-status" role="status" hidden></p>
         <pre id="item-output" hidden></pre>
         <section id="terminal" class="terminal" aria-label="Drive terminal" hidden>
-          <div id="terminal-screen" class="terminal-screen"></div>
-          <button id="terminal-run" class="button secondary" type="button" disabled>Run</button>
+          <div class="terminal-actions">
+            <code id="terminal-command" hidden></code>
+            <button id="terminal-start" class="button primary" type="button">Start terminal</button>
+            <button id="terminal-paste" class="button secondary" type="button" hidden>Paste settings command</button>
+            <button id="terminal-stop" class="button quiet-button" type="button" hidden>Disconnect</button>
+          </div>
+          <p id="terminal-status" class="quiet" role="status" hidden></p>
+          <div id="terminal-screen" class="terminal-screen" hidden></div>
         </section>
       </section>
 

@@ -29,7 +29,7 @@ Run `./run web` from the vault for a browser dashboard. The sidebar lists instal
 
 Archives listed in Overview and their search hits open through the dashboard's shared Kiwix library when the bundled Kiwix tools are installed. **Stop serving** removes an archive after its last active service releases it. Use `./run web --no-open` to print the dashboard URL without opening a browser. Use Ctrl+C to stop the dashboard and its services.
 
-Open **Settings** to use the drive terminal in the dashboard. Press Enter to run the prefilled `./run settings` command. Add a key to read it, add its new value to change it, or run `./run settings --reset <key>` to restore the default.
+Open the private link printed by `./run web` and select **Terminal** to start your interactive shell in the vault folder. The shell runs as your local user. Opening it from **Settings** prefills `./run settings`. Press Enter to run it. The terminal renders ANSI colors, including syntax highlighting provided by your shell or tools.
 
 Everything the wizard and the TUI screens do has a command, so scripts and agents never need the TUI:
 

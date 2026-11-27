@@ -3,6 +3,7 @@ package frontpage
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -26,21 +27,21 @@ import (
 var assets embed.FS
 
 type dashboard struct {
-	ctx        context.Context
-	root       string
-	port       int
-	inv        inventory
-	specs      map[string]serviceSpec
-	previews   map[string]bool
-	archives   map[string]string // installed ZIM filename to its dashboard service key
-	kiwix      *browse.Library
-	mu         sync.Mutex
-	jobs       map[string]*job
-	workers    sync.WaitGroup
-	wiki       wikiService
-	settingsMu sync.Mutex
-	searchMu   sync.Mutex
-	search     *search.Session
+	ctx         context.Context
+	root        string
+	port        int
+	inv         inventory
+	specs       map[string]serviceSpec
+	previews    map[string]bool
+	archives    map[string]string // installed ZIM filename to its dashboard service key
+	kiwix       *browse.Library
+	mu          sync.Mutex
+	jobs        map[string]*job
+	workers     sync.WaitGroup
+	wiki        wikiService
+	terminalKey string
+	searchMu    sync.Mutex
+	search      *search.Session
 }
 
 type link struct {
@@ -78,7 +79,7 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 	d := &dashboard{
 		ctx: ctx, root: root, port: listener.Addr().(*net.TCPAddr).Port,
 		inv: inv, specs: specs, previews: installedPreviewFiles(inv), jobs: make(map[string]*job),
-		archives: make(map[string]string), kiwix: browse.NewLibrary(root),
+		archives: make(map[string]string), kiwix: browse.NewLibrary(root), terminalKey: rand.Text(),
 	}
 	for key, spec := range specs {
 		if spec.name == "browse" && spec.target != "" {
@@ -94,7 +95,7 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 
 	exited := make(chan error, 1)
 	go func() { exited <- server.Serve(listener) }()
-	address := "http://" + host + "/"
+	address := "http://" + host + "/#terminal-key=" + d.terminalKey
 	fmt.Fprintf(out, "Svalbard frontpage: %s\nPress Ctrl+C to stop the dashboard and its services.\n", address)
 	if open != nil {
 		_ = open(address)
@@ -142,10 +143,11 @@ func (d *dashboard) handler(host string) http.Handler {
 	mux.HandleFunc("POST /api/services/{key}/stop", d.stop)
 	mux.HandleFunc("POST /api/search", d.runSearch)
 	mux.HandleFunc("POST /api/read", d.readResult)
-	mux.HandleFunc("POST /api/terminal/settings", d.runSettings)
+	mux.HandleFunc("GET /api/terminal", d.serveTerminal)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-src http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+		// xterm.js calculates dynamic font and cell styles in its DOM renderer.
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self' ws://"+host+"; frame-src http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")

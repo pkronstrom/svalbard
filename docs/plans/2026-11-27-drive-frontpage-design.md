@@ -8,7 +8,7 @@ Overview lists each installed action and saved HTML app with a short description
 
 The dashboard starts one loopback Kiwix library on demand and adds archives as users open them from Overview, the sidebar, or search. **Serve Everything** can use that same library and keep the full collection loaded. Stopping an individual archive removes it when its last service releases it. Older vaults with only `kiwix-serve` use the standalone reader.
 
-The Settings detail view includes a terminal with `./run settings` ready to submit. The terminal calls the runtime's existing settings command and displays its text output. It accepts the same list, read, set, reset, and help forms. Its command endpoint uses the dashboard's same-origin POST controls and accepts only settings arguments. The command transcript stays in the browser tab.
+The Terminal view starts the user's interactive shell in the vault. Settings opens the same terminal with `./run settings` prefilled. The browser sends keystrokes and terminal size over a WebSocket to a local pseudo-terminal. Only the exact dashboard origin and a browser with the key from the private launch link can connect. Disconnecting closes the pseudo-terminal and ends the shell. xterm.js is bundled on the drive and renders the colors emitted by the shell and its programs.
 
 A managed action exposes its starting, running, stopped or failed state. The dashboard uses the running service's URL, deduplicates identical launches, and stops its services when it exits. Explicit local-network sharing uses the existing Share action. A loopback address, exact Host check, and same-origin POSTs constrain dashboard controls. Browser requests select a known action and, for Open WebUI, may select an installed model.
 
