@@ -11,6 +11,8 @@ bin/
 build-tools/zim-compact
 
 *.zim
+# Small generated test fixtures (testdata/make_fixture.py) are committed.
+!host-cli/internal/zimext/testdata/*.zim
 *.pmtiles
 *.gguf
 .DS_Store
