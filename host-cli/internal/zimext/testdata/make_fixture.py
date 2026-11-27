@@ -24,6 +24,8 @@ documents.zim  "Fixture Library", main page home, laid out like an openZIM nauti
                  files/book.epub         book.epub
                  Novel.123 and Novel.123.epub, a Gutenberg-style HTML book with its EPUB copy
 empty.zim      only vendors/app.js: nothing to index.
+long-url.zim   an auxiliary JSON URL beyond gozim's directory-entry buffer,
+               a readable article in the title index and an embedded PDF.
 """
 import os
 import sys
@@ -134,6 +136,11 @@ def main(out):
     ])
     zim(os.path.join(out, "empty.zim"), "Empty", None, [
         Entry("vendors/app.js", "application/javascript", "console.log('app');"),
+    ])
+    zim(os.path.join(out, "long-url.zim"), "Long URL", "home", [
+        Entry("api/data.json?query=" + "x" * 4100, "application/json", "{}", "Data"),
+        Entry("guide.pdf", "application/pdf", read(os.path.join(PDFS, "text.pdf")), "Guide"),
+        Entry("home", "text/html", page("Long URL", "<p>A page that remains searchable.</p>"), "Long URL"),
     ])
 
 

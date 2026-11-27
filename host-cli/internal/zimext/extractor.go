@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -67,17 +68,38 @@ func ExtractArticlesContext(ctx context.Context, path string) ([]searchdb.Articl
 	// Newer ZIM files (new namespace scheme) store content in 'C'; older ones
 	// use 'A' for articles.  Try 'C' first, fall back to 'A'.
 	ns := byte('C')
-	if archive.EntryCountByNamespace('C') == 0 {
+	count := archive.EntryCountByNamespace(ns)
+	if count == 0 {
 		ns = 'A'
+		count = archive.EntryCountByNamespace(ns)
 	}
+	articles, err := extractArticleEntries(ctx, archive.AllEntriesByNamespace(ns), count)
+	if archive.HasTitleIndex() && (count == 0 || isLongDirectoryEntry(err)) {
+		// A long auxiliary URL can break the namespace lookup or iteration.
+		// The title listing generally points only to the readable articles.
+		articles, err = extractArticleEntries(ctx, archive.AllEntriesByTitle(), 0)
+	}
+	if isLongDirectoryEntry(err) {
+		articles, err = extractArticleEntries(ctx, readableContentEntries(ctx, archive), 0)
+	}
+	if err != nil {
+		return nil, "", "", err
+	}
+	uuid := archive.UUID()
+	return articles, archiveTitle, hex.EncodeToString(uuid[:]), nil
+}
 
-	articles := make([]searchdb.Article, 0, archive.EntryCountByNamespace(ns))
-	for entry, iterErr := range archive.AllEntriesByNamespace(ns) {
+func extractArticleEntries(ctx context.Context, entries iter.Seq2[zim.Entry, error], count int) ([]searchdb.Article, error) {
+	articles := make([]searchdb.Article, 0, count)
+	for entry, iterErr := range entries {
 		if err := ctx.Err(); err != nil {
-			return nil, "", "", err
+			return nil, err
 		}
 		if iterErr != nil {
-			return nil, "", "", fmt.Errorf("iterate content entries: %w", iterErr)
+			return nil, fmt.Errorf("iterate content entries: %w", iterErr)
+		}
+		if entry.Namespace() != 'A' && entry.Namespace() != 'C' {
+			continue
 		}
 		if entry.IsRedirect() || !isIndexableMIME(entry.MIMEType()) || IsJunkEntry(entry.MIMEType(), entry.Path()) {
 			continue
@@ -85,7 +107,7 @@ func ExtractArticlesContext(ctx context.Context, path string) ([]searchdb.Articl
 
 		content, err := entry.ReadContent()
 		if err != nil {
-			return nil, "", "", fmt.Errorf("read %s: %w", entry.FullPath(), err)
+			return nil, fmt.Errorf("read %s: %w", entry.FullPath(), err)
 		}
 
 		if strings.HasPrefix(entry.MIMEType(), "text/html") && IsTemplateTitle(htmlTitle(content)) {
@@ -115,11 +137,9 @@ func ExtractArticlesContext(ctx context.Context, path string) ([]searchdb.Articl
 	}
 
 	if len(articles) == 0 {
-		return nil, "", "", ErrNoIndexableArticles
+		return nil, ErrNoIndexableArticles
 	}
-
-	uuid := archive.UUID()
-	return articles, archiveTitle, hex.EncodeToString(uuid[:]), nil
+	return articles, nil
 }
 
 // junkExtensions are the files of a ZIM's own web app that are stored with a

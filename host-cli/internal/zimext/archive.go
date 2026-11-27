@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"iter"
+	"log/slog"
 	"path"
 	"sort"
 	"strings"
@@ -33,6 +35,9 @@ type Embedded struct {
 type Archive struct {
 	zim *zim.Archive
 	ns  byte
+	// A long directory entry can also break the library's path lookup.
+	// Retain the document entries when listing needed the fallback scan.
+	documentEntries map[string]zim.Entry
 }
 
 // OpenArchive opens a ZIM. Close it when done. Documents are read once each,
@@ -86,12 +91,27 @@ func (a *Archive) HoldsDocuments() bool {
 // HTML is indexed already. Titles come from a nautilus catalogue when the
 // archive has one.
 func (a *Archive) Documents(ctx context.Context) ([]Embedded, error) {
+	if a.zim.EntryCountByNamespace(a.ns) != 0 {
+		documents, err := a.listDocuments(ctx, a.zim.AllEntriesByNamespace(a.ns), nil)
+		if !isLongDirectoryEntry(err) {
+			return documents, err
+		}
+	}
+	entries := make(map[string]zim.Entry)
+	documents, err := a.listDocuments(ctx, readableContentEntries(ctx, a.zim), entries)
+	if err == nil {
+		a.documentEntries = entries
+	}
+	return documents, err
+}
+
+func (a *Archive) listDocuments(ctx context.Context, entries iter.Seq2[zim.Entry, error], lookup map[string]zim.Entry) ([]Embedded, error) {
 	pages := map[string]bool{}
 	var found []Embedded
 	var catalogue string
-	for entry, err := range a.zim.AllEntriesByNamespace(a.ns) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	for entry, err := range entries {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
 		}
 		if err != nil {
 			return nil, fmt.Errorf("iterate content entries: %w", err)
@@ -109,6 +129,9 @@ func (a *Archive) Documents(ctx context.Context) ([]Embedded, error) {
 				return nil, fmt.Errorf("size of %s: %w", entry.Path(), err)
 			}
 			found = append(found, Embedded{Path: entry.Path(), MIME: mime, Size: size})
+			if lookup != nil {
+				lookup[entry.Path()] = entry
+			}
 		case entry.Path() == nautilusCatalogue:
 			if content, err := entry.ReadContent(); err == nil {
 				catalogue = string(content)
@@ -128,6 +151,44 @@ func (a *Archive) Documents(ctx context.Context) ([]Embedded, error) {
 	return documents, nil
 }
 
+func isLongDirectoryEntry(err error) bool {
+	return errors.Is(err, zim.ErrInvalidEntry) && strings.Contains(err.Error(), "missing null terminator")
+}
+
+// readableContentEntries works around gozim's fixed directory-entry buffer
+// only on the fallback path. Verify the archive before overlooking entries
+// its parser cannot read, so download corruption still fails the index.
+func readableContentEntries(ctx context.Context, archive *zim.Archive) iter.Seq2[zim.Entry, error] {
+	return func(yield func(zim.Entry, error) bool) {
+		if err := ctx.Err(); err != nil {
+			yield(zim.Entry{}, err)
+			return
+		}
+		if err := archive.Verify(); err != nil {
+			yield(zim.Entry{}, err)
+			return
+		}
+		for i := range archive.EntryCount() {
+			if err := ctx.Err(); err != nil {
+				yield(zim.Entry{}, err)
+				return
+			}
+			entry, err := archive.EntryByIndex(i)
+			if isLongDirectoryEntry(err) {
+				slog.Warn("skipping ZIM entry beyond reader's directory-entry buffer", "index", i)
+				continue
+			}
+			if err != nil {
+				yield(zim.Entry{}, err)
+				return
+			}
+			if (entry.Namespace() == 'A' || entry.Namespace() == 'C') && !yield(entry, nil) {
+				return
+			}
+		}
+	}
+}
+
 // MIMEType returns the MIME type of the content entry at entryPath, and
 // false when there is none.
 func (a *Archive) MIMEType(entryPath string) (string, bool) {
@@ -141,11 +202,15 @@ func (a *Archive) MIMEType(entryPath string) (string, bool) {
 // ReadEntry returns an entry's content. An entry larger than limit bytes is
 // not read: ErrEntryTooLarge.
 func (a *Archive) ReadEntry(entryPath string, limit int64) ([]byte, error) {
-	entry, err := a.zim.EntryByPath(string(a.ns) + "/" + entryPath)
-	if err != nil {
-		return nil, fmt.Errorf("find %s: %w", entryPath, err)
+	entry, ok := a.documentEntries[entryPath]
+	if !ok {
+		var err error
+		entry, err = a.zim.EntryByPath(string(a.ns) + "/" + entryPath)
+		if err != nil {
+			return nil, fmt.Errorf("find %s: %w", entryPath, err)
+		}
 	}
-	entry, err = entry.Resolve()
+	entry, err := entry.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", entryPath, err)
 	}

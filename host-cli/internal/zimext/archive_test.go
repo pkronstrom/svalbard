@@ -34,6 +34,35 @@ func TestExtractArticlesReportsAnArchiveWithNothingIndexable(t *testing.T) {
 	}
 }
 
+func TestExtractArticlesUsesTitleIndexWhenNamespaceLookupCannotReadLongURL(t *testing.T) {
+	articles, _, err := ExtractArticles("testdata/long-url.zim")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(articles) != 1 || articles[0].Path != "/home" {
+		t.Fatalf("articles = %+v, want only /home", articles)
+	}
+}
+
+func TestDocumentsRemainReadableWithAnOverlongAuxiliaryURL(t *testing.T) {
+	archive, err := OpenArchive("testdata/long-url.zim")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	documents, err := archive.Documents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 1 || documents[0].Path != "guide.pdf" {
+		t.Fatalf("documents = %+v, want guide.pdf", documents)
+	}
+	data, err := archive.ReadEntry(documents[0].Path, 1<<20)
+	if err != nil || !bytes.HasPrefix(data, []byte("%PDF")) {
+		t.Fatalf("reading guide.pdf: %v, %d bytes", err, len(data))
+	}
+}
+
 func openDocuments(t *testing.T) *Archive {
 	t.Helper()
 	archive, err := OpenArchive(documentsZIM)
