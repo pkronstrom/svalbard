@@ -146,7 +146,7 @@ function overviewRow(item, grouped) {
   row.append(itemPreview(item, "overview-preview"), content);
 
   if (item.service && readerKinds.has(item.icon)) {
-    const launch = node("a", "button primary overview-launch", overviewLaunchLabel(item.service));
+    const launch = node("a", "button overview-launch", overviewLaunchLabel(item.service));
     launch.href = link.href;
     launch.dataset.service = item.service;
     launch.dataset.label = item.label;
