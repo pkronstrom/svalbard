@@ -56,9 +56,12 @@ func ExtraFlags(modelPath string, ctxSize int) []string {
 	if strings.Contains(name, "qwen3.8") {
 		flags = append(flags, "--reasoning-effort", "medium", "--reasoning-preserve", "--jinja", "--chat-template", qwen38ChatTemplate)
 	}
+	if strings.Contains(name, "inkling-2") {
+		flags = append(flags, "--jinja")
+	}
 
-	if draft, nMax, ok := packagedDraft(modelPath, name); ok {
-		flags = append(flags, "--spec-type", "draft-mtp", "--spec-draft-model", draft, "--spec-draft-n-max", nMax)
+	if draft, mode, nMax, ok := packagedDraft(modelPath, name); ok {
+		flags = append(flags, "--spec-type", mode, "--spec-draft-model", draft, "--spec-draft-n-max", nMax)
 	}
 
 	return flags
@@ -88,6 +91,10 @@ func SamplingParams(modelName string) map[string]float64 {
 
 func modelSampler(name string) []samplerParam {
 	switch {
+	case strings.Contains(name, "inkling-2"):
+		return []samplerParam{
+			{"--temp", "temperature", "1.0"}, {"--top-k", "top_k", "0"}, {"--top-p", "top_p", "1.0"}, {"--min-p", "min_p", "0.0"},
+		}
 	case strings.Contains(name, "qwen3.8"):
 		return []samplerParam{
 			{"--temp", "temperature", "1.0"}, {"--top-k", "top_k", "20"}, {"--top-p", "top_p", "0.95"}, {"--min-p", "min_p", "0.0"},
@@ -106,20 +113,23 @@ func modelSampler(name string) []samplerParam {
 	}
 }
 
-// packagedDraft returns the optional Qwen3.8 27B MTP drafter installed under
-// models/draft/ (ai/mtp pack) when the target is one of the packaged quants.
-// Its presence is the opt-in: the drafter carries the same MTP layer as the
-// target, and speculation showed no decode gain on Apple Silicon Metal.
-// Gemma 4 drafters are deliberately not matched (slower on Metal).
-func packagedDraft(modelPath, name string) (string, string, bool) {
-	if !strings.HasPrefix(name, "qwen3.8-27b-") || !strings.HasSuffix(name, ".gguf") ||
-		!(strings.Contains(name, "ud-iq4_xs") || strings.Contains(name, "ud-q4_k_m") || strings.Contains(name, "ud-q6_k_xl")) {
-		return "", "", false
+// packagedDraft enables speculation when a supported target has its optional
+// companion installed under models/draft/.
+func packagedDraft(modelPath, name string) (path, mode, nMax string, ok bool) {
+	var filename string
+	switch {
+	case name == "inkling-2-mini-ud-q4_k_m.gguf":
+		filename, mode, nMax = "dspark-Inkling-2-Mini-Q8_0.gguf", "draft-dspark", "5"
+	case strings.HasPrefix(name, "qwen3.8-27b-") && strings.HasSuffix(name, ".gguf") &&
+		(strings.Contains(name, "ud-iq4_xs") || strings.Contains(name, "ud-q4_k_m") || strings.Contains(name, "ud-q6_k_xl")):
+		filename, mode, nMax = "mtp-Qwen3.8-27B-Q4_0.gguf", "draft-mtp", "2"
+	default:
+		return "", "", "", false
 	}
-	draft := filepath.Join(filepath.Dir(modelPath), "draft", "mtp-Qwen3.8-27B-Q4_0.gguf")
-	info, err := os.Stat(draft)
+	path = filepath.Join(filepath.Dir(modelPath), "draft", filename)
+	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() {
-		return "", "", false
+		return "", "", "", false
 	}
-	return draft, "2", true
+	return path, mode, nMax, true
 }
