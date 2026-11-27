@@ -3,13 +3,14 @@ import {FitAddon} from "./vendor/xterm/addon-fit.mjs";
 
 export function openShell(target, key, mode, prefill, onConnection) {
   target.hidden = false;
+  const colors = getComputedStyle(target);
   const term = new Terminal({
     fontFamily: "ui-monospace, Menlo, monospace",
     fontSize: 14,
     cursorBlink: true,
     screenReaderMode: true,
     scrollback: 2000,
-    theme: {background: "#1c3029", foreground: "#eef6ee", cursor: "#eef6ee"},
+    theme: {background: colors.backgroundColor, foreground: colors.color, cursor: colors.color},
   });
   const fit = new FitAddon();
   term.loadAddon(fit);

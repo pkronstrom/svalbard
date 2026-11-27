@@ -83,9 +83,7 @@ function navLink(item) {
   link.href = "#" + item.route;
   link.title = item.label;
   link.dataset.match = itemSearchText(item);
-  const icon = node("span", "glyph", icons[item.icon] || "·");
-  icon.setAttribute("aria-hidden", "true");
-  link.append(icon, node("span", "nav-text", item.label));
+  link.append(node("span", "nav-text", item.label));
   if (item.service) {
     link.dataset.service = item.service;
     const indicator = node("span", "nav-dot");

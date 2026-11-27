@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f0f3ee">
+  <meta name="theme-color" content="#e9eef0">
   <title>Svalbard Drive</title>
   <link rel="icon" href="/favicon.png" type="image/png">
   <link rel="stylesheet" href="/vendor/xterm/xterm.css">
@@ -14,8 +14,8 @@
   <a class="skip" href="#main">Skip to workspace</a>
   <aside class="sidebar" id="sidebar" aria-label="Drive sidebar">
     <a class="brand" href="#overview">
-      <span class="brand-mark" aria-hidden="true">✦</span>
-      <span><strong>Svalbard</strong><small id="vault">Drive</small></span>
+      <strong>Svalbard</strong>
+      <small id="vault">Drive</small>
     </a>
     <label class="filter">
       <span class="lens" aria-hidden="true"></span>
@@ -23,15 +23,15 @@
     </label>
     <nav id="nav" aria-label="Drive contents">
       <div class="nav-primary">
-        <a class="nav-link" href="#overview" aria-current="page"><span class="glyph" aria-hidden="true">⌂</span>Overview</a>
-        <a class="nav-link" href="#search" id="search-nav" hidden><span class="glyph" aria-hidden="true">⌕</span>Search the vault</a>
-        <a class="nav-link" href="#terminal"><span class="glyph" aria-hidden="true">›_</span>Terminal</a>
+        <a class="nav-link" href="#overview" aria-current="page">Overview</a>
+        <a class="nav-link" href="#search" id="search-nav" hidden>Search the vault</a>
+        <a class="nav-link" href="#terminal">Terminal</a>
       </div>
       <div id="groups"></div>
       <section class="group" aria-labelledby="saved-title">
         <div class="group-title">
           <h2 id="saved-title">Saved apps</h2>
-          <button type="button" class="icon-button" id="refresh" aria-label="Refresh saved apps" title="Refresh saved apps" disabled>↻</button>
+          <button type="button" class="text-button" id="refresh" aria-label="Refresh saved apps" disabled>Refresh</button>
         </div>
         <div id="saved-links"></div>
         <p id="workspace-status" class="quiet" role="status"></p>
@@ -43,7 +43,7 @@
   <main id="main" class="main" tabindex="-1">
     <header class="top">
       <div class="top-location">
-        <button type="button" id="menu" class="icon-button mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Toggle sidebar">☰</button>
+        <button type="button" id="menu" class="button quiet-button mobile-menu" aria-controls="sidebar" aria-expanded="false">Menu</button>
         <a href="#overview" class="top-home">Drive</a>
         <span class="divider" aria-hidden="true">/</span>
         <span id="location">Overview</span>
@@ -54,7 +54,8 @@
     <div id="viewport" class="viewport">
       <section id="overview" class="page overview" aria-labelledby="home-title">
         <header class="welcome">
-          <div><h1 id="home-title">Your offline vault</h1><p id="inventory-summary" class="quiet" role="status">Loading drive contents…</p></div>
+          <h1 id="home-title">Drive catalog</h1>
+          <p id="inventory-summary" class="quiet" role="status">Loading drive contents…</p>
         </header>
         <form id="home-search" class="search-form" hidden>
           <label for="home-query">Search articles and documents</label>
@@ -64,10 +65,10 @@
           </div>
         </form>
         <div class="overview-list" id="home-content" hidden>
-          <h2 id="contents-title">Explore the drive</h2>
+          <h2 id="contents-title">Installed items</h2>
           <div class="catalog-controls" aria-labelledby="contents-title">
             <label class="catalog-filter" for="overview-filter">
-              Filter installed items
+              Filter items
               <input id="overview-filter" type="search" placeholder="Name, description, or tag">
             </label>
             <label for="overview-type">

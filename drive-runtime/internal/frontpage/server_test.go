@@ -27,7 +27,7 @@ func TestDashboardServesInstalledAppsAndReapsThem(t *testing.T) {
 		{Label: "CLI tool", Action: config.ExecAction(config.ExecActionConfig{Executable: "ignored"})},
 	}}}}
 	client, origin, stop := startDashboard(t, root, cfg)
-	if page := requestBody(t, client, origin+"/", http.StatusOK); !strings.Contains(page, "Your offline vault") {
+	if page := requestBody(t, client, origin+"/", http.StatusOK); !strings.Contains(page, "Drive catalog") {
 		t.Fatalf("dashboard returned %q", page)
 	}
 	var inv inventory
