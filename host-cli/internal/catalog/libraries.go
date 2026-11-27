@@ -125,6 +125,24 @@ func validateLibraryRecipe(item Item) error {
 	return nil
 }
 
+// providedPackages are the packages a js-lib recipe offers pages: its
+// libraries, or every top-level package when it lists none (a user recipe,
+// whose top-level packages each get a quickstart).
+func providedPackages(item Item) []string {
+	var pkgs []string
+	for _, lib := range item.Libraries {
+		pkgs = append(pkgs, lib.Package)
+	}
+	if len(pkgs) == 0 {
+		for _, source := range item.Bundle {
+			if pkg := TopLevelPackage(source); pkg != "" {
+				pkgs = append(pkgs, pkg)
+			}
+		}
+	}
+	return pkgs
+}
+
 // ValidateLibraries checks the js-lib recipes among items: every library's
 // portability is a known level and has its bundle source, and no package is
 // a library of two recipes, since a page's import of it must resolve to one.
@@ -139,11 +157,11 @@ func ValidateLibraries(items []Item) error {
 		if err := validateLibraryRecipe(item); err != nil {
 			return err
 		}
-		for _, lib := range item.Libraries {
-			if other, ok := owner[lib.Package]; ok {
-				return fmt.Errorf("library %s is in two recipes, %s and %s: a page's import of it must resolve to one", lib.Package, other, item.ID)
+		for _, pkg := range providedPackages(item) {
+			if other, ok := owner[pkg]; ok {
+				return fmt.Errorf("library %s is in two recipes, %s and %s: a page's import of it must resolve to one", pkg, other, item.ID)
 			}
-			owner[lib.Package] = item.ID
+			owner[pkg] = item.ID
 		}
 	}
 	return nil

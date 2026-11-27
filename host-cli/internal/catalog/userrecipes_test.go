@@ -388,3 +388,18 @@ bundle:
 		t.Errorf("js-unpinned skipped for %q, want the missing pin", reasons["js-unpinned"])
 	}
 }
+
+// A user recipe without libraries: still offers its top-level packages to
+// pages, so it may not take over a package a built-in recipe has.
+func TestUserJSLibCannotTakeOverABuiltInLibrary(t *testing.T) {
+	cat, err := NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	writeUserRecipe(t, dir, "my-d3.yaml", "type: js-lib\nbundle:\n  - url: https://registry.npmjs.org/d3/-/d3-6.7.0.tgz\n    sha256: "+strings.Repeat("ab", 32)+"\n    dest: node_modules/d3\n")
+	skipped := cat.LoadUserRecipes(dir)
+	if len(skipped) != 1 || !strings.Contains(skipped[0].Reason, "d3") || !strings.Contains(skipped[0].Reason, "js-core") {
+		t.Fatalf("skipped = %+v, want my-d3 refused for d3, which js-core has", skipped)
+	}
+}
