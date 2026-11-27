@@ -82,6 +82,9 @@ func runHTML(ctx context.Context, stdout, stderr io.Writer, driveRoot string, ar
 	if result.Portability == "directory" {
 		fmt.Fprintln(stdout, "open it through the drive's server, not by double-click")
 	}
+	for _, n := range result.Notices {
+		fmt.Fprintln(stdout, n)
+	}
 	for _, w := range result.Warnings {
 		fmt.Fprintf(stdout, "warning: %s\n", w)
 	}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // The drive's JS libraries: one archive per js-lib recipe, lib/js/<id>.zip,
@@ -35,8 +36,10 @@ type archive struct {
 	// mains maps a package folder to the file a bare import of it resolves
 	// to (a self-contained build), from svalbard-js.json.
 	mains map[string]string
-	// pkgJSON caches parsed package.json files by package folder.
+	// pkgJSON caches parsed package.json files by package folder; mu guards
+	// it, since esbuild resolves from several goroutines.
 	pkgJSON map[string]*packageJSON
+	mu      sync.Mutex
 }
 
 func openArchive(id, file string) (*archive, error) {
@@ -120,12 +123,18 @@ type libraries struct {
 	byPackage map[string][]*archive
 	// documented are the packages with a quickstart, by package.
 	documented map[string]library
+	// twice are packages two recipes document; a page cannot import them.
+	twice map[string][]string
+	// broken are the archives that could not be read, by recipe; a page
+	// fails only when it needs one.
+	broken   map[string]error
+	warnings []string
 }
 
 // loadLibraries opens every archive under lib/js/ of the drive. A drive
 // without any has none; that is not an error until a page imports one.
 func loadLibraries(driveRoot string) (*libraries, error) {
-	libs := &libraries{byPackage: map[string][]*archive{}, documented: map[string]library{}}
+	libs := &libraries{byPackage: map[string][]*archive{}, documented: map[string]library{}, twice: map[string][]string{}, broken: map[string]error{}}
 	dir := filepath.Join(driveRoot, filepath.FromSlash(libraryDir))
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -141,14 +150,19 @@ func loadLibraries(driveRoot string) (*libraries, error) {
 		}
 		a, err := openArchive(id, filepath.Join(dir, e.Name()))
 		if err != nil {
-			libs.close()
-			return nil, fmt.Errorf("library archive %s: %w", e.Name(), err)
+			libs.broken[id] = err
+			libs.warnings = append(libs.warnings, fmt.Sprintf("lib/js/%s cannot be read (%v); its libraries are left out", e.Name(), err))
+			continue
 		}
 		libs.archives = append(libs.archives, a)
 		for _, pkg := range a.topLevel() {
 			libs.byPackage[pkg] = append(libs.byPackage[pkg], a)
 			quickstart := filepath.Join(dir, id, "docs", strings.ReplaceAll(pkg, "/", "__")+".md")
 			if _, err := os.Stat(quickstart); err == nil {
+				if other, ok := libs.documented[pkg]; ok {
+					libs.twice[pkg] = append(libs.twice[pkg], other.archive.id, id)
+					continue
+				}
 				libs.documented[pkg] = library{pkg: pkg, archive: a, portability: frontmatterValue(quickstart, "portability")}
 			}
 		}
@@ -165,6 +179,9 @@ func (l *libraries) close() {
 // owner returns the archive a page's import of pkg resolves in: the one
 // recipe that has it as a library, or the one archive that holds it.
 func (l *libraries) owner(pkg string) (*archive, error) {
+	if ids, ok := l.twice[pkg]; ok {
+		return nil, fmt.Errorf("%q is a library of two recipes on this drive (%s); remove one of them", pkg, strings.Join(ids, " and "))
+	}
 	if lib, ok := l.documented[pkg]; ok {
 		return lib.archive, nil
 	}
@@ -178,6 +195,14 @@ func (l *libraries) owner(pkg string) (*archive, error) {
 			names = append(names, name)
 		}
 		sort.Strings(names)
+		var broken []string
+		for id := range l.broken {
+			broken = append(broken, "lib/js/"+id+".zip")
+		}
+		sort.Strings(broken)
+		if len(broken) > 0 {
+			return nil, fmt.Errorf("%q is not in a readable library archive; %s cannot be read", pkg, strings.Join(broken, ", "))
+		}
 		if len(names) == 0 {
 			return nil, fmt.Errorf("%q is not on this drive, which has no JS libraries installed", pkg)
 		}
@@ -234,6 +259,8 @@ type packageJSON struct {
 }
 
 func (a *archive) packageJSON(dir string) (*packageJSON, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if p, ok := a.pkgJSON[dir]; ok {
 		return p, nil
 	}

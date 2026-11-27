@@ -62,7 +62,7 @@ func Check(page []byte) []Problem {
 		case isRemote(ref):
 			add("remote-resource", "%s loads %s from the network", where, ref)
 		case !isInline(ref):
-			add("missing-asset", "%s names %s, a file a single page does not have beside it; import it or put it in the page", where, ref)
+			problems = append(problems, Problem{Kind: "missing-asset", Detail: fmt.Sprintf("%s names %s, a file a single page does not have beside it; import it or put it in the page", where, ref), Target: ref})
 		}
 	}
 	checkCSS := func(where, css string) {
@@ -74,16 +74,7 @@ func Check(page []byte) []Problem {
 		}
 	}
 	checkScript := func(where, code string) {
-		for _, m := range jsRemoteRe.FindAllStringSubmatch(code, -1) {
-			add("remote-resource", "%s loads %s from the network", where, m[1])
-		}
-		for _, re := range []*regexp.Regexp{jsFetchRe, jsLoaderRe, jsXHRRe} {
-			for _, m := range re.FindAllStringSubmatch(code, -1) {
-				if target := m[1]; !isRemote(target) && !isInline(target) && !strings.HasPrefix(target, "$") {
-					add("relative-fetch", "%s: %s (%s)", where, relativeFetchMessage, target)
-				}
-			}
-		}
+		problems = append(problems, CheckScript(where, code)...)
 	}
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
@@ -112,6 +103,27 @@ func Check(page []byte) []Problem {
 					}
 				}
 			}
+			// SVG <image> and <use> load what their href names.
+			if n.Namespace == "svg" && (n.Data == "image" || n.Data == "use" || n.Data == "feImage") {
+				for _, a := range n.Attr {
+					if a.Key == "href" {
+						reference("<"+n.Data+"> href", a.Val)
+					}
+				}
+			}
+			if n.DataAtom == atom.Base {
+				if href, ok := attr(n, "href"); ok && isRemote(href) {
+					add("remote-resource", "<base href=%q> resolves the page's references on the network", href)
+				}
+			}
+			if n.DataAtom == atom.Meta {
+				if equiv, _ := attr(n, "http-equiv"); strings.EqualFold(strings.TrimSpace(equiv), "refresh") {
+					content, _ := attr(n, "content")
+					if _, target, ok := strings.Cut(strings.ToLower(content), "url="); ok {
+						reference("<meta refresh>", strings.Trim(strings.TrimSpace(content[len(content)-len(target):]), `"'`))
+					}
+				}
+			}
 			if style, ok := attr(n, "style"); ok {
 				checkCSS(tag+" style", style)
 			}
@@ -119,7 +131,8 @@ func Check(page []byte) []Problem {
 			case atom.Style:
 				checkCSS("<style>", textOf(n))
 			case atom.Script:
-				if kind, _ := attr(n, "type"); kind == "" || strings.Contains(strings.ToLower(kind), "javascript") || strings.EqualFold(kind, "module") {
+				kind, _ := attr(n, "type")
+				if kind = strings.TrimSpace(kind); kind == "" || strings.Contains(strings.ToLower(kind), "javascript") || strings.EqualFold(kind, "module") {
 					checkScript("<script>", textOf(n))
 				}
 			}
@@ -129,5 +142,30 @@ func Check(page []byte) []Problem {
 		}
 	}
 	walk(doc)
+	return problems
+}
+
+// CheckScript looks in script text for loads from the network and fetches of
+// files beside the page.
+func CheckScript(where, code string) []Problem {
+	var problems []Problem
+	add := func(kind, format string, args ...any) {
+		problems = append(problems, Problem{Kind: kind, Detail: fmt.Sprintf(format, args...)})
+	}
+	for _, m := range jsRemoteRe.FindAllStringSubmatch(code, -1) {
+		add("remote-resource", "%s loads %s from the network", where, m[1])
+	}
+	for _, re := range []*regexp.Regexp{jsFetchRe, jsLoaderRe, jsXHRRe} {
+		for _, m := range re.FindAllStringSubmatch(code, -1) {
+			switch target := m[1]; {
+			case isRemote(target) && re == jsFetchRe:
+				// jsRemoteRe reported it.
+			case isRemote(target):
+				add("remote-resource", "%s loads %s from the network", where, target)
+			case !isInline(target) && !strings.HasPrefix(target, "$"):
+				problems = append(problems, Problem{Kind: "relative-fetch", Detail: fmt.Sprintf("%s: %s (%s)", where, relativeFetchMessage, target), Target: target})
+			}
+		}
+	}
 	return problems
 }

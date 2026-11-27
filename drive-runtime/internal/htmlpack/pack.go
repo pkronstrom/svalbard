@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/evanw/esbuild/pkg/api"
 	"golang.org/x/net/html"
@@ -55,6 +56,9 @@ type Result struct {
 type Problem struct {
 	Kind   string // remote-resource, relative-fetch, missing-asset, served-library, build
 	Detail string
+	// Target is the page-relative file a relative fetch or a missing asset
+	// names, when there is one; a folder output copies it.
+	Target string
 }
 
 func (p Problem) String() string { return p.Kind + ": " + p.Detail }
@@ -81,6 +85,9 @@ const relativeFetchMessage = "relative fetch cannot work from file://; import th
 const (
 	libNamespace   = "svalbard-js"
 	emptyNamespace = "svalbard-empty"
+	// pageNamespace holds the page's inline module scripts, which one
+	// bundle imports in their order.
+	pageNamespace = "svalbard-page"
 )
 
 type packer struct {
@@ -89,9 +96,15 @@ type packer struct {
 	libs    *libraries
 	// used records the library packages bundled: archive id and package
 	// folder in it.
-	used     map[string]usedPackage
+	used map[string]usedPackage
+	// mu guards used and problems: esbuild calls the plugin from several
+	// goroutines.
+	mu sync.Mutex
+	// inline holds the inline module scripts by their virtual path.
+	inline   map[string]string
 	problems []Problem
 	notices  []string
+	warnings []string
 	// files are the extra files of a folder output, by path in it.
 	files map[string][]byte
 }
@@ -121,15 +134,25 @@ func Pack(ctx context.Context, opts Options) (Result, error) {
 			opts.Out = filepath.Join(filepath.Dir(page), base+".packed.html")
 		}
 	}
-	if out, err := filepath.Abs(opts.Out); err == nil && out == page {
+	out, err := filepath.Abs(opts.Out)
+	if err != nil {
+		return Result{}, err
+	}
+	opts.Out = out
+	if out == page {
 		return Result{}, fmt.Errorf("the output would replace the page itself; name another with -o")
+	}
+	if opts.Dir {
+		if err := checkOutputFolder(out, page); err != nil {
+			return Result{}, err
+		}
 	}
 	libs, err := loadLibraries(opts.DriveRoot)
 	if err != nil {
 		return Result{}, err
 	}
 	defer libs.close()
-	p := &packer{opts: opts, pageDir: filepath.Dir(page), libs: libs, used: map[string]usedPackage{}, files: map[string][]byte{}}
+	p := &packer{opts: opts, pageDir: filepath.Dir(page), libs: libs, used: map[string]usedPackage{}, files: map[string][]byte{}, inline: map[string]string{}, warnings: libs.warnings}
 
 	doc, err := html.Parse(bytes.NewReader(source))
 	if err != nil {
@@ -148,23 +171,78 @@ func Pack(ctx context.Context, opts Options) (Result, error) {
 	if err := html.Render(&buf, doc); err != nil {
 		return Result{}, err
 	}
-	if notice := p.licenseNotice(); notice != "" {
-		buf.WriteString("\n<!-- licenses: " + strings.ReplaceAll(notice, "--", "- -") + " -->\n")
+	notice, unlicensed := p.licenseNotice()
+	if bundled := p.libraryNames(); len(bundled) > 0 {
+		p.notices = append(p.notices, "bundled: "+strings.Join(bundled, ", "))
+	}
+	if notice != "" {
+		buf.WriteString("\n<!-- " + notice + "\n-->\n")
+	}
+	for _, name := range unlicensed {
+		p.warnings = append(p.warnings, name+" has no licence text in the drive's archive; the page names its licence only")
 	}
 	output := buf.Bytes()
-	if !opts.Dir {
-		p.problems = append(p.problems, Check(output)...)
-	} else {
-		for _, problem := range Check(output) {
-			if problem.Kind == "remote-resource" {
-				p.problems = append(p.problems, problem)
-			}
+	p.problems = append(p.problems, Check(output)...)
+	if opts.Dir {
+		if js, ok := p.files["script.js"]; ok {
+			p.problems = append(p.problems, CheckScript("script.js", string(js))...)
 		}
+		p.problems = p.copyTargets(p.problems)
 	}
 	if len(p.problems) > 0 {
 		return Result{}, &ProblemsError{Problems: dedupe(p.problems)}
 	}
 	return p.write(output)
+}
+
+// packMarker marks a folder html pack wrote, which a later pack may replace.
+const packMarker = ".svalbard-pack"
+
+// checkOutputFolder refuses a folder output that would hold the page or
+// replace files that are not a previous pack's.
+func checkOutputFolder(out, page string) error {
+	if rel, err := filepath.Rel(out, page); err == nil && !strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("the output folder %s holds the page itself; name another with -o", out)
+	}
+	entries, err := os.ReadDir(out)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(out, packMarker)); err != nil {
+		return fmt.Errorf("the output folder %s already holds files that html pack did not write; name an empty or new folder with -o", out)
+	}
+	return nil
+}
+
+// copyTargets copies into a folder output the files beside the page that
+// its relative fetches and references name, and returns the problems left:
+// what is not there, outside the page's folder, or has no file name.
+func (p *packer) copyTargets(problems []Problem) []Problem {
+	var left []Problem
+	for _, problem := range problems {
+		if (problem.Kind != "relative-fetch" && problem.Kind != "missing-asset") || problem.Target == "" {
+			left = append(left, problem)
+			continue
+		}
+		if own := strings.TrimPrefix(path.Clean(strings.SplitN(problem.Target, "?", 2)[0]), "./"); p.files[own] != nil {
+			continue // a file of the output itself
+		}
+		file := p.localFile(problem.Target)
+		rel, err := filepath.Rel(p.pageDir, file)
+		data, readErr := os.ReadFile(file)
+		if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) || readErr != nil {
+			left = append(left, Problem{Kind: "missing-asset", Detail: fmt.Sprintf("%s names %s, which is not a file in the page's folder", problem.Detail, problem.Target)})
+			continue
+		}
+		p.files[filepath.ToSlash(rel)] = data
+	}
+	return left
 }
 
 func dedupe(problems []Problem) []Problem {
@@ -180,7 +258,7 @@ func dedupe(problems []Problem) []Problem {
 }
 
 func (p *packer) write(page []byte) (Result, error) {
-	result := Result{Out: p.opts.Out, Notices: p.notices}
+	result := Result{Out: p.opts.Out, Notices: p.notices, Warnings: p.warnings}
 	if !p.opts.Dir {
 		if err := writeFile(p.opts.Out, page); err != nil {
 			return Result{}, err
@@ -191,20 +269,39 @@ func (p *packer) write(page []byte) (Result, error) {
 		}
 		return result, nil
 	}
-	if err := os.MkdirAll(p.opts.Out, 0o755); err != nil {
+	// Written whole into a new folder beside the output, then swapped in:
+	// files of an earlier pack do not linger and nothing else is touched.
+	if err := os.MkdirAll(filepath.Dir(p.opts.Out), 0o755); err != nil {
 		return Result{}, err
 	}
+	tmp, err := os.MkdirTemp(filepath.Dir(p.opts.Out), "."+filepath.Base(p.opts.Out)+".packing-")
+	if err != nil {
+		return Result{}, err
+	}
+	defer os.RemoveAll(tmp)
 	p.files["index.html"] = page
+	p.files[packMarker] = []byte("written by svalbard-drive html pack; a later pack replaces this folder\n")
 	names := make([]string, 0, len(p.files))
 	for name := range p.files {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if err := writeFile(filepath.Join(p.opts.Out, filepath.FromSlash(name)), p.files[name]); err != nil {
+		if err := writeFile(filepath.Join(tmp, filepath.FromSlash(name)), p.files[name]); err != nil {
 			return Result{}, err
 		}
-		result.Bytes += int64(len(p.files[name]))
+		if name != packMarker {
+			result.Bytes += int64(len(p.files[name]))
+		}
+	}
+	if err := checkOutputFolder(p.opts.Out, p.opts.Page); err != nil {
+		return Result{}, err
+	}
+	if err := os.RemoveAll(p.opts.Out); err != nil {
+		return Result{}, err
+	}
+	if err := os.Rename(tmp, p.opts.Out); err != nil {
+		return Result{}, err
 	}
 	result.Portability = "directory"
 	return result, nil
@@ -232,7 +329,13 @@ func humanBytes(n int64) string {
 }
 
 func (p *packer) problem(kind, format string, args ...any) {
-	p.problems = append(p.problems, Problem{Kind: kind, Detail: fmt.Sprintf(format, args...)})
+	p.addProblems(Problem{Kind: kind, Detail: fmt.Sprintf(format, args...)})
+}
+
+func (p *packer) addProblems(problems ...Problem) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.problems = append(p.problems, problems...)
 }
 
 // ---------------------------------------------------------------------------
@@ -337,35 +440,48 @@ func (p *packer) processDocument(doc *html.Node) {
 	walk(doc)
 
 	var collected []string // stylesheets imported by modules
-	moduleIndex := 0
+	// Module scripts are deferred and run in order, so one bundle that
+	// imports each of them in that order behaves the same, with libraries
+	// and shared modules once.
+	var modules []*html.Node
+	var entries []string
 	for _, n := range scripts {
 		kind, _ := attr(n, "type")
 		src, hasSrc := attr(n, "src")
 		switch {
 		case strings.EqualFold(strings.TrimSpace(kind), "module"):
-			moduleIndex++
-			code, resolveDir, name, ok := p.moduleSource(n, src, hasSrc, moduleIndex)
-			if !ok {
-				continue
-			}
-			js, css, ok := p.bundleModule(code, resolveDir, name)
-			if !ok {
-				continue
-			}
-			if css != "" {
-				collected = append(collected, css)
-			}
-			if p.opts.Dir {
-				file := fmt.Sprintf("script-%d.js", moduleIndex)
-				p.files[file] = []byte(js)
-				setAttr(n, "src", "./"+file)
-				setText(n, "")
-			} else {
-				removeAttr(n, "src")
-				setText(n, escapeClosing(js, "script"))
+			if entry, ok := p.moduleEntry(n, src, hasSrc, len(modules)+1); ok {
+				modules = append(modules, n)
+				entries = append(entries, entry)
 			}
 		case hasSrc && !isRemote(src) && !isInline(src):
 			p.inlineClassicScript(n, src)
+		case !hasSrc && (kind == "" || strings.Contains(strings.ToLower(kind), "javascript")):
+			p.addProblems(scanOwnSource(filepath.Base(p.opts.Page)+" (script)", textOf(n))...)
+			setText(n, stripSourceMaps(textOf(n)))
+		}
+	}
+	if len(modules) > 0 {
+		var lines []string
+		for _, entry := range entries {
+			lines = append(lines, fmt.Sprintf("import %q;", entry))
+		}
+		if js, css, ok := p.bundleModule(strings.Join(lines, "\n"), p.pageDir, filepath.Base(p.opts.Page)); ok {
+			if css != "" {
+				collected = append(collected, css)
+			}
+			first := modules[0]
+			if p.opts.Dir {
+				p.files["script.js"] = []byte(js)
+				setAttr(first, "src", "./script.js")
+				setText(first, "")
+			} else {
+				removeAttr(first, "src")
+				setScript(first, js)
+			}
+			for _, n := range modules[1:] {
+				n.Parent.RemoveChild(n)
+			}
 		}
 	}
 	for _, n := range links {
@@ -431,23 +547,41 @@ func escapeClosing(code, tag string) string {
 	return closingRe[tag].ReplaceAllString(code, `<\/$1`)
 }
 
-// moduleSource returns a module script's code and where its imports resolve.
-func (p *packer) moduleSource(n *html.Node, src string, hasSrc bool, index int) (code, resolveDir, name string, ok bool) {
-	name = fmt.Sprintf("%s (module script %d)", filepath.Base(p.opts.Page), index)
+var scriptOpenRe = regexp.MustCompile(`(?i)<script[\s/>]`)
+
+// setScript puts code into a script element. Code holding "<!--" and then
+// "<script" would put the HTML parser into a state where the closing tag no
+// longer ends the script, and no escape is safe in every JS context; such
+// code goes in as a data URL instead, which file:// pages may load.
+func setScript(n *html.Node, code string) {
+	if strings.Contains(code, "<!--") && scriptOpenRe.MatchString(code) {
+		setAttr(n, "src", "data:text/javascript;base64,"+base64.StdEncoding.EncodeToString([]byte(code)))
+		setText(n, "")
+		return
+	}
+	setText(n, escapeClosing(code, "script"))
+}
+
+// moduleEntry returns what the page's bundle imports for a module script:
+// an inline script's virtual path, or a script file's path.
+func (p *packer) moduleEntry(n *html.Node, src string, hasSrc bool, index int) (string, bool) {
 	if !hasSrc {
-		return textOf(n), p.pageDir, name, true
+		name := fmt.Sprintf("%s:%s (module script %d)", pageNamespace, filepath.Base(p.opts.Page), index)
+		code := textOf(n)
+		p.inline[name] = code
+		p.addProblems(scanOwnSource(strings.TrimPrefix(name, pageNamespace+":"), code)...)
+		return name, true
 	}
 	if isRemote(src) {
 		p.problem("remote-resource", "<script type=module src=%q> loads from the network; import the library by name instead (skill_search kind=library lists them)", src)
-		return "", "", "", false
+		return "", false
 	}
 	file := p.localFile(src)
-	data, err := os.ReadFile(file)
-	if err != nil {
+	if _, err := os.Stat(file); err != nil {
 		p.problem("missing-asset", "<script type=module src=%q>: %s is not there", src, file)
-		return "", "", "", false
+		return "", false
 	}
-	return string(data), filepath.Dir(file), filepath.Base(file), true
+	return file, true // scanned when esbuild loads it
 }
 
 // inlineClassicScript puts a classic script's file into the page: a file
@@ -456,7 +590,9 @@ func (p *packer) moduleSource(n *html.Node, src string, hasSrc bool, index int) 
 func (p *packer) inlineClassicScript(n *html.Node, src string) {
 	var data []byte
 	var name string
-	if isBare(src) {
+	// A file beside the page wins: "app.js" names a file before a package.
+	_, statErr := os.Stat(p.localFile(src))
+	if isBare(src) && statErr != nil {
 		pkg, sub := splitSpecifier(src)
 		a, err := p.libs.owner(pkg)
 		if err != nil {
@@ -472,17 +608,13 @@ func (p *packer) inlineClassicScript(n *html.Node, src string) {
 			p.problem("missing-asset", "<script src=%q>: %v", src, err)
 			return
 		}
-		p.used[a.id+":"+dir] = usedPackage{archive: a, dir: dir}
+		p.markUsed(a, dir)
 		name = path.Join("lib", a.id, file)
 	} else {
 		file := p.localFile(src)
 		var err error
 		if data, err = os.ReadFile(file); err != nil {
-			if _, statErr := os.Stat(file); statErr != nil && p.libs.byPackage[src] != nil {
-				p.problem("missing-asset", "<script src=%q>: no such file beside the page", src)
-			} else {
-				p.problem("missing-asset", "<script src=%q>: %s is not there", src, file)
-			}
+			p.problem("missing-asset", "<script src=%q>: %s is not there", src, file)
 			return
 		}
 		rel, err := filepath.Rel(p.pageDir, file)
@@ -490,14 +622,16 @@ func (p *packer) inlineClassicScript(n *html.Node, src string) {
 			rel = filepath.Base(file)
 		}
 		name = filepath.ToSlash(rel)
+		p.addProblems(scanOwnSource(name, string(data))...)
 	}
+	data = []byte(stripSourceMaps(string(data)))
 	if p.opts.Dir {
 		p.files[name] = data
 		setAttr(n, "src", "./"+name)
 		return
 	}
 	removeAttr(n, "src")
-	setText(n, escapeClosing(string(data), "script"))
+	setScript(n, string(data))
 }
 
 // embedAsset turns a file beside the page into a data URL, or in a folder
@@ -672,7 +806,22 @@ func (p *packer) plugin() api.Plugin {
 		build.OnResolve(api.OnResolveOptions{Filter: `.*`, Namespace: libNamespace}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
 			return p.resolveInArchive(args)
 		})
-		build.OnResolve(api.OnResolveOptions{Filter: `^[^./]`, Namespace: "file"}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+		build.OnResolve(api.OnResolveOptions{Filter: "^" + pageNamespace + ":"}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+			return api.OnResolveResult{Path: args.Path, Namespace: pageNamespace}, nil
+		})
+		build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: pageNamespace}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+			code := p.inline[args.Path]
+			return api.OnLoadResult{Contents: &code, ResolveDir: p.pageDir, Loader: api.LoaderJS}, nil
+		})
+		// The page's own script files are scanned as esbuild reads them; it
+		// loads them itself.
+		build.OnLoad(api.OnLoadOptions{Filter: `\.(m?js|cjs|jsx|tsx?)$`, Namespace: "file"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+			if data, err := os.ReadFile(args.Path); err == nil {
+				p.addProblems(scanOwnSource(filepath.Base(args.Path), string(data))...)
+			}
+			return api.OnLoadResult{}, nil
+		})
+		build.OnResolve(api.OnResolveOptions{Filter: `^[^./]`}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
 			if !isBare(args.Path) {
 				return api.OnResolveResult{}, nil
 			}
@@ -774,7 +923,7 @@ func (p *packer) load(virtual string) (api.OnLoadResult, error) {
 		return api.OnLoadResult{}, fmt.Errorf("%s: %s: %w", id, file, err)
 	}
 	if dir := packageDirOf(file); dir != "" {
-		p.used[id+":"+dir] = usedPackage{archive: a, dir: dir}
+		p.markUsed(a, dir)
 	}
 	loader, ok := p.loaders()[strings.ToLower(path.Ext(file))]
 	if !ok {
@@ -807,7 +956,16 @@ func (p *packer) checkPortability() {
 	}
 }
 
+// markUsed records a bundled library package.
+func (p *packer) markUsed(a *archive, dir string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.used[a.id+":"+dir] = usedPackage{archive: a, dir: dir}
+}
+
 func (p *packer) sortedUsed() []usedPackage {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	keys := make([]string, 0, len(p.used))
 	for key := range p.used {
 		keys = append(keys, key)
@@ -820,9 +978,33 @@ func (p *packer) sortedUsed() []usedPackage {
 	return used
 }
 
-// licenseNotice names each bundled package with its version and licence.
-func (p *packer) licenseNotice() string {
-	var parts []string
+// libraryNames lists the drive's libraries the page bundled, with versions.
+func (p *packer) libraryNames() []string {
+	var names []string
+	for _, u := range p.sortedUsed() {
+		pkg := strings.TrimPrefix(u.dir, "node_modules/")
+		if lib, ok := p.libs.documented[pkg]; !ok || lib.archive != u.archive {
+			continue
+		}
+		version := ""
+		if pj, _ := u.archive.packageJSON(u.dir); pj != nil {
+			version = " " + pj.Version
+		}
+		names = append(names, pkg+version)
+	}
+	return names
+}
+
+// licenseFileRe names the licence and notice files of a package.
+var licenseFileRe = regexp.MustCompile(`(?i)^(licen[cs]e|copying|notice)([.-].*)?$`)
+
+// licenseNotice is the trailing comment of a packed page: each bundled
+// package with its version and licence, then the licence texts themselves
+// (once each), which MIT, BSD and the like require to travel with a copy.
+// It returns the packages that have no licence text in their archive.
+func (p *packer) licenseNotice() (string, []string) {
+	var names, texts, missing []string
+	seen := map[string]bool{}
 	for _, u := range p.sortedUsed() {
 		pj, _ := u.archive.packageJSON(u.dir)
 		name, version, license := strings.TrimPrefix(u.dir[strings.LastIndex(u.dir, "node_modules/"):], "node_modules/"), "", ""
@@ -832,32 +1014,43 @@ func (p *packer) licenseNotice() string {
 			}
 			version, license = pj.Version, pj.License
 		}
-		if license == "" {
-			license = firstLicenseLine(u.archive, u.dir)
-		}
 		part := strings.TrimSpace(name + " " + version)
 		if license != "" {
 			part += " (" + license + ")"
 		}
-		parts = append(parts, part)
-	}
-	return strings.Join(parts, "; ")
-}
-
-func firstLicenseLine(a *archive, dir string) string {
-	for file := range a.files {
-		if path.Dir(file) != dir || !strings.HasPrefix(strings.ToUpper(path.Base(file)), "LICEN") {
-			continue
-		}
-		data, err := a.read(file)
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if line = strings.TrimSpace(line); line != "" {
-				return line
+		names = append(names, part)
+		var files []string
+		for file := range u.archive.files {
+			rel, ok := strings.CutPrefix(file, u.dir+"/")
+			if !ok {
+				continue
+			}
+			nested := strings.Contains(rel, "node_modules/")
+			if (!strings.Contains(rel, "/") && licenseFileRe.MatchString(rel)) || (!nested && strings.HasSuffix(rel, ".LICENSE.txt")) {
+				files = append(files, file)
 			}
 		}
+		sort.Strings(files)
+		if len(files) == 0 {
+			missing = append(missing, name)
+		}
+		for _, file := range files {
+			data, err := u.archive.read(file)
+			text := strings.TrimSpace(string(data))
+			if err != nil || text == "" || seen[text] {
+				continue
+			}
+			seen[text] = true
+			texts = append(texts, fmt.Sprintf("== %s: %s ==\n%s", part, path.Base(file), text))
+		}
 	}
-	return ""
+	if len(names) == 0 {
+		return "", nil
+	}
+	notice := "licenses: " + strings.Join(names, "; ")
+	if len(texts) > 0 {
+		notice += "\n\nLicence texts of the bundled packages:\n\n" + strings.Join(texts, "\n\n")
+	}
+	// Nothing in it may end the comment.
+	return strings.NewReplacer("-->", "- ->", "--!>", "- -!>").Replace(notice), missing
 }
