@@ -8,6 +8,8 @@ Overview lists each installed action and saved HTML app with a short description
 
 The dashboard starts one loopback Kiwix library on demand and adds archives as users open them from Overview, the sidebar, or search. **Serve Everything** can use that same library and keep the full collection loaded. Stopping an individual archive removes it when its last service releases it. Older vaults with only `kiwix-serve` use the standalone reader.
 
+The Settings detail view includes a terminal with `./run settings` ready to submit. The terminal calls the runtime's existing settings command and displays its text output. It accepts the same list, read, set, reset, and help forms. Its command endpoint uses the dashboard's same-origin POST controls and accepts only settings arguments. The command transcript stays in the browser tab.
+
 A managed action exposes its starting, running, stopped or failed state. The dashboard uses the running service's URL, deduplicates identical launches, and stops its services when it exits. Explicit local-network sharing uses the existing Share action. A loopback address, exact Host check, and same-origin POSTs constrain dashboard controls. Browser requests select a known action and, for Open WebUI, may select an installed model.
 
 Verify the generated launcher and browser routes using a tiny vault with one cached archive, a test document and workspace pages. Exercise search and lifecycle behavior in tests and reuse the existing small launch fixtures for Open WebUI and Wiki.

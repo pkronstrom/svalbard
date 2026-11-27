@@ -26,20 +26,21 @@ import (
 var assets embed.FS
 
 type dashboard struct {
-	ctx      context.Context
-	root     string
-	port     int
-	inv      inventory
-	specs    map[string]serviceSpec
-	previews map[string]bool
-	archives map[string]string // installed ZIM filename to its dashboard service key
-	kiwix    *browse.Library
-	mu       sync.Mutex
-	jobs     map[string]*job
-	workers  sync.WaitGroup
-	wiki     wikiService
-	searchMu sync.Mutex
-	search   *search.Session
+	ctx        context.Context
+	root       string
+	port       int
+	inv        inventory
+	specs      map[string]serviceSpec
+	previews   map[string]bool
+	archives   map[string]string // installed ZIM filename to its dashboard service key
+	kiwix      *browse.Library
+	mu         sync.Mutex
+	jobs       map[string]*job
+	workers    sync.WaitGroup
+	wiki       wikiService
+	settingsMu sync.Mutex
+	searchMu   sync.Mutex
+	search     *search.Session
 }
 
 type link struct {
@@ -141,6 +142,7 @@ func (d *dashboard) handler(host string) http.Handler {
 	mux.HandleFunc("POST /api/services/{key}/stop", d.stop)
 	mux.HandleFunc("POST /api/search", d.runSearch)
 	mux.HandleFunc("POST /api/read", d.readResult)
+	mux.HandleFunc("POST /api/terminal/settings", d.runSettings)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-src http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")

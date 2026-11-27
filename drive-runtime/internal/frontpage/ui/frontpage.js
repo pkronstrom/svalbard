@@ -389,17 +389,64 @@ function savedAddress(item, base) {
   return new URL(path, base).href;
 }
 
+function terminalLine(text, css) {
+  const log = byId("terminal-log");
+  log.append(node("pre", css, text));
+  while (log.childElementCount > 40) log.firstElementChild.remove();
+  log.hidden = false;
+  log.scrollTop = log.scrollHeight;
+}
+
+async function runSettings(event) {
+  event.preventDefault();
+  const command = byId("terminal-command");
+  if (command.readOnly) return;
+  const parts = command.value.trim().match(/^\.\/run\s+settings(?:\s+(\S+)(?:\s+(.+))?)?$/);
+  if (!parts) {
+    terminalLine("Enter ./run settings or ./run settings --help.", "error");
+    return;
+  }
+  const [, key, value] = parts;
+  const args = key ? [key] : [];
+  if (value !== undefined) {
+    const quoted = value.length >= 2 && ["'", '"'].includes(value[0]) && value.at(-1) === value[0];
+    args.push(quoted ? value.slice(1, -1) : value);
+  }
+  // Print the command and key without retaining a possible secret value.
+  terminalLine("$ ./run settings" + (key ? " " + key : ""), "terminal-echo");
+  const run = event.currentTarget.querySelector("button");
+  command.readOnly = true;
+  command.value = "./run settings";
+  run.disabled = true;
+  try {
+    const data = await request("/api/terminal/settings", {args});
+    terminalLine(data.output.trimEnd(), data.failed ? "error" : "");
+  } catch (error) {
+    terminalLine(error.message, "error");
+  } finally {
+    command.readOnly = false;
+    run.disabled = false;
+    if (selection?.terminal) command.focus();
+  }
+}
+
 function renderItem() {
   const item = selection;
   const controls = byId("item-controls");
   const focused = controls.contains(document.activeElement);
   const status = byId("item-status");
   const output = byId("item-output");
+  byId("terminal").hidden = !item.terminal;
   controls.replaceChildren();
   note(status, "");
   note(output, "");
   if (!item.service) {
-    if (item.command) {
+    if (item.terminal) {
+      const command = byId("terminal-command");
+      command.value = item.command;
+      command.focus({preventScroll: true});
+      command.setSelectionRange(command.value.length, command.value.length);
+    } else if (item.command) {
       note(status, "Run this action from the drive’s terminal.");
       note(output, item.command);
     }
@@ -653,6 +700,7 @@ byId("filter").addEventListener("input", filterNavigation);
 byId("overview-filter").addEventListener("input", renderHome);
 byId("overview-type").addEventListener("change", renderHome);
 byId("overview-order").addEventListener("change", renderHome);
+byId("terminal-form").addEventListener("submit", runSettings);
 byId("stop-search-reader").addEventListener("click", stopSearchReader);
 byId("refresh").addEventListener("click", refreshPages);
 byId("back-to-search").addEventListener("click", () => {

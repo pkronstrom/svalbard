@@ -39,6 +39,7 @@ type entry struct {
 	Icon        string        `json:"icon"`
 	Service     string        `json:"service,omitempty"`
 	Command     string        `json:"command,omitempty"`
+	Terminal    bool          `json:"terminal,omitempty"`
 	RecipeID    string        `json:"recipeId,omitempty"`
 	Summary     string        `json:"summary,omitempty"`
 	Tags        []string      `json:"tags,omitempty"`
@@ -107,6 +108,7 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 				inv.HasSearch = true
 			case "settings":
 				view.Command = "./run settings"
+				view.Terminal = true
 			case "chat":
 				modelLabels[filepath.Base(action.Args["model"])] = item.Label
 			case "open-webui":

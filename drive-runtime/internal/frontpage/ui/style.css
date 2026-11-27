@@ -107,8 +107,17 @@ h2 { font-size: 1rem; font-weight: 710; }
 .overview-summary { margin-top: 2px; color: var(--muted); font-size: .86rem; }
 .overview-meta { margin-top: 3px; color: var(--muted); font-size: .75rem; }
 .overview-launch { white-space: nowrap; }
-.preview { position: relative; isolation: isolate; display: grid; place-items: center; width: 100%; aspect-ratio: 8 / 5; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--rail); }
-.preview::before { position: absolute; inset: 50% 0 auto; z-index: 1; transform: translateY(-50%); aspect-ratio: 1; background: url("/notebook-previews.webp") var(--preview-x, 100%) var(--preview-y, 100%) / 300% 200% no-repeat; content: ""; }
+.preview { position: relative; isolation: isolate; display: grid; place-items: center; width: 100%; aspect-ratio: 8 / 5; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #f5dfbb; }
+.preview::before {
+  position: absolute;
+  inset: 0 auto 0 50%;
+  z-index: 1;
+  transform: translateX(-50%);
+  aspect-ratio: 1;
+  background: url("/notebook-previews.webp") var(--preview-x, 100%) var(--preview-y, 100%) / 300% 200% no-repeat;
+  mask-image: linear-gradient(to right, transparent, black 4%, black 96%, transparent);
+  content: "";
+}
 .preview[data-type="Maps"] { --preview-x: 0%; --preview-y: 0%; }
 .preview[data-type="Archives"] { --preview-x: 50%; --preview-y: 0%; }
 .preview[data-type="Documents"] { --preview-x: 100%; --preview-y: 0%; }
@@ -129,6 +138,13 @@ h2 { font-size: 1rem; font-weight: 710; }
 .item-copy { flex: 1 1 215px; min-width: 0; }
 .item-preview { flex: 0 0 clamp(88px, 15vw, 155px); }
 .item-recipe { margin-top: 5px; font-size: .75rem; overflow-wrap: anywhere; }
+.terminal { margin-top: 20px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.terminal-log { max-height: min(48vh, 440px); overflow: auto; padding: 12px; border-bottom: 1px solid var(--line); }
+.terminal-log pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: .83rem/1.55 ui-monospace, monospace; }
+.terminal-log pre + .terminal-echo { margin-top: 10px; }
+.terminal-echo, .terminal-prompt { color: var(--accent); font-weight: 650; }
+.terminal-form { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; }
+.terminal-form input { width: 100%; padding: 6px 0; border: 0; background: transparent; color: var(--ink); font: max(16px, .9rem) ui-monospace, monospace; }
 .item-copy h1 { font-size: clamp(1.45rem, 3vw, 2rem); }
 .item-copy p:empty { display: none; }
 #item-kind { margin-bottom: 3px; font-size: .77rem; font-weight: 620; }
