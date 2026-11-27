@@ -68,7 +68,7 @@ func DriveContext(opts ContextOptions) string {
 	b.WriteString("# Svalbard offline drive\n\n")
 	b.WriteString("You run from a Svalbard USB drive" + where + ". There is no internet. Do not try curl, wget, git clone, pip install, npm install or any other download.\n\n")
 	b.WriteString("The drive has an offline library: reference archives, SQLite databases and maps. For a factual question, look it up with the " + tools + " tools instead of guessing:\n\n")
-	b.WriteString("1. " + tool("vault_sources") + " lists what the drive has. Call it first.\n")
+	b.WriteString("1. " + tool("vault_sources") + " lists the drive's content sources.\n")
 	// How to word a query and how a long article continues is in the tools'
 	// own descriptions, which the model has beside this text; saying it
 	// twice cost 40 tokens of every prompt.

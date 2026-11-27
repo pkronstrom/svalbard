@@ -26,7 +26,7 @@ func (c *VaultCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "sources",
-			Desc: "List all content sources with descriptions and tags. CALL THIS FIRST to understand what is available before using search or query tools. Returns archive names, types, descriptions, topics, and sizes. A book (a PDF document) also has its path, which is its source name for search, its title, how many of its pages are searchable, and a note when some or all of it is not.",
+			Desc: "List content sources when you need an inventory or want to choose a particular archive. For a known topic, search can be called directly. Returns source names, descriptions, topics, and sizes. A document also has its search path, title, and any available indexing notes.",
 			Params: []ParamDef{
 				{Name: "type", Type: "string", Desc: "Optional source type filter", Enum: []string{"zim", "database", "map", "book"}},
 			},

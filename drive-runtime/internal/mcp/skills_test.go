@@ -192,8 +192,8 @@ func TestDriveCapabilitiesGateSkills(t *testing.T) {
 		with := t.TempDir()
 		writeRecipes(with, recipes)
 		names := DriveToolNames(with, 0)
-		if !slices.Contains(names, "skill_search") || !slices.Contains(names, "skill_read") || len(names) != 10 {
-			t.Errorf("%s: tools = %v, want the eight drive tools and the two skill tools", recipes, names)
+		if !slices.Contains(names, "skill_search") || !slices.Contains(names, "skill_read") || len(names) != 11 {
+			t.Errorf("%s: tools = %v, want the nine drive tools and the two skill tools", recipes, names)
 		}
 		// After search, before the inventory: the order a client lists them in.
 		if at := slices.Index(names, "skill_search"); at != slices.Index(names, "search_read")+1 {

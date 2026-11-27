@@ -204,12 +204,13 @@ func (c *SearchCapability) readFullPage(ctx context.Context, source string, cand
 // root; an empty path is the archive's main page. It returns the path the
 // page was finally served from, which differs after a redirect.
 func (c *SearchCapability) fetchPage(ctx context.Context, book, path string) (search.Page, string, error) {
-	if err := c.ensureKiwix(); err != nil {
+	port, err := c.ensureKiwix(book)
+	if err != nil {
 		return search.Page{}, "", fmt.Errorf("kiwix-serve unavailable: %w", err)
 	}
 	// Escaped per segment: an indexed path may hold spaces, "?" or "%".
 	prefix := "/content/" + book + "/"
-	pageURL := url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", c.kiwixPort), Path: prefix + path}
+	pageURL := url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", port), Path: prefix + path}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL.String(), nil)
 	if err != nil {
 		return search.Page{}, "", err
@@ -312,7 +313,11 @@ func (c *SearchCapability) resolveScope(ctx context.Context, name string, onDisk
 	if len(knowledge) == 0 {
 		return "", fmt.Errorf("unknown source %q: the drive has no archives or documents", name)
 	}
-	return "", fmt.Errorf("unknown source %q. Sources on this drive: %s", name, strings.Join(sourceNames(knowledge), ", "))
+	names := sourceNames(knowledge)
+	if len(names) > holdingsListed {
+		return "", fmt.Errorf("unknown source %q. Example sources: %s. Use vault_sources for more", name, strings.Join(names[:holdingsListed], ", "))
+	}
+	return "", fmt.Errorf("unknown source %q. Sources on this drive: %s", name, strings.Join(names, ", "))
 }
 
 // knowledgeSources drops the skill files and library quickstarts from a list

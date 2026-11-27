@@ -119,14 +119,15 @@ func TestAllCapabilitiesRegisterExpectedTools(t *testing.T) {
 		"query_describe",
 		"query_sql",
 		"search",
+		"search_link",
 		"search_read",
 	} {
 		if _, ok := tools[name]; !ok {
 			t.Errorf("missing tool %q", name)
 		}
 	}
-	if len(tools) != 8 {
-		t.Fatalf("len(tools) = %d, want 8", len(tools))
+	if len(tools) != 9 {
+		t.Fatalf("len(tools) = %d, want 9", len(tools))
 	}
 	searchTool := tools["search"].Tool
 	if got := searchTool.InputSchema.Required; len(got) != 1 || got[0] != "query" {
@@ -149,7 +150,7 @@ func TestDriveServerHasTheVaultToolsAndNoFileTools(t *testing.T) {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	want := []string{"query_describe", "query_sql", "search", "search_read", "vault_databases", "vault_maps", "vault_sources", "vault_stats"}
+	want := []string{"query_describe", "query_sql", "search", "search_link", "search_read", "vault_databases", "vault_maps", "vault_sources", "vault_stats"}
 	if !slices.Equal(names, want) {
 		t.Errorf("drive tools = %v, want %v", names, want)
 	}
