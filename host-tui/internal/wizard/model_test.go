@@ -579,3 +579,29 @@ func TestWizardPackEscGoesBackAsTheFooterSays(t *testing.T) {
 		t.Errorf("expected stagePreset after Esc, got %d", m.stage)
 	}
 }
+
+// The review screen shows what the target disk's clusters cost the selection
+// before anything is downloaded.
+func TestWizardReviewShowsStorageNoteForTheSelection(t *testing.T) {
+	var gotPath string
+	var gotIDs, gotPlatforms []string
+	cfg := testConfig()
+	cfg.StorageNote = func(path string, ids []string, platforms []string) string {
+		gotPath, gotIDs, gotPlatforms = path, ids, platforms
+		return "warning: this disk stores files in 128 KB clusters"
+	}
+	m := sizedModel(cfg)
+	m.vaultPath = "/Volumes/STICK/svalbard"
+	m.hostPlatforms = []string{"linux-arm64"}
+	updated, _ := m.Update(packDoneMsg{explicitIDs: map[string]bool{"wikiciv": true}, selectedIDs: map[string]bool{"wikiciv": true}})
+	m = updated.(Model)
+	if m.stage != stageReview {
+		t.Fatalf("stage = %d, want review", m.stage)
+	}
+	if gotPath != "/Volumes/STICK/svalbard" || strings.Join(gotIDs, ",") != "wikiciv" || strings.Join(gotPlatforms, ",") != "linux-arm64" {
+		t.Fatalf("StorageNote(%q, %v, %v)", gotPath, gotIDs, gotPlatforms)
+	}
+	if view := m.review.View(); !strings.Contains(view, "128 KB clusters") {
+		t.Fatalf("review lacks the note:\n%s", view)
+	}
+}

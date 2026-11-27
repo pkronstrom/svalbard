@@ -74,6 +74,10 @@ type WizardConfig struct {
 	// ForPlatforms re-lists Presets and PackGroups with sizes estimated for
 	// the chosen target platforms; nil keeps the sizes above.
 	ForPlatforms func(platforms []string) ([]PresetOption, []PackGroup)
+	// StorageNote is a warning about the target disk for the selection, such
+	// as what its large clusters cost, shown on the review screen; nil or ""
+	// shows none.
+	StorageNote func(path string, items []string, platforms []string) string
 }
 
 // WizardResult is returned when the wizard completes.

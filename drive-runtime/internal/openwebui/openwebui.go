@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -58,6 +59,9 @@ var pickContext = contextpicker.Pick
 // servers it talks to.
 type Launch struct {
 	RuntimeRoot string // <drive>/.svalbard/runtime/open-webui
+	// BytecodeDir is where Python writes compiled modules, on this computer;
+	// empty writes none.
+	BytecodeDir string
 	SecretKey   string
 	ModelName   string // id llama-server reports for the model
 	LlamaURL    string // OpenAI-compatible base URL, ending in /v1
@@ -93,15 +97,14 @@ func Environment(l Launch) map[string]string {
 		// State. STATIC_DIR is rewritten on every start and would otherwise be
 		// inside the installed package; the temporary directory holds uploads
 		// in flight.
-		"HOME":                filepath.Join(l.RuntimeRoot, "home"),
-		"XDG_CONFIG_HOME":     filepath.Join(l.RuntimeRoot, "config"),
-		"XDG_CACHE_HOME":      filepath.Join(l.RuntimeRoot, "cache"),
-		"XDG_DATA_HOME":       filepath.Join(l.RuntimeRoot, "share"),
-		"TMPDIR":              filepath.Join(l.RuntimeRoot, "tmp"),
-		"DATA_DIR":            filepath.Join(l.RuntimeRoot, "data"),
-		"STATIC_DIR":          filepath.Join(l.RuntimeRoot, "static"),
-		"PYTHONPYCACHEPREFIX": filepath.Join(l.RuntimeRoot, "pycache"),
-		"WEBUI_SECRET_KEY":    l.SecretKey,
+		"HOME":             filepath.Join(l.RuntimeRoot, "home"),
+		"XDG_CONFIG_HOME":  filepath.Join(l.RuntimeRoot, "config"),
+		"XDG_CACHE_HOME":   filepath.Join(l.RuntimeRoot, "cache"),
+		"XDG_DATA_HOME":    filepath.Join(l.RuntimeRoot, "share"),
+		"TMPDIR":           filepath.Join(l.RuntimeRoot, "tmp"),
+		"DATA_DIR":         filepath.Join(l.RuntimeRoot, "data"),
+		"STATIC_DIR":       filepath.Join(l.RuntimeRoot, "static"),
+		"WEBUI_SECRET_KEY": l.SecretKey,
 
 		// The slim dependency set is installed; this switch stops Open WebUI
 		// importing what the full set would provide.
@@ -148,6 +151,13 @@ func Environment(l Launch) map[string]string {
 
 		// Slim has no vector store, so attached text goes into the context whole.
 		"BYPASS_EMBEDDING_AND_RETRIEVAL": "True",
+	}
+	// Bytecode stays off the stick, where up to 8,311 compiled modules took
+	// 1.10 GB at 128 KB clusters.
+	if l.BytecodeDir != "" {
+		env["PYTHONPYCACHEPREFIX"] = l.BytecodeDir
+	} else {
+		env["PYTHONDONTWRITEBYTECODE"] = "1"
 	}
 	for _, feature := range []string{
 		"WEB_SEARCH", "CODE_INTERPRETER", "CODE_EXECUTION", "MEMORIES", "CALENDAR", "AUTOMATIONS",
@@ -215,7 +225,11 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	if err := os.RemoveAll(filepath.Join(runtimeRoot, "tmp")); err != nil {
 		return err
 	}
-	for _, dir := range []string{"home", "config", "cache", "share", "tmp", "data", "static", "pycache"} {
+	// Where earlier runtimes kept bytecode on the stick.
+	if err := os.RemoveAll(filepath.Join(runtimeRoot, "pycache")); err != nil {
+		return err
+	}
+	for _, dir := range []string{"home", "config", "cache", "share", "tmp", "data", "static"} {
 		if err := os.MkdirAll(filepath.Join(runtimeRoot, dir), 0o755); err != nil {
 			return err
 		}
@@ -303,6 +317,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 	webuiCmd.Dir = runtimeRoot
 	webuiCmd.Env = append(hostEnvironment(), platform.EnvList(Environment(Launch{
 		RuntimeRoot: runtimeRoot,
+		BytecodeDir: bytecodeDir(),
 		SecretKey:   secret,
 		ModelName:   modelName,
 		LlamaURL:    llamaRoot + "/v1",
@@ -419,6 +434,21 @@ func resolveLauncher(driveRoot string) (string, error) {
 		return "", fmt.Errorf("Open WebUI is not installed for %s", platformName)
 	}
 	return launcher, nil
+}
+
+// bytecodeDir is where Python's compiled modules go on this computer: the
+// same directory the drive's Python commands use (svalbard/pycache in the user
+// cache dir), or none when there is no cache dir or it is macOS's /tmp.
+func bytecodeDir() string {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(base, "svalbard", "pycache")
+	if runtime.GOOS == "darwin" && (strings.HasPrefix(dir, "/tmp/") || strings.HasPrefix(dir, "/private/tmp/")) {
+		return ""
+	}
+	return dir
 }
 
 // loadSecretKey returns the key that signs Open WebUI's sessions, creating it

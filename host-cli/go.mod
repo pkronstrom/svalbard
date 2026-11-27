@@ -7,6 +7,7 @@ require (
 	github.com/klippa-app/go-pdfium v1.21.5
 	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
 	github.com/ncruces/go-sqlite3 v0.38.0
+	github.com/pkronstrom/svalbard/bintree v0.0.0-00010101000000-000000000000
 	github.com/pkronstrom/svalbard/host-tui v0.0.0-00010101000000-000000000000
 	github.com/pkronstrom/svalbard/tui v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.10.2
@@ -57,3 +58,5 @@ require (
 replace github.com/pkronstrom/svalbard/host-tui => ../host-tui
 
 replace github.com/pkronstrom/svalbard/tui => ../tui
+
+replace github.com/pkronstrom/svalbard/bintree => ../bintree

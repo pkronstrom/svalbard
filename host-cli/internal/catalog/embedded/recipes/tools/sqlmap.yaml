@@ -5,6 +5,7 @@ tags:
 - cybersec
 depth: reference-only
 size_gb: 0.017
+file_count: 1060
 venv: svalbard-python
 packages:
 - sqlmap==1.10.11

@@ -38,6 +38,39 @@ svalbard status --vault /Volumes/MyDrive
 
 `plan`, `status`, `catalog`, `preset list` and `preset show` take `--json`. Commands run inside a vault directory find it without `--vault`.
 
+## Preparing a stick
+
+USB sticks come formatted as exFAT, often with 128 KB clusters. Every file takes at least one cluster, so content made of many small files takes several times its size: Open WebUI's slim install takes 3.20 GB per platform at 128 KB clusters and about 0.6 GB at 4 KB. Large files such as ZIM archives and models lose almost nothing.
+
+`svalbard init` warns when the disk's clusters are 32 KB or larger and estimates what they cost the selection. `svalbard status` shows the vault's size in files beside the space it takes on disk.
+
+To avoid the cost, format the stick with 4 KB clusters before creating the vault. **Formatting erases everything on the disk you name: check the disk number or drive letter twice.**
+
+macOS (here the stick is `disk4`):
+
+```bash
+diskutil list external                              # find the stick by its size and name
+diskutil eraseDisk ExFAT SVALBARD GPT /dev/disk4    # erases the whole stick
+diskutil list /dev/disk4                            # the partition named SVALBARD, e.g. disk4s2
+diskutil unmountDisk /dev/disk4
+sudo newfs_exfat -R -v SVALBARD -b 4096 /dev/rdisk4s2
+diskutil mountDisk /dev/disk4
+```
+
+`diskutil eraseDisk` picks the cluster size itself; `newfs_exfat -b` then rewrites the partition with 4 KB clusters. If `diskutil list` shows no EFI partition (small sticks have none), the exFAT partition is `disk4s1`.
+
+Windows (here the stick is `E:`), in an administrator prompt:
+
+```bat
+format E: /FS:exFAT /A:4096 /Q /V:SVALBARD
+```
+
+Linux (here the stick's partition is `/dev/sdX1`; find it with `lsblk` and unmount it first):
+
+```bash
+sudo mkfs.exfat -c 4K -L SVALBARD /dev/sdX1
+```
+
 ## Catalog And Presets
 
 The CLI loads the built-in catalog from embedded copies of `recipes/` and `presets/`.
