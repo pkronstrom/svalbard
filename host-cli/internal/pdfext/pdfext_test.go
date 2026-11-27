@@ -1,6 +1,7 @@
 package pdfext
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -278,5 +279,29 @@ func TestDocumentWaitsForTheKillOfACancelledInstance(t *testing.T) {
 	}
 	if started.Load() == 0 {
 		t.Skip("no cancellation landed in the middle of a document")
+	}
+}
+
+func TestDocumentFromBytesMatchesDocument(t *testing.T) {
+	path := filepath.Join("testdata", "text.pdf")
+	fromFile, err := testExtractor.Document(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromBytes, err := testExtractor.DocumentFrom(context.Background(), bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromBytes.Title != fromFile.Title || len(fromBytes.Pages) != len(fromFile.Pages) {
+		t.Fatalf("from bytes: %q with %d pages, from file: %q with %d pages", fromBytes.Title, len(fromBytes.Pages), fromFile.Title, len(fromFile.Pages))
+	}
+	for i := range fromFile.Pages {
+		if fromBytes.Pages[i] != fromFile.Pages[i] {
+			t.Fatalf("page %d differs: %+v vs %+v", i+1, fromBytes.Pages[i], fromFile.Pages[i])
+		}
 	}
 }

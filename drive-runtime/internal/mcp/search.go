@@ -51,7 +51,7 @@ func (c *SearchCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "search",
-			Desc: "Search the drive's archives and documents by keyword. Use two to four specific words (\"paracetamol dose\", not a sentence). Articles with every word come first; if there are few, articles with most of the words follow, marked with the words they matched. A hit in a document (a PDF) is one page: its title names the document and the page to cite. Pass a result's source and path to search_read. vault_sources lists the archives and documents. Not for SQLite data: use query_sql.",
+			Desc: "Search the drive's archives and documents by keyword. Use two to four specific words (\"paracetamol dose\", not a sentence). Articles with every word come first; if there are few, articles with most of the words follow, marked with the words they matched. A hit in a document (a PDF or EPUB, on its own or inside an archive) is one page: its title names the document and the page to cite. Pass a result's source and path to search_read. vault_sources lists the archives and documents. Not for SQLite data: use query_sql.",
 			Params: []ParamDef{
 				{Name: "query", Type: "string", Required: true, Desc: "Keywords, for example: nmap port scan"},
 				{Name: "source", Type: "string", Desc: "Restrict to one archive or document, by its name from vault_sources, or to a folder of documents such as books/car-manuals"},
@@ -317,7 +317,15 @@ func (c *SearchCapability) holdings(ctx context.Context) string {
 	}
 	var holdings []*holding
 	folders := map[string]*holding{}
+	archives := map[string]*holding{}
 	for _, filename := range filenames {
+		if archive, _, ok := engine.EmbeddedArchive(filename); ok {
+			// Counted under its archive, which sorts before it.
+			if held := archives[archive]; held != nil {
+				held.documents++
+			}
+			continue
+		}
 		recipe, _ := c.meta.RecipeForFile(filename)
 		if rest, isDocument := strings.CutPrefix(filename, engine.DocumentsDir+"/"); isDocument {
 			if cut := strings.Index(rest, "/"); cut > 0 {
@@ -330,7 +338,9 @@ func (c *SearchCapability) holdings(ctx context.Context) string {
 				continue
 			}
 		}
-		holdings = append(holdings, &holding{name: sourceName(filename), recipe: recipe})
+		held := &holding{name: sourceName(filename), recipe: recipe}
+		archives[filename] = held
+		holdings = append(holdings, held)
 	}
 	listed := make([]string, 0, holdingsListed)
 	for _, held := range holdings[:min(len(holdings), holdingsListed)] {

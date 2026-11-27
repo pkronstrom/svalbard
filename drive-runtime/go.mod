@@ -11,6 +11,7 @@ require (
 	github.com/evanw/esbuild v0.28.2
 	github.com/mark3labs/mcp-go v1.6.0
 	github.com/ncruces/go-sqlite3 v0.38.0
+	github.com/pkronstrom/svalbard/bintree v0.0.0-00010101000000-000000000000
 	github.com/pkronstrom/svalbard/tui v0.0.0-00010101000000-000000000000
 	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0
@@ -47,3 +48,5 @@ require (
 )
 
 replace github.com/pkronstrom/svalbard/tui => ../tui
+
+replace github.com/pkronstrom/svalbard/bintree => ../bintree

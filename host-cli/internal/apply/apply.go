@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkronstrom/svalbard/bintree"
 	"github.com/pkronstrom/svalbard/host-cli/internal/builder"
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
@@ -108,6 +109,7 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	}
 
 	recoverAsides(root, m.Realized.Entries)
+	repairBinaryTrees(root, m.Realized.Entries, progress)
 	acquire := slices.Concat(plan.ToDownload, plan.ToUpdate)
 	// The installed entries of each item being updated, to set aside while
 	// its job runs.
@@ -131,6 +133,16 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	for _, e := range m.Realized.Entries {
 		if _, ok := removeSet[e.ID]; ok {
 			path := filepath.Join(root, e.RelativePath)
+			// A binary archive's tree, unpacked here or on first use; the
+			// .unpacked directory belongs to its archive whatever the type.
+			if err := bintree.RemoveUnpacked(path); err != nil {
+				slog.Warn("removing an unpacked tree", "id", e.ID, "error", err)
+			}
+			if e.Type == "binary" {
+				if err := bintree.RemoveLegacyTrees(path, path); err != nil {
+					slog.Warn("removing an unpacked tree", "id", e.ID, "error", err)
+				}
+			}
 			os.RemoveAll(path)
 			// The downloader's record of where the file came from.
 			os.Remove(path + ".download.json")
@@ -496,9 +508,26 @@ func (s updateSwap) run(root, id string, job func() downloadResult) downloadResu
 		path := filepath.Join(root, e.RelativePath)
 		var err error
 		if s.replace {
-			err = os.RemoveAll(path)
-		} else if err = os.Rename(path, path+asideSuffix); os.IsNotExist(err) {
-			err = nil // already missing; nothing to keep
+			if e.Type == "binary" {
+				err = bintree.RemoveTrees(path)
+			} else {
+				err = bintree.RemoveUnpacked(path)
+			}
+			if err == nil {
+				err = os.RemoveAll(path)
+			}
+		} else {
+			// The old release's unpacked tree would be found before the new
+			// archive's, so it goes aside with its archive and comes back
+			// with it if the update fails.
+			if err = os.Rename(bintree.UnpackedDir(path), bintree.UnpackedDir(path)+asideSuffix); os.IsNotExist(err) {
+				err = nil
+			}
+			if err == nil {
+				if err = os.Rename(path, path+asideSuffix); os.IsNotExist(err) {
+					err = nil // already missing; nothing to keep
+				}
+			}
 		}
 		if err != nil {
 			recoverAsides(root, old)
@@ -511,8 +540,21 @@ func (s updateSwap) run(root, id string, job func() downloadResult) downloadResu
 		return result
 	}
 	for _, e := range old {
-		if err := os.RemoveAll(filepath.Join(root, e.RelativePath) + asideSuffix); err != nil {
+		path := filepath.Join(root, e.RelativePath)
+		if e.Type == "binary" {
+			// The flat tree an older drive runtime unpacked, as the old
+			// archive lists it.
+			if err := bintree.RemoveLegacyTrees(path, path+asideSuffix); err != nil {
+				slog.Warn("removing the previous unpacked tree", "id", id, "error", err)
+			}
+		}
+		// The archive's copy goes first: once it is gone the update has
+		// happened, and recoverAsides drops a tree left aside without it.
+		if err := os.RemoveAll(path + asideSuffix); err != nil {
 			slog.Warn("removing the previous copy", "id", id, "error", err)
+		}
+		if err := os.RemoveAll(bintree.UnpackedDir(path) + asideSuffix); err != nil {
+			slog.Warn("removing the previous unpacked tree", "id", id, "error", err)
 		}
 	}
 	return result
@@ -525,6 +567,19 @@ func (s updateSwap) run(root, id string, job func() downloadResult) downloadResu
 func recoverAsides(root string, entries []manifest.RealizedEntry) {
 	for _, e := range entries {
 		path := filepath.Join(root, e.RelativePath)
+		// A tree set aside comes back with its archive's copy; without that
+		// copy the update finished, and the tree is the old release's.
+		if unpacked := bintree.UnpackedDir(path); exists(unpacked + asideSuffix) {
+			if !exists(path + asideSuffix) {
+				if err := os.RemoveAll(unpacked + asideSuffix); err != nil {
+					slog.Warn("removing the previous unpacked tree", "id", e.ID, "error", err)
+				}
+			} else if err := os.RemoveAll(unpacked); err == nil {
+				if err := os.Rename(unpacked+asideSuffix, unpacked); err != nil {
+					slog.Warn("restoring the previous unpacked tree", "id", e.ID, "error", err)
+				}
+			}
+		}
 		if _, err := os.Lstat(path + asideSuffix); err != nil {
 			continue
 		}
@@ -534,6 +589,34 @@ func recoverAsides(root string, entries []manifest.RealizedEntry) {
 				slog.Warn("restoring the previous copy", "id", e.ID, "error", err)
 			}
 		}
+	}
+}
+
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+// repairBinaryTrees converts the flat trees drive runtimes from before
+// <archive>.unpacked left beside binary archives (on exFAT, macOS's XSym files
+// or a tree Linux stopped at its first link), so a stick heals on its next
+// apply without an update; see bintree.RepairLegacy.
+func repairBinaryTrees(root string, entries []manifest.RealizedEntry, progress ProgressFunc) {
+	var archives []string
+	for _, e := range entries {
+		if e.Type == "binary" {
+			archives = append(archives, filepath.Join(root, e.RelativePath))
+		}
+	}
+	converted, err := bintree.RepairLegacy(archives)
+	if err != nil {
+		slog.Warn("converting older unpacked binary trees", "error", err)
+	}
+	for _, archive := range converted {
+		rel, _ := filepath.Rel(root, archive)
+		notice := "unpacked " + filepath.ToSlash(rel) + " again in the current layout"
+		slog.Info("binary tree converted", "archive", rel)
+		progress(ProgressEvent{ID: noticeID, Status: tui.StatusDone, Step: notice, Message: notice})
 	}
 }
 
@@ -833,6 +916,17 @@ func fetchAndRecordAt(ctx context.Context, root, id string, recipe catalog.Item,
 	if bareBinary {
 		if err := os.Chmod(destPath, 0o755); err != nil {
 			return manifest.RealizedEntry{}, fmt.Errorf("mark %s executable: %w", destPath, err)
+		}
+	} else if platformBinary {
+		// No stick can create the links in an archive, so one that has them
+		// is unpacked now, with each link resolved; first use then writes
+		// nothing. If that fails, the drive runtime still unpacks it there.
+		report, err := bintree.Prepare(destPath)
+		if err != nil {
+			slog.Warn("binary archive left to unpack on first use", "id", id, "error", err)
+		}
+		for _, line := range report {
+			slog.Info("binary archive link", "id", id, "link", line)
 		}
 	}
 

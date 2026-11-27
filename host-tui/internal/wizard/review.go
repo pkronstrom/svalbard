@@ -37,6 +37,7 @@ type reviewModel struct {
 	theme        tui.Theme
 	keys         tui.KeyMap
 	errMsg       string
+	note         string // a warning about the target disk
 }
 
 func newReviewModel(vaultPath string, items []ReviewItem, missingIDs []string, freeGB float64) reviewModel {
@@ -92,7 +93,10 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m reviewModel) maxVisible() int {
 	// Shell chrome(4) + header(3) + detail(4) + footer(2) = 13
-	avail := m.height - 13 - validationLines(m.width, reviewValidation(m))
+	avail := m.height - 13 - validationLines(m.width, reviewValidation(m), m.note)
+	if m.note != "" {
+		avail-- // the blank line after it
+	}
 	if avail < 1 {
 		avail = 1
 	}
@@ -145,6 +149,10 @@ func (m reviewModel) View() string {
 		b.WriteString(fmt.Sprintf(" / %s free", tui.FormatSizeGB(m.freeGB)))
 	}
 	b.WriteString("\n\n")
+	if m.note != "" {
+		b.WriteString(m.theme.Warning.Render(validationText(m.width, m.note)))
+		b.WriteString("\n\n")
+	}
 
 	// Scrollable item list — one line per item: symbol + ID + size
 	maxVis := m.maxVisible()

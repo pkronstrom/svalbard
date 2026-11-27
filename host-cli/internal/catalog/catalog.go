@@ -20,7 +20,13 @@ type Item struct {
 	// one platform's download, using the largest platform asset; estimates
 	// multiply it by the number of the vault's platforms the recipe supports
 	// (see SizeGBFor). For any other recipe it is the single asset's size.
-	SizeGB     float64           `yaml:"size_gb"`
+	SizeGB float64 `yaml:"size_gb"`
+	// FileCount is how many files and directories the item puts on the
+	// vault, per platform as SizeGB is. It is set, from a measured install,
+	// for the items that are trees of many small files, whose space on a
+	// stick with large clusters is several times their size (see
+	// FileCountFor).
+	FileCount  int               `yaml:"file_count,omitempty"`
 	Strategy   string            `yaml:"strategy"`
 	URL        string            `yaml:"url,omitempty"`
 	SHA256     string            `yaml:"sha256,omitempty"`

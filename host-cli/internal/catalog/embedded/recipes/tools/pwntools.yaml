@@ -6,6 +6,7 @@ tags:
 - ctf
 depth: reference-only
 size_gb: 0.18
+file_count: 10855
 venv: svalbard-python
 packages:
 - pwntools==4.15.1

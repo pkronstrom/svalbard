@@ -40,7 +40,7 @@ func TestResolveExtractsTarGzBinaryFromPlatformBinDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if want := filepath.Join(binDir, "kiwix-tools", "kiwix-serve"); got != want {
+	if want := filepath.Join(binDir, "kiwix-tools.tar.gz.unpacked", "kiwix-tools", "kiwix-serve"); got != want {
 		t.Fatalf("Resolve() = %q, want %q", got, want)
 	}
 	info, err := os.Stat(got)
@@ -90,7 +90,7 @@ func TestResolveExtractsTarBz2BinaryFromPlatformBinDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if want := filepath.Join(toolDir, "goose-bundle", "goose"); got != want {
+	if want := filepath.Join(toolDir, "goose.tar.bz2.unpacked", "goose-bundle", "goose"); got != want {
 		t.Fatalf("Resolve() = %q, want %q", got, want)
 	}
 }
@@ -116,11 +116,11 @@ func TestResolveKeepsExtractedBinaryInPlaceWhenNestedLibrariesMayExist(t *testin
 		t.Fatalf("Resolve() error = %v", err)
 	}
 
-	want := filepath.Join(toolDir, "bundle", "bin", "llama-server")
+	want := filepath.Join(toolDir, "llama-server.tar.gz.unpacked", "bundle", "bin", "llama-server")
 	if got != want {
 		t.Fatalf("Resolve() = %q, want %q", got, want)
 	}
-	if _, err := os.Stat(filepath.Join(toolDir, "bundle", "lib", "libmtmd.0.dylib")); err != nil {
+	if _, err := os.Stat(filepath.Join(toolDir, "llama-server.tar.gz.unpacked", "bundle", "lib", "libmtmd.0.dylib")); err != nil {
 		t.Fatalf("support library missing after resolve: %v", err)
 	}
 }
@@ -150,18 +150,12 @@ func TestResolveExtractsTarSymlinkedLibraries(t *testing.T) {
 		t.Fatalf("Resolve() error = %v", err)
 	}
 
-	want := filepath.Join(toolDir, "llama-b8799", "llama-server")
-	if got != want {
+	tree := filepath.Join(toolDir, "llama-server.tar.gz.unpacked", "llama-b8799")
+	if want := filepath.Join(tree, "llama-server"); got != want {
 		t.Fatalf("Resolve() = %q, want %q", got, want)
 	}
-	linkPath := filepath.Join(toolDir, "llama-b8799", "libmtmd.0.dylib")
-	target, err := os.Readlink(linkPath)
-	if err != nil {
-		t.Fatalf("Readlink() error = %v", err)
-	}
-	if target != "libmtmd.0.0.dylib" {
-		t.Fatalf("Readlink() = %q, want %q", target, "libmtmd.0.0.dylib")
-	}
+	// exFAT has no symlinks: the link is a copy of the library it named.
+	assertPlainFile(t, filepath.Join(tree, "libmtmd.0.dylib"), "real")
 }
 
 func buildTarGz(t *testing.T, files map[string]string) []byte {
@@ -375,7 +369,7 @@ func TestResolveIgnoresAppleDoubleCompanionsOfArchives(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if want := filepath.Join(binDir, "kiwix-tools", "kiwix-serve"); got != want {
+	if want := filepath.Join(binDir, "kiwix-tools.tar.gz.unpacked", "kiwix-tools", "kiwix-serve"); got != want {
 		t.Fatalf("Resolve() = %q, want %q", got, want)
 	}
 }

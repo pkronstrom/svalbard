@@ -189,6 +189,16 @@ func (s *Session) OpenResult(result Result) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// A document inside an archive is served by kiwix-serve, as the
+	// archive's pages are, and opens at the page of the hit.
+	if engine.IsEmbeddedSource(result.Filename) {
+		if err := s.ensureKiwix(context.Background()); err != nil {
+			return err
+		}
+		page, _ := engine.PageNumber(result.Path)
+		return s.opener(embeddedURL(fmt.Sprintf("http://localhost:%d", s.kiwixPort), result.Filename, page))
+	}
+
 	// A document opens in the browser's own PDF viewer at the page of the
 	// hit; kiwix-serve only knows ZIM archives.
 	if IsDocumentSource(result.Filename) {

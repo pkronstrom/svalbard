@@ -94,6 +94,9 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 	if engine.IsDocumentSource(source) {
 		return c.readDocument(ctx, source, rawPath, offset)
 	}
+	if document, page, ok := c.documentInArchive(ctx, source, rawPath); ok {
+		return c.readDocument(ctx, document, page, offset)
+	}
 	if engine.IsSkillSource(source) {
 		return c.readSkillSource(ctx, source, rawPath, offset)
 	}
@@ -135,6 +138,11 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 	if next < total {
 		result.Continues = fmt.Sprintf("Characters %d to %d of %d. Call search_read with the same source and path and offset %d for the next part.", offset, next, total, next)
 	}
+	if strings.TrimSpace(rawPath) == "" && offset == 0 {
+		if held := c.archiveDocumentsNote(ctx, source); held != "" {
+			result.Note = strings.TrimSpace(result.Note + " " + held)
+		}
+	}
 	if offset == 0 {
 		result.Links = page.Links
 		if extra := len(page.Links) - c.read.Links; extra > 0 {
@@ -146,6 +154,29 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 		}
 	}
 	return ActionResult{Data: result}, nil
+}
+
+// documentInArchive finds the document indexed from inside an archive that a
+// path names: "files/guide.pdf", or "files/guide.pdf/page/2" for a page of it.
+// kiwix-serve would answer the first with the PDF's bytes.
+func (c *SearchCapability) documentInArchive(ctx context.Context, archive, rawPath string) (document, page string, ok bool) {
+	path := strings.Trim(strings.TrimSpace(rawPath), "/")
+	if path == "" || !strings.EqualFold(filepath.Ext(archive), ".zim") {
+		return "", "", false
+	}
+	for _, filename := range c.knownSources(ctx, false) {
+		inside, entry, isEmbedded := engine.EmbeddedArchive(filename)
+		if !isEmbedded || inside != archive {
+			continue
+		}
+		if path == entry {
+			return filename, "", true
+		}
+		if rest, found := strings.CutPrefix(path, entry+"/"); found {
+			return filename, rest, true
+		}
+	}
+	return "", "", false
 }
 
 // readFullPage loads the first candidate path the source has, as text. Only
@@ -255,7 +286,10 @@ func (c *SearchCapability) resolveScope(ctx context.Context, name string, onDisk
 			if slices.Contains(forms, given) {
 				return filename, nil
 			}
-			if strings.Contains(forms[0], given) {
+			// A document inside an archive is a near miss only for a name
+			// with a path in it: the archive's own name must find the
+			// archive, not one of the documents it holds.
+			if strings.Contains(forms[0], given) && (!engine.IsEmbeddedSource(filename) || strings.Contains(given, "/")) {
 				partial = append(partial, filename)
 			}
 			continue

@@ -6,6 +6,7 @@ tags:
 - forensics
 depth: reference-only
 size_gb: 0.011
+file_count: 514
 venv: svalbard-python
 packages:
 - volatility3==2.28.2

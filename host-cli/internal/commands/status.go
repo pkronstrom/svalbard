@@ -41,6 +41,9 @@ type StatusReport struct {
 	// platforms; apply skips them.
 	OtherPlatform []string     `json:"other_platform"`
 	Items         []StatusItem `json:"items"`
+	// Usage is what the vault's files hold and take on its disk; nil when
+	// not measured.
+	Usage *VaultUsage `json:"usage,omitempty"`
 }
 
 // BuildStatus summarizes m: each desired item, whether it is realized, and
@@ -108,7 +111,11 @@ var versionLabels = map[string]string{
 // WriteStatus prints a human-readable summary of vault state including
 // desired items, realized items, and what is pending.
 func WriteStatus(w io.Writer, cat *catalog.Catalog, m manifest.Manifest) error {
-	r := BuildStatus(cat, m)
+	return WriteStatusReport(w, BuildStatus(cat, m), m)
+}
+
+// WriteStatusReport prints r, the status BuildStatus made of m.
+func WriteStatusReport(w io.Writer, r StatusReport, m manifest.Manifest) error {
 	fmt.Fprintf(w, "Vault: %s\n", r.Vault)
 	if r.Preset != "" {
 		fmt.Fprintf(w, "Preset: %s\n", r.Preset)
@@ -118,6 +125,9 @@ func WriteStatus(w io.Writer, cat *catalog.Catalog, m manifest.Manifest) error {
 	fmt.Fprintf(w, "Desired: %d items\n", r.Desired)
 	fmt.Fprintf(w, "Realized: %d items\n", r.Realized)
 	fmt.Fprintf(w, "Pending: %d items\n", r.Pending)
+	if r.Usage != nil {
+		WriteVaultUsage(w, *r.Usage)
+	}
 
 	if r.Desired == 0 {
 		return nil

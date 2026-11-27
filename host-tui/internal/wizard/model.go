@@ -145,7 +145,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case packDoneMsg:
 		m.capturePackSelection(msg.explicitIDs, msg.selectedIDs, msg.missingIDs)
 		m.stage = stageReview
-		m.review = newReviewModel(m.vaultPath, m.buildReviewItems(), m.missingIDs, m.freeGB)
+		m.review = m.newReview()
 		return m.sizeActiveModel()
 
 	case packCancelMsg:
@@ -164,7 +164,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.config.InitVault != nil {
 			if err := m.config.InitVault(m.vaultPath, ids, m.presetName, m.region, m.hostPlatforms); err != nil {
 				m.stage = stageReview
-				m.review = newReviewModel(m.vaultPath, m.buildReviewItems(), m.missingIDs, m.freeGB)
+				m.review = m.newReview()
 				m.review.errMsg = fmt.Sprintf("Init failed: %v", err)
 				return m.sizeActiveModel()
 			}
@@ -350,4 +350,13 @@ func (m Model) doneCmd() tea.Cmd {
 		HostPlatforms: m.hostPlatforms,
 	}
 	return func() tea.Msg { return DoneMsg{Result: result} }
+}
+
+// newReview is the review screen for the current selection.
+func (m Model) newReview() reviewModel {
+	review := newReviewModel(m.vaultPath, m.buildReviewItems(), m.missingIDs, m.freeGB)
+	if m.config.StorageNote != nil {
+		review.note = m.config.StorageNote(m.vaultPath, m.selectedIDList(), m.hostPlatforms)
+	}
+	return review
 }
