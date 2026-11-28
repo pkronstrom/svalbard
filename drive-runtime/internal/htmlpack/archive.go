@@ -5,11 +5,14 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -28,11 +31,11 @@ const (
 
 // archive is one recipe's library archive.
 type archive struct {
-	id    string
-	path  string
-	zr    *zip.ReadCloser
-	files map[string]*zip.File
-	dirs  map[string]bool
+	id     string
+	reader io.Closer
+	limits *workspaceLimits
+	files  map[string]*zip.File
+	dirs   map[string]bool
 	// mains maps a package folder to the file a bare import of it resolves
 	// to (a self-contained build), from svalbard-js.json.
 	mains map[string]string
@@ -42,12 +45,50 @@ type archive struct {
 	mu      sync.Mutex
 }
 
-func openArchive(id, file string) (*archive, error) {
-	zr, err := zip.OpenReader(file)
+func openArchive(id string, files fs.FS, name string, limits *workspaceLimits) (*archive, error) {
+	if limits != nil {
+		info, err := fs.Stat(files, name)
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s is not a regular library archive", name)
+		}
+	}
+	f, err := files.Open(name)
 	if err != nil {
 		return nil, err
 	}
-	a := &archive{id: id, path: file, zr: zr, files: map[string]*zip.File{}, dirs: map[string]bool{"": true}, mains: map[string]string{}, pkgJSON: map[string]*packageJSON{}}
+	a, err := readArchive(id, f, limits)
+	if err != nil {
+		f.Close()
+	}
+	return a, err
+}
+
+func readArchive(id string, f fs.File, limits *workspaceLimits) (*archive, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular library archive", info.Name())
+	}
+	reader, ok := f.(io.ReaderAt)
+	if !ok {
+		return nil, fmt.Errorf("library archive %s does not support reading at an offset", id)
+	}
+	if limits != nil {
+		reader = workspaceZIPReader{source: reader, limits: limits}
+	}
+	zr, err := zip.NewReader(reader, info.Size())
+	if err != nil {
+		return nil, err
+	}
+	if limits != nil && len(zr.File) > maxZIPEntries {
+		return nil, fmt.Errorf("%s.zip has more than %d entries", id, maxZIPEntries)
+	}
+	a := &archive{id: id, reader: f, limits: limits, files: map[string]*zip.File{}, dirs: map[string]bool{"": true}, mains: map[string]string{}, pkgJSON: map[string]*packageJSON{}}
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
@@ -63,8 +104,7 @@ func openArchive(id, file string) (*archive, error) {
 			Main map[string]string `json:"main"`
 		}
 		if err := json.Unmarshal(data, &index); err != nil {
-			zr.Close()
-			return nil, fmt.Errorf("%s: %s: %w", file, libraryIndexFile, err)
+			return nil, fmt.Errorf("%s: %w", libraryIndexFile, err)
 		}
 		for dir, main := range index.Main {
 			a.mains[path.Clean(dir)] = path.Clean(main)
@@ -81,12 +121,29 @@ func (a *archive) read(p string) ([]byte, error) {
 	if !ok {
 		return nil, os.ErrNotExist
 	}
-	rc, err := f.Open()
-	if err != nil {
-		return nil, err
+	if a.limits == nil {
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+		return io.ReadAll(rc)
 	}
-	defer rc.Close()
-	return io.ReadAll(rc)
+	return a.limits.read(func(maxBytes int64) ([]byte, error) {
+		if f.UncompressedSize64 > uint64(maxBytes) {
+			return nil, fmt.Errorf("%s: %s exceeds the %d byte limit for an archived dependency", a.id, p, maxBytes)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+		data, err := io.ReadAll(io.LimitReader(packReader{ctx: a.limits.ctx, reader: rc}, maxBytes+1))
+		if err == nil && int64(len(data)) > maxBytes {
+			return nil, fmt.Errorf("%s: %s exceeds the %d byte limit for an archived dependency", a.id, p, maxBytes)
+		}
+		return data, err
+	})
 }
 
 // topLevel lists the packages installed at the top of the tree.
@@ -133,22 +190,44 @@ type libraries struct {
 
 // loadLibraries opens every archive under lib/js/ of the drive. A drive
 // without any has none; that is not an error until a page imports one.
-func loadLibraries(driveRoot string) (*libraries, error) {
+func loadLibraries(driveRoot string, limits *workspaceLimits) (*libraries, error) {
 	libs := &libraries{byPackage: map[string][]*archive{}, documented: map[string]library{}, twice: map[string][]string{}, broken: map[string]error{}}
-	dir := filepath.Join(driveRoot, filepath.FromSlash(libraryDir))
-	entries, err := os.ReadDir(dir)
+	var files fs.FS = os.DirFS(filepath.Join(driveRoot, libraryDir))
+	if limits != nil {
+		root, err := os.OpenRoot(driveRoot)
+		if err != nil {
+			return nil, err
+		}
+		defer root.Close()
+		store, err := root.OpenRoot(libraryDir)
+		if errors.Is(err, fs.ErrNotExist) {
+			return libs, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("open the installed library store: %w", err)
+		}
+		defer store.Close()
+		files = store.FS()
+	}
+	entries, err := libraryEntries(files, limits)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return libs, nil
 		}
 		return nil, err
 	}
 	for _, e := range entries {
+		if limits != nil {
+			if err := limits.failure(); err != nil {
+				libs.close()
+				return nil, err
+			}
+		}
 		id, ok := strings.CutSuffix(e.Name(), ".zip")
 		if !ok || e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		a, err := openArchive(id, filepath.Join(dir, e.Name()))
+		a, err := openArchive(id, files, e.Name(), limits)
 		if err != nil {
 			libs.broken[id] = err
 			libs.warnings = append(libs.warnings, fmt.Sprintf("lib/js/%s cannot be read (%v); its libraries are left out", e.Name(), err))
@@ -157,22 +236,52 @@ func loadLibraries(driveRoot string) (*libraries, error) {
 		libs.archives = append(libs.archives, a)
 		for _, pkg := range a.topLevel() {
 			libs.byPackage[pkg] = append(libs.byPackage[pkg], a)
-			quickstart := filepath.Join(dir, id, "docs", strings.ReplaceAll(pkg, "/", "__")+".md")
-			if _, err := os.Stat(quickstart); err == nil {
+			quickstart := path.Join(id, "docs", strings.ReplaceAll(pkg, "/", "__")+".md")
+			if _, err := fs.Stat(files, quickstart); err == nil {
 				if other, ok := libs.documented[pkg]; ok {
 					libs.twice[pkg] = append(libs.twice[pkg], other.archive.id, id)
 					continue
 				}
-				libs.documented[pkg] = library{pkg: pkg, archive: a, portability: frontmatterValue(quickstart, "portability")}
+				libs.documented[pkg] = library{pkg: pkg, archive: a, portability: frontmatterValue(files, quickstart, "portability", limits)}
 			}
+		}
+	}
+	if limits != nil {
+		if err := limits.failure(); err != nil {
+			libs.close()
+			return nil, err
 		}
 	}
 	return libs, nil
 }
 
+func libraryEntries(files fs.FS, limits *workspaceLimits) ([]fs.DirEntry, error) {
+	if limits == nil {
+		return fs.ReadDir(files, ".")
+	}
+	f, err := files.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	dir, ok := f.(fs.ReadDirFile)
+	if !ok {
+		return nil, fmt.Errorf("%s is not a library folder", libraryDir)
+	}
+	entries, err := dir.ReadDir(maxLibraryDirEntries + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if len(entries) > maxLibraryDirEntries {
+		return nil, fmt.Errorf("the %s store has more than %d entries", libraryDir, maxLibraryDirEntries)
+	}
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+	return entries, nil
+}
+
 func (l *libraries) close() {
 	for _, a := range l.archives {
-		a.zr.Close()
+		a.reader.Close()
 	}
 }
 
@@ -217,13 +326,35 @@ func (l *libraries) owner(pkg string) (*archive, error) {
 }
 
 // frontmatterValue reads one top-level key of a markdown file's frontmatter.
-func frontmatterValue(file, key string) string {
-	f, err := os.Open(file)
+func frontmatterValue(files fs.FS, file, key string, limits *workspaceLimits) string {
+	if limits != nil {
+		info, err := fs.Stat(files, file)
+		if err != nil || !info.Mode().IsRegular() {
+			return ""
+		}
+		data, err := limits.read(func(maxBytes int64) ([]byte, error) {
+			f, err := files.Open(file)
+			if err != nil {
+				return nil, err
+			}
+			defer f.Close()
+			return io.ReadAll(io.LimitReader(packReader{ctx: limits.ctx, reader: f}, min(64<<10, maxBytes)))
+		})
+		if err != nil {
+			return ""
+		}
+		return scanFrontmatter(bytes.NewReader(data), key)
+	}
+	f, err := files.Open(file)
 	if err != nil {
 		return ""
 	}
 	defer f.Close()
-	scanner := bufio.NewScanner(io.LimitReader(f, 64<<10))
+	return scanFrontmatter(io.LimitReader(f, 64<<10), key)
+}
+
+func scanFrontmatter(r io.Reader, key string) string {
+	scanner := bufio.NewScanner(r)
 	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
 		return ""
 	}
@@ -266,6 +397,9 @@ func (a *archive) packageJSON(dir string) (*packageJSON, error) {
 	}
 	data, err := a.read(path.Join(dir, "package.json"))
 	if err != nil {
+		if a.limits != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
 		a.pkgJSON[dir] = nil
 		return nil, nil // a package without package.json resolves by file
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -207,6 +208,7 @@ type fakeSearchSession struct {
 	searchErr error
 	openErr   error
 	searches  []string
+	excluded  []string
 	opened    []search.Result
 	closed    bool
 }
@@ -215,8 +217,9 @@ func (f *fakeSearchSession) Info() search.SessionInfo {
 	return f.info
 }
 
-func (f *fakeSearchSession) Search(_ context.Context, mode search.Mode, query string, _ int) (search.SearchResponse, error) {
+func (f *fakeSearchSession) Search(_ context.Context, mode search.Mode, query string, _ int, excluded ...string) (search.SearchResponse, error) {
 	f.searches = append(f.searches, string(mode)+":"+query)
+	f.excluded = excluded
 	return f.response, f.searchErr
 }
 
@@ -253,6 +256,48 @@ func TestEnterOnSearchItemOpensSearchSession(t *testing.T) {
 	}
 	if got.searchMode != search.ModeKeyword {
 		t.Fatalf("searchMode = %q", got.searchMode)
+	}
+}
+
+func TestSearchArchiveCheckboxFiltersNextQuery(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "zim"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for filename, content := range map[string]string{"wikipedia_en.zim": "largest", "wiktionary_en.zim": "short", "handbook.zim": "hi"} {
+		if err := os.WriteFile(filepath.Join(root, "zim", filename), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := NewModel(sampleGroupedConfig(), root)
+	fake := &fakeSearchSession{info: search.SessionInfo{BestMode: search.ModeKeyword}}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	if err := m.openSearchSession(); err != nil {
+		t.Fatal(err)
+	}
+	m.height = 16
+	m.searchQuery.SetValue("potato farming")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	m = updated.(Model)
+	if !m.archiveFilterOpen || !strings.Contains(m.View(), "[x] wikipedia_en") {
+		t.Fatalf("archive filter did not open with Wikipedia checked: %s", m.View())
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = updated.(Model)
+	if !strings.Contains(m.View(), "[ ] wikipedia_en") {
+		t.Fatalf("archive filter did not uncheck Wikipedia: %s", m.View())
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("no search submitted after changing the archive filter")
+	}
+	cmd()
+	if !slices.Equal(fake.excluded, []string{"wikipedia_en.zim", "wiktionary_en.zim"}) {
+		t.Fatalf("excluded archives = %v", fake.excluded)
 	}
 }
 

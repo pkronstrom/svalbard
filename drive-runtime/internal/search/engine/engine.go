@@ -20,6 +20,7 @@ type Result struct {
 	ChunkHeader string
 	Score       float64
 	Body        string
+	Native      bool // result retrieved from an embedded ZIM index
 	// Partial marks a keyword result that lacks some of the query words;
 	// Matched lists the ones it has.
 	Partial bool
@@ -54,9 +55,9 @@ func (e *Engine) Keyword(query string, limit int) ([]Result, error) {
 // returns at most sectionsPerSkill sections unless the scope is that skill,
 // so that hybrid search, whose candidates these are, reaches the skills
 // behind a long one.
-func (e *Engine) KeywordContext(ctx context.Context, query string, limit int, scope string) ([]Result, error) {
+func (e *Engine) KeywordContext(ctx context.Context, query string, limit int, scope string, excluded ...string) ([]Result, error) {
 	ftsQuery := BuildFTSQuery(query)
-	clause, scopeArgs := scopeClause(scope)
+	clause, scopeArgs := scopeClause(scope, excluded...)
 	skills := e.newSkillBound(ctx, scope)
 	scan := limit
 	if skills != nil {
@@ -108,9 +109,27 @@ func (e *Engine) Hybrid(query string, queryVec []float32, limit int) ([]Result, 
 
 // HybridContext is Hybrid within a search scope, as InScope reads it. Both
 // halves keep to the scope: the keyword candidates and the vectors scored.
-func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []float32, limit int, scope string) ([]Result, error) {
-	// Step 1: Run FTS5 first to get candidate article IDs for vector pre-filter.
-	ftsResults, ftsErr := e.KeywordContext(ctx, query, 200, scope)
+func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []float32, limit int, scope string, excluded ...string) ([]Result, error) {
+	return e.hybridContext(ctx, query, queryVec, limit, scope, false, excluded...)
+}
+
+// SelectiveHybridContext searches all vectors in a selective index so
+// paraphrases and cross-language hits can enter the keyword ranking.
+func (e *Engine) SelectiveHybridContext(ctx context.Context, query string, queryVec []float32, limit int, scope string, excluded ...string) ([]Result, error) {
+	return e.hybridContext(ctx, query, queryVec, limit, scope, true, excluded...)
+}
+
+func (e *Engine) hybridContext(ctx context.Context, query string, queryVec []float32, limit int, scope string, independent bool, excluded ...string) ([]Result, error) {
+	// Selective retrieval uses the regular keyword policy. Weak any-word
+	// matches should not boost an incidental semantic hit above a useful one.
+	var ftsResults []Result
+	var ftsErr error
+	if independent {
+		matches, err := e.Search(ctx, query, KeywordOptions{Source: scope, Limit: 100, ExcludedArchives: excluded})
+		ftsResults, ftsErr = matches.Results, err
+	} else {
+		ftsResults, ftsErr = e.KeywordContext(ctx, query, 200, scope, excluded...)
+	}
 
 	// Step 2: Run vector search filtered to FTS candidate articles.
 	// This avoids loading ALL embeddings into memory.
@@ -123,15 +142,28 @@ func (e *Engine) HybridContext(ctx context.Context, query string, queryVec []flo
 
 	var vecChunks []scoredChunk
 	var vecErr error
-	if len(candidateIDs) > 0 {
+	if len(candidateIDs) > 0 && !independent {
 		// The candidates are in the scope already.
 		vecChunks, vecErr = e.vectorSearchFiltered(queryVec, candidateIDs, 100)
 	} else {
 		// No FTS hits — fall back to full scan (small corpus or unusual query)
-		vecChunks, vecErr = e.vectorSearch(ctx, queryVec, 100, scope)
+		vecChunks, vecErr = e.vectorSearch(ctx, queryVec, 100, scope, excluded...)
 	}
 	if vecErr != nil {
 		return nil, vecErr
+	}
+	if independent {
+		// The vector list is sorted by similarity. Give each article one
+		// vote, keeping its most relevant chunk for the result heading.
+		seen := map[int]bool{}
+		best := vecChunks[:0]
+		for _, chunk := range vecChunks {
+			if !seen[chunk.articleID] {
+				best = append(best, chunk)
+				seen[chunk.articleID] = true
+			}
+		}
+		vecChunks = best
 	}
 
 	// Trim FTS results to top 100 for RRF (we fetched 200 for wider pre-filter)
@@ -196,8 +228,8 @@ func (e *Engine) vectorSearchFiltered(queryVec []float32, articleIDs []int, limi
 
 // vectorSearch fetches every embedding in the scope and computes dot product
 // with queryVec. Used as fallback when FTS5 returns no candidates.
-func (e *Engine) vectorSearch(ctx context.Context, queryVec []float32, limit int, scope string) ([]scoredChunk, error) {
-	clause, scopeArgs := scopeClause(scope)
+func (e *Engine) vectorSearch(ctx context.Context, queryVec []float32, limit int, scope string, excluded ...string) ([]scoredChunk, error) {
+	clause, scopeArgs := scopeClause(scope, excluded...)
 	skills := e.newSkillBound(ctx, scope)
 	rows, err := e.db.Query(
 		`SELECT e.article_id, e.chunk_header, e.vector, src.filename

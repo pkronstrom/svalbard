@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -97,6 +100,52 @@ func (f *readFixture) read(params map[string]any) (readResult, error) {
 		return readResult{}, err
 	}
 	return result.Data.(readResult), nil
+}
+
+func TestSearchUsesKiwixForAnInstalledUnindexedZIM(t *testing.T) {
+	f := newReadFixture(t, false)
+	if err := os.WriteFile(filepath.Join(f.root, "zim", "wikipedia_en_all_nopic_2026-06.zim"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if r.URL.Path != "/search" || q.Get("books.name") != "wikipedia_en_all_nopic_2026-06" ||
+			q.Get("pattern") != "solar energy" || q.Get("format") != "xml" || q.Get("pageLength") != "1" {
+			t.Errorf("unexpected Kiwix request %s", r.URL)
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		fmt.Fprint(w, `<rss><channel><item><title>Solar energy</title><link>/content/wikipedia_en_all_nopic_2026-06/Solar%20energy</link><description>&lt;b&gt;Solar&lt;/b&gt; energy</description></item></channel></rss>`)
+	}))
+	defer server.Close()
+	f.cap.kiwix = map[string]kiwixArchive{
+		"wikipedia_en_all_nopic_2026-06": {port: server.Listener.Addr().(*net.TCPAddr).Port},
+	}
+	result, err := f.cap.Handle(context.Background(), "search", map[string]any{
+		"query": "solar energy", "source": "wikipedia_en_all_nopic_2026-06", "limit": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := result.Data.([]searchResultItem)
+	want := searchResultItem{Source: "wikipedia_en_all_nopic_2026-06", Path: "/Solar energy", Title: "Solar energy", Snippet: "Solar energy"}
+	if len(items) != 1 || items[0].Source != want.Source || items[0].Path != want.Path || items[0].Title != want.Title || items[0].Snippet != want.Snippet {
+		t.Fatalf("results = %+v, want %+v", items, want)
+	}
+}
+
+func TestSearchLinkServesTheArticle(t *testing.T) {
+	f := newReadFixture(t, true)
+	f.page("Example Page", "Example Page", "<h1>Example Page</h1><p>Archived text</p>", "Archived text")
+	result, err := f.cap.Handle(context.Background(), "link", map[string]any{"source": "wiki", "path": "/Example Page"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := result.Data.(map[string]string)["url"]
+	want := fmt.Sprintf("http://localhost:%d/content/wiki/Example%%20Page", f.cap.kiwix["wiki"].port)
+	if link != want {
+		t.Fatalf("link = %q, want %q", link, want)
+	}
 }
 
 func article(title string, paragraphs ...string) string {

@@ -23,6 +23,7 @@ import (
 type SessionInfo struct {
 	SourceCount      int
 	ArticleCount     int
+	NativeZIMCount   int
 	BestMode         Mode
 	HybridEnabled    bool
 	EmbeddingModelID string
@@ -89,14 +90,25 @@ func newSession(ctx context.Context, driveRoot string, opener func(string) error
 	}
 
 	bestMode := BestMode(caps)
+	eng := engine.New(db)
+	groups, err := eng.NativeZIMGroups(ctx, "")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	var nativeCount int
+	for _, group := range groups {
+		nativeCount += len(group)
+	}
 	return &Session{
 		driveRoot: driveRoot,
 		db:        db,
-		eng:       engine.New(db),
+		eng:       eng,
 		caps:      caps,
 		info: SessionInfo{
 			SourceCount:      sourceCount,
 			ArticleCount:     articleCount,
+			NativeZIMCount:   nativeCount,
 			BestMode:         bestMode,
 			HybridEnabled:    bestMode == ModeHybrid,
 			EmbeddingModelID: caps.EmbeddingModelID,
@@ -122,7 +134,7 @@ func (s *Session) Info() SessionInfo {
 	return s.info
 }
 
-func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int) (SearchResponse, error) {
+func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int, excluded ...string) (SearchResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -148,7 +160,7 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 			status = "Hybrid unavailable, fell back to keyword"
 		} else {
 			var usable bool
-			results, usable, embedErr = HybridSnapshot(ctx, s.db, contract, query, queryVec, limit, "")
+			results, usable, embedErr = HybridSnapshot(ctx, s.db, contract, query, queryVec, limit, "", excluded...)
 			if !usable {
 				effectiveMode = ModeKeyword
 				status = "Hybrid unavailable, fell back to keyword"
@@ -165,8 +177,9 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 		return SearchResponse{}, err
 	}
 
+	var matches engine.KeywordMatches
 	if effectiveMode == ModeKeyword {
-		matches, err := s.eng.Search(ctx, query, engine.KeywordOptions{Limit: limit})
+		matches, err = s.eng.Search(ctx, query, engine.KeywordOptions{Limit: limit, ExcludedArchives: excluded})
 		if err != nil {
 			return SearchResponse{}, err
 		}
@@ -174,12 +187,26 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 			return SearchResponse{}, err
 		}
 		results = matches.Results
+	}
+
+	nativePort := func(ctx context.Context) (int, error) {
+		err := s.ensureKiwix(ctx)
+		return s.kiwixPort, err
+	}
+	results, native, nativeErr := MergeZIMKeywords(ctx, s.eng, nativePort, query, "", limit, results, excluded...)
+	if err := ctx.Err(); err != nil {
+		return SearchResponse{}, err
+	}
+	var notes []string
+	if status != "" {
+		notes = append(notes, status)
+	}
+	if nativeErr != nil {
+		notes = append(notes, "Some embedded ZIM indexes were unavailable: "+nativeErr.Error())
+	}
+	if effectiveMode == ModeKeyword && !native {
 		// Partial matches follow the complete ones; say where they start, and
 		// name the words that are nowhere in the index.
-		var notes []string
-		if status != "" {
-			notes = append(notes, status)
-		}
 		if partial := len(results) - matches.Exact; partial > 0 && matches.Exact > 0 {
 			notes = append(notes, fmt.Sprintf("First %d have every word; the rest are partial matches", matches.Exact))
 		} else if partial > 0 {
@@ -188,8 +215,8 @@ func (s *Session) Search(ctx context.Context, mode Mode, query string, limit int
 		if len(matches.Missing) > 0 {
 			notes = append(notes, "No article mentions: "+strings.Join(matches.Missing, ", "))
 		}
-		status = strings.Join(notes, ". ")
 	}
+	status = strings.Join(notes, ". ")
 
 	return SearchResponse{
 		Results:       results,
@@ -316,7 +343,11 @@ func (s *Session) ensureKiwix(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cmd, err := server.StartKiwix(ctx, kiwixBin, zims, port)
+	languages, err := s.eng.NativeZIMLanguages(ctx)
+	if err != nil {
+		return err
+	}
+	cmd, err := server.StartKiwixForSearch(ctx, kiwixBin, zims, port, languages)
 	if err != nil {
 		return err
 	}

@@ -325,14 +325,14 @@ func TestSearchCapabilityReusesAndClosesKiwix(t *testing.T) {
 	t.Setenv("SVALBARD_TEST_MCP_KIWIX", "1")
 
 	capability := NewSearchCapability(root, DriveMetadata{})
-	if err := capability.ensureKiwix(); err != nil {
+	if _, err := capability.ensureKiwix("wiki"); err != nil {
 		t.Fatalf("first ensureKiwix() error = %v", err)
 	}
-	first := capability.kiwixCmd
-	if err := capability.ensureKiwix(); err != nil {
+	first := capability.kiwix["wiki"].cmd
+	if _, err := capability.ensureKiwix("wiki"); err != nil {
 		t.Fatalf("second ensureKiwix() error = %v", err)
 	}
-	if capability.kiwixCmd != first {
+	if capability.kiwix["wiki"].cmd != first {
 		t.Fatal("ensureKiwix() did not reuse the cached process")
 	}
 	if err := capability.Close(); err != nil {

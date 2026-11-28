@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -52,26 +53,35 @@ func run() error {
 		drive := ""
 		sse := false
 		streamable := false
+		webSearch := false
 		// --context is the client model's window in tokens, which the
 		// drive's launchers pass; below the Balanced tier the server offers
 		// less.
 		var opts mcp.DriveOptions
-		for i, arg := range os.Args {
-			if arg == "--drive" && i+1 < len(os.Args) {
-				drive = os.Args[i+1]
-			}
-			if arg == "--context" && i+1 < len(os.Args) {
-				size, err := strconv.Atoi(os.Args[i+1])
+		for i := 2; i < len(os.Args); i++ {
+			switch os.Args[i] {
+			case "--drive":
+				if i+1 == len(os.Args) {
+					return fmt.Errorf("--drive path required")
+				}
+				i++
+				drive = os.Args[i]
+			case "--context":
+				if i+1 == len(os.Args) {
+					return fmt.Errorf("--context needs a number of tokens")
+				}
+				i++
+				size, err := strconv.Atoi(os.Args[i])
 				if err != nil || size < 0 {
-					return fmt.Errorf("--context needs a number of tokens, not %q", os.Args[i+1])
+					return fmt.Errorf("--context needs a number of tokens, not %q", os.Args[i])
 				}
 				opts.Context = size
-			}
-			if arg == "--sse" {
+			case "--sse":
 				sse = true
-			}
-			if arg == "--http" {
+			case "--http":
 				streamable = true
+			case "--web-search":
+				webSearch = true
 			}
 		}
 		if drive == "" {
@@ -86,6 +96,14 @@ func run() error {
 		if streamable {
 			return runMCPHTTP(drive, opts)
 		}
+		if webSearch {
+			prefs := settings.OpenForAction(drive, os.Stderr)
+			var err error
+			opts.WebSearch, err = mcp.WebSearchForSettings(prefs)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Web search is off:", err)
+			}
+		}
 		opts.Stdio = true
 		return runMCP(drive, opts)
 	}
@@ -98,6 +116,26 @@ func run() error {
 	// menu, so scripts and other programs can read and change a value.
 	if len(os.Args) > 1 && os.Args[1] == "settings" {
 		return settings.Run(os.Stdout, os.Stderr, driveRoot, os.Args[2:])
+	}
+	if len(os.Args) > 1 && os.Args[1] == "web-search" {
+		if len(os.Args) < 3 {
+			return fmt.Errorf("usage: ./run web-search <query>")
+		}
+		prefs := settings.OpenForAction(driveRoot, os.Stderr)
+		web, err := mcp.WebSearchForSettings(prefs)
+		if err != nil {
+			return err
+		}
+		if web == nil {
+			return fmt.Errorf("web search is off. Enable Web search in Settings to send public queries to the provider")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		results, err := web.Query(ctx, strings.Join(os.Args[2:], " "), 3)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(results)
 	}
 	// Skills subcommand: the same fast path, for an agent that has a shell
 	// and no MCP client.

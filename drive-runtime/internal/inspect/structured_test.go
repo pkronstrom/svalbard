@@ -85,6 +85,7 @@ func TestStatsReturnsDriveSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWriteFile(t, filepath.Join(dir, "zim", "wiki.zim"), []byte("data"))
+	mustWriteFile(t, filepath.Join(dir, "zim", "wiki.zim.download.json"), []byte("receipt"))
 	mustWriteFile(t, filepath.Join(dir, "data", "db.sqlite"), []byte("db"))
 
 	stats, err := inspect.Stats(dir)
@@ -109,6 +110,9 @@ func TestStatsReturnsDriveSummary(t *testing.T) {
 	}
 	if _, ok := stats.Sizes["zim"]; !ok {
 		t.Error("expected zim size entry")
+	}
+	if stats.ReportedSize != inspect.HumanSize(6) {
+		t.Errorf("reported size = %q, want six bytes across the listed content directories", stats.ReportedSize)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +76,26 @@ func TestVaultSourcesAction(t *testing.T) {
 	}
 	if len(sources[0].Tags) != 2 {
 		t.Errorf("expected 2 enriched tags, got %d", len(sources[0].Tags))
+	}
+}
+
+func TestVaultSourcesPagesAndFiltersTheInventory(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 15; i++ {
+		writeTestFile(t, filepath.Join(root, "zim", fmt.Sprintf("source-%02d.zim", i)), []byte("zim"))
+	}
+	cap := mcp.NewVaultCapability(root, mcp.DriveMetadata{})
+	first, err := cap.Handle(context.Background(), "sources", map[string]any{})
+	if err != nil || len(first.Data.([]inspect.SourceInfo)) != 12 || !strings.Contains(first.Text, "of 15 sources") {
+		t.Fatalf("first page = %+v, %v", first, err)
+	}
+	last, err := cap.Handle(context.Background(), "sources", map[string]any{"offset": 12})
+	if err != nil || len(last.Data.([]inspect.SourceInfo)) != 3 || last.Text != "" {
+		t.Fatalf("last page = %+v, %v", last, err)
+	}
+	match, err := cap.Handle(context.Background(), "sources", map[string]any{"match": "SOURCE-14"})
+	if err != nil || len(match.Data.([]inspect.SourceInfo)) != 1 || match.Data.([]inspect.SourceInfo)[0].ID != "source-14" {
+		t.Fatalf("source match = %+v, %v", match, err)
 	}
 }
 

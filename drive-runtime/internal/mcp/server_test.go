@@ -119,14 +119,15 @@ func TestAllCapabilitiesRegisterExpectedTools(t *testing.T) {
 		"query_describe",
 		"query_sql",
 		"search",
+		"search_link",
 		"search_read",
 	} {
 		if _, ok := tools[name]; !ok {
 			t.Errorf("missing tool %q", name)
 		}
 	}
-	if len(tools) != 8 {
-		t.Fatalf("len(tools) = %d, want 8", len(tools))
+	if len(tools) != 9 {
+		t.Fatalf("len(tools) = %d, want 9", len(tools))
 	}
 	searchTool := tools["search"].Tool
 	if got := searchTool.InputSchema.Required; len(got) != 1 || got[0] != "query" {
@@ -149,11 +150,11 @@ func TestDriveServerHasTheVaultToolsAndNoFileTools(t *testing.T) {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	want := []string{"query_describe", "query_sql", "search", "search_read", "vault_databases", "vault_maps", "vault_sources", "vault_stats"}
+	want := []string{"query_describe", "query_sql", "search", "search_link", "search_read", "vault_databases", "vault_maps", "vault_sources", "vault_stats"}
 	if !slices.Equal(names, want) {
 		t.Errorf("drive tools = %v, want %v", names, want)
 	}
-	listed := DriveToolNames(root, 0)
+	listed := DriveToolNames(root, DriveOptions{})
 	slices.Sort(listed)
 	if !slices.Equal(listed, want) {
 		t.Errorf("DriveToolNames() = %v, want %v", listed, want)
@@ -198,7 +199,7 @@ func TestSmallContextOffersNoWikiAndShorterReads(t *testing.T) {
 			t.Errorf("context %d: tools = %v, want the search and skill tools", tc.context, names)
 		}
 		// Launchers that enable tools by name get the same list.
-		listed := DriveToolNames(root, tc.context)
+		listed := DriveToolNames(root, DriveOptions{Context: tc.context})
 		slices.Sort(listed)
 		if !slices.Equal(listed, names) {
 			t.Errorf("context %d: DriveToolNames() = %v, want %v", tc.context, listed, names)

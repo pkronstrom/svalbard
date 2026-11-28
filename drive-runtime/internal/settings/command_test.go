@@ -35,6 +35,8 @@ func TestCommandListsEverySettingGrouped(t *testing.T) {
 	want := `Local AI
   ai.default_model           ask
   ai.context               * balanced
+  ai.web_search              off
+  ai.web_search_url
 
 Open WebUI
   open-webui.open_browser  * off
@@ -139,7 +141,7 @@ func TestCommandErrorsAreOneLineAndNameWhatIsValid(t *testing.T) {
 		{[]string{"ai.contxt", "fast"}, `unknown setting "ai.contxt"`},
 		{[]string{"--reset", "nope.nope"}, `unknown setting "nope.nope"`},
 		{[]string{"--reset"}, "--reset takes one key"},
-		{[]string{KeyContext, "huge"}, `ai.context: "huge" is not one of ask, auto, fast, balanced, max`},
+		{[]string{KeyContext, "huge"}, `ai.context: "huge" is not one of ask, auto, fast, 16k, balanced, 64k, max, 256k, 512k, model-max`},
 		{[]string{"open-webui.open_browser", "sometimes"}, "is not on or off"},
 	} {
 		stdout, _, err := runCommand(t, root, tc.args...)
@@ -170,7 +172,7 @@ func TestCommandReportsIgnoredValuesAndRefusesAnUnparsableFile(t *testing.T) {
 	if !strings.Contains(stdout, "ai.context                 ask\n") {
 		t.Errorf("list does not show the default for the ignored value:\n%s", stdout)
 	}
-	if want := "warning: ai.context: saved value \"huge\" is not one of ask, auto, fast, balanced, max; using ask\n"; stderr != want {
+	if want := "warning: ai.context: saved value \"huge\" is not one of ask, auto, fast, 16k, balanced, 64k, max, 256k, 512k, model-max; using ask\n"; stderr != want {
 		t.Errorf("stderr = %q, want %q", stderr, want)
 	}
 	stdout, stderr, err = runCommand(t, root, KeyContext)

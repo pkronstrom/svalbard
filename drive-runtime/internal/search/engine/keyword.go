@@ -53,6 +53,8 @@ type KeywordOptions struct {
 	// knowledge source.
 	Source string
 	Limit  int
+	// ExcludedArchives omits these ZIM filenames and their embedded documents.
+	ExcludedArchives []string
 	// AnyWord also returns articles that have only one or a few of the
 	// words, after those with more. Knowledge search leaves them out as
 	// being about something else; among a drive's few skills the nearest one
@@ -67,19 +69,28 @@ const skillRoots = `(src.filename GLOB '` + SkillsDir + `/*' OR src.filename GLO
 
 // scopeClause is the SQL condition for a search scope on the sources table
 // joined as src, with its arguments. It reads a scope as InScope does.
-func scopeClause(scope string) (string, []any) {
+func scopeClause(scope string, excluded ...string) (string, []any) {
+	var clause string
+	var args []any
 	switch {
 	case scope == "":
-		return ` AND NOT ` + skillRoots, nil
+		clause = ` AND NOT ` + skillRoots
 	case scope == SkillScope:
-		return ` AND ` + skillRoots, nil
+		clause = ` AND ` + skillRoots
 	case strings.HasSuffix(scope, "/"):
 		// substr, not LIKE: a folder name may hold "%" or "_".
-		return ` AND substr(src.filename, 1, length(?)) = ?`, []any{scope, scope}
+		clause, args = ` AND substr(src.filename, 1, length(?)) = ?`, []any{scope, scope}
 	case isArchiveName(scope):
-		return ` AND (src.filename = ? OR substr(src.filename, 1, length(?)) = ?)`, []any{scope, scope + "/", scope + "/"}
+		clause, args = ` AND (src.filename = ? OR substr(src.filename, 1, length(?)) = ?)`, []any{scope, scope + "/", scope + "/"}
+	default:
+		clause, args = ` AND src.filename = ?`, []any{scope}
 	}
-	return ` AND src.filename = ?`, []any{scope}
+	for _, archive := range excluded {
+		prefix := archive + "/"
+		clause += ` AND src.filename <> ? AND substr(src.filename, 1, length(?)) <> ?`
+		args = append(args, archive, prefix, prefix)
+	}
+	return clause, args
 }
 
 // KeywordMatches is the outcome of Search.
@@ -160,16 +171,26 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 		return matches, ctx.Err()
 	}
 
-	exact, more, err := e.ranked(ctx, ftsTerms(matches.Words, " AND "), opts.Source, opts.Limit)
+	candidateLimit := opts.Limit
+	if opts.Source == "" {
+		// Diversification can only promote a source if it is in the pool.
+		// Bound the extra work for popular terms in very large archives.
+		candidateLimit = max(opts.Limit, min(rankedScan, max(128, 8*min(opts.Limit, rankedScan))))
+	}
+	exact, more, err := e.ranked(ctx, ftsTerms(matches.Words, " AND "), opts.Source, candidateLimit, opts.ExcludedArchives...)
 	if err != nil {
 		return matches, err
+	}
+	sources := map[string]int{}
+	if opts.Source == "" {
+		exact = diversifyKeyword(exact, matches.Words, opts.Limit, sources)
 	}
 	matches.MorePages = more
 	matches.Results, matches.Exact = exact, len(exact)
 	if len(exact) >= opts.Limit {
 		return matches, ctx.Err()
 	}
-	if matches.Missing, err = e.missingWords(ctx, matches.Words, opts.Source); err != nil {
+	if matches.Missing, err = e.missingWords(ctx, matches.Words, opts.Source, opts.ExcludedArchives...); err != nil {
 		return matches, err
 	}
 	// Two words have no "most": an article with one of them is a search for
@@ -183,7 +204,7 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 
 	// More candidates than are returned, so that an article with many of the
 	// words can overtake one that repeats a single rare word.
-	candidates, _, err := e.ranked(ctx, ftsTerms(matches.Words, " OR "), opts.Source, max(3*opts.Limit, 30))
+	candidates, _, err := e.ranked(ctx, ftsTerms(matches.Words, " OR "), opts.Source, max(3*opts.Limit, 30), opts.ExcludedArchives...)
 	if err != nil {
 		return matches, err
 	}
@@ -209,6 +230,19 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	}
 	partial = enough
 	sort.SliceStable(partial, func(i, j int) bool { return len(partial[i].Matched) > len(partial[j].Matched) })
+	if opts.Source == "" {
+		// The number of matched words still outranks source variety.
+		var ranked []Result
+		for first := 0; first < len(partial) && len(exact)+len(ranked) < opts.Limit; {
+			last := first + 1
+			for last < len(partial) && len(partial[last].Matched) == len(partial[first].Matched) {
+				last++
+			}
+			ranked = append(ranked, diversifyKeyword(partial[first:last], nil, opts.Limit-len(exact)-len(ranked), sources)...)
+			first = last
+		}
+		partial = ranked
+	}
 	if room := opts.Limit - len(exact); len(partial) > room {
 		partial = partial[:room]
 	}
@@ -216,18 +250,57 @@ func (e *Engine) Search(ctx context.Context, query string, opts KeywordOptions) 
 	return matches, ctx.Err()
 }
 
+// diversifyKeyword protects the best exact title. After two results from
+// one source, a bounded penalty lets close matches from elsewhere surface
+// while keeping clearly stronger hits.
+func diversifyKeyword(results []Result, words []string, limit int, sources map[string]int) []Result {
+	limit = min(limit, len(results))
+	first := 0
+	if limit > 0 && len(words) > 0 {
+		query := strings.Join(words, " ")
+		for i, r := range results {
+			if strings.EqualFold(query, strings.Join(QueryWords(r.Title), " ")) {
+				copy(results[1:i+1], results[:i])
+				results[0] = r
+				sources[r.Filename]++
+				first = 1
+				break
+			}
+		}
+	}
+	weight := func(r Result) float64 {
+		repeats := min(max(sources[r.Filename]-1, 0), 3)
+		return r.Score / (1 + 0.15*float64(repeats))
+	}
+	for i := first; i < limit; i++ {
+		best := i
+		for j := i + 1; j < len(results); j++ {
+			if weight(results[j]) > weight(results[best]) {
+				best = j
+			}
+		}
+		if best != i {
+			result := results[best]
+			copy(results[i+1:best+1], results[i:best])
+			results[i] = result
+		}
+		sources[results[i].Filename]++
+	}
+	return results[:limit]
+}
+
 // ranked runs one FTS5 query ordered by the title-weighted rank. Unless the
 // scope is a single document or skill, it keeps at most pagesPerDocument
 // pages of any one document and sectionsPerSkill sections of any one skill,
 // and returns those that had more, as scopes that show the rest.
-func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int) ([]Result, []string, error) {
-	statement := `SELECT a.id, src.filename, a.path, a.title,
+func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int, excluded ...string) ([]Result, []string, error) {
+	statement := `SELECT a.id, src.filename, a.path, a.title, -rank,
                 snippet(articles_fts, 1, '»', '«', '...', 12)
          FROM articles_fts
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id
          WHERE articles_fts MATCH ? AND rank MATCH '` + keywordRank + `'`
-	clause, scopeArgs := scopeClause(source)
+	clause, scopeArgs := scopeClause(source, excluded...)
 	statement += clause
 	args := append([]any{ftsQuery}, scopeArgs...)
 	// FTS5 hands the rows out in rank order, so reading stops as soon as the
@@ -250,7 +323,7 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
 	for len(results) < limit && rows.Next() {
 		var r Result
 		var snippet sql.NullString
-		if err := rows.Scan(&r.ArticleID, &r.Filename, &r.Path, &r.Title, &snippet); err != nil {
+		if err := rows.Scan(&r.ArticleID, &r.Filename, &r.Path, &r.Title, &r.Score, &snippet); err != nil {
 			return nil, nil, err
 		}
 		if capped && IsDocumentSource(r.Filename) {
@@ -276,8 +349,8 @@ func (e *Engine) ranked(ctx context.Context, ftsQuery, source string, limit int)
 
 // missingWords returns the words that no article of the searched sources
 // contains, so a caller can tell "not on this drive" from "not together".
-func (e *Engine) missingWords(ctx context.Context, words []string, source string) ([]string, error) {
-	clause, scopeArgs := scopeClause(source)
+func (e *Engine) missingWords(ctx context.Context, words []string, source string, excluded ...string) ([]string, error) {
+	clause, scopeArgs := scopeClause(source, excluded...)
 	statement := `SELECT 1 FROM articles_fts
          JOIN articles a ON a.id = articles_fts.rowid
          JOIN sources src ON src.id = a.source_id

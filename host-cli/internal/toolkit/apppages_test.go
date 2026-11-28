@@ -64,6 +64,37 @@ func TestGenerateSkipsAppPageWhenAppDirectoryIsMissing(t *testing.T) {
 	}
 }
 
+func TestOfflineAppPagesMatchTheirRecipeFiles(t *testing.T) {
+	cat, err := catalog.NewEmbeddedCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"cyberchef", "mml-map-sheets"} {
+		t.Run(id, func(t *testing.T) {
+			recipe, ok := cat.RecipeByID(id)
+			if !ok {
+				t.Fatal("recipe missing")
+			}
+			page, err := appPages.ReadFile(path.Join("apppages", id, "index.html"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if id == "cyberchef" {
+				if len(recipe.Bundle) != 1 || recipe.Bundle[0].SHA256 == "" ||
+					!strings.Contains(string(page), `href="CyberChef_v11.6.0.html"`) {
+					t.Fatal("CyberChef needs an unpacked, pinned bundle and its HTML entry point")
+				}
+				return
+			}
+			for _, asset := range recipe.Build.Assets {
+				if !strings.Contains(string(page), `href="`+asset.Dest+`"`) {
+					t.Errorf("map sheet %s is missing from the page", asset.Dest)
+				}
+			}
+		})
+	}
+}
+
 // The DuckDB page loads files by relative path; the catalog recipe's bundle
 // must provide each of them, so bumping one without the other fails here.
 func TestDuckDBPageFilesComeFromRecipeBundle(t *testing.T) {

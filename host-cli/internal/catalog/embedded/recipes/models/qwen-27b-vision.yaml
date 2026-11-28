@@ -1,0 +1,13 @@
+id: qwen-27b-vision
+type: gguf-mmproj
+display_group: models
+tags: [computing, vision]
+size_gb: 0.86
+filename: mmproj-Qwen3.8-27B-F16.gguf
+url: https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4af51b3542f775b0a8e4b310bfb3f17e01c306c9/mmproj-F16.gguf
+sha256: cbb841a9ee0636b2ec172f5bb8df2ea8dfeb01e90fe7c6126581d662a0b4e43e
+description: Optional F16 vision projector for Qwen3.8 27B
+deps: [llama-server]
+license:
+  id: Apache-2.0
+  attribution: Alibaba Cloud / Qwen Team / Unsloth

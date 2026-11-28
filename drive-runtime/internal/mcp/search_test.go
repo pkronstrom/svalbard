@@ -19,8 +19,8 @@ func TestSearchCapabilityToolName(t *testing.T) {
 func TestSearchCapabilityActions(t *testing.T) {
 	cap := mcp.NewSearchCapability(t.TempDir(), mcp.DriveMetadata{})
 	actions := cap.Actions()
-	if len(actions) != 2 {
-		t.Fatalf("expected 2 actions, got %d", len(actions))
+	if len(actions) != 3 {
+		t.Fatalf("expected 3 actions, got %d", len(actions))
 	}
 	names := map[string]bool{}
 	var searchAction, readAction *mcp.ActionDef
@@ -34,7 +34,7 @@ func TestSearchCapabilityActions(t *testing.T) {
 			readAction = &action
 		}
 	}
-	for _, want := range []string{"search", "read"} {
+	for _, want := range []string{"search", "read", "link"} {
 		if !names[want] {
 			t.Errorf("missing action %q", want)
 		}

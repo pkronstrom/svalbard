@@ -146,6 +146,8 @@ Choices saved on this drive (.svalbard/settings.json).
 Local AI
   > Default model            ask every time
     Context size           * Auto
+    Web search               off
+    SearXNG URL              not set
 Open WebUI
     Open browser on start  * off
 
@@ -165,7 +167,7 @@ enter change · r reset to default · esc back
 	}
 
 	// The selected block follows the cursor.
-	view := press(m, "down", "down").View()
+	view := press(m, "down", "down", "down", "down").View()
 	for _, want := range []string{
 		"  > Open browser on start  * off",
 		"    Default model            ask every time",
@@ -199,7 +201,7 @@ func TestSettingsScreenShowsRecipeGroupsOnlyWhenTheirSchemaIsThere(t *testing.T)
 
 func TestSettingsEnterTogglesABoolAtOnce(t *testing.T) {
 	root := newSettingsDrive(t, openWebUISchema, "")
-	m := press(openSettingsScreen(t, root, 80, 24), "down", "down", "enter")
+	m := press(openSettingsScreen(t, root, 80, 24), "down", "down", "down", "down", "enter")
 
 	if want := map[string]map[string]any{"open-webui": {"open_browser": false}}; !reflect.DeepEqual(savedSettings(t, root), want) {
 		t.Fatalf("settings.json = %v, want %v", savedSettings(t, root), want)
@@ -231,8 +233,13 @@ slower and needs more memory.
   ask every time
   Auto — sized for this computer's memory
 ▸ Fast — 8K, snappier, less memory
+  16K
   Balanced — 32K
-  Max — 128K, may be slow, high memory
+  64K
+  128K
+  256K — high memory
+  512K — high memory
+  Max — model limit, highest memory
 
 ↑/↓ select · enter confirm · esc keeps Fast`
 	if got := m.View(); got != want {
@@ -244,7 +251,7 @@ slower and needs more memory.
 		t.Fatalf("esc changed the value: %v", savedSettings(t, root))
 	}
 
-	m = press(m, "down", "enter")
+	m = press(m, "down", "down", "enter")
 	if got := savedSettings(t, root)["ai"]["context"]; got != "balanced" {
 		t.Fatalf("saved ai.context = %v, want balanced", got)
 	}
@@ -268,7 +275,7 @@ func TestSettingsEnterOpensAOneLineEdit(t *testing.T) {
 	m := openSettingsScreen(t, root, 80, 24)
 
 	// Number: the edit line starts on the current value.
-	m = press(m, "down", "down", "enter")
+	m = press(m, "down", "down", "down", "down", "enter")
 	if view := m.View(); !strings.Contains(view, "> 5") || !strings.Contains(view, "enter save · esc cancel") {
 		t.Fatalf("number edit line missing:\n%s", view)
 	}
@@ -387,10 +394,11 @@ func TestSettingsListScrollsInAShortTerminal(t *testing.T) {
 	}
 
 	// Walk to the bottom one row at a time; the cursor row is always visible.
-	for i := 0; i < 2+count-1; i++ {
+	const builtins = 4
+	for i := 1; i < builtins+count; i++ {
 		m = press(m, "down")
-		if i >= 1 {
-			check(m, fmt.Sprintf("Option %02d", i))
+		if i >= builtins {
+			check(m, fmt.Sprintf("Option %02d", i-builtins+1))
 		}
 	}
 	bottom := check(m, "Option 40")
@@ -415,7 +423,7 @@ func TestSettingsListScrollsInAShortTerminal(t *testing.T) {
 	if view := check(m, "Option 01"); !strings.Contains(view, "Many\n  > Option 01") {
 		t.Errorf("the group heading is not shown above its first row:\n%s", view)
 	}
-	for i := 0; i < 2; i++ {
+	for i := 0; i < builtins; i++ {
 		m = press(m, "up")
 	}
 	if view := check(m, "Default model"); !strings.Contains(view, "Local AI\n  > Default model") || strings.Contains(view, "↑") {
@@ -466,7 +474,7 @@ func TestSettingsScreenRefusesChangesToAnUnparsableFile(t *testing.T) {
 	if !strings.Contains(view, "Context size             ask every time") {
 		t.Errorf("defaults are not shown for an unreadable file:\n%s", view)
 	}
-	m = press(m, "down", "down", "enter", "r")
+	m = press(m, "down", "down", "down", "down", "enter", "r")
 	if view := m.View(); !strings.Contains(view, "Not saved:") {
 		t.Errorf("a refused change is not reported:\n%s", view)
 	}

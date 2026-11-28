@@ -26,8 +26,9 @@ import (
 )
 
 type LaunchConfig struct {
-	Args []string
-	Env  map[string]string
+	Args          []string
+	Env           map[string]string
+	WebSearchNote string
 }
 
 func ClientEnvironment(baseURL, modelName string) map[string]string {
@@ -42,6 +43,14 @@ func ClientEnvironment(baseURL, modelName string) map[string]string {
 
 func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelName string, ctxSize int) (LaunchConfig, error) {
 	cfg := LaunchConfig{Env: map[string]string{}}
+	prefs, _ := settings.Open(driveRoot)
+	web, webErr := mcp.WebSearchForSettings(prefs)
+	if webErr != nil {
+		cfg.WebSearchNote = "Web search is off: " + webErr.Error()
+	} else if web != nil {
+		cfg.WebSearchNote = "Web search is enabled. Public search queries go to " + web.Provider() + "."
+	}
+	mcpArgs := driveMCPArgs(driveRoot, ctxSize, web != nil)
 	runtimeRoot := filepath.Join(driveRoot, ".svalbard", "runtime", clientName)
 	configRoot := filepath.Join(runtimeRoot, "config")
 	cacheRoot := filepath.Join(runtimeRoot, "cache")
@@ -60,6 +69,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			return LaunchConfig{}, fmt.Errorf("resolve mcp binary: %w", err)
 		}
 		configPath := filepath.Join(configRoot, "opencode.json")
+		command, _ := json.Marshal(append([]string{mcpBinary}, mcpArgs...))
 		content := fmt.Sprintf(`{
   "$schema": "https://opencode.ai/config.json",
   "enabled_providers": ["llama.cpp"],
@@ -76,7 +86,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
       "models": {
         "%[1]s": {
           "name": "%[1]s",
-          "limit": { "context": %[5]d, "output": 8192 }
+          "limit": { "context": %[3]d, "output": 8192 }
         }
       }
     }
@@ -84,12 +94,12 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
   "mcp": {
     "svalbard": {
       "type": "local",
-      "command": ["%[3]s", "mcp", "--drive", "%[4]s", "--context", "%[5]d"],
+      "command": %[4]s,
       "enabled": true
     }
   }
 }
-`, modelName, baseURL, mcpBinary, driveRoot, ctxSize)
+`, modelName, baseURL, ctxSize, command)
 		if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
@@ -99,7 +109,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		if err := os.MkdirAll(filepath.Dir(contextPath), 0o755); err != nil {
 			return LaunchConfig{}, err
 		}
-		if err := writeGeneratedFile(contextPath, driveContextFor(driveRoot, OpencodeToolPrefix, ctxSize)); err != nil {
+		if err := writeGeneratedFile(contextPath, driveContextFor(driveRoot, OpencodeToolPrefix, ctxSize, web != nil)); err != nil {
 			return LaunchConfig{}, err
 		}
 		cfg.Args = []string{"-m", "llama.cpp/" + modelName}
@@ -122,12 +132,12 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			return LaunchConfig{}, fmt.Errorf("resolve mcp binary: %w", err)
 		}
 		gooseConfigPath := filepath.Join(configRoot, "goose", "config.yaml")
-		if err := ensureGooseStdioExtension(gooseConfigPath, mcpBinary, driveRoot, ctxSize); err != nil {
+		if err := ensureGooseStdioExtension(gooseConfigPath, mcpBinary, mcpArgs); err != nil {
 			return LaunchConfig{}, fmt.Errorf("write goose extension config: %w", err)
 		}
 		// Goose reads global hints from its config folder
 		// ($XDG_CONFIG_HOME/goose/.goosehints); checked with 1.61.1.
-		if err := writeGeneratedFile(filepath.Join(configRoot, "goose", ".goosehints"), driveContextFor(driveRoot, GooseToolPrefix, ctxSize)); err != nil {
+		if err := writeGeneratedFile(filepath.Join(configRoot, "goose", ".goosehints"), driveContextFor(driveRoot, GooseToolPrefix, ctxSize, web != nil)); err != nil {
 			return LaunchConfig{}, err
 		}
 		cfg.Env = map[string]string{
@@ -168,10 +178,10 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		// stdio server, at parity with OpenCode/Goose. pi's default exposure
 		// hides a server's tools behind one "codemode" script tool; "direct"
 		// declares them like built-ins, which small local models need.
-		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, driveRoot, ctxSize, map[string]any{"exposure": "direct"})); err != nil {
+		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, mcpArgs, map[string]any{"exposure": "direct"})); err != nil {
 			return LaunchConfig{}, err
 		}
-		if err := writeGeneratedFile(filepath.Join(configRoot, "AGENTS.md"), driveContextFor(driveRoot, PiToolPrefix, ctxSize)); err != nil {
+		if err := writeGeneratedFile(filepath.Join(configRoot, "AGENTS.md"), driveContextFor(driveRoot, PiToolPrefix, ctxSize, web != nil)); err != nil {
 			return LaunchConfig{}, err
 		}
 		if err := ensurePiSettings(filepath.Join(configRoot, "settings.json"), modelName, ctxSize); err != nil {
@@ -207,7 +217,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		if err := os.WriteFile(filepath.Join(configRoot, "models.yml"), []byte(ompModelsYAML(baseURL, modelName, ctxSize)), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
-		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, driveRoot, ctxSize, nil)); err != nil {
+		if err := writeJSON(filepath.Join(configRoot, "mcp.json"), svalbardMCPServers(mcpBinary, mcpArgs, nil)); err != nil {
 			return LaunchConfig{}, err
 		}
 		// The user's own config.yml is left alone apart from marking setup as
@@ -223,7 +233,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 			return LaunchConfig{}, err
 		}
 		promptPath := filepath.Join(configRoot, "lean-prompt.md")
-		if err := os.WriteFile(promptPath, []byte(ompPrompt(driveRoot, ctxSize)), 0o644); err != nil {
+		if err := os.WriteFile(promptPath, []byte(ompPrompt(driveRoot, ctxSize, web != nil)), 0o644); err != nil {
 			return LaunchConfig{}, err
 		}
 		// The lean profile: six file and shell tools plus the drive's MCP
@@ -231,7 +241,7 @@ func PrepareClientLaunchConfig(driveRoot, clientName, hostRoot, baseURL, modelNa
 		// enables only the tools named here, so the MCP tools are listed too,
 		// under the names omp gives them.
 		tools := []string{"read", "bash", "edit", "write", "grep", "glob"}
-		for _, name := range mcp.DriveToolNames(driveRoot, ctxSize) {
+		for _, name := range mcp.DriveToolNames(driveRoot, mcp.DriveOptions{Context: ctxSize, WebSearch: web}) {
 			tools = append(tools, OmpToolPrefix+name)
 		}
 		cfg.Args = []string{
@@ -297,19 +307,23 @@ func writePiModels(path, baseURL, modelName string, ctxSize int, isGemma bool) e
 
 // svalbardMCPServers is the mcp.json both pi and oh-my-pi read; extra holds
 // client-specific keys for the svalbard server entry.
-func svalbardMCPServers(mcpBinary, driveRoot string, ctxSize int, extra map[string]any) map[string]any {
-	server := map[string]any{"command": mcpBinary, "args": mcpArgs(driveRoot, ctxSize)}
+func svalbardMCPServers(mcpBinary string, args []string, extra map[string]any) map[string]any {
+	server := map[string]any{"command": mcpBinary, "args": args}
 	for key, value := range extra {
 		server[key] = value
 	}
 	return map[string]any{"mcpServers": map[string]any{"svalbard": server}}
 }
 
-// mcpArgs starts the drive's MCP server for a harness whose model has a
+// driveMCPArgs starts the drive's MCP server for a harness whose model has a
 // context window of ctxSize tokens: below the Balanced tier the server offers
 // fewer tools and reads shorter pieces.
-func mcpArgs(driveRoot string, ctxSize int) []string {
-	return []string{"mcp", "--drive", driveRoot, "--context", strconv.Itoa(ctxSize)}
+func driveMCPArgs(driveRoot string, ctxSize int, webSearch bool) []string {
+	args := []string{"mcp", "--drive", driveRoot, "--context", strconv.Itoa(ctxSize)}
+	if webSearch {
+		args = append(args, "--web-search")
+	}
+	return args
 }
 
 // writeGeneratedFile keeps a Svalbard-written file current without touching
@@ -358,15 +372,20 @@ const ompLeanPrompt = `You are a coding assistant running offline from a Svalbar
 
 Inspect the relevant files before changing them. Use the provided tools rather than guessing. Keep edits focused on what was asked. Run the smallest relevant check after a change, then state which files changed and what the check showed.
 
-There is no network. The svalbard tools search and read the reference material stored on this drive.
+The svalbard tools search and read the reference material stored on this drive.
 `
 
 // ompPrompt is the lean prompt for the drive at driveRoot, with a line about
 // the wiki when the drive's server offers the wiki tools, and the lines of
 // the drive context about skills when the drive has them. omp gets no
 // generated context file, so this prompt is the orientation it gets.
-func ompPrompt(driveRoot string, ctxSize int) string {
+func ompPrompt(driveRoot string, ctxSize int, webSearch bool) string {
 	prompt := ompLeanPrompt
+	if webSearch {
+		prompt += webSearchContext(OmpToolPrefix) + "\n"
+	} else {
+		prompt += "There is no network.\n"
+	}
 	if mcp.WikiOffered(driveRoot, ctxSize) {
 		prompt += "The svalbard wiki tools read and write the user's own notes on this drive: use them when asked to save or look up a note.\n"
 	}
@@ -646,7 +665,7 @@ func resolveLaunch(stdout io.Writer, driveRoot, clientName, selectedModel string
 	if err != nil {
 		return "", 0, err
 	}
-	ctxSize = prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
+	ctxSize = llamaserve.ContextForModel(model, prefs.ContextSize(llamaserve.ContextForHost(), pickContext))
 	if err := checkClientContext(clientName, ctxSize); err != nil {
 		if saved := prefs.String(settings.KeyContext); saved != settings.Ask {
 			// Nothing was picked at this launch, so say where the size came from.
@@ -708,6 +727,9 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	if err != nil {
 		return err
 	}
+	if launchCfg.WebSearchNote != "" {
+		fmt.Fprintln(stdout, launchCfg.WebSearchNote)
+	}
 	clientCmd := exec.CommandContext(ctx, clientBin, launchCfg.Args...)
 	clientCmd.Stdin = os.Stdin
 	clientCmd.Stdout = os.Stdout
@@ -721,7 +743,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, clientName, selectedM
 	return clientCmd.Run()
 }
 
-func ensureGooseStdioExtension(configPath, mcpBinary, driveRoot string, ctxSize int) error {
+func ensureGooseStdioExtension(configPath, mcpBinary string, args []string) error {
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return err
 	}
@@ -731,24 +753,24 @@ func ensureGooseStdioExtension(configPath, mcpBinary, driveRoot string, ctxSize 
 		return err
 	}
 
-	updated := upsertGooseExtensionYAML(string(content), gooseExtensionBlock(mcpBinary, driveRoot, ctxSize))
+	updated := upsertGooseExtensionYAML(string(content), gooseExtensionBlock(mcpBinary, args))
 	return os.WriteFile(configPath, []byte(updated), 0o644)
 }
 
-func gooseExtensionBlock(mcpBinary, driveRoot string, ctxSize int) string {
-	return fmt.Sprintf(`  svalbard:
+func gooseExtensionBlock(mcpBinary string, args []string) string {
+	var block strings.Builder
+	fmt.Fprintf(&block, `  svalbard:
     enabled: true
     type: stdio
     name: svalbard
     cmd: %q
     args:
-      - "mcp"
-      - "--drive"
-      - %q
-      - "--context"
-      - "%d"
-    timeout: 300
-`, mcpBinary, driveRoot, ctxSize)
+`, mcpBinary)
+	for _, arg := range args {
+		fmt.Fprintf(&block, "      - %q\n", arg)
+	}
+	block.WriteString("    timeout: 300\n")
+	return block.String()
 }
 
 func upsertGooseExtensionYAML(existing, block string) string {

@@ -24,6 +24,8 @@ build:
   srs: "EPSG:4326"
   layer_name: lipas_recreation
   max_zoom: 14
+  # Thin features in tiles that exceed Tippecanoe's size limit.
+  drop_densest_as_needed: true
 
 viewer:
   name: Outdoor Recreation (LIPAS)

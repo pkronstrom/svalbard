@@ -26,9 +26,12 @@ func (c *VaultCapability) Actions() []ActionDef {
 	return []ActionDef{
 		{
 			Name: "sources",
-			Desc: "List all content sources with descriptions and tags. CALL THIS FIRST to understand what is available before using search or query tools. Returns archive names, types, descriptions, topics, and sizes. A book (a PDF document) also has its path, which is its source name for search, its title, how many of its pages are searchable, and a note when some or all of it is not.",
+			Desc: "Find particular content sources by name or topic, or list a page of sources. Use vault_stats for a broad overview and search for a known topic. Returns source names, descriptions, sizes, and any document indexing notes.",
 			Params: []ParamDef{
 				{Name: "type", Type: "string", Desc: "Optional source type filter", Enum: []string{"zim", "database", "map", "book"}},
+				{Name: "match", Type: "string", Desc: "Filter by part of a source name, title, description or tag"},
+				{Name: "limit", Type: "integer", Desc: "Sources per page, up to 50", Default: 12},
+				{Name: "offset", Type: "integer", Desc: "Start at this zero-based position in the filtered list", Default: 0},
 			},
 		},
 		{
@@ -43,7 +46,7 @@ func (c *VaultCapability) Actions() []ActionDef {
 		},
 		{
 			Name:   "stats",
-			Desc:   "Get a high-level summary of the drive, including preset, region, creation date, and content counts.",
+			Desc:   "Give a broad overview of what is available on the drive. Includes the preset, region, file counts and sizes by directory, and the combined size of those directories.",
 			Params: nil,
 		},
 	}
@@ -106,7 +109,24 @@ func (c *VaultCapability) handleSources(params map[string]any) (ActionResult, er
 		}
 	}
 
-	return ActionResult{Data: sources}, nil
+	if match := strings.ToLower(strings.TrimSpace(getString(params, "match"))); match != "" {
+		filtered := sources[:0]
+		for _, source := range sources {
+			text := strings.Join([]string{source.Name, source.Title, source.Description, strings.Join(source.Tags, " ")}, " ")
+			if strings.Contains(strings.ToLower(text), match) {
+				filtered = append(filtered, source)
+			}
+		}
+		sources = filtered
+	}
+	offset := min(len(sources), max(0, intParam(params, "offset", 0)))
+	limit := min(50, max(1, intParam(params, "limit", 12)))
+	end := min(len(sources), offset+limit)
+	note := ""
+	if end < len(sources) {
+		note = fmt.Sprintf("Showing %d–%d of %d sources. Use offset %d for the next page, or narrow with match.", offset+1, end, len(sources), end)
+	}
+	return ActionResult{Data: sources[offset:end], Text: note}, nil
 }
 
 // indexedDocuments returns what the search index holds about each document,

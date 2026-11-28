@@ -1,4 +1,4 @@
-// Package openwebui starts Open WebUI from the drive: one llama-server model,
+// Package openwebui starts Open WebUI from the drive: a llama-server backend,
 // the drive's MCP server over Streamable HTTP, and Open WebUI itself, all on
 // localhost with every setting supplied by environment. Unless file tools are
 // off it also offers the drive's workspace folder: tools to read and write it,
@@ -15,10 +15,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -46,6 +48,8 @@ const (
 	// They are a tool server of their own so a chat can switch them off and
 	// keep vault search.
 	filesServerID = "workspace"
+	webServerID   = "web"
+	webMCPPath    = "/web/mcp"
 
 	// These two are declared by the open-webui recipe.
 	settingOpenBrowser = recipeID + ".open_browser"
@@ -61,14 +65,19 @@ type Launch struct {
 	RuntimeRoot string // <drive>/.svalbard/runtime/open-webui
 	// BytecodeDir is where Python writes compiled modules, on this computer;
 	// empty writes none.
-	BytecodeDir string
-	SecretKey   string
-	ModelName   string // id llama-server reports for the model
-	LlamaURL    string // OpenAI-compatible base URL, ending in /v1
-	MCPURL      string // Streamable HTTP endpoint of the drive's MCP server
-	Wiki        bool   // the drive's MCP server offers the wiki tools
-	FilesURL    string // Streamable HTTP endpoint of the file tools; empty when they are off
-	Port        int
+	BytecodeDir       string
+	SecretKey         string
+	ModelName         string // id llama-server reports for the model
+	ContextSize       int    // token limit configured on llama-server
+	LlamaURL          string // OpenAI-compatible base URL, ending in /v1
+	MCPURL            string // Streamable HTTP endpoint of the drive's MCP server
+	Wiki              bool   // the drive's MCP server offers the wiki tools
+	FilesURL          string // Streamable HTTP endpoint of the file tools; empty when they are off
+	WebSearchURL      string
+	WebSearchProvider string
+	PDFUploadURL      string
+	PDFUploadToken    string
+	Port              int
 }
 
 // Environment returns everything Open WebUI needs from its environment. It is
@@ -93,6 +102,17 @@ func Environment(l Launch) map[string]string {
 		toolServers = append(toolServers, toolServer(filesServerID, "Svalbard files", "Read and save files in the drive's workspace folder", l.FilesURL))
 		toolIDs = append(toolIDs, "server:mcp:"+filesServerID)
 	}
+	if l.WebSearchURL != "" {
+		toolServers = append(toolServers, toolServer(webServerID, "Web search ("+l.WebSearchProvider+")", "Send public web search queries to "+l.WebSearchProvider, l.WebSearchURL))
+		toolIDs = append(toolIDs, "server:mcp:"+webServerID)
+	}
+	capabilities := map[string]any{
+		"file_upload": true, "vision": false,
+		"web_search": false, "code_interpreter": false, "image_generation": false, "memory": false,
+	}
+	// Summarization is another request within the same model context. Leave
+	// room for its prompt and for vault tool results added during a turn.
+	compactionThreshold := strconv.Itoa(l.ContextSize * 7 / 10)
 	env := map[string]string{
 		// State. STATIC_DIR is rewritten on every start and would otherwise be
 		// inside the installed package; the temporary directory holds uploads
@@ -123,17 +143,17 @@ func Environment(l Launch) map[string]string {
 		"OPENAI_API_CONFIGS": mustJSON(map[string]any{"0": map[string]any{
 			"enable": true, "provider": "llama.cpp", "connection_type": "local", "auth_type": "none",
 		}}),
-		"DEFAULT_MODELS": l.ModelName,
+		"DEFAULT_MODELS":                     l.ModelName,
+		"ENABLE_CONTEXT_COMPACTION":          "True",
+		"CONTEXT_COMPACTION_TOKEN_THRESHOLD": compactionThreshold,
+		"CONTEXT_COMPACTION_TOKEN_CAP":       compactionThreshold,
 		// A model still loading from a slow drive answers the list late.
 		"AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST": "30",
 
 		"TOOL_SERVER_CONNECTIONS": mustJSON(toolServers),
 		"DEFAULT_MODEL_METADATA": mustJSON(map[string]any{
-			// Vision stays off until the runtime loads a projector with the model.
-			"capabilities": map[string]any{
-				"file_upload": true, "vision": false,
-				"web_search": false, "code_interpreter": false, "image_generation": false, "memory": false,
-			},
+			// Projector-enabled models override this through the model list.
+			"capabilities": capabilities,
 			// Tool servers listed here are switched on in a new chat.
 			"toolIds":      toolIDs,
 			"builtinTools": builtinTools(),
@@ -149,8 +169,20 @@ func Environment(l Launch) map[string]string {
 		"ENABLE_SEARCH_QUERY_GENERATION":    "False",
 		"ENABLE_IMAGE_PROMPT_GENERATION":    "False",
 
-		// Slim has no vector store, so attached text goes into the context whole.
+		// Store extracted text without building a vector index.
 		"BYPASS_EMBEDDING_AND_RETRIEVAL": "True",
+	}
+	if l.PDFUploadURL != "" {
+		// Native browser chats can page through stored text without an
+		// embedding model. Keep that path for both PDFs and old text files.
+		env["CONTENT_EXTRACTION_ENGINE"] = "external"
+		env["EXTERNAL_DOCUMENT_LOADER_URL"] = l.PDFUploadURL
+		env["EXTERNAL_DOCUMENT_LOADER_API_KEY"] = l.PDFUploadToken
+		env["RAG_FILE_MAX_SIZE"] = strconv.Itoa(pdfUploadLimitMiB)
+		env["VIEW_FILE_DEFAULT_MAX_CHARS"] = strconv.Itoa(min(l.ContextSize/4, 10000))
+		env["DEFAULT_INTERFACE_SETTINGS"] = mustJSON(map[string]string{
+			"system": "For files attached to this chat, read the stored text with view_file, or use grep_chat_files for keywords. Cite the labeled PDF page when available.",
+		})
 	}
 	// Bytecode stays off the stick, where up to 8,311 compiled modules took
 	// 1.10 GB at 128 KB clusters.
@@ -222,7 +254,11 @@ func RunForBrowser(ctx context.Context, stdout io.Writer, driveRoot, selected st
 }
 
 func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, pick func(int) int, ready func(*settings.Store, string) error) error {
-	launcher, err := resolveLauncher(driveRoot)
+	platformName, err := platform.Detect()
+	if err != nil {
+		return err
+	}
+	launcher, err := resolveLauncher(driveRoot, platformName)
 	if err != nil {
 		return err
 	}
@@ -255,7 +291,27 @@ func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, pick
 		return err
 	}
 
-	ctxSize := prefs.ContextSize(llamaserve.ContextForHost(), pick)
+	requestedContext := prefs.ContextSize(llamaserve.ContextForHost(), pick)
+	ctxSize := llamaserve.ContextForModel(model, requestedContext)
+	var modelPreset string
+	var models []string
+	if selected == "" {
+		models, err = llamaserve.ChatModels(driveRoot)
+		if err != nil {
+			return err
+		}
+		if len(models) > 1 {
+			var minimumContext int
+			modelPreset, minimumContext, err = llamaserve.WriteRouterPresets(filepath.Join(runtimeRoot, "tmp"), filepath.Join(driveRoot, "models"), models, requestedContext)
+			if err != nil {
+				fmt.Fprintf(stdout, "Model switching unavailable, starting the default model: %v\n", err)
+			} else {
+				// WebUI's default compaction threshold and the shared tools
+				// also have to work with the smallest model window.
+				ctxSize = minimumContext
+			}
+		}
+	}
 
 	// The MCP listener is held from here on. The two child servers bind their
 	// own ports later, so their searches must not land on the same free port.
@@ -286,6 +342,16 @@ func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, pick
 	modelName := strings.TrimSuffix(filepath.Base(model), filepath.Ext(model))
 	llamaRoot := fmt.Sprintf("http://127.0.0.1:%d", llamaPort)
 	webuiRoot := fmt.Sprintf("http://127.0.0.1:%d", port)
+	visionModels := map[string]bool{}
+	if modelPreset != "" {
+		for _, name := range models {
+			if llamaserve.VisionProjector(filepath.Join(driveRoot, "models", name)) != "" {
+				visionModels[strings.TrimSuffix(name, filepath.Ext(name))] = true
+			}
+		}
+	} else if llamaserve.VisionProjector(model) != "" {
+		visionModels[modelName] = true
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
@@ -293,13 +359,59 @@ func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, pick
 		cancel()
 		wg.Wait()
 	}()
-	exited := make(chan error, 4)
+	exited := make(chan error, 5)
+	var pdfURL, pdfToken string
+	uploads, err := startPDFUploads(ctx, driveRoot, platformName, ctxSize)
+	if err != nil {
+		fmt.Fprintln(stdout, "PDF uploads are off:", err)
+	} else {
+		pdfURL, pdfToken = uploads.URL, uploads.Token
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-uploads.done
+		}()
+	}
+
+	webuiBackend := llamaRoot
+	if len(visionModels) > 0 {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return fmt.Errorf("starting image-capable model connection: %w", err)
+		}
+		target := &url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", llamaPort)}
+		proxy := &http.Server{Handler: visionProxy(target, visionModels), ReadHeaderTimeout: 5 * time.Second}
+		defer listener.Close()
+		defer proxy.Close()
+		webuiBackend = "http://" + listener.Addr().String()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := proxy.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				exited <- fmt.Errorf("model connection stopped: %w", err)
+			}
+		}()
+	}
 
 	mcpServer := mcp.NewDriveServer(driveRoot, mcp.DriveOptions{Context: ctxSize})
 	mcpServers := map[string]*mcp.Server{mcp.StreamableHTTPPath: mcpServer}
+	var webURL, webProvider string
+	web, err := mcp.WebSearchForSettings(prefs)
+	if err != nil {
+		fmt.Fprintln(stdout, "Web search is off:", err)
+	} else if web != nil {
+		webProvider = web.Provider()
+		webURL = fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, webMCPPath)
+		mcpServers[webMCPPath] = mcp.NewServer(mcp.NewWebCapability(web))
+		fmt.Fprintf(stdout, "Web search is enabled. Public search queries go to %s.\n", webProvider)
+	}
 	filesURL := ""
 	if files != nil {
-		mcpServers[mcp.FilesStreamableHTTPPath] = mcp.NewServer(mcp.NewFilesCapability(files.workspace, files.url))
+		capability := mcp.NewFilesCapability(files.workspace, files.url)
+		if mcp.LibrariesInstalled(driveRoot) {
+			capability = capability.WithHTMLPacking(driveRoot)
+		}
+		mcpServers[mcp.FilesStreamableHTTPPath] = mcp.NewServer(capability)
 		filesURL = fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.FilesStreamableHTTPPath)
 		wg.Add(1)
 		go func() {
@@ -312,18 +424,32 @@ func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, pick
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer mcpServer.Close()
+		defer func() {
+			for _, server := range mcpServers {
+				_ = server.Close()
+			}
+		}()
 		if err := mcp.ServeStreamableHTTP(ctx, mcpListener, mcpServers); err != nil {
 			exited <- fmt.Errorf("MCP server stopped: %w", err)
 		}
 	}()
 
-	fmt.Fprintf(stdout, "Starting llama-server with %s (context %d)\n", modelName, ctxSize)
-	// The alias is the name Open WebUI's model picker shows; without it
-	// llama-server reports the model's full path.
-	llamaArgs := []string{"-m", model, "--alias", modelName, "--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", llamaPort)}
-	llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model, ctxSize)...)
+	llamaArgs := []string{"--jinja", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", llamaPort)}
+	if modelPreset != "" {
+		fmt.Fprintf(stdout, "Starting llama-server with %d switchable models (shared context floor %d)\n", len(models), ctxSize)
+		llamaArgs = append(llamaArgs, "--models-preset", modelPreset, "--models-max", "1")
+	} else {
+		fmt.Fprintf(stdout, "Starting llama-server with %s (context %d)\n", modelName, ctxSize)
+		// Keep the same model ID in saved chats and in the picker.
+		llamaArgs = append(llamaArgs, "-m", model, "--alias", modelName)
+		llamaArgs = append(llamaArgs, llamaserve.ExtraFlags(model, ctxSize)...)
+	}
 	llamaCmd := exec.CommandContext(ctx, llamaBin, llamaArgs...)
+	if modelPreset != "" {
+		// The router also scans the host's llama.cpp cache by default. Set
+		// its cache to this run's directory so only vault models appear.
+		llamaCmd.Env = append(os.Environ(), "LLAMA_CACHE="+filepath.Join(runtimeRoot, "tmp", "llama-cache"))
+	}
 	if err := start(llamaCmd, runtimeRoot, "llama-server", stdout, &wg, exited); err != nil {
 		return err
 	}
@@ -332,15 +458,20 @@ func run(ctx context.Context, stdout io.Writer, driveRoot, selected string, pick
 	webuiCmd := exec.CommandContext(ctx, launcher, "serve", "--host", "127.0.0.1", "--port", fmt.Sprintf("%d", port))
 	webuiCmd.Dir = runtimeRoot
 	webuiCmd.Env = append(hostEnvironment(), platform.EnvList(Environment(Launch{
-		RuntimeRoot: runtimeRoot,
-		BytecodeDir: bytecodeDir(),
-		SecretKey:   secret,
-		ModelName:   modelName,
-		LlamaURL:    llamaRoot + "/v1",
-		MCPURL:      fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
-		Wiki:        mcp.WikiOffered(driveRoot, ctxSize),
-		FilesURL:    filesURL,
-		Port:        port,
+		RuntimeRoot:       runtimeRoot,
+		BytecodeDir:       bytecodeDir(),
+		SecretKey:         secret,
+		ModelName:         modelName,
+		ContextSize:       ctxSize,
+		LlamaURL:          webuiBackend + "/v1",
+		MCPURL:            fmt.Sprintf("http://127.0.0.1:%d%s", mcpPort, mcp.StreamableHTTPPath),
+		Wiki:              mcp.WikiOffered(driveRoot, ctxSize),
+		FilesURL:          filesURL,
+		WebSearchURL:      webURL,
+		WebSearchProvider: webProvider,
+		PDFUploadURL:      pdfURL,
+		PDFUploadToken:    pdfToken,
+		Port:              port,
 	}))...)
 	if err := start(webuiCmd, runtimeRoot, recipeID, stdout, &wg, exited); err != nil {
 		return err
@@ -438,11 +569,7 @@ func stopped(ctx context.Context, err error) error {
 // resolveLauncher returns the wrapper the python-package build wrote for this
 // platform. PATH is not searched: a host install would be a different version
 // with the full dependency set.
-func resolveLauncher(driveRoot string) (string, error) {
-	platformName, err := platform.Detect()
-	if err != nil {
-		return "", err
-	}
+func resolveLauncher(driveRoot, platformName string) (string, error) {
 	launcher := filepath.Join(driveRoot, "bin", platformName, recipeID)
 	if info, err := os.Stat(launcher); err != nil || info.IsDir() {
 		return "", fmt.Errorf("Open WebUI is not installed for %s", platformName)

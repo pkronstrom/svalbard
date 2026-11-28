@@ -51,6 +51,52 @@ func search(t *testing.T, db *sql.DB, query string, opts KeywordOptions) Keyword
 	return matches
 }
 
+func TestUnscopedSearchSharesCloseMatchesAcrossArchives(t *testing.T) {
+	db := setupTestDB(t)
+	wiki := insertSource(t, db, "wikipedia.zim")
+	handbook := insertSource(t, db, "handbook.zim")
+	for _, path := range []string{"/one", "/two", "/three", "/four"} {
+		insertArticle(t, db, wiki, path, "Rainwater collection", "A guide to rainwater collection.")
+	}
+	insertArticle(t, db, handbook, "/handbook", "Rainwater collection", "A guide to rainwater collection.")
+	global := search(t, db, "rainwater collection", KeywordOptions{Limit: 4})
+	if got := paths(global.Results); !slices.Equal(got, []string{"/one", "/two", "/handbook", "/three"}) {
+		t.Fatalf("unscoped paths = %v", got)
+	}
+	scoped := search(t, db, "rainwater collection", KeywordOptions{Source: "wikipedia.zim", Limit: 4})
+	if got := paths(scoped.Results); !slices.Equal(got, []string{"/one", "/two", "/three", "/four"}) {
+		t.Fatalf("scoped paths = %v", got)
+	}
+}
+
+func TestExcludedArchiveAndItsDocumentsDoNotFillResultSlots(t *testing.T) {
+	db := setupTestDB(t)
+	wiki := insertSource(t, db, "wikipedia.zim")
+	embedded := insertSource(t, db, "wikipedia.zim/guide.pdf")
+	local := insertSource(t, db, "books/manual.pdf")
+	insertArticle(t, db, wiki, "/wiki", "Growing potatoes", "Growing potatoes")
+	insertArticle(t, db, embedded, "page/1", "Growing potatoes", "Growing potatoes")
+	insertArticle(t, db, local, "page/1", "A manual", "Growing potatoes")
+	matches := search(t, db, "growing potatoes", KeywordOptions{Limit: 1, ExcludedArchives: []string{"wikipedia.zim"}})
+	if len(matches.Results) != 1 || matches.Results[0].Filename != "books/manual.pdf" {
+		t.Fatalf("filtered search returned %+v", matches.Results)
+	}
+}
+
+func TestUnscopedSearchDoesNotFillSlotsWithWeakMatches(t *testing.T) {
+	db := setupTestDB(t)
+	wiki := insertSource(t, db, "wikipedia.zim")
+	handbook := insertSource(t, db, "handbook.zim")
+	for _, path := range []string{"/one", "/two", "/three"} {
+		insertArticle(t, db, wiki, path, "Rainwater collection", "Rainwater collection and tank installation.")
+	}
+	insertArticle(t, db, handbook, "/weak", "A homeowner's guide", strings.Repeat("lawn road garden house ", 100)+"rainwater collection")
+	global := search(t, db, "rainwater collection", KeywordOptions{Limit: 3})
+	if got := paths(global.Results); !slices.Equal(got, []string{"/one", "/two", "/three"}) {
+		t.Fatalf("unscoped paths = %v", got)
+	}
+}
+
 func TestSearchPutsAllWordMatchesFirstThenPartial(t *testing.T) {
 	db := setupTestDB(t)
 	src := insertSource(t, db, "med.zim")

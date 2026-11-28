@@ -4,18 +4,18 @@ display_group: tools
 tags:
 - computing
 depth: reference-only
-size_gb: 0.017
+size_gb: 0.021
 platforms:
-  linux-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-ubuntu-x64.tar.gz
-  linux-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-ubuntu-arm64.tar.gz
-  macos-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-macos-arm64.tar.gz
-  macos-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b12359/llama-b12359-bin-macos-x64.tar.gz
+  linux-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b12774/llama-b12774-bin-ubuntu-x64.tar.gz
+  linux-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b12774/llama-b12774-bin-ubuntu-arm64.tar.gz
+  macos-arm64: https://github.com/ggml-org/llama.cpp/releases/download/b12774/llama-b12774-bin-macos-arm64.tar.gz
+  macos-x86_64: https://github.com/ggml-org/llama.cpp/releases/download/b12774/llama-b12774-bin-macos-x64.tar.gz
 platform_sha256:
-  linux-x86_64: 0bc1f091e8916102b6d8f2cf944233a620e90a0f856c72d0ce41150c65c2e72e
-  linux-arm64: dc7aa17a67884619b7223870aca9fd6addbc01717713b04a714add1c31137359
-  macos-arm64: 82b00abc740160e1b9980e6cc79c117345fa34af058c80e6c0a69aa8ddccde75
-  macos-x86_64: 25320d529077ef5a3d16e7b5da26438f221d88c8c0930a32b0c79457f5eede56
-description: llama.cpp server binary for serving GGUF models (v1.0.0 / b12359 — portable CPU/Metal builds with native MTP support)
+  linux-x86_64: ab5837cca2317cfb7ecb5f85b550934e7355cd9df74cdde6e106581457034dbb
+  linux-arm64: 068e15b27cfaf2733855c313baad26fbce84952cbb770500e806073c41aa4214
+  macos-arm64: 70311c4751ed3221e63f47769327dd088d7400f76dcfb81c66ec843db165814d
+  macos-x86_64: 0368e3dbdae70065a928c130aa235efc84090bb7817c3267998f00df4e6ed862
+description: llama.cpp server for GGUF models (v1.1.0 / b12774 — portable CPU/Metal builds with Inkling 2 and native MTP support)
 license:
   id: MIT
   attribution: Georgi Gerganov and llama.cpp contributors

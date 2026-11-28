@@ -1,5 +1,5 @@
 // Package embedder manages a llama-server subprocess for generating text
-// embeddings via a GGUF embedding model (e.g. nomic-embed-text-v1.5).
+// embeddings via a GGUF embedding model.
 package embedder
 
 import (

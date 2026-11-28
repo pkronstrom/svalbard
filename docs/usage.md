@@ -377,6 +377,23 @@ A drive built from a default preset has a wiki: a place for your own notes, next
 
 The wiki is [SilverBullet](https://silverbullet.md) 3.0.1. It keeps nothing on the drive but the pages: its index and settings are rebuilt in a temporary folder on the computer at each start and removed when it stops.
 
+## Open WebUI attachments and workspace
+
+Attach a small text-bearing PDF to a chat and ask about a page. Open WebUI processes it locally and includes the physical page numbers in the extracted text. The launch sets a text budget for the model's context size. Use a [document collection](#your-own-documents) for long documents that you want to search a page at a time.
+
+With **File tools** enabled and a JS library installed, ask the assistant to pack a workspace page as offline HTML. It can return a link to `<name>.packed.html`, which opens from the workspace or as a standalone file.
+
+## Online search
+
+Web search is off by default. Enable **Web search** under **Local AI** in the drive's Settings screen and launch your client again. Open WebUI shows the provider as a separate tool connection, so you can switch it off for a chat and keep the vault tools.
+
+```sh
+./run settings ai.web_search true
+./run web-search "Go release notes"
+```
+
+The default sends the query to DuckDuckGo's public HTML search. If it refuses automated requests, set **SearXNG URL** to a server you use that has JSON search enabled. Both options work without a search API key. [SearXNG JSON search](https://docs.searxng.org/dev/search_api.html)
+
 ## Builder Scripts
 
 Some recipes build their artifacts from source rather than downloading prebuilt outputs (e.g. ZIM scraping, geodata processing). These steps are implemented as Python scripts under `recipes/builders/` and run inside the `svalbard-tools` container — the host CLI invokes them through Docker on demand.

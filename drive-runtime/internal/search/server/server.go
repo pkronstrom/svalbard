@@ -18,6 +18,9 @@ var (
 	healthPollInterval      = 500 * time.Millisecond
 )
 
+// Kiwix normally becomes ready much sooner than the embedding backend.
+const kiwixHealthPollInterval = 50 * time.Millisecond
+
 // ZIMFiles lists the archives in the drive's zim folder, in name order. On
 // an exFAT stick macOS keeps a "._name.zim" file beside each archive, and
 // kiwix-serve does not start when it is handed one.
@@ -64,7 +67,7 @@ func StartEmbedding(ctx context.Context, llamaBin, model string, port int) (*exe
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting llama-server: %w", err)
 	}
-	if err := waitForHealthy(ctx, cmd, fmt.Sprintf("http://127.0.0.1:%d/health", port), embeddingStartupTimeout); err != nil {
+	if err := waitForHealthy(ctx, cmd, fmt.Sprintf("http://127.0.0.1:%d/health", port), embeddingStartupTimeout, healthPollInterval); err != nil {
 		return nil, fmt.Errorf("llama-server failed to become healthy: %w", err)
 	}
 	return cmd, nil
@@ -76,24 +79,28 @@ func StartKiwix(ctx context.Context, kiwixBin string, zims []string, port int) (
 	if len(zims) == 0 {
 		return nil, fmt.Errorf("no ZIM files found")
 	}
+	return startKiwix(ctx, kiwixBin, zims, port)
+}
+
+func startKiwix(ctx context.Context, kiwixBin string, inputs []string, port int) (*exec.Cmd, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	args := []string{"--port", fmt.Sprintf("%d", port), "--address", "127.0.0.1"}
-	args = append(args, zims...)
+	args = append(args, inputs...)
 	cmd := exec.Command(kiwixBin, args...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting kiwix-serve: %w", err)
 	}
-	if err := waitForHealthy(ctx, cmd, fmt.Sprintf("http://127.0.0.1:%d/", port), kiwixStartupTimeout); err != nil {
+	if err := waitForHealthy(ctx, cmd, fmt.Sprintf("http://127.0.0.1:%d/", port), kiwixStartupTimeout, kiwixHealthPollInterval); err != nil {
 		return nil, fmt.Errorf("kiwix-serve failed to become healthy: %w", err)
 	}
 	return cmd, nil
 }
 
-func waitForHealthy(ctx context.Context, cmd *exec.Cmd, healthURL string, timeout time.Duration) error {
+func waitForHealthy(ctx context.Context, cmd *exec.Cmd, healthURL string, timeout, pollInterval time.Duration) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -120,7 +127,7 @@ func waitForHealthy(ctx context.Context, cmd *exec.Cmd, healthURL string, timeou
 				return ctx.Err()
 			}
 			return fmt.Errorf("health check timed out: %w", healthCtx.Err())
-		case <-time.After(healthPollInterval):
+		case <-time.After(pollInterval):
 		}
 	}
 }

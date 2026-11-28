@@ -3,7 +3,8 @@ kind: pack
 display_group: AI
 description: General and coding GGUF choices for 8 GB RAM hosts — load one model at
   a time; context and OS need extra headroom
-target_size_gb: 7
+target_size_gb: 9
 sources:
+- minicpm5-2b
 - gemma-4-e4b-it
 - qwen-4b

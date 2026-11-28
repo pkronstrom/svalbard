@@ -92,6 +92,37 @@ func TestRunPromptsAgainAfterEmptyResultChoice(t *testing.T) {
 	}
 }
 
+func TestRunShowsMoreWithoutRenumberingResults(t *testing.T) {
+	root := newSearchDrive(t)
+	db, err := sql.Open("sqlite3", filepath.Join(root, "data", "search.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<24)
+		INSERT INTO articles (source_id, path, title, body)
+		SELECT 1, '/water_' || i, 'Water reference ' || i, 'Water storage and treatment.' FROM n;
+		INSERT INTO articles_fts(articles_fts) VALUES ('rebuild');`)
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	err = Run(context.Background(), strings.NewReader("water\nmore\n/more\nq\n"), &stdout, root, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	for _, want := range []string{"more for more results", "\n  20. [wiki]", "\n  21. [wiki]", "\n  25. [wiki]", "No more results"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("Run() output missing %q in:\n%s", want, output)
+		}
+	}
+	if strings.Count(output, "\n  1. [wiki]") != 1 || strings.Contains(output, "Searching (keyword): more") {
+		t.Errorf("Run() restarted or repeated the first page:\n%s", output)
+	}
+}
+
 func TestRunOpensNumberedResultThroughSession(t *testing.T) {
 	root := newSearchDrive(t)
 	writeTestKiwix(t, root)

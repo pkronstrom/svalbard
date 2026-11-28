@@ -36,7 +36,7 @@ func Run(ctx context.Context, stdout io.Writer, driveRoot, selected string, open
 		return err
 	}
 
-	ctxSize := prefs.ContextSize(llamaserve.ContextForHost(), pickContext)
+	ctxSize := llamaserve.ContextForModel(model, prefs.ContextSize(llamaserve.ContextForHost(), pickContext))
 	fmt.Fprintf(stdout, "Starting llama-server on port %d with %s (context %d)...\n", port, filepath.Base(model), ctxSize)
 	args := []string{"-m", model, "--port", fmt.Sprintf("%d", port), "--host", "127.0.0.1"}
 	args = append(args, llamaserve.ExtraFlags(model, ctxSize)...)

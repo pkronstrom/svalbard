@@ -135,7 +135,7 @@ func TestWikiCapabilityActions(t *testing.T) {
 }
 
 func TestWikiToolsAreRegisteredOnlyWhenTheWikiIsInstalled(t *testing.T) {
-	vault := []string{"query_describe", "query_sql", "search", "search_read", "vault_databases", "vault_maps", "vault_sources", "vault_stats"}
+	vault := []string{"query_describe", "query_sql", "search", "search_link", "search_read", "vault_databases", "vault_maps", "vault_sources", "vault_stats"}
 	wikiTools := []string{"wiki_append", "wiki_create", "wiki_delete", "wiki_edit", "wiki_list", "wiki_move", "wiki_read", "wiki_search"}
 	registered := func(root string) []string {
 		srv := NewServer(DriveCapabilities(root, DriveOptions{})...)
@@ -172,7 +172,7 @@ func TestWikiToolsAreRegisteredOnlyWhenTheWikiIsInstalled(t *testing.T) {
 		t.Errorf("tools with the wiki = %v\nwant %v", got, want)
 	}
 	// Launchers that enable tools by name read this list.
-	listed := DriveToolNames(with, 0)
+	listed := DriveToolNames(with, DriveOptions{})
 	slices.Sort(listed)
 	if !slices.Equal(listed, want) {
 		t.Errorf("DriveToolNames() = %v\nwant %v", listed, want)

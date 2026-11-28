@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"database/sql"
 	"encoding/binary"
 	"math"
@@ -431,6 +432,28 @@ func TestListSources(t *testing.T) {
 	if sources[1].Filename != "wiki.zim" || sources[1].ArticleCount != 2 {
 		t.Errorf("source 1: got %+v", sources[1])
 	}
+}
+
+func TestSelectiveHybridFindsPassageOutsideKeywordPool(t *testing.T) {
+	db := setupTestDB(t)
+	source := insertSource(t, db, "books/garden.pdf")
+	insertArticle(t, db, source, "page/1", "Kasvien kasvatus astiassa", "Puutarhaa voi perustaa ruukkuihin.")
+	insertArticle(t, db, source, "page/2", "Unrelated", "A passing reference to containers.")
+	var articleID int
+	if err := db.QueryRow("SELECT id FROM articles WHERE path='page/1'").Scan(&articleID); err != nil {
+		t.Fatal(err)
+	}
+	insertEmbedding(t, db, articleID, "Kasvien kasvatus astiassa", []float32{1, 0})
+	results, err := New(db).SelectiveHybridContext(context.Background(), "containers", []float32{1, 0}, 5, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		if result.Path == "page/1" {
+			return
+		}
+	}
+	t.Fatalf("independent vector candidate missing: %+v", results)
 }
 
 func TestHybridSearch(t *testing.T) {

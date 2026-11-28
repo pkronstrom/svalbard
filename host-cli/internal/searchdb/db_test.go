@@ -3,6 +3,7 @@ package searchdb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -486,6 +487,30 @@ func TestReplaceSourceReplacesArticlesAndLegacyEmbeddingsAtomically(t *testing.T
 	}
 	if embeddings != 0 {
 		t.Fatalf("embeddings = %d, want 0", embeddings)
+	}
+}
+
+func TestReplaceSourceStreamRollsBackPartialArticles(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	seedSource(t, db, "wiki.zim", "Old", []Article{{Path: "/old", Title: "Old", Body: "original"}})
+	interrupted := errors.New("archive changed during extraction")
+	err = db.ReplaceSourceStream(context.Background(), Source{Filename: "wiki.zim", Title: "New"}, func(yield func(Article, error) bool) {
+		if yield(Article{Path: "/new", Title: "New", Body: "replacement"}, nil) {
+			yield(Article{}, interrupted)
+		}
+	})
+	if !errors.Is(err, interrupted) {
+		t.Fatalf("replace returned %v", err)
+	}
+	if hits, err := db.Search("original", 10); err != nil || len(hits) != 1 {
+		t.Fatalf("original hits = %v, %v", hits, err)
+	}
+	if hits, err := db.Search("replacement", 10); err != nil || len(hits) != 0 {
+		t.Fatalf("partial replacement hits = %v, %v", hits, err)
 	}
 }
 

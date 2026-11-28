@@ -21,6 +21,9 @@ func renderView(m Model) string {
 		return m.paletteModel.View()
 	}
 	if m.searchActive {
+		if m.archiveFilterOpen {
+			return m.renderArchiveFilter()
+		}
 		return renderSearchView(m)
 	}
 	if m.settingsActive {
@@ -33,22 +36,26 @@ func renderView(m Model) string {
 	var b strings.Builder
 
 	if m.inGroup {
-		renderGroupView(&b, m)
-	} else {
-		renderTopLevelView(&b, m)
+		if group, ok := m.CurrentGroup(); ok {
+			return m.groupLayout(group).render(m.theme)
+		}
 	}
+	renderTopLevelView(&b, m)
 
 	if m.status != "" {
 		b.WriteString("\n")
-		if m.lastErr != nil {
-			b.WriteString(m.theme.Error.Render(fmt.Sprintf("%s: %v", m.status, m.lastErr)))
-		} else {
-			b.WriteString(m.theme.Status.Render(m.status))
-		}
+		b.WriteString(m.renderStatus())
 		b.WriteString("\n")
 	}
 
 	return b.String()
+}
+
+func (m Model) renderStatus() string {
+	if m.lastErr != nil {
+		return m.theme.Error.Render(fmt.Sprintf("%s: %v", m.status, m.lastErr))
+	}
+	return m.theme.Status.Render(m.status)
 }
 
 func renderSearchView(m Model) string {
@@ -69,6 +76,10 @@ func renderSearchView(m Model) string {
 	status := m.searchStatus
 	if status == "" {
 		status = fmt.Sprintf("%d sources • %d articles", m.searchInfo.SourceCount, m.searchInfo.ArticleCount)
+		if m.searchInfo.NativeZIMCount > 0 {
+			status = fmt.Sprintf("%d sources • %d embedded indexes • %d SQLite entries",
+				m.searchInfo.SourceCount, m.searchInfo.NativeZIMCount, m.searchInfo.ArticleCount)
+		}
 	}
 	if m.searchLoading {
 		status = "Working... " + status
@@ -82,6 +93,12 @@ func renderSearchView(m Model) string {
 
 	b.WriteString("> ")
 	b.WriteString(m.searchQuery.View())
+	b.WriteString("\n")
+	filterHelp := "Ctrl+F archives"
+	if count := len(m.excludedArchives); count > 0 {
+		filterHelp += fmt.Sprintf(" (%d excluded)", count)
+	}
+	b.WriteString(m.theme.Help.Render(filterHelp))
 	b.WriteString("\n\n")
 
 	shown := len(m.searchResults)
@@ -236,33 +253,32 @@ func renderTopLevelView(b *strings.Builder, m Model) {
 	b.WriteString(shell.Render())
 }
 
-func renderGroupView(b *strings.Builder, m Model) {
-	group, ok := m.CurrentGroup()
-	if !ok {
-		renderTopLevelView(b, m)
-		return
+func (m *Model) scrollGroup() {
+	if group, ok := m.CurrentGroup(); ok {
+		m.itemScrollOffset = m.groupLayout(group).offset
 	}
+}
 
-	b.WriteString(m.theme.Title.Render("Svalbard / " + group.Label))
-	b.WriteString("\n")
-	b.WriteString(m.theme.Muted.Render(group.Description))
-	b.WriteString("\n")
-	b.WriteString("\n")
-
-	visible := m.VisibleItems()
+func (m Model) groupLayout(group config.MenuGroup) menuListLayout {
+	clip := lipgloss.NewStyle().MaxWidth(m.width)
+	oneLine := func(text string) string { return strings.Join(strings.Fields(text), " ") }
+	layout := menuListLayout{top: []string{
+		clip.Render(m.theme.Title.Render("Svalbard / " + group.Label)),
+		clip.Render(m.theme.Muted.Render(oneLine(group.Description))), "",
+	}}
+	visible := group.Items
 	if len(visible) == 0 {
-		b.WriteString(m.theme.Help.Render("No items available."))
-		b.WriteString("\n")
-		return
+		layout.list = []string{clip.Render(m.theme.Help.Render("No items available."))}
 	}
 
 	noteColumn := menuNoteColumn(visible)
 	currentSubheader := ""
+	cursorLine, anchorLine := 0, 0
 	for idx, item := range visible {
+		anchor := len(layout.list)
 		if item.Subheader != "" && item.Subheader != currentSubheader {
 			currentSubheader = item.Subheader
-			b.WriteString(m.theme.Section.Render(currentSubheader))
-			b.WriteString("\n")
+			layout.list = append(layout.list, clip.Render(m.theme.Section.Render(currentSubheader)))
 		}
 
 		selected := idx == m.itemSelected
@@ -270,26 +286,71 @@ func renderGroupView(b *strings.Builder, m Model) {
 		note := menuNote(row, item.Note, noteColumn, m.width)
 		if selected {
 			row = m.theme.Selected.Render(row)
+			cursorLine, anchorLine = len(layout.list), anchor
 		}
-		b.WriteString(row)
-		if note != "" {
-			b.WriteString(m.theme.Muted.Render(note))
-		}
-		b.WriteString("\n")
+		layout.list = append(layout.list, clip.Render(row+m.theme.Muted.Render(note)))
 	}
 
-	if item, ok := m.SelectedItem(); ok {
-		b.WriteString("\n")
-		b.WriteString(m.theme.Section.Render("Selected"))
-		b.WriteString("\n")
-		b.WriteString(m.theme.Muted.Render(item.Description))
-		b.WriteString("\n")
+	layout.bottom = []string{""}
+	if m.itemSelected >= 0 && m.itemSelected < len(visible) {
+		layout.bottom = append(layout.bottom, m.theme.Section.Render("Selected"),
+			clip.Render(m.theme.Muted.Render(oneLine(visible[m.itemSelected].Description))), "")
 	}
-
+	if m.status != "" {
+		layout.bottom = append(layout.bottom, clip.Render(strings.ReplaceAll(m.renderStatus(), "\n", " ")))
+	}
 	keys := tui.DefaultKeyMap()
-	b.WriteString("\n")
-	b.WriteString(m.theme.Help.Render(tui.FooterHints(keys.MoveUp, keys.Enter, keys.Back, keys.Quit)))
-	b.WriteString("\n")
+	footer := clip.Render(m.theme.Help.Render(tui.FooterHints(keys.MoveUp, keys.Enter, keys.Back, keys.Quit)))
+	layout.bottom = append(layout.bottom, footer)
+	if m.height > 0 && m.height <= len(layout.top)+len(layout.bottom) {
+		// When the terminal is very short, keep room for the selected row.
+		layout.top, layout.bottom = layout.top[:1], nil
+		if m.height >= 3 {
+			layout.bottom = []string{footer}
+		}
+		if m.height >= 5 {
+			layout.top = append(layout.top, "")
+			layout.bottom = []string{"", footer}
+		}
+		if m.height == 1 {
+			layout.top = nil
+		}
+	}
+	layout.fit(m.height, m.itemScrollOffset, cursorLine, anchorLine)
+	return layout
+}
+
+// menuListLayout keeps the title and footer fixed while the body scrolls.
+// Blank lines adjacent to the body can carry overflow indicators.
+type menuListLayout struct {
+	top    []string
+	list   []string
+	bottom []string
+	offset int
+	window int
+}
+
+func (layout *menuListLayout) fit(height, offset, cursor, anchor int) {
+	layout.window = len(layout.list)
+	if height > 0 {
+		layout.window = min(layout.window, max(1, height-len(layout.top)-len(layout.bottom)))
+	}
+	layout.offset = min(offset, len(layout.list)-layout.window, anchor)
+	layout.offset = max(layout.offset, cursor-layout.window+1, 0)
+}
+
+func (layout menuListLayout) render(theme tui.Theme) string {
+	end := layout.offset + layout.window
+	lines := append([]string(nil), layout.top...)
+	if layout.offset > 0 && len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines[len(lines)-1] = theme.Muted.Render(fmt.Sprintf("  ↑ %d more", layout.offset))
+	}
+	lines = append(lines, layout.list[layout.offset:end]...)
+	lines = append(lines, layout.bottom...)
+	if end < len(layout.list) && len(layout.bottom) > 0 && layout.bottom[0] == "" {
+		lines[len(layout.top)+layout.window] = theme.Muted.Render(fmt.Sprintf("  ↓ %d more", len(layout.list)-end))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderOutputView(m Model) string {

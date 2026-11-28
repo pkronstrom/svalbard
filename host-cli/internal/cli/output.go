@@ -54,11 +54,16 @@ func applyLines(w io.Writer) apply.ProgressFunc {
 			line = "downloading"
 			if ev.Step != "" {
 				line = ev.Step
+			} else if ev.Total > 0 {
+				line += " " + tui.FormatBytes(ev.Total)
 			}
 		case tui.StatusDone:
 			line = "done"
 			if ev.Message != "" {
 				line = ev.Message
+			}
+			if ev.ItemsTotal > 0 {
+				line = fmt.Sprintf("[%d/%d] %s", ev.ItemsDone, ev.ItemsTotal, line)
 			}
 		case tui.StatusFailed:
 			line = "failed: " + ev.Error

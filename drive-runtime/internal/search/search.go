@@ -51,13 +51,17 @@ func BestMode(c Capabilities) Mode {
 }
 
 func RenderResults(w io.Writer, results []Result) {
+	renderResults(w, results, 0)
+}
+
+func renderResults(w io.Writer, results []Result, offset int) {
 	for i, result := range results {
 		label := SourceLabel(result.Filename)
 		title := result.Title
 		if result.ChunkHeader != "" && result.ChunkHeader != result.Title {
 			title = result.ChunkHeader
 		}
-		fmt.Fprintf(w, "  %d. [%s] %s\n", i+1, label, title)
+		fmt.Fprintf(w, "  %d. [%s] %s\n", offset+i+1, label, title)
 		if result.Snippet != "" {
 			fmt.Fprintf(w, "     %s\n", result.Snippet)
 		}
@@ -79,14 +83,20 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 	mode := info.BestMode
 
 	fmt.Fprintln(stdout)
-	fmt.Fprintf(stdout, "Search (%d sources, %d articles, %s)\n", info.SourceCount, info.ArticleCount, mode)
+	if info.NativeZIMCount > 0 {
+		fmt.Fprintf(stdout, "Search (%d sources, %d embedded ZIM indexes, %d SQLite articles or pages, %s)\n", info.SourceCount, info.NativeZIMCount, info.ArticleCount, mode)
+	} else {
+		fmt.Fprintf(stdout, "Search (%d sources, %d articles, %s)\n", info.SourceCount, info.ArticleCount, mode)
+	}
 	fmt.Fprintln(stdout, "────────────────────────────────")
 
 	reader := bufio.NewReader(stdin)
+	const pageSize = 20
+	var excluded []string
 	query := initialQuery
 	for {
 		if query == "" {
-			fmt.Fprintf(stdout, "\n  [%s] Search (/fts /hybrid q): ", mode)
+			fmt.Fprintf(stdout, "\n  [%s] Search (/fts /hybrid /wikis q): ", mode)
 			line, err := reader.ReadString('\n')
 			if err != nil && line == "" {
 				return err
@@ -97,6 +107,19 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 			return nil
 		}
 		switch query {
+		case "/wikis":
+			archives, err := ListArchives(session.driveRoot)
+			if err != nil {
+				return err
+			}
+			excluded = ToggleWikiArchives(excluded, archives)
+			if len(excluded) > 0 {
+				fmt.Fprintf(stdout, "  Wikipedia and Wiktionary excluded (%d archives)\n", len(excluded))
+			} else {
+				fmt.Fprintln(stdout, "  Wikipedia and Wiktionary included")
+			}
+			query = ""
+			continue
 		case "/fts", "/keyword":
 			mode = ModeKeyword
 			fmt.Fprintln(stdout, "  Switched to keyword search")
@@ -113,7 +136,8 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 		}
 
 		fmt.Fprintf(stdout, "Searching (%s): %s\n", mode, query)
-		response, err := session.Search(ctx, mode, query, 20)
+		limit := pageSize
+		response, err := session.Search(ctx, mode, query, limit, excluded...)
 		if err != nil {
 			return err
 		}
@@ -129,13 +153,41 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "────────────────────────────────")
 		RenderResults(stdout, response.Results)
-		fmt.Fprintln(stdout)
-		fmt.Fprint(stdout, "  Open # (or new search, q to quit): ")
-		choice, err := reader.ReadString('\n')
-		if err != nil && choice == "" {
-			return err
+		displayed := response.Results
+		var choice string
+		for {
+			more := len(response.Results) == limit
+			fmt.Fprint(stdout, "\n  Open #")
+			if more {
+				fmt.Fprint(stdout, ", more for more results")
+			}
+			fmt.Fprint(stdout, " (or new search, q to quit): ")
+			line, err := reader.ReadString('\n')
+			if err != nil && line == "" {
+				return err
+			}
+			choice = strings.TrimSpace(line)
+			if !strings.EqualFold(strings.TrimPrefix(choice, "/"), "more") {
+				break
+			}
+			if !more {
+				fmt.Fprintln(stdout, "  No more results")
+				continue
+			}
+			limit += pageSize
+			response, err = session.Search(ctx, mode, query, limit, excluded...)
+			if err != nil {
+				return err
+			}
+			start := len(displayed)
+			displayed = appendUnseen(displayed, response.Results)
+			if len(displayed) == start {
+				fmt.Fprintln(stdout, "  No more results")
+				continue
+			}
+			fmt.Fprintln(stdout)
+			renderResults(stdout, displayed[start:], start)
 		}
-		choice = strings.TrimSpace(choice)
 		if choice == "" {
 			query = ""
 			continue
@@ -143,8 +195,8 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 		if strings.EqualFold(choice, "q") {
 			return nil
 		}
-		if idx, err := strconv.Atoi(choice); err == nil && idx >= 1 && idx <= len(response.Results) {
-			if chosen := response.Results[idx-1]; session.OpenResult(chosen) != nil {
+		if idx, err := strconv.Atoi(choice); err == nil && idx >= 1 && idx <= len(displayed) {
+			if chosen := displayed[idx-1]; session.OpenResult(chosen) != nil {
 				if IsDocumentSource(chosen.Filename) {
 					fmt.Fprintf(stdout, "  Could not open the document. It is on the drive at %s, %s\n", chosen.Filename, chosen.Path)
 				} else {
@@ -159,6 +211,23 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 		}
 		query = choice
 	}
+}
+
+// The larger search can reorder winners as its candidate pool grows.
+// Retain every displayed result at its original number.
+func appendUnseen(displayed, results []Result) []Result {
+	seen := make(map[[2]string]bool, len(displayed))
+	for _, result := range displayed {
+		seen[[2]string{result.Filename, result.Path}] = true
+	}
+	for _, result := range results {
+		key := [2]string{result.Filename, result.Path}
+		if !seen[key] {
+			displayed = append(displayed, result)
+			seen[key] = true
+		}
+	}
+	return displayed
 }
 
 func detectCapabilities(ctx context.Context, driveRoot string, db *sql.DB) (Capabilities, int, int, error) {

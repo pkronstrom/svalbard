@@ -1,0 +1,13 @@
+id: inkling-2-mini-vision
+type: gguf-mmproj
+display_group: models
+tags: [computing, vision]
+size_gb: 0.60
+filename: mmproj-Inkling-2-Mini-F16.gguf
+url: https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/07fb508609f0652b3f3b2dca32129fa2b8083260/mmproj-F16.gguf
+sha256: 3bff75ffeb2d6e0371ba7bd42e30d26a7d98aea681fa44b03b5a20891cfa2c5f
+description: Optional F16 vision projector for Inkling 2 Mini
+deps: [llama-server]
+license:
+  id: Apache-2.0
+  attribution: Thinking Machines Lab / Unsloth

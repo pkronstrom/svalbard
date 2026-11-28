@@ -50,8 +50,8 @@ func ScanZIMFiles(root string) ([]string, error) {
 	return files, nil
 }
 
-// IndexVault scans the vault's ZIM files and documents and builds a SQLite
-// FTS5 search index.
+// IndexVault registers embedded ZIM full-text indexes and builds a SQLite
+// FTS5 index for the remaining archives and documents.
 // Progress is reported per-file via onProgress. Text output goes to w.
 func IndexVault(root string, force bool, w io.Writer, onProgress func(IndexProgress)) error {
 	return IndexVaultContext(context.Background(), root, force, w, onProgress)
@@ -78,6 +78,15 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 	if err != nil {
 		return err
 	}
+	sizes := make(map[string]int64, len(zimFiles))
+	for _, filename := range zimFiles {
+		info, err := os.Stat(filepath.Join(root, "zim", filename))
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", filename, err)
+		}
+		sizes[filename] = info.Size()
+	}
+	sort.SliceStable(zimFiles, func(i, j int) bool { return sizes[zimFiles[i]] < sizes[zimFiles[j]] })
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -89,13 +98,13 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 	}
 
 	dbPath := filepath.Join(dataDir, "search.db")
-	db, err := searchdb.Open(dbPath)
+	previousDB, err := searchdb.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("opening search database: %w", err)
 	}
-	defer db.Close()
+	defer previousDB.Close()
 
-	indexed, err := db.IndexedSources()
+	indexed, err := previousDB.IndexedSources()
 	if err != nil {
 		return fmt.Errorf("reading indexed sources: %w", err)
 	}
@@ -106,6 +115,41 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 		// lost mount, not a removal: pruning them would empty the index.
 		if dir := sourceDir(source.Filename); missing[dir] {
 			return fmt.Errorf("the index holds sources from %s/, which is missing; not pruning them", dir)
+		}
+	}
+
+	plans := make([]searchdb.Source, 0, len(zimFiles))
+	var omitHTML []string
+	compact := false
+	for _, filename := range zimFiles {
+		old, known := indexedByFilename[filename]
+		plan, err := planZIMSearch(ctx, root, filename, old, force)
+		if err != nil {
+			return fmt.Errorf("inspecting index for %s: %w", filename, err)
+		}
+		plans = append(plans, plan)
+		if plan.NativeLanguage != "" {
+			omitHTML = append(omitHTML, filename)
+			compact = compact || known && old.NativeLanguage == ""
+		}
+	}
+	db := previousDB
+	var stagedPath string
+	if compact {
+		fmt.Fprintln(w, "Migrating search.db to reuse embedded ZIM indexes")
+		stageDir, err := os.MkdirTemp(dataDir, ".search-index-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(stageDir)
+		stagedPath = filepath.Join(stageDir, "search.db")
+		db, err = searchdb.Open(stagedPath)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		if err := db.CopyFallback(ctx, dbPath, omitHTML); err != nil {
+			return err
 		}
 	}
 
@@ -121,11 +165,11 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 	}
 	readers := newReaderSet()
 	defer readers.Close()
-	for _, zf := range zimFiles {
+	for _, plan := range plans {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		names, err := indexZIM(ctx, db, root, zf, force, indexedByFilename, readers, w, notify)
+		names, err := indexZIM(ctx, db, root, plan, force, indexedByFilename, readers, w, notify)
 		if err != nil {
 			return err
 		}
@@ -152,6 +196,30 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 	// Store metadata timestamp.
 	if err := db.SetMetaContext(ctx, "indexed_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
 		return fmt.Errorf("setting indexed_at metadata: %w", err)
+	}
+	if compact {
+		if err := db.CheckIntegrity(ctx); err != nil {
+			return fmt.Errorf("checking the compact search database: %w", err)
+		}
+		if err := db.PrepareReplacement(ctx); err != nil {
+			return fmt.Errorf("finishing the compact search database: %w", err)
+		}
+		if err := db.Close(); err != nil {
+			return err
+		}
+		if err := previousDB.PrepareReplacement(ctx); err != nil {
+			return fmt.Errorf("preparing the old search database for replacement (close any vault search sessions): %w", err)
+		}
+		if err := previousDB.Close(); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := os.Rename(stagedPath, dbPath); err != nil {
+			return fmt.Errorf("replacing search.db: %w", err)
+		}
+		fmt.Fprintln(w, "Replaced the old search database with the compact index")
 	}
 
 	return nil

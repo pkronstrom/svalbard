@@ -24,9 +24,14 @@ var qwen38ChatTemplate string
 
 // Context presets offered by the launch-time picker (in tokens).
 const (
-	CtxFast     = 8192   // snappier, less memory
-	CtxBalanced = 32768  // middle ground
-	CtxMax      = 131072 // host ceiling; may be slow / high memory
+	CtxFast     = 8192 // snappier, less memory
+	Ctx16K      = 16384
+	CtxBalanced = 32768 // middle ground
+	Ctx64K      = 65536
+	CtxMax      = 131072 // legacy 128K setting
+	Ctx256K     = 262144
+	Ctx512K     = 524288
+	CtxModelMax = -1 // resolve to the model's declared context before launch
 )
 
 // ExtraFlags returns the llama-server flags implied by a model's filename for
@@ -40,28 +45,50 @@ const (
 // users) both fail with "Context size has been exceeded" (b11840). One slot
 // queues the second request and gives each the full context.
 func ExtraFlags(modelPath string, ctxSize int) []string {
+	var flags []string
+	for _, option := range modelOptions(modelPath, ctxSize) {
+		flags = append(flags, option.flag)
+		if option.value != "" {
+			flags = append(flags, option.value)
+		}
+	}
+	return flags
+}
+
+type modelOption struct {
+	flag  string
+	value string // empty for switches that take no argument
+}
+
+func modelOptions(modelPath string, ctxSize int) []modelOption {
 	name := strings.ToLower(filepath.Base(modelPath))
 
-	flags := []string{"--ctx-size", strconv.Itoa(ctxSize), "--parallel", "1"}
+	options := []modelOption{{"--ctx-size", strconv.Itoa(ctxSize)}, {"--parallel", "1"}}
 	for _, param := range modelSampler(name) {
-		flags = append(flags, param.flag, param.value)
+		options = append(options, modelOption{param.flag, param.value})
 	}
 
 	// Qwen3.6 GGUF requires a q8_0 KV cache: q4/default desyncs its Gated
 	// DeltaNet state and corrupts long generations (Unsloth guidance). Flash
 	// attention is required for quantized V-cache and pairs with it.
 	if strings.Contains(name, "qwen3.6") || strings.Contains(name, "qwen3.8") {
-		flags = append(flags, "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0")
+		options = append(options, modelOption{"--flash-attn", "on"}, modelOption{"--cache-type-k", "q8_0"}, modelOption{"--cache-type-v", "q8_0"})
 	}
 	if strings.Contains(name, "qwen3.8") {
-		flags = append(flags, "--reasoning-effort", "medium", "--reasoning-preserve", "--jinja", "--chat-template", qwen38ChatTemplate)
+		options = append(options, modelOption{"--reasoning-effort", "medium"}, modelOption{"--reasoning-preserve", ""}, modelOption{"--jinja", ""}, modelOption{"--chat-template", qwen38ChatTemplate})
+	}
+	if strings.Contains(name, "inkling-2") {
+		options = append(options, modelOption{"--jinja", ""})
 	}
 
-	if draft, nMax, ok := packagedDraft(modelPath, name); ok {
-		flags = append(flags, "--spec-type", "draft-mtp", "--spec-draft-model", draft, "--spec-draft-n-max", nMax)
+	if draft, mode, nMax, ok := packagedDraft(modelPath, name); ok {
+		options = append(options, modelOption{"--spec-type", mode}, modelOption{"--spec-draft-model", draft}, modelOption{"--spec-draft-n-max", nMax})
+	}
+	if projector := VisionProjector(modelPath); projector != "" {
+		options = append(options, modelOption{"--mmproj", projector})
 	}
 
-	return flags
+	return options
 }
 
 type samplerParam struct {
@@ -88,6 +115,10 @@ func SamplingParams(modelName string) map[string]float64 {
 
 func modelSampler(name string) []samplerParam {
 	switch {
+	case strings.Contains(name, "inkling-2"):
+		return []samplerParam{
+			{"--temp", "temperature", "1.0"}, {"--top-k", "top_k", "0"}, {"--top-p", "top_p", "1.0"}, {"--min-p", "min_p", "0.0"},
+		}
 	case strings.Contains(name, "qwen3.8"):
 		return []samplerParam{
 			{"--temp", "temperature", "1.0"}, {"--top-k", "top_k", "20"}, {"--top-p", "top_p", "0.95"}, {"--min-p", "min_p", "0.0"},
@@ -106,20 +137,23 @@ func modelSampler(name string) []samplerParam {
 	}
 }
 
-// packagedDraft returns the optional Qwen3.8 27B MTP drafter installed under
-// models/draft/ (ai/mtp pack) when the target is one of the packaged quants.
-// Its presence is the opt-in: the drafter carries the same MTP layer as the
-// target, and speculation showed no decode gain on Apple Silicon Metal.
-// Gemma 4 drafters are deliberately not matched (slower on Metal).
-func packagedDraft(modelPath, name string) (string, string, bool) {
-	if !strings.HasPrefix(name, "qwen3.8-27b-") || !strings.HasSuffix(name, ".gguf") ||
-		!(strings.Contains(name, "ud-iq4_xs") || strings.Contains(name, "ud-q4_k_m") || strings.Contains(name, "ud-q6_k_xl")) {
-		return "", "", false
+// packagedDraft enables speculation when a supported target has its optional
+// companion installed under models/draft/.
+func packagedDraft(modelPath, name string) (path, mode, nMax string, ok bool) {
+	var filename string
+	switch {
+	case name == "inkling-2-mini-ud-q4_k_m.gguf":
+		filename, mode, nMax = "dspark-Inkling-2-Mini-Q8_0.gguf", "draft-dspark", "5"
+	case strings.HasPrefix(name, "qwen3.8-27b-") && strings.HasSuffix(name, ".gguf") &&
+		(strings.Contains(name, "ud-iq4_xs") || strings.Contains(name, "ud-q4_k_m") || strings.Contains(name, "ud-q6_k_xl")):
+		filename, mode, nMax = "mtp-Qwen3.8-27B-Q4_0.gguf", "draft-mtp", "2"
+	default:
+		return "", "", "", false
 	}
-	draft := filepath.Join(filepath.Dir(modelPath), "draft", "mtp-Qwen3.8-27B-Q4_0.gguf")
-	info, err := os.Stat(draft)
+	path = filepath.Join(filepath.Dir(modelPath), "draft", filename)
+	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() {
-		return "", "", false
+		return "", "", "", false
 	}
-	return draft, "2", true
+	return path, mode, nMax, true
 }

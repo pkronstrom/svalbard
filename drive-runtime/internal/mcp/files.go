@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"unicode/utf8"
 
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/htmlpack"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/workspace"
 )
 
@@ -29,11 +30,11 @@ const (
 )
 
 // FilesCapability exposes the drive's workspace folder via the MCP "file"
-// tools: list, read, write and edit, with no delete, move or execute. Only the
-// browser front end gets it; terminal harnesses bring their own file tools.
+// tools for the browser front end. Terminal harnesses bring their own file tools.
 type FilesCapability struct {
-	ws      *workspace.Workspace
-	baseURL string
+	ws        *workspace.Workspace
+	baseURL   string
+	driveRoot string
 }
 
 // NewFilesCapability creates the file tools for ws. baseURL is where the
@@ -43,11 +44,19 @@ func NewFilesCapability(ws *workspace.Workspace, baseURL string) *FilesCapabilit
 	return &FilesCapability{ws: ws, baseURL: baseURL}
 }
 
+// WithHTMLPacking returns the file tools with offline HTML packing enabled
+// using the installed library store at driveRoot.
+func (c *FilesCapability) WithHTMLPacking(driveRoot string) *FilesCapability {
+	configured := *c
+	configured.driveRoot = driveRoot
+	return &configured
+}
+
 func (c *FilesCapability) Tool() string { return "file" }
 
 func (c *FilesCapability) Actions() []ActionDef {
 	const pathDesc = "File path inside the workspace, for example: notes/page.html"
-	return []ActionDef{
+	actions := []ActionDef{
 		{
 			Name: "list",
 			Desc: "List the files and folders in the workspace, the one folder where you can save files. Returns each entry's path, type, size in bytes and modified time.",
@@ -88,9 +97,18 @@ func (c *FilesCapability) Actions() []ActionDef {
 			},
 		},
 	}
+	if c.driveRoot != "" {
+		actions = append(actions, ActionDef{
+			Name:   "pack_html",
+			Writes: true,
+			Desc:   "Pack an HTML page and its local assets and installed JS libraries into one offline file beside the source, named .packed.html. Put the returned Markdown link in your reply exactly as returned so the user can open the packed page.",
+			Params: []ParamDef{{Name: "path", Type: "string", Required: true, Desc: pathDesc}},
+		})
+	}
+	return actions
 }
 
-func (c *FilesCapability) Handle(_ context.Context, action string, params map[string]any) (ActionResult, error) {
+func (c *FilesCapability) Handle(ctx context.Context, action string, params map[string]any) (ActionResult, error) {
 	var result ActionResult
 	var err error
 	switch action {
@@ -102,6 +120,11 @@ func (c *FilesCapability) Handle(_ context.Context, action string, params map[st
 		result, err = c.handleWrite(params)
 	case "edit":
 		result, err = c.handleEdit(params)
+	case "pack_html":
+		if c.driveRoot == "" {
+			return ActionResult{}, fmt.Errorf("unknown file action: %s", action)
+		}
+		result, err = c.handlePackHTML(ctx, params)
 	default:
 		return ActionResult{}, fmt.Errorf("unknown file action: %s", action)
 	}
@@ -283,6 +306,21 @@ func (c *FilesCapability) handleWrite(params map[string]any) (ActionResult, erro
 		return ActionResult{}, err
 	}
 	return ActionResult{Data: c.change(rel, len(content), 0)}, nil
+}
+
+func (c *FilesCapability) handlePackHTML(ctx context.Context, params map[string]any) (ActionResult, error) {
+	name := getString(params, "path")
+	if name == "" {
+		return ActionResult{}, fmt.Errorf("missing required parameter: path, for example: notes/page.html")
+	}
+	packed, err := htmlpack.PackWorkspace(ctx, c.driveRoot, c.ws, name)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	return ActionResult{
+		Data: c.change(packed.Out, int(packed.Bytes), 0),
+		Text: strings.Join(append(packed.Notices, packed.Warnings...), "\n"),
+	}, nil
 }
 
 func (c *FilesCapability) handleEdit(params map[string]any) (ActionResult, error) {

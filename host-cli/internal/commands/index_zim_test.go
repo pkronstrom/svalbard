@@ -134,6 +134,54 @@ func TestIndexZIMSecondRunReadsNothing(t *testing.T) {
 	}
 }
 
+func TestKeywordMigrationKeepsFallbackAndDocuments(t *testing.T) {
+	root := zimVault(t)
+	book := filepath.Join(root, "books", "test.pdf")
+	if err := os.MkdirAll(filepath.Dir(book), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFile(t, filepath.Join("..", "pdfext", "testdata", "text.pdf"), book)
+	index(t, root)
+
+	path := filepath.Join(root, "zim", "native.zim")
+	copyFile(t, fixtureZIM("native.zim"), path)
+	ctx := context.Background()
+	legacy, err := searchdb.Open(filepath.Join(root, "data", "search.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := archiveSourceIdentity(ctx, path, "native.zim")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.Title, source.ReaderVersion = "Native Search", 1
+	err = legacy.ReplaceSource(ctx, source, []searchdb.Article{{Path: "/home", Title: "Native Search", Body: "Photosynthesis harvests sunlight."}})
+	legacy.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reads := countReads(t)
+	index(t, root)
+	if got := reads.Load(); got != 1 {
+		t.Errorf("migration read %d documents, want just the new embedded PDF", got)
+	}
+	counts := indexedCounts(t, root)
+	for name, want := range map[string]int64{"native.zim": 0, "native.zim/guide.pdf": 3, "documents.zim": 5,
+		"documents.zim/files/guide.pdf": 3, "books/test.pdf": 3} {
+		if got, ok := counts[name]; !ok || got != want {
+			t.Errorf("%s: %d articles (present %v), want %d", name, got, ok, want)
+		}
+	}
+	if lang := indexedSource(t, root, "native.zim").NativeLanguage; lang != "eng" {
+		t.Errorf("native search language = %q, want eng", lang)
+	}
+	hits, err := openIndex(t, root).Search("coolant", 10)
+	if err != nil || len(hits) < 2 {
+		t.Errorf("retained PDF search returned %d hits: %v", len(hits), err)
+	}
+}
+
 func TestIndexZIMUpgradesAnOldIndex(t *testing.T) {
 	root := zimVault(t)
 	copyFile(t, testSmallZIMPath(t), filepath.Join(root, "zim", "small.zim"))

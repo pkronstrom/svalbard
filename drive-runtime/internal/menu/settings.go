@@ -186,28 +186,16 @@ func (m *Model) scrollSettings() {
 	}
 }
 
-// settingsLayout is one frame of the Settings screen: fixed lines above and
-// below a list that scrolls. top ends and bottom begins with a blank line;
-// when the list scrolls those two lines carry the "more" marks, so the rows
-// keep their place on the screen.
-type settingsLayout struct {
-	top    []string
-	list   []string
-	bottom []string
-	offset int // first list line shown
-	window int // list lines shown; len(list) when everything fits
-}
-
 const settingsDescription = "Choices saved on this drive (.svalbard/settings.json)."
 
-func (m Model) settingsLayout() settingsLayout {
+func (m Model) settingsLayout() menuListLayout {
 	s := m.settings
 	width := m.width
 	if width <= 0 {
 		width = 80
 	}
 
-	layout := settingsLayout{top: []string{
+	layout := menuListLayout{top: []string{
 		m.theme.Title.Render("Svalbard / Settings"),
 		m.theme.Muted.Render(settingsDescription),
 	}}
@@ -306,15 +294,7 @@ func (m Model) settingsLayout() settingsLayout {
 		}
 	}
 
-	layout.window = len(layout.list)
-	if m.height > 0 {
-		if room := m.height - len(layout.top) - len(layout.bottom); len(layout.list) > room {
-			layout.window = max(1, room)
-		}
-	}
-	layout.offset = min(prevOffset, len(layout.list)-layout.window)
-	layout.offset = min(layout.offset, anchorLine)
-	layout.offset = max(layout.offset, cursorLine-layout.window+1, 0)
+	layout.fit(m.height, prevOffset, cursorLine, anchorLine)
 	return layout
 }
 
@@ -358,20 +338,7 @@ func settingHint(setting settings.Setting) string {
 }
 
 func renderSettingsView(m Model) string {
-	layout := m.settingsLayout()
-	end := layout.offset + layout.window
-	lines := append([]string(nil), layout.top...)
-	if layout.offset > 0 {
-		lines[len(lines)-1] = m.theme.Muted.Render(fmt.Sprintf("  ↑ %d more", layout.offset))
-	}
-	lines = append(lines, layout.list[layout.offset:end]...)
-	lines = append(lines, layout.bottom...)
-	if end < len(layout.list) {
-		lines[len(layout.top)+layout.window] = m.theme.Muted.Render(fmt.Sprintf("  ↓ %d more", len(layout.list)-end))
-	}
-	// No final newline: it would be one line more than the terminal has when
-	// the screen is exactly full, and scroll the title away.
-	return strings.Join(lines, "\n")
+	return m.settingsLayout().render(m.theme)
 }
 
 // wrapText breaks text at spaces into lines of at most width cells. A word

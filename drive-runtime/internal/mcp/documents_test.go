@@ -254,8 +254,8 @@ func TestReadDocumentPageComesFromTheIndex(t *testing.T) {
 		}
 	}
 	// kiwix-serve was never started for any of it.
-	if f.cap.kiwixCmd != nil || f.cap.kiwixErr != nil {
-		t.Errorf("a document read touched kiwix-serve: cmd %v, err %v", f.cap.kiwixCmd, f.cap.kiwixErr)
+	if len(f.cap.kiwix) != 0 {
+		t.Error("a document read started kiwix-serve")
 	}
 
 	// A long page comes in parts like any article.
@@ -333,8 +333,8 @@ func TestReadDocumentErrorsSayWhereToGo(t *testing.T) {
 			}
 		}
 	}
-	if f.cap.kiwixCmd != nil || f.cap.kiwixErr != nil {
-		t.Errorf("a failed document read touched kiwix-serve: cmd %v, err %v", f.cap.kiwixCmd, f.cap.kiwixErr)
+	if len(f.cap.kiwix) != 0 {
+		t.Error("a failed document read started kiwix-serve")
 	}
 }
 

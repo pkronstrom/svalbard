@@ -1,0 +1,16 @@
+id: inkling-2-mini-dspark
+type: gguf-mtp
+display_group: models
+tags:
+- computing
+- coding
+size_gb: 0.47
+filename: dspark-Inkling-2-Mini-Q8_0.gguf
+url: https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/583a137ae6974e57067e81288c012a92b3a162ae/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
+sha256: 3da00cf7c31bbe5662b3c0d373ecf782d74d32ef43990acc158ce60c2add72e0
+description: Optional Inkling 2 Mini DSpark Q8_0 drafter for speculative decoding with upstream llama.cpp v1.1.0 or newer. Speedup depends on hardware and workload.
+license:
+  id: Apache-2.0
+  attribution: Thinking Machines Lab / Unsloth
+draft_for: [inkling-2-mini]
+deps: [llama-server]

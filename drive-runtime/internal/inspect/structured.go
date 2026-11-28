@@ -35,11 +35,12 @@ type SourceInfo struct {
 
 // DriveStats holds aggregate drive statistics.
 type DriveStats struct {
-	Preset  string            `json:"preset"`
-	Region  string            `json:"region"`
-	Created string            `json:"created"`
-	Counts  map[string]int    `json:"counts"`
-	Sizes   map[string]string `json:"sizes"`
+	Preset       string            `json:"preset"`
+	Region       string            `json:"region"`
+	Created      string            `json:"created"`
+	Counts       map[string]int    `json:"counts"`
+	Sizes        map[string]string `json:"sizes"`
+	ReportedSize string            `json:"reported_size,omitempty"`
 }
 
 // DatabaseInfo describes a SQLite database on the drive. For a GeoPackage
@@ -130,6 +131,7 @@ func Stats(driveRoot string) (DriveStats, error) {
 
 	counts := map[string]int{}
 	sizes := map[string]string{}
+	var reportedBytes int64
 
 	for _, dir := range []string{"zim", "maps", "models", "data", "apps", "books", "bin"} {
 		full := filepath.Join(driveRoot, dir)
@@ -139,14 +141,20 @@ func Stats(driveRoot string) (DriveStats, error) {
 		}
 		counts[dir] = count
 		sizes[dir] = HumanSize(size)
+		reportedBytes += size
+	}
+	reportedSize := ""
+	if len(counts) > 0 {
+		reportedSize = HumanSize(reportedBytes)
 	}
 
 	return DriveStats{
-		Preset:  meta["preset"],
-		Region:  meta["region"],
-		Created: meta["created"],
-		Counts:  counts,
-		Sizes:   sizes,
+		Preset:       meta["preset"],
+		Region:       meta["region"],
+		Created:      meta["created"],
+		Counts:       counts,
+		Sizes:        sizes,
+		ReportedSize: reportedSize,
 	}, nil
 }
 
@@ -204,7 +212,7 @@ func listSQLiteTables(path string) ([]string, error) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+	rows, err := db.Query("SELECT name FROM pragma_table_list WHERE schema='main' AND type IN ('table','virtual') AND name NOT GLOB 'sqlite_*' ORDER BY name")
 	if err != nil {
 		return nil, err
 	}

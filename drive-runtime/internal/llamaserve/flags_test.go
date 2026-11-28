@@ -30,6 +30,7 @@ func TestExtraFlags(t *testing.T) {
 	}{
 		{"qwen3.5 gets ctx + sampling", "/d/models/Qwen3.5-9B-Q4_K_M.gguf", join(ctx, qwenSampling)},
 		{"gemma gets ctx + sampling", "/d/models/gemma-4-31B-it-qat-UD-Q4_K_XL.gguf", join(ctx, gemmaSampling)},
+		{"inkling gets untruncated sampling", "/d/models/Inkling-2-Mini-UD-Q4_K_M.gguf", join(ctx, []string{"--temp", "1.0", "--top-k", "0", "--top-p", "1.0", "--min-p", "0.0", "--jinja"})},
 		{"qwen3.6 moe adds kv guard", "/d/models/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", join(ctx, qwenSampling, qwen36KV)},
 		{"qwen3.6 mtp filename does not imply a built-in draft", "/d/models/Qwen3.6-27B-MTP-UD-Q4_K_XL.gguf", join(ctx, qwenSampling, qwen36KV)},
 		{"case insensitive", "/d/models/qwen3.6-27b-mtp.gguf", join(ctx, qwenSampling, qwen36KV)},
@@ -48,10 +49,11 @@ func TestExtraFlags(t *testing.T) {
 }
 
 func TestExtraFlagsUsesPackagedDraftOnlyForMatchingTarget(t *testing.T) {
-	for _, tc := range []struct{ target, draft, count string }{
-		{"Qwen3.8-27B-UD-IQ4_XS.gguf", "mtp-Qwen3.8-27B-Q4_0.gguf", "2"},
-		{"Qwen3.8-27B-UD-Q4_K_M.gguf", "mtp-Qwen3.8-27B-Q4_0.gguf", "2"},
-		{"Qwen3.8-27B-UD-Q6_K_XL.gguf", "mtp-Qwen3.8-27B-Q4_0.gguf", "2"},
+	for _, tc := range []struct{ target, draft, mode, count string }{
+		{"Qwen3.8-27B-UD-IQ4_XS.gguf", "mtp-Qwen3.8-27B-Q4_0.gguf", "draft-mtp", "2"},
+		{"Qwen3.8-27B-UD-Q4_K_M.gguf", "mtp-Qwen3.8-27B-Q4_0.gguf", "draft-mtp", "2"},
+		{"Qwen3.8-27B-UD-Q6_K_XL.gguf", "mtp-Qwen3.8-27B-Q4_0.gguf", "draft-mtp", "2"},
+		{"Inkling-2-Mini-UD-Q4_K_M.gguf", "dspark-Inkling-2-Mini-Q8_0.gguf", "draft-dspark", "5"},
 	} {
 		t.Run(tc.target, func(t *testing.T) {
 			models := filepath.Join(t.TempDir(), "models with spaces")
@@ -76,12 +78,12 @@ func TestExtraFlagsUsesPackagedDraftOnlyForMatchingTarget(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := ExtraFlags(target, 8192)
-			want := []string{"--spec-type", "draft-mtp", "--spec-draft-model", draft, "--spec-draft-n-max", tc.count}
+			want := []string{"--spec-type", tc.mode, "--spec-draft-model", draft, "--spec-draft-n-max", tc.count}
 			if len(got) < len(want) || !reflect.DeepEqual(got[len(got)-len(want):], want) {
-				t.Fatalf("packaged MTP flags = %v; want suffix %v", got, want)
+				t.Fatalf("packaged draft flags = %v; want suffix %v", got, want)
 			}
 			if n := strings.Count(strings.Join(got, " "), "--parallel 1"); n != 1 {
-				t.Fatalf("packaged MTP flags = %v; want --parallel 1 exactly once, got %d", got, n)
+				t.Fatalf("packaged draft flags = %v; want --parallel 1 exactly once, got %d", got, n)
 			}
 			if strings.Contains(strings.Join(ExtraFlags(filepath.Join(models, "other.gguf"), 8192), " "), "--spec-type") {
 				t.Fatal("draft must not be attached to a different model")
@@ -142,8 +144,8 @@ func TestContextForHostTiers(t *testing.T) {
 		{"16GB", 16, CtxBalanced},
 		{"24GB", 24, CtxBalanced},
 		{"32GB", 32, CtxBalanced},
-		{"64GB", 64, CtxMax},
-		{"128GB", 128, CtxMax},
+		{"64GB", 64, Ctx64K},
+		{"128GB", 128, Ctx64K},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

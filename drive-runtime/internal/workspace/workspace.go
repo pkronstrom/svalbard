@@ -5,12 +5,14 @@
 package workspace
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -30,7 +32,7 @@ const (
 // Workspace is the opened folder. All access goes through an os.Root, so a
 // path that slips past Resolve still cannot leave the folder.
 type Workspace struct {
-	dir  string // symlinks resolved, so resolved paths can be compared to it
+	dir  string // symlinks resolved when the workspace was opened
 	root *os.Root
 	opts Options
 }
@@ -120,30 +122,28 @@ func (w *Workspace) Resolve(name string) (string, error) {
 	return rel, nil
 }
 
-// checkLinks resolves the deepest part of rel that exists and rejects it when
-// a symlink takes it out of the workspace. Missing parts are created later
-// below that point, so they cannot be links.
+// checkLinks checks the deepest existing path through the opened root.
+// A dangling link is refused as well, because writes could go through it.
 func (w *Workspace) checkLinks(rel string) error {
 	outside := fmt.Errorf("path %q leaves the %s through a link; use a plain path inside the %s, for example: %s", rel, w.opts.Place, w.opts.Place, w.opts.Example)
-	for current := filepath.Join(w.dir, filepath.FromSlash(rel)); ; current = filepath.Dir(current) {
-		resolved, err := filepath.EvalSymlinks(current)
+	for current := rel; ; current = path.Dir(current) {
+		_, err := w.root.Stat(current)
 		switch {
 		case err == nil:
-			if resolved != w.dir && !strings.HasPrefix(resolved, w.dir+string(filepath.Separator)) {
-				return outside
-			}
 			return nil
 		case errors.Is(err, fs.ErrNotExist):
-			// A link whose target is missing would be created through.
-			if _, statErr := os.Lstat(current); statErr == nil {
+			// Another operation may have created a regular file since Stat.
+			if info, statErr := w.root.Lstat(current); statErr == nil && info.Mode()&fs.ModeSymlink != 0 {
 				return outside
 			}
 		case errors.Is(err, syscall.ENOTDIR):
 			// A file where a folder was expected; the operation reports it.
+		case errors.Is(err, fs.ErrPermission), errors.Is(err, fs.ErrClosed):
+			return describe(rel, err)
 		default:
-			return fmt.Errorf("cannot check path %q: %v", rel, pathErr(err))
+			return outside
 		}
-		if current == w.dir {
+		if current == "." {
 			return nil
 		}
 	}
@@ -175,29 +175,76 @@ func (w *Workspace) ReadDir(rel string) ([]fs.DirEntry, error) {
 // ReadFile returns the content of the regular file rel, refusing one larger
 // than maxBytes.
 func (w *Workspace) ReadFile(rel string, maxBytes int64) ([]byte, error) {
+	return w.ReadFileContext(context.Background(), rel, maxBytes)
+}
+
+// ReadFileContext bounds the bytes read even if the file grows after stat.
+func (w *Workspace) ReadFileContext(ctx context.Context, rel string, maxBytes int64) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	info, err := w.Stat(rel)
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case info.IsDir():
+	if info.IsDir() {
 		return nil, &refusal{fmt.Sprintf("%s is a folder, not a file", rel), ErrIsFolder}
-	case !info.Mode().IsRegular():
-		return nil, fmt.Errorf("%s is not a regular file and cannot be read", rel)
-	case info.Size() > maxBytes:
-		return nil, fmt.Errorf("%s is %d bytes, over the %d byte limit for reading", rel, info.Size(), maxBytes)
 	}
-	data, err := w.root.ReadFile(rel)
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file and cannot be read", rel)
+	}
+	f, err := w.root.OpenFile(rel, os.O_RDONLY|readNonblock, 0)
 	if err != nil {
 		return nil, describe(rel, err)
 	}
+	defer f.Close()
+	info, err = f.Stat()
+	if err != nil {
+		return nil, describe(rel, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file and cannot be read", rel)
+	}
+	if info.Size() > maxBytes {
+		return nil, fmt.Errorf("%s is %d bytes, over the %d byte limit for reading", rel, info.Size(), maxBytes)
+	}
+	data, err := io.ReadAll(io.LimitReader(contextReader{ctx: ctx, reader: f}, min(maxBytes, math.MaxInt64-1)+1))
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	if err != nil {
+		return nil, describe(rel, err)
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("%s exceeds the %d byte limit for reading", rel, maxBytes)
+	}
 	return data, nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
 }
 
 // WriteFile creates or replaces the file rel, creating its parent folders.
 // The content goes to a temporary file that is renamed into place, so a stick
 // pulled mid-write leaves the old file or the new one, never half of one.
 func (w *Workspace) WriteFile(rel string, data []byte) error {
+	return w.WriteFileContext(context.Background(), rel, data)
+}
+
+// WriteFileContext checks for cancellation before publishing the complete file.
+func (w *Workspace) WriteFileContext(ctx context.Context, rel string, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if rel == "." {
 		return fmt.Errorf("path is the %s folder itself; give a file name, for example: %s", w.opts.Place, w.opts.Example)
 	}
@@ -234,10 +281,16 @@ func (w *Workspace) WriteFile(rel string, data []byte) error {
 		err = closeErr
 	}
 	if err == nil {
+		err = ctx.Err()
+	}
+	if err == nil {
 		err = w.root.Rename(temp, rel)
 	}
 	if err != nil {
 		_ = w.root.Remove(temp)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		return describe(rel, err)
 	}
 	return nil

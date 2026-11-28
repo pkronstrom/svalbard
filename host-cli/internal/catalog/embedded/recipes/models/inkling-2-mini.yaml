@@ -1,0 +1,18 @@
+id: inkling-2-mini
+type: gguf
+display_group: models
+tags:
+- computing
+- coding
+- agentic
+depth: comprehensive
+size_gb: 15.47
+filename: Inkling-2-Mini-UD-Q4_K_M.gguf
+# Unsloth's mainline layout ships with a .gguf_file suffix. Install it as .gguf.
+url: https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/07fb508609f0652b3f3b2dca32129fa2b8083260/Mainline_Support/Inkling-2-Mini-UD-Q4_K_M.gguf_file
+sha256: 78fcedcf93c5d1bfe83e225513b71392bb52259be0eaa5f8899c856a2e5834ae
+deps: [llama-server]
+description: Inkling 2 Mini (Unsloth UD-Q4_K_M) — 26.4B looped MoE for coding and tool use, packaged for text inference with upstream llama.cpp v1.1.0 or newer
+license:
+  id: Apache-2.0
+  attribution: Thinking Machines Lab / Unsloth

@@ -302,7 +302,7 @@ func TestSettingsSubcommandNeedsNoActionsFile(t *testing.T) {
 		t.Fatalf("get: %q, %v", out, err)
 	}
 	out, err := runSubcommand(t, "settings")
-	if err != nil || !strings.Contains(out, "Local AI\n  ai.default_model    ask\n  ai.context        * balanced\n") {
+	if err != nil || !strings.Contains(out, "Local AI\n  ai.default_model     ask\n  ai.context         * balanced\n  ai.web_search        off\n") {
 		t.Fatalf("list: %q, %v", out, err)
 	}
 	if strings.ContainsAny(out, "\x1b\r") {
@@ -314,7 +314,7 @@ func TestSettingsSubcommandNeedsNoActionsFile(t *testing.T) {
 	}
 
 	if out, err := runSubcommand(t, "settings", "ai.context", "huge"); err == nil || out != "" ||
-		!strings.Contains(err.Error(), "is not one of ask, auto, fast, balanced, max") {
+		!strings.Contains(err.Error(), "is not one of ask, auto, fast, 16k, balanced, 64k, max, 256k, 512k, model-max") {
 		t.Fatalf("bad value: %q, %v", out, err)
 	}
 	// Everything else still needs the generated menu.

@@ -5,6 +5,8 @@ tags: [maps, viewer]
 depth: reference-only
 size_gb: 0.001
 description: MapLibre GL JS and PMTiles JS for the drive's map viewer
+menu:
+  hidden: true
 # The same npm tarballs and versions as js-maps (a catalog test checks
 # they match). Both stay on maplibre-gl 5.x: 6.x is ESM-only and the viewer
 # loads these files as classic scripts.

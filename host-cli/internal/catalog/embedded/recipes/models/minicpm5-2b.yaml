@@ -1,0 +1,12 @@
+id: minicpm5-2b
+type: gguf
+display_group: models
+tags: [computing, tool-calling]
+size_gb: 1.45
+url: https://huggingface.co/openbmb/MiniCPM5-2B-GGUF/resolve/8ad02b786ab81e33d465e1c80562640c55ab2877/MiniCPM5-2B-Q4_K_M.gguf
+sha256: ec2d5801640099e97d8d7e8003ad4d81f336e757811f03a26173dddf386602fd
+description: MiniCPM5 2B (OpenBMB Q4_K_M) for lightweight text chat and tool calls
+deps: [llama-server]
+license:
+  id: Apache-2.0
+  attribution: OpenBMB

@@ -36,6 +36,7 @@ const noEntryYet = "no menu entry yet"
 var supportOnlyTypes = map[string]string{
 	"gguf-embed":  "embedding model: Search uses it for semantic results",
 	"gguf-mtp":    "draft model: speeds up the chat model it is paired with",
+	"gguf-mmproj": "vision projector: adds image input to its chat model",
 	"python-venv": "the Python environment that Python packages run in",
 	"skills":      "procedures for the AI clients, which find them with skill_search",
 	"js-lib":      "browser libraries the AI clients' HTML skills pack into pages with svalbard-drive html pack",
@@ -52,7 +53,7 @@ var supportOnlyRecipes = map[string][]string{
 	"builds the Python environment during apply":           {"uv"},
 	"PlatformIO itself: the Embedded Dev Shell runs it":    {"platformio-core", "espidf-python"},
 	"Python libraries the AI clients' document skills run": {"py-docs"},
-	"dependency of the map viewer, which has its own rows": {"go-pmtiles", "dufs"},
+	"dependency of the map viewer, which has its own rows": {"go-pmtiles", "dufs", "maplibre-vendor"},
 	// Command-line tools: launching them from the menu is a later phase.
 	noEntryYet: {
 		"7z", "age", "caido", "chisel", "duckdb", "feroxbuster", "ffuf", "fzf", "gobuster", "httpx", "jq", "katana",

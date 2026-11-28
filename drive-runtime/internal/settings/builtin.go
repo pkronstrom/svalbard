@@ -13,6 +13,8 @@ import (
 const (
 	KeyDefaultModel = "ai.default_model"
 	KeyContext      = "ai.context"
+	KeyWebSearch    = "ai.web_search"
+	KeyWebSearchURL = "ai.web_search_url"
 )
 
 // Ask is the choice that leaves a built-in setting to be decided at launch.
@@ -47,20 +49,35 @@ func builtinGroups(driveRoot string) []Group {
 				Owner: "ai", Name: "context", Type: TypeChoice, Default: Ask,
 				Label:       "Context size",
 				Description: "how much of the conversation the model keeps in view. Larger is slower and needs more memory.",
-				Choices:     []string{Ask, "auto", "fast", "balanced", "max"},
+				Choices:     []string{Ask, "auto", "fast", "16k", "balanced", "64k", "max", "256k", "512k", "model-max"},
 				ChoiceLabels: map[string]string{
-					Ask:        askLabel,
-					"auto":     "Auto",
-					"fast":     "Fast",
-					"balanced": "Balanced",
-					"max":      "Max",
+					Ask:         askLabel,
+					"auto":      "Auto",
+					"fast":      "Fast",
+					"16k":       "16K",
+					"balanced":  "Balanced",
+					"64k":       "64K",
+					"max":       "128K",
+					"256k":      "256K",
+					"512k":      "512K",
+					"model-max": "Max",
 				},
 				ChoiceNotes: map[string]string{
-					"auto":     "sized for this computer's memory",
-					"fast":     fmtTokens(llamaserve.CtxFast) + ", snappier, less memory",
-					"balanced": fmtTokens(llamaserve.CtxBalanced),
-					"max":      fmtTokens(llamaserve.CtxMax) + ", may be slow, high memory",
+					"auto":      "sized for this computer's memory",
+					"fast":      fmtTokens(llamaserve.CtxFast) + ", snappier, less memory",
+					"balanced":  fmtTokens(llamaserve.CtxBalanced),
+					"256k":      "high memory",
+					"512k":      "high memory",
+					"model-max": "model limit, highest memory",
 				},
+			},
+			{
+				Owner: "ai", Name: "web_search", Type: TypeBool, Default: false,
+				Label: "Web search", Description: "Allow assistants to send public search queries to DuckDuckGo or your SearXNG server. Applies on the next launch.",
+			},
+			{
+				Owner: "ai", Name: "web_search_url", Type: TypeText, Default: "",
+				Label: "SearXNG URL", Description: "Optional server with JSON search enabled. Leave empty to use DuckDuckGo.",
 			},
 		},
 	}}
@@ -79,10 +96,20 @@ func (s *Store) ContextSize(autoCtx int, ask func(autoCtx int) int) int {
 		return autoCtx
 	case "fast":
 		return llamaserve.CtxFast
+	case "16k":
+		return llamaserve.Ctx16K
 	case "balanced":
 		return llamaserve.CtxBalanced
+	case "64k":
+		return llamaserve.Ctx64K
 	case "max":
 		return llamaserve.CtxMax
+	case "256k":
+		return llamaserve.Ctx256K
+	case "512k":
+		return llamaserve.Ctx512K
+	case "model-max":
+		return llamaserve.CtxModelMax
 	default:
 		return ask(autoCtx)
 	}

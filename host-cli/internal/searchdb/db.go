@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"time"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -26,6 +27,9 @@ type SemanticContract struct {
 	QueryPrefix string `json:"query_prefix"`
 	Dimensions  int    `json:"dimensions"`
 	Matryoshka  bool   `json:"matryoshka"`
+	// SourceSelectors is a canonical JSON array of exact filenames and
+	// directory prefixes. An empty value retains legacy full coverage.
+	SourceSelectors string `json:"source_selectors,omitempty"`
 }
 
 // Article represents an article to be indexed.
@@ -125,6 +129,7 @@ func Open(path string) (*DB, error) {
 		{"source_mtime_ns", "INTEGER"},
 		{"note", "TEXT"},
 		{"reader_version", "INTEGER"},
+		{"native_language", "TEXT"},
 	} {
 		var present int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, tableForColumn(column.name), column.name).Scan(&present); err != nil {
@@ -247,12 +252,16 @@ type Source struct {
 	// is a cache key, not a checksum: a ZIM indexed by an older reader is
 	// read again.
 	ReaderVersion int
+	// ZIMSearchKnown records that this archive was checked for full-text
+	// search. NativeLanguage is empty when SQLite indexes its HTML.
+	ZIMSearchKnown bool
+	NativeLanguage string
 }
 
 // IndexedSources returns all currently indexed source identities. Legacy rows
 // without an identity are returned with an empty UUID and are never current.
 func (d *DB) IndexedSources() ([]Source, error) {
-	rows, err := d.db.Query(`SELECT filename, title, COALESCE(source_uuid, ''), COALESCE(source_size, 0), COALESCE(source_mtime_ns, 0), COALESCE(note, ''), COALESCE(reader_version, 0) FROM sources ORDER BY filename`)
+	rows, err := d.db.Query(`SELECT filename, title, COALESCE(source_uuid, ''), COALESCE(source_size, 0), COALESCE(source_mtime_ns, 0), COALESCE(note, ''), COALESCE(reader_version, 0), native_language FROM sources ORDER BY filename`)
 	if err != nil {
 		return nil, fmt.Errorf("searchdb: query sources: %w", err)
 	}
@@ -261,9 +270,11 @@ func (d *DB) IndexedSources() ([]Source, error) {
 	var sources []Source
 	for rows.Next() {
 		var source Source
-		if err := rows.Scan(&source.Filename, &source.Title, &source.UUID, &source.Size, &source.ModTimeNS, &source.Note, &source.ReaderVersion); err != nil {
+		var language sql.NullString
+		if err := rows.Scan(&source.Filename, &source.Title, &source.UUID, &source.Size, &source.ModTimeNS, &source.Note, &source.ReaderVersion, &language); err != nil {
 			return nil, fmt.Errorf("searchdb: scan source: %w", err)
 		}
+		source.ZIMSearchKnown, source.NativeLanguage = language.Valid, language.String
 		sources = append(sources, source)
 	}
 	return sources, rows.Err()
@@ -322,6 +333,17 @@ func (s Source) IdentityCurrent(candidate Source) bool {
 // ReplaceSource atomically replaces a source's articles and identity. It
 // deletes embeddings explicitly because older databases did not cascade them.
 func (d *DB) ReplaceSource(ctx context.Context, source Source, articles []Article) error {
+	return d.ReplaceSourceStream(ctx, source, func(yield func(Article, error) bool) {
+		for _, article := range articles {
+			if !yield(article, nil) {
+				return
+			}
+		}
+	})
+}
+
+// ReplaceSourceStream rolls back when article extraction or insertion fails.
+func (d *DB) ReplaceSourceStream(ctx context.Context, source Source, articles iter.Seq2[Article, error]) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("searchdb: begin replacement: %w", err)
@@ -348,7 +370,7 @@ func (d *DB) ReplaceSource(ctx context.Context, source Source, articles []Articl
 		note = source.Note
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sources (filename, title, indexed_at, source_uuid, source_size, source_mtime_ns, note, reader_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(filename) DO UPDATE SET title=excluded.title, indexed_at=excluded.indexed_at, source_uuid=excluded.source_uuid, source_size=excluded.source_size, source_mtime_ns=excluded.source_mtime_ns, note=excluded.note, reader_version=excluded.reader_version`,
+		ON CONFLICT(filename) DO UPDATE SET title=excluded.title, indexed_at=excluded.indexed_at, source_uuid=excluded.source_uuid, source_size=excluded.source_size, source_mtime_ns=excluded.source_mtime_ns, note=excluded.note, reader_version=excluded.reader_version, native_language=NULL`,
 		source.Filename, source.Title, now, source.UUID, source.Size, source.ModTimeNS, note, source.ReaderVersion); err != nil {
 		return fmt.Errorf("searchdb: replace source: %w", err)
 	}
@@ -422,14 +444,17 @@ func (d *DB) PruneSources(ctx context.Context, present map[string]bool) error {
 	return nil
 }
 
-func insertArticles(ctx context.Context, tx *sql.Tx, sourceID int64, articles []Article) error {
+func insertArticles(ctx context.Context, tx *sql.Tx, sourceID int64, articles iter.Seq2[Article, error]) error {
 	stmt, err := tx.PrepareContext(ctx, "INSERT INTO articles (source_id, path, title, body, sections) VALUES (?, ?, ?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("searchdb: prepare insert: %w", err)
 	}
 	defer stmt.Close()
 
-	for _, a := range articles {
+	for a, extractErr := range articles {
+		if extractErr != nil {
+			return extractErr
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -541,7 +566,16 @@ func (d *DB) CompleteSemanticContract(ctx context.Context, contract SemanticCont
 		return nil
 	}
 	var missing int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM articles a WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.article_id=a.id)`).Scan(&missing); err != nil {
+	coverage := `SELECT COUNT(*) FROM articles a JOIN sources s ON s.id=a.source_id
+		WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.article_id=a.id)`
+	var args []any
+	if contract.SourceSelectors != "" {
+		coverage += ` AND EXISTS (SELECT 1 FROM json_each(?) selected
+			WHERE s.filename=selected.value OR
+				(substr(selected.value, -1)='/' AND substr(s.filename, 1, length(selected.value))=selected.value))`
+		args = append(args, contract.SourceSelectors)
+	}
+	if err := tx.QueryRowContext(ctx, coverage, args...).Scan(&missing); err != nil {
 		return err
 	}
 	if missing != 0 {

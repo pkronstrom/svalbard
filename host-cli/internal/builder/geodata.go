@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/downloader"
@@ -126,6 +127,9 @@ func buildPMTilesFromGeoJSON(ctx context.Context, root, workdir string, recipe c
 	}
 	maxZoom := configInt(recipe.Build.Config, "max_zoom", 14)
 	args := []string{"-o", output, "-l", layerName, "-z", strconv.Itoa(maxZoom), "--force"}
+	if recipe.Build.Config["drop_densest_as_needed"] == "true" {
+		args = append(args, "--drop-densest-as-needed")
+	}
 	args = append(args, inputs...)
 	if _, err := runToolCommand(ctx, root, workdir, BaseToolsImage, "tippecanoe", args); err != nil {
 		return nil, err
@@ -148,7 +152,8 @@ func firstFileWithExtension(root, extension string) (string, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == extension {
+		// AppleDouble metadata on FAT and exFAT retains the original extension.
+		if !entry.IsDir() && !strings.HasPrefix(entry.Name(), "._") && filepath.Ext(entry.Name()) == extension {
 			found = path
 			return filepath.SkipAll
 		}

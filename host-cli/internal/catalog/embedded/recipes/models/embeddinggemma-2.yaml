@@ -1,0 +1,20 @@
+id: embeddinggemma-2
+type: gguf-embed
+display_group: models
+tags:
+- embedding
+- search
+depth: reference-only
+size_gb: 0.31
+url: https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/6ea3e3a309d12a4779cfda98b8c19800d2d5da71/embeddinggemma-2-Q8_0.gguf
+sha256: 2188ac1deca4b77dffefd603c2776a9d76d9d74ec01841392982ebb840b09135
+description: EmbeddingGemma 2 text encoder from Google DeepMind, 256-dimensional multilingual search embeddings
+embedding:
+  doc_prefix: 'title: {title} | text: '
+  query_prefix: 'task: search result | query: '
+  dims: 256
+  matryoshka: true
+  max_input_tokens: 2048
+license:
+  id: Apache-2.0
+  attribution: Google DeepMind

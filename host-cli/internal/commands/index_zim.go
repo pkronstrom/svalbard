@@ -68,15 +68,33 @@ func (s *readerSet) Close() {
 	}
 }
 
+func planZIMSearch(ctx context.Context, root, filename string, stored searchdb.Source, force bool) (searchdb.Source, error) {
+	path := filepath.Join(root, "zim", filename)
+	identity, err := archiveSourceIdentity(ctx, path, filename)
+	if err != nil {
+		return searchdb.Source{}, err
+	}
+	if !force && stored.ZIMSearchKnown && stored.IdentityCurrent(identity) {
+		identity.NativeLanguage = stored.NativeLanguage
+		return identity, nil
+	}
+	archive, err := zimext.OpenIndexArchive(path)
+	if err != nil {
+		return searchdb.Source{}, err
+	}
+	defer archive.Close()
+	if archive.UUID() != identity.UUID {
+		return searchdb.Source{}, fmt.Errorf("archive changed while checking its search index")
+	}
+	identity.NativeLanguage = archive.FullTextLanguage()
+	return identity, nil
+}
+
 // indexZIM brings one ZIM's sources up to date and returns the names of all
 // of them, the ZIM's own and its documents', for the caller's prune.
-func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool, indexed map[string]searchdb.Source, readers *readerSet, w io.Writer, notify func(IndexProgress)) ([]string, error) {
+func indexZIM(ctx context.Context, db *searchdb.DB, root string, identity searchdb.Source, force bool, indexed map[string]searchdb.Source, readers *readerSet, w io.Writer, notify func(IndexProgress)) ([]string, error) {
+	zf := identity.Filename
 	path := filepath.Join(root, "zim", zf)
-	identity, err := archiveSourceIdentity(ctx, path, zf)
-	if err != nil {
-		notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
-		return nil, fmt.Errorf("reading identity for %s: %w", zf, err)
-	}
 	present := []string{zf}
 	stored, known := indexed[zf]
 	identityCurrent := known && stored.IdentityCurrent(identity)
@@ -86,19 +104,38 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 				present = append(present, name)
 			}
 		}
-		notify(IndexProgress{File: zf, Status: "skip", Detail: "already indexed"})
-		return present, nil
+		if identity.NativeLanguage != "" {
+			if !stored.ZIMSearchKnown || stored.NativeLanguage != identity.NativeLanguage {
+				identity.Title, identity.ReaderVersion = stored.Title, stored.ReaderVersion
+				if err := db.SetNativeZIM(ctx, identity); err != nil {
+					return nil, err
+				}
+			}
+			notify(IndexProgress{File: zf, Status: "skip", Detail: "using embedded full-text index"})
+			return present, nil
+		}
+		if stored.NativeLanguage == "" {
+			if !stored.ZIMSearchKnown {
+				if err := db.MarkSQLiteZIM(ctx, zf); err != nil {
+					return nil, err
+				}
+			}
+			notify(IndexProgress{File: zf, Status: "skip", Detail: "already indexed"})
+			return present, nil
+		}
+		present = present[:1]
 	}
 
-	archive, err := zimext.OpenArchive(path)
+	archive, err := zimext.OpenIndexArchive(path)
 	if err != nil {
 		notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
 		return nil, fmt.Errorf("opening %s: %w", zf, err)
 	}
 	defer archive.Close()
 
-	htmlStale := force || !identityCurrent
-	if !htmlStale && archive.HoldsDocuments() {
+	native := identity.NativeLanguage != ""
+	htmlStale := force || !identityCurrent || stored.NativeLanguage != ""
+	if !native && !htmlStale && archive.HoldsDocuments() {
 		// Indexed by an older reader: its pages need extracting again only
 		// if it kept files the HTML pass now leaves out. That web app is
 		// what an archive of documents wraps them in; an archive without
@@ -120,7 +157,7 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 			return nil, err
 		}
 	}
-	if htmlStale {
+	if !native && htmlStale {
 		if err := indexZIMPages(ctx, db, archive, path, zf, identity, notify); err != nil {
 			return nil, err
 		}
@@ -135,7 +172,25 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if native {
+		current, err := archiveSourceIdentity(ctx, path, zf)
+		if err != nil || current.UUID != archive.UUID() || !identity.IdentityCurrent(current) {
+			return nil, fmt.Errorf("source %s changed during indexing; retry indexing", zf)
+		}
+		identity.Title, identity.ReaderVersion = archive.Title(), zimReaderVersion
+		if identity.Title == "" {
+			identity.Title = strings.TrimSuffix(zf, filepath.Ext(zf))
+		}
+		if err := db.SetNativeZIM(ctx, identity); err != nil {
+			return nil, err
+		}
+		notify(IndexProgress{File: zf, Status: "done", Detail: "using embedded full-text index"})
+		return present, nil
+	}
 	if err := db.SetSourceReaderVersion(ctx, zf, zimReaderVersion); err != nil {
+		return nil, err
+	}
+	if err := db.MarkSQLiteZIM(ctx, zf); err != nil {
 		return nil, err
 	}
 	return present, nil
@@ -144,48 +199,52 @@ func indexZIM(ctx context.Context, db *searchdb.DB, root, zf string, force bool,
 // indexZIMPages is the HTML pass. The source it writes has reader version 0,
 // so the archive counts as unfinished until its documents are done too.
 func indexZIMPages(ctx context.Context, db *searchdb.DB, archive *zimext.Archive, path, zf string, identity searchdb.Source, notify func(IndexProgress)) error {
+	workers := zimext.IndexWorkers()
 	notify(IndexProgress{File: zf, Status: "extracting", Detail: "extracting articles..."})
-
-	articles, title, uuid, err := zimext.ExtractArticlesContext(ctx, path)
-	if errors.Is(err, zimext.ErrNoIndexableArticles) && archive.HoldsDocuments() {
-		// Its content is the documents inside.
-		articles, title, uuid, err = nil, archive.Title(), archive.UUID(), nil
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	if err != nil {
-		notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
-		return fmt.Errorf("extracting articles from %s: %w", zf, err)
-	}
+	title := archive.Title()
 	if title == "" {
 		title = strings.TrimSuffix(zf, filepath.Ext(zf))
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	current, err := archiveSourceIdentity(ctx, path, zf)
-	if err != nil {
-		return fmt.Errorf("rechecking identity for %s: %w", zf, err)
-	}
-	if current.UUID != uuid || !identity.IdentityCurrent(current) {
-		return fmt.Errorf("source %s changed during extraction; retry indexing", zf)
-	}
-
-	notify(IndexProgress{
-		File: zf, Status: "extracting",
-		Detail:  fmt.Sprintf("inserting %d articles...", len(articles)),
-		Current: int64(len(articles)), Total: int64(len(articles)),
-	})
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	identity.Title = title
 	identity.ReaderVersion = 0
-	if err := db.ReplaceSource(ctx, identity, articles); err != nil {
+	var count int64
+	err := db.ReplaceSourceStream(ctx, identity, func(yield func(searchdb.Article, error) bool) {
+		for article, err := range archive.Articles(ctx, workers) {
+			if errors.Is(err, zimext.ErrNoIndexableArticles) && archive.HoldsDocuments() {
+				// Its content is the documents inside.
+				break
+			}
+			if count == 0 && err == nil {
+				notify(IndexProgress{File: zf, Status: "extracting", Detail: "inserting articles..."})
+			}
+			if !yield(article, err) || err != nil {
+				return
+			}
+			count++
+			if count%50000 == 0 {
+				notify(IndexProgress{File: zf, Status: "extracting", Detail: fmt.Sprintf("processed %d articles", count), Current: count})
+			}
+		}
+		current, err := archiveSourceIdentity(ctx, path, zf)
+		if err != nil {
+			yield(searchdb.Article{}, fmt.Errorf("rechecking source identity: %w", err))
+		} else if current.UUID != archive.UUID() || !identity.IdentityCurrent(current) {
+			yield(searchdb.Article{}, fmt.Errorf("source %s changed during extraction; retry indexing", zf))
+		}
+	})
+	if err != nil {
+		if cancelErr := ctx.Err(); cancelErr != nil {
+			return cancelErr
+		}
+		notify(IndexProgress{File: zf, Status: "failed", Detail: err.Error()})
 		return fmt.Errorf("replacing articles for %s: %w", zf, err)
 	}
 	notify(IndexProgress{
 		File: zf, Status: "done",
-		Detail:  fmt.Sprintf("%d articles", len(articles)),
-		Current: int64(len(articles)), Total: int64(len(articles)),
+		Detail: fmt.Sprintf("%d articles", count), Current: count, Total: count,
 	})
 	return nil
 }

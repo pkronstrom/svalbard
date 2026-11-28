@@ -121,6 +121,7 @@ func TestApplyVaultResumesOnlyPendingRecipeAfterCancellation(t *testing.T) {
 	slowReceived := make(chan struct{})
 	var receivedOnce sync.Once
 	fastDone := make(chan struct{})
+	var firstCompletion apply.ProgressEvent
 	ctx, cancel := context.WithCancel(context.Background())
 	applyDone := make(chan error, 1)
 	go func() {
@@ -132,6 +133,7 @@ func TestApplyVaultResumesOnlyPendingRecipeAfterCancellation(t *testing.T) {
 				select {
 				case <-fastDone:
 				default:
+					firstCompletion = event
 					close(fastDone)
 				}
 			}
@@ -140,6 +142,9 @@ func TestApplyVaultResumesOnlyPendingRecipeAfterCancellation(t *testing.T) {
 	<-started
 	<-fastDone
 	<-slowReceived
+	if firstCompletion.ItemsDone != 1 || firstCompletion.ItemsTotal != 2 {
+		t.Errorf("first apply progress = %d/%d, want 1/2", firstCompletion.ItemsDone, firstCompletion.ItemsTotal)
+	}
 	during, err := manifest.Load(filepath.Join(root, "manifest.yaml"))
 	if err != nil || len(during.Realized.Entries) != 1 || during.Realized.Entries[0].ID != "fast" {
 		t.Fatalf("peer was not saved while other transfer blocked: %+v error=%v", during.Realized, err)
@@ -171,8 +176,16 @@ func TestApplyVaultResumesOnlyPendingRecipeAfterCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ApplyVault(context.Background(), root, cat); err != nil {
+	var resumedCompletion apply.ProgressEvent
+	if err := ApplyVault(context.Background(), root, cat, func(event apply.ProgressEvent) {
+		if event.ID == "slow" && event.Status == "done" {
+			resumedCompletion = event
+		}
+	}); err != nil {
 		t.Fatalf("resume apply: %v", err)
+	}
+	if resumedCompletion.ItemsDone != 1 || resumedCompletion.ItemsTotal != 1 {
+		t.Errorf("resumed apply progress = %d/%d, want 1/1", resumedCompletion.ItemsDone, resumedCompletion.ItemsTotal)
 	}
 	mu.Lock()
 	gotFast, gotSlow, gotRange := requests["/fast.zim"], requests["/slow.zim"], slowRange

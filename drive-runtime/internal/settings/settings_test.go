@@ -86,16 +86,21 @@ func TestBuiltinsWorkWithoutSchemaOrValuesFile(t *testing.T) {
 	root := newDrive(t, "")
 	store := mustOpen(t, root)
 
-	if got, want := store.Keys(), []string{"ai.default_model", "ai.context"}; !reflect.DeepEqual(got, want) {
+	if got, want := store.Keys(), []string{"ai.default_model", "ai.context", "ai.web_search", "ai.web_search_url"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Keys() = %v, want %v", got, want)
 	}
 	if group := store.Groups()[0]; group.Owner != "ai" || group.Label != "Local AI" {
 		t.Errorf("group = %q %q, want ai / Local AI", group.Owner, group.Label)
 	}
-	for _, key := range store.Keys() {
+	for _, key := range []string{KeyDefaultModel, KeyContext} {
 		if got := store.String(key); got != Ask {
 			t.Errorf("%s = %q, want the default %q", key, got, Ask)
 		}
+	}
+	if store.Bool(KeyWebSearch) || store.String(KeyWebSearchURL) != "" {
+		t.Fatal("Web search must be off without explicit settings")
+	}
+	for _, key := range store.Keys() {
 		if store.Changed(key) {
 			t.Errorf("%s reported as changed with no values file", key)
 		}
@@ -155,7 +160,7 @@ func TestSchemaFileCannotTakeOverABuiltinOwner(t *testing.T) {
 			{"name":"Bad-Name","type":"bool","default":false,"label":"L","description":"D"},
 			{"name":"bad_default","type":"choice","default":"z","choices":["a"],"label":"L","description":"D"}]}]}`)
 	store := mustOpen(t, root)
-	if got, want := store.Keys(), []string{"ai.default_model", "ai.context", "tool.ok"}; !reflect.DeepEqual(got, want) {
+	if got, want := store.Keys(), []string{"ai.default_model", "ai.context", "ai.web_search", "ai.web_search_url", "tool.ok"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Keys() = %v, want %v", got, want)
 	}
 	if context, _ := store.Lookup(KeyContext); context.Type != TypeChoice {
@@ -166,8 +171,8 @@ func TestSchemaFileCannotTakeOverABuiltinOwner(t *testing.T) {
 func TestUnreadableSchemaFileLeavesBuiltinsWorking(t *testing.T) {
 	root := newDrive(t, `{"version": 1, "groups": [`)
 	store := mustOpen(t, root)
-	if got := len(store.Keys()); got != 2 {
-		t.Fatalf("Keys() = %v, want the two built-ins", store.Keys())
+	if got := len(store.Keys()); got != 4 {
+		t.Fatalf("Keys() = %v, want the four built-ins", store.Keys())
 	}
 	problems := store.Problems()
 	if len(problems) != 1 || !strings.Contains(problems[0], schemaFile) || !strings.Contains(problems[0], "svalbard apply") {
@@ -254,14 +259,14 @@ func TestSetRejectsBadValuesNamingWhatIsValid(t *testing.T) {
 	root := newDrive(t, testSchema)
 	store := mustOpen(t, root)
 	for _, tc := range []struct{ key, value, want string }{
-		{KeyContext, "huge", `ai.context: "huge" is not one of ask, auto, fast, balanced, max`},
+		{KeyContext, "huge", `ai.context: "huge" is not one of ask, auto, fast, 16k, balanced, 64k, max, 256k, 512k, model-max`},
 		{KeyDefaultModel, "llama-99", "is not one of ask, Qwen3.8-27B-UD-IQ4_XS, gemma-4-12B-it-qat"},
 		{"open-webui.open_browser", "maybe", `"maybe" is not on or off`},
 		{"radio-tool.band", "hf", "is not one of vhf, uhf"},
 		{"radio-tool.gain", "loud", `"loud" is not a number (1 to 10)`},
 		{"radio-tool.gain", "11", "11 is outside 1 to 10"},
 		{"radio-tool.station", "two\nlines", "more than one line"},
-		{"radio-tool.volume", "3", `unknown setting "radio-tool.volume"; settings on this drive: ai.default_model, ai.context, open-webui.open_browser`},
+		{"radio-tool.volume", "3", `unknown setting "radio-tool.volume"; settings on this drive: ai.default_model, ai.context, ai.web_search, ai.web_search_url, open-webui.open_browser`},
 	} {
 		err := store.Set(tc.key, tc.value)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -308,7 +313,7 @@ func TestBadSavedValuesAreIgnoredAndReported(t *testing.T) {
 
 	problems := strings.Join(store.Problems(), "\n")
 	for _, want := range []string{
-		`ai.context: saved value "huge" is not one of ask, auto, fast, balanced, max; using ask`,
+		`ai.context: saved value "huge" is not one of ask, auto, fast, 16k, balanced, 64k, max, 256k, 512k, model-max; using ask`,
 		`open-webui.open_browser: saved value "no" is not true or false; using on`,
 		`radio-tool.gain: saved value 99 is outside 1 to 10; using 5`,
 		`radio-tool.band: saved value 3 is not one of vhf, uhf; using vhf`,
@@ -500,7 +505,9 @@ func TestContextSizeFollowsTheSetting(t *testing.T) {
 	root := newDrive(t, "")
 	const auto = 16384
 	for value, want := range map[string]int{
-		"auto": auto, "fast": llamaserve.CtxFast, "balanced": llamaserve.CtxBalanced, "max": llamaserve.CtxMax,
+		"auto": auto, "fast": llamaserve.CtxFast, "16k": llamaserve.Ctx16K, "balanced": llamaserve.CtxBalanced,
+		"64k": llamaserve.Ctx64K, "max": llamaserve.CtxMax, "256k": llamaserve.Ctx256K,
+		"512k": llamaserve.Ctx512K, "model-max": llamaserve.CtxModelMax,
 	} {
 		writeValues(t, root, `{"ai": {"context": "`+value+`"}}`)
 		asked := false

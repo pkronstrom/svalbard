@@ -273,19 +273,42 @@ func NewRootCommand() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
+			selectors, _ := cmd.Flags().GetStringArray("source")
+			model, _ := cmd.Flags().GetString("model")
+			keywordProgress := func(p commands.IndexProgress) {
+				if p.Status != "skip" {
+					fmt.Fprintf(out, "%s: %s\n", p.File, p.Detail)
+				}
+			}
 			switch kind, _ := cmd.Flags().GetString("type"); kind {
 			case "keyword":
-				return commands.IndexVaultContext(ctx, vaultRoot, false, out, nil)
+				if len(selectors) > 0 || model != "" {
+					return fmt.Errorf("--source and --model require --type semantic")
+				}
+				return commands.IndexVaultContext(ctx, vaultRoot, false, out, keywordProgress)
 			case "semantic":
-				return commands.IndexSemantic(ctx, vaultRoot, false, out, nil)
+				progress := func(p commands.SemanticProgress) {
+					if p.Status == "starting" || p.Status == "done" {
+						if p.File != "" {
+							fmt.Fprintf(out, "%s: ", p.File)
+						}
+						fmt.Fprintln(out, p.Detail)
+					}
+				}
+				return commands.IndexSemanticSelected(ctx, vaultRoot, false, out, progress, selectors, model)
 			case "full":
-				return commands.RunConfiguredIndex(ctx, vaultRoot, "full", out, nil, nil)
+				if len(selectors) > 0 || model != "" {
+					return fmt.Errorf("--source and --model require --type semantic")
+				}
+				return commands.RunConfiguredIndex(ctx, vaultRoot, "full", out, keywordProgress, nil)
 			default:
 				return fmt.Errorf("unknown index type %q; use keyword, semantic or full", kind)
 			}
 		},
 	}
 	indexCmd.Flags().String("type", "keyword", "what to build: keyword, semantic (needs an embedding model on the vault) or full (both)")
+	indexCmd.Flags().StringArray("source", nil, "indexed filename or directory prefix ending in / to embed (repeatable)")
+	indexCmd.Flags().String("model", "", "embedding GGUF filename under models/embed/")
 
 	root.AddCommand(
 		newInitCommand(),
