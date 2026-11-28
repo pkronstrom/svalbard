@@ -1,9 +1,12 @@
 package mapview
 
 import (
-	_ "embed"
+	"bytes"
+	"embed"
 	"html/template"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 )
 
@@ -28,6 +31,12 @@ type templateData struct {
 
 //go:embed viewer.html
 var htmlTemplate string
+
+// The atlas typefaces: label glyph ranges for MapLibre and web fonts for the
+// page around the map.
+//
+//go:embed glyphs fonts
+var assets embed.FS
 
 // The maplibre-vendor app-bundle installs into apps/maplibre-vendor/vendor/,
 // a sibling of this viewer's apps/map/ directory.
@@ -63,6 +72,10 @@ func Generate(root string, layers []Layer) error {
 		return err
 	}
 
+	if err := writeAssets(dir); err != nil {
+		return err
+	}
+
 	tmpl, err := template.New("mapview").Parse(htmlTemplate)
 	if err != nil {
 		return err
@@ -82,4 +95,27 @@ func Generate(root string, layers []Layer) error {
 		PMTilesJSPath:   pmTilesJSPath,
 	}
 	return tmpl.Execute(f, data)
+}
+
+// writeAssets copies the glyphs and fonts beside the viewer. A file that
+// already holds the same bytes is left alone, so a re-apply does not rewrite
+// a removable drive.
+func writeAssets(dir string) error {
+	return fs.WalkDir(assets, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || path.Ext(name) == ".md" {
+			return err
+		}
+		data, err := assets.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dir, filepath.FromSlash(name))
+		if current, err := os.ReadFile(target); err == nil && bytes.Equal(current, data) {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
 }

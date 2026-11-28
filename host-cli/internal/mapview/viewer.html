@@ -8,6 +8,9 @@
 <script src="{{.MapLibreJSPath}}"></script>
 <script src="{{.PMTilesJSPath}}"></script>
 <style>
+@font-face { font-family: "EB Garamond"; src: url("fonts/eb.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "EB Garamond"; src: url("fonts/italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Plex Mono"; src: url("fonts/mono.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 * { box-sizing: border-box }
 body { margin:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(172px,21%); background:#f7f7f2; color:#171b1c; font:16px/1.4 "EB Garamond",Georgia,serif; }
 #map { width:100%; height:100vh; height:100dvh; }
@@ -37,6 +40,7 @@ input { accent-color:#35585e; }
 <details open><summary>Map layers</summary>
 {{range $i, $l := .Layers}}<label><input id="layer-{{$i}}" type="{{if eq $l.Category "basemap"}}radio{{else}}checkbox{{end}}" {{if eq $l.Category "basemap"}}name="basemap"{{end}} disabled> {{$l.Name}}</label>
 {{end}}
+<label><input id="graticule-toggle" type="checkbox" disabled> Graticule</label>
 </details>
 <p id="basemap-note" hidden>No basemap on this drive, so overlays show on plain paper. Add a basemap such as an OpenStreetMap extract with the Svalbard host.</p>
 <button id="fit-layer" type="button" disabled>Fit visible layers</button>
@@ -51,46 +55,125 @@ function report(message) {
   document.querySelector('#errors').textContent = Array.from(errors).join(' · ');
 }
 
-const colors = {
-  earth: '#eceade', landcover: '#c9debc', landuse: '#dae1c7', park: '#c1d9b5',
-  water: '#9acbd8', waterways: '#72b5cd', buildings: '#c6b9a9', roads: '#fffdf3',
-  boundaries: '#9a8d96', transit: '#a89d98'
+// The atlas palette: paper land, glacier water, ink lines and ochre notes,
+// as on the cover plate. Overlay recipes keep their own colours.
+const atlas = {
+  paper:'#f7f7f2', sea:'#b9c9c6', shore:'#35585e', river:'#7f9e9e',
+  forest:'#ebeee5', green:'#e8ece2', grass:'#f0f2ea', farm:'#f3f2ea', glacier:'#eef3f2',
+  barren:'#efece4', urban:'#ebe9e2', industrial:'#e5e2da', building:'#dedad1', buildingLine:'#b5b1a6',
+  ink:'#171b1c', road:'#4c5a59', minor:'#8f9895', path:'#8c7b5a', boundary:'#a18a64',
+  label:'#1f2a29', muted:'#4c5a59', water:'#35585e', halo:'#f7f7f2', grid:'#687774'
 };
-const landColor = ['match', ['get','kind'],
-  ['wood','forest','nature_reserve'], '#b6d2ad', ['park','grass','meadow','grassland'], '#cce0b7',
-  ['industrial','commercial'], '#ddd6ce', 'residential', '#e8e2d7', '#dce2ca'];
-const roadColor = ['match',['get','kind'],
-  ['highway','major_road'], '#e9b776', ['path','other'], '#c2bba6', '#fffdf3'];
-const roadWidth = ['interpolate',['linear'],['zoom'],
-  5, 0.6, 11, ['match',['get','kind'],['highway','major_road'],2.8,1.1],
-  16, ['match',['get','kind'],['highway','major_road'],9,4]];
+const serif = ['EB Garamond Regular'], italic = ['EB Garamond Italic'], mono = ['Plex Mono Regular'];
+const zoomed = (...stops) => ['interpolate',['exponential',1.4],['zoom'],...stops];
+const name = ['coalesce',['get','name'],['get','name:en'],''];
+// A zoom curve must be the outermost expression, so each stop picks a width
+// for the given kinds and another for the rest.
+const byKind = (kinds, ...stops) => ['interpolate',['exponential',1.4],['zoom'],
+  ...stops.flatMap(([zoom, match, rest]) => [zoom, ['match',['get','kind'],kinds,match,rest]])];
+const halo = {'text-halo-color':atlas.halo,'text-halo-width':1.4,'text-halo-blur':0.4};
 
+// Stipple and hatch fills are drawn here, so the drive needs no sprite sheet.
+function patternImage(id) {
+  const size = 12, data = new Uint8Array(size*size*4);
+  const ink = id === 'stipple' ? [118,138,112,150] : [128,140,120,110];
+  const dot = (x,y) => { const i=(y*size+x)*4; data.set(ink,i); };
+  if (id === 'stipple') { dot(2,3); dot(8,9); dot(9,2); dot(3,9); }
+  else if (id === 'hatch') { for (let i=0;i<size;i++) dot(i,(size-1-i)); }
+  else return null;
+  return {width:size, height:size, data};
+}
+
+// Protomaps basemaps (earth, water, roads, places…) get the full atlas plate.
+function protomapsLayers(source) {
+  const layer = (id, type, sourceLayer, extra) => ({id:source+'-'+id, type, source, 'source-layer':sourceLayer, ...extra});
+  const kind = (...kinds) => ['in',['get','kind'],['literal',kinds]];
+  const polygons = ['==',['geometry-type'],'Polygon'], lines = ['==',['geometry-type'],'LineString'];
+  return [
+    layer('earth','fill','earth',{paint:{'fill-color':atlas.paper}}),
+    layer('coast','line','earth',{paint:{'line-color':atlas.shore,'line-width':zoomed(5,0.4,12,0.9,16,1.4),'line-opacity':0.75}}),
+    layer('landcover','fill','landcover',{paint:{'fill-color':['match',['get','kind'],
+      'forest',atlas.forest,['grassland','scrub'],atlas.grass,'farmland',atlas.farm,'glacier',atlas.glacier,
+      'barren',atlas.barren,'urban_area',atlas.urban,atlas.paper],'fill-opacity':0.9}}),
+    layer('woods','fill','landcover',{filter:kind('forest'),minzoom:9,paint:{'fill-pattern':'stipple','fill-opacity':0.8}}),
+    layer('landuse','fill','landuse',{filter:polygons,paint:{'fill-color':['match',['get','kind'],
+      ['wood','forest','nature_reserve','national_park','protected_area'],atlas.forest,
+      ['park','garden','golf_course','cemetery','grass','meadow','village_green','recreation_ground'],atlas.green,
+      ['farmland','farmyard','orchard','allotments'],atlas.farm,
+      ['industrial','commercial','railway','military','retail'],atlas.industrial,
+      ['residential','school','university','hospital','college'],atlas.urban,
+      ['beach','sand','bare_rock','scree'],atlas.barren, atlas.paper],'fill-opacity':0.85}}),
+    layer('wetland','fill','landuse',{filter:kind('wetland','marsh','swamp','bog'),minzoom:10,paint:{'fill-pattern':'hatch','fill-opacity':0.7}}),
+    layer('water','fill','water',{filter:polygons,paint:{'fill-color':atlas.sea}}),
+    layer('shore','line','water',{filter:polygons,minzoom:8,paint:{'line-color':atlas.shore,'line-width':zoomed(8,0.3,14,0.8),'line-opacity':0.55}}),
+    layer('rivers','line','water',{filter:lines,paint:{'line-color':atlas.river,
+      'line-width':byKind(['river','canal'],[8,0.6,0.2],[14,2.2,0.7],[18,6,1.6])}}),
+    layer('buildings','fill','buildings',{minzoom:13,paint:{'fill-color':atlas.building,'fill-outline-color':atlas.buildingLine}}),
+    layer('boundaries','line','boundaries',{paint:{'line-color':atlas.boundary,
+      'line-width':byKind(['country'],[3,0.8,0.4],[10,1.6,1]),
+      'line-dasharray':['literal',[5,2,1,2]],'line-opacity':0.85}}),
+    layer('paths','line','roads',{filter:kind('path','other'),minzoom:13,paint:{'line-color':atlas.path,'line-width':zoomed(13,0.5,18,1.4),'line-dasharray':['literal',[2,1.5]]}}),
+    layer('rail','line','roads',{filter:kind('rail'),paint:{'line-color':atlas.ink,'line-width':zoomed(8,0.4,16,1.4),'line-dasharray':['literal',[6,3]]}}),
+    layer('streets','line','roads',{filter:kind('minor_road','medium_road'),minzoom:11,
+      layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':atlas.minor,'line-width':zoomed(10,0.3,14,1,18,5)}}),
+    // Main roads are engraved double lines: an ink casing around a paper core.
+    layer('main-casing','line','roads',{filter:kind('highway','major_road'),layout:{'line-cap':'round','line-join':'round'},
+      paint:{'line-color':atlas.road,'line-opacity':zoomed(5,0.55,10,0.9),'line-width':zoomed(5,0.4,9,0.8,12,2.6,16,7,18,14)}}),
+    layer('main','line','roads',{filter:kind('highway','major_road'),minzoom:10,layout:{'line-cap':'round','line-join':'round'},
+      paint:{'line-color':atlas.paper,'line-width':zoomed(10,0.5,12,1.4,16,5,18,11)}}),
+    layer('water-names','symbol','water',{filter:['!=',name,''],minzoom:9,
+      layout:{'text-field':name,'text-font':italic,'text-size':zoomed(9,11,16,15),'text-letter-spacing':0.08,
+        'symbol-placement':['step',['zoom'],'point',11,'line'],'text-max-width':8},
+      paint:{'text-color':atlas.water,...halo}}),
+    layer('road-names','symbol','roads',{filter:['all',['!=',name,''],kind('highway','major_road','medium_road','minor_road')],minzoom:13,
+      layout:{'text-field':name,'text-font':serif,'text-size':zoomed(13,10,18,14),'symbol-placement':'line','text-max-angle':30},
+      paint:{'text-color':atlas.muted,...halo}}),
+    layer('islands','symbol','earth',{filter:['!=',name,''],minzoom:10,
+      layout:{'text-field':name,'text-font':italic,'text-size':12},paint:{'text-color':atlas.muted,...halo}}),
+    layer('regions','symbol','places',{filter:kind('country','region'),maxzoom:10,
+      layout:{'text-field':name,'text-font':serif,'text-transform':'uppercase','text-letter-spacing':0.3,
+        'text-size':['match',['get','kind'],'country',15,11],'text-max-width':10},
+      paint:{'text-color':atlas.muted,...halo}}),
+    layer('neighbourhoods','symbol','places',{filter:kind('neighbourhood','macrohood'),minzoom:12,
+      layout:{'text-field':name,'text-font':italic,'text-size':12,'text-max-width':8},paint:{'text-color':atlas.muted,...halo}}),
+    // Cities in spaced capitals, towns and villages in plain serif, larger the earlier they appear.
+    layer('places','symbol','places',{filter:kind('locality'),
+      layout:{'text-field':name,'text-font':serif,'symbol-sort-key':['coalesce',['get','min_zoom'],20],'text-padding':4,
+        'text-transform':['match',['get','kind_detail'],'city','uppercase','none'],
+        'text-letter-spacing':['match',['get','kind_detail'],'city',0.12,0.02],
+        'text-size':['interpolate',['linear'],['zoom'],5,['match',['get','kind_detail'],'city',12,10],
+          12,['match',['get','kind_detail'],'city',18,['town'],15,13]],
+        'text-max-width':8},
+      paint:{'text-color':atlas.label,...halo}})
+  ];
+}
+
+// Any other basemap or overlay is styled per source layer.
 function paints(config, name) {
   if (config.Category !== 'basemap') {
     return config.Style || {
-      polygons: {'fill-color':'#4c9b74','fill-opacity':0.38},
-      lines: {'line-color':'#298167','line-width':2},
-      points: {'circle-color':'#c86739','circle-radius':4,'circle-stroke-color':'#fff','circle-stroke-width':1}
+      polygons: {'fill-color':atlas.boundary,'fill-opacity':0.28,'fill-outline-color':atlas.ink},
+      lines: {'line-color':atlas.ink,'line-width':1.4},
+      points: {'circle-color':atlas.boundary,'circle-radius':4,'circle-stroke-color':atlas.ink,'circle-stroke-width':1}
     };
   }
   const key = name.toLowerCase();
   if (['places','pois','physical_point','addresses'].includes(key)) return {};
-  const water = /water|järvi|jarvi|meri|joki|vesi/.test(key);
-  const fill = colors[key] || (water ? colors.water : '#c9d8bc');
-  return {
-    polygons: {'fill-color': ['landuse','landcover'].includes(key) ? landColor : fill},
-    lines: {'line-color': key === 'roads' ? roadColor : (water ? colors.waterways : colors[key] || '#979b88'),
-            'line-width': key === 'roads' ? roadWidth : 1.2},
-    points: {'circle-color': '#807964','circle-radius':2}
-  };
+  if (/korkeus|contour/.test(key)) return {lines:{'line-color':atlas.boundary,'line-width':0.5,'line-opacity':0.7}};
+  const water = /water|järvi|jarvi|meri|joki|vesi|lake|sea|river/.test(key);
+  if (water) return {polygons:{'fill-color':atlas.sea}, lines:{'line-color':atlas.river,'line-width':1}, points:{}};
+  if (/road|tie|katu|street|path|polku/.test(key)) return {lines:{'line-color':atlas.road,'line-width':zoomed(8,0.4,16,2)}};
+  if (/build|rakennus/.test(key)) return {polygons:{'fill-color':atlas.building,'fill-outline-color':atlas.buildingLine}};
+  if (/forest|metsä|metsa|wood/.test(key)) return {polygons:{'fill-color':atlas.forest}};
+  return {polygons:{'fill-color':atlas.urban,'fill-opacity':0.6}, lines:{'line-color':atlas.minor,'line-width':0.8}, points:{'circle-color':atlas.muted,'circle-radius':2}};
 }
-
 function vectorLayers(config, source, metadata) {
   const specs = metadata.vector_layers || [];
   const names = specs.map(layer => layer.id);
   if (!names.length && config.SourceLayer) names.push(config.SourceLayer);
   if (!names.length) throw Error('Archive does not identify any vector layers');
-  // Protomaps lists layers alphabetically. Paint land and water before buildings and roads.
+  if (config.Category === 'basemap' && ['earth','water','roads','places'].every(n => names.includes(n))) return protomapsLayers(source);
+  // Other archives list layers alphabetically. Paint land and water before buildings and roads.
   const order = ['earth','landcover','landuse','water','buildings','boundaries','transit','roads','places'];
   const rank = name => order.includes(name) ? order.indexOf(name) : 3.5;
   names.sort((a,b) => rank(a) - rank(b));
@@ -114,15 +197,53 @@ function vectorLayers(config, source, metadata) {
     if (!geom || geom === 'Point') add('circle','Point', style.points);
     if (config.Category === 'basemap' && name === 'places') {
       layers.push({id:source+'-labels', type:'symbol', source, 'source-layer':name,
-        layout:{'text-field':['coalesce',['get','name'],['get','name:en'],''], 'text-font':['sans-serif'],
+        layout:{'text-field':['coalesce',['get','name'],['get','name:en'],''], 'text-font':serif,
           'text-size':['interpolate',['linear'],['zoom'],4,11,14,16], 'text-padding':5,
           'symbol-sort-key':['coalesce',['get','min_zoom'],0]},
-        paint:{'text-color':'#384238','text-halo-color':'#fffff6','text-halo-width':1.5}});
+        paint:{'text-color':atlas.label,...halo}});
     }
   }
   return layers;
 }
 
+// The graticule: whole degrees, then half and tenth degrees as the map closes in.
+function graticule(bounds) {
+  const features = [];
+  const format = (value, axis) => {
+    const degrees = Math.floor(Math.abs(value) + 1e-9), minutes = Math.round((Math.abs(value) - degrees) * 60);
+    return degrees + '°' + (minutes ? String(minutes).padStart(2,'0') + '′' : '') + (axis === 'lat' ? (value < 0 ? 'S' : 'N') : (value < 0 ? 'W' : 'E'));
+  };
+  const [[w,s],[e,n]] = bounds;
+  for (const [step, level] of [[1,0],[0.5,1],[0.1,2]]) {
+    for (let lon = Math.ceil(w/step)*step; lon <= e + 1e-9; lon += step) {
+      const v = Math.round(lon*10)/10;
+      if (level && Math.abs(v/(step*(level===1?2:5)) - Math.round(v/(step*(level===1?2:5)))) < 1e-6) continue;
+      features.push({type:'Feature',properties:{level,label:format(v,'lon')},geometry:{type:'LineString',coordinates:[[v,s],[v,n]]}});
+    }
+    for (let lat = Math.ceil(s/step)*step; lat <= n + 1e-9; lat += step) {
+      const v = Math.round(lat*10)/10;
+      if (level && Math.abs(v/(step*(level===1?2:5)) - Math.round(v/(step*(level===1?2:5)))) < 1e-6) continue;
+      const points = [];
+      for (let x = w; x <= e + 1e-9; x += (e-w)/64) points.push([x, v]);
+      features.push({type:'Feature',properties:{level,label:format(v,'lat')},geometry:{type:'LineString',coordinates:points}});
+    }
+  }
+  return {type:'FeatureCollection',features};
+}
+// One line layer and one label layer per level: degrees always, half degrees
+// from zoom 8, tenths from zoom 11.
+function graticuleLayers() {
+  const lines = [], labels = [];
+  for (const [level, minzoom] of [[0,0],[1,8],[2,11]]) {
+    const filter = ['==',['get','level'],level];
+    lines.push({id:'graticule-'+level,type:'line',source:'graticule',filter,minzoom,
+      paint:{'line-color':atlas.grid,'line-width':level ? 0.4 : 0.6,'line-opacity':0.55,'line-dasharray':['literal',[2,3]]}});
+    labels.push({id:'graticule-labels-'+level,type:'symbol',source:'graticule',filter,minzoom,
+      layout:{'text-field':['get','label'],'text-font':mono,'text-size':10,'symbol-placement':'line','symbol-spacing':420,'text-letter-spacing':0.05},
+      paint:{'text-color':atlas.grid,...halo}});
+  }
+  return {lines, labels};
+}
 async function start() {
   if (location.protocol === 'file:') throw Error('Open Maps from the vault menu to serve local map files.');
   if (!window.pmtiles || !window.maplibregl) throw Error('The local map viewer libraries are missing.');
@@ -163,15 +284,27 @@ async function start() {
   const base = (enabled && loaded.find(a=>a.config.Category === 'basemap' && enabled.has(a.config.Filename))) || loaded.find(a => a.config.Category === 'basemap');
   const ordered = loaded.slice().sort((a,b) => Number(b.config.Category === 'basemap') - Number(a.config.Category === 'basemap'));
   const sources = {};
-  const layers = [{id:'paper',type:'background',paint:{'background-color':'#f4f1e7'}}];
+  // The sea is the page's background; land is drawn over it in paper.
+  const layers = [{id:'paper',type:'background',paint:{'background-color':base && base.layers.some(l=>l.id.endsWith('-earth')) ? atlas.sea : atlas.paper}}];
+  const labels = [];
   for (const a of ordered) {
     sources[a.source] = a.definition;
     a.input.checked = a.config.Category === 'basemap' ? a === base : !enabled || enabled.has(a.config.Filename);
     for (const layer of a.layers) {
       layer.layout = {...layer.layout, visibility:a.input.checked ? 'visible' : 'none'};
-      layers.push(layer);
+      if (layer.type === 'raster') layer.paint = {'raster-saturation':-0.55,'raster-contrast':-0.06,'raster-brightness-max':0.97};
+      (layer.type === 'symbol' ? labels : layers).push(layer);
     }
   }
+  // Graticule over the archives' extent, then every label above every fill and line.
+  const extent = loaded.reduce((b,{header:h}) => [[Math.min(b[0][0],h.minLon),Math.min(b[0][1],h.minLat)],[Math.max(b[1][0],h.maxLon),Math.max(b[1][1],h.maxLat)]],[[180,90],[-180,-90]]);
+  const pad = 2, gridBounds = [[Math.max(-180,Math.floor(extent[0][0])-pad),Math.max(-85,Math.floor(extent[0][1])-pad)],[Math.min(180,Math.ceil(extent[1][0])+pad),Math.min(85,Math.ceil(extent[1][1])+pad)]];
+  sources.graticule = {type:'geojson',data:graticule(gridBounds)};
+  const grid = document.querySelector('#graticule-toggle');
+  const gridLayers = graticuleLayers();
+  for (const layer of [...gridLayers.lines, ...gridLayers.labels]) layer.layout = {...layer.layout, visibility:saved?.graticule === false ? 'none' : 'visible'};
+  grid.checked = saved?.graticule !== false;
+  layers.push(...gridLayers.lines, ...labels, ...gridLayers.labels);
   document.querySelector('#basemap-note').hidden=Boolean(base);
   const fit=document.querySelector('#fit-layer');
   function fitVisible() {
@@ -184,7 +317,9 @@ async function start() {
     map.fitBounds(bounds,{padding:24,maxZoom:15,duration:0});
   }
   const h = (base || loaded.find(a=>a.input.checked) || loaded[0]).header;
-  const map = new maplibregl.Map({container:'map', style:{version:8,sources,layers},
+  // Glyphs for EB Garamond and Plex Mono ship beside this page.
+  const glyphs = location.href.replace(/[?#].*$/,'').replace(/[^/]*$/,'') + 'glyphs/{fontstack}/{range}.pbf';
+  const map = new maplibregl.Map({container:'map', style:{version:8,glyphs,sources,layers},
     bounds:[[h.minLon,h.minLat],[h.maxLon,h.maxLat]], fitBoundsOptions:{padding:32,maxZoom:15},
     attributionControl:{compact:false}});
   if (Array.isArray(saved?.center) && saved.center.length===2 && saved.center.every(Number.isFinite) && Number.isFinite(saved.zoom)) {
@@ -193,14 +328,23 @@ async function start() {
   const remember=()=>{
     const c=map.getCenter();
     document.querySelector('#coordinates').textContent=c.lat.toFixed(4)+'°, '+c.lng.toFixed(4)+'°';
-    try {sessionStorage.setItem(stateKey,JSON.stringify({center:[c.lng,c.lat],zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch(),enabled:loaded.filter(a=>a.input.checked).map(a=>a.config.Filename)}))} catch {}
+    try {sessionStorage.setItem(stateKey,JSON.stringify({center:[c.lng,c.lat],zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch(),enabled:loaded.filter(a=>a.input.checked).map(a=>a.config.Filename),graticule:grid.checked}))} catch {}
   };
   map.on('moveend',remember);
   remember();
   map.on('error', event => report(event.error.message));
+  map.on('styleimagemissing', event => {
+    const image = patternImage(event.id);
+    if (image && !map.hasImage(event.id)) map.addImage(event.id, image);
+  });
   map.addControl(new maplibregl.NavigationControl());
   map.addControl(new maplibregl.ScaleControl({unit:'metric'}), 'bottom-left');
   map.on('load', () => {
+    grid.disabled = false;
+    grid.addEventListener('change', () => {
+      for (const layer of [...gridLayers.lines, ...gridLayers.labels]) map.setLayoutProperty(layer.id,'visibility',grid.checked ? 'visible' : 'none');
+      remember();
+    });
     fit.disabled=!loaded.some(a=>a.input.checked);
     fit.onclick=fitVisible;
     for (const a of loaded) {

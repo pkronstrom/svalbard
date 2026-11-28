@@ -614,7 +614,7 @@ function renderItem() {
       select.addEventListener("change", () => { model = select.value; });
       controls.append(select);
     }
-    let start = item.label === "Share on Local Network" ? "Share drive" : startLabels[item.icon] || "Start service";
+    let start = item.id === "share-files" ? "Share drive" : startLabels[item.icon] || "Start service";
     if (readerKinds.has(item.icon)) start = "Serve & open";
     if (state.status === "failed") start = "Retry";
     controls.append(button(start, "primary", () => act(item)));

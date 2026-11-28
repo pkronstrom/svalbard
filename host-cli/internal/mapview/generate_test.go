@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeVendorBundle(t *testing.T, root string) {
@@ -101,5 +102,34 @@ func TestGenerateRequiresVendorBundle(t *testing.T) {
 	err := Generate(root, []Layer{{Name: "OSM", Filename: "osm.pmtiles"}})
 	if err == nil {
 		t.Fatal("expected error when vendor bundle is missing")
+	}
+}
+
+func TestGenerateWritesAtlasTypefacesOnce(t *testing.T) {
+	root := t.TempDir()
+	writeVendorBundle(t, root)
+	if err := Generate(root, []Layer{{Name: "OSM", Filename: "osm.pmtiles", Category: "basemap"}}); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "apps", "map")
+	for _, rel := range []string{"glyphs/EB Garamond Regular/0-255.pbf", "glyphs/EB Garamond Italic/256-511.pbf", "glyphs/Plex Mono Regular/8192-8447.pbf", "fonts/eb.woff2"} {
+		if info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err != nil || info.Size() == 0 {
+			t.Fatalf("%s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "glyphs", "README.md")); !os.IsNotExist(err) {
+		t.Errorf("the regeneration note belongs in the source tree, not the drive: %v", err)
+	}
+	// An unchanged file keeps its modification time on the next apply.
+	glyph := filepath.Join(dir, "glyphs", "EB Garamond Regular", "0-255.pbf")
+	past := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(glyph, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := Generate(root, nil); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(glyph); err != nil || !info.ModTime().Equal(past) {
+		t.Errorf("unchanged glyph rewritten: %v", err)
 	}
 }
