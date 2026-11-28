@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -216,6 +217,47 @@ func ReadManifestRecipes(path string) (map[string]string, error) {
 		}
 	}
 	return recipes, scanner.Err()
+}
+
+// ReadManifestSizes totals the realized size_bytes of each recipe in
+// manifest.yaml. A recipe that installed several files reports their sum.
+func ReadManifestSizes(path string) (map[string]int64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return map[string]int64{}, err
+	}
+	defer file.Close()
+
+	sizes := map[string]int64{}
+	inRealized, id := false, ""
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		raw := scanner.Text()
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if raw[0] != ' ' && raw[0] != '\t' && raw[0] != '-' {
+			inRealized, id = strings.HasPrefix(line, "realized:"), ""
+			continue
+		}
+		if !inRealized {
+			continue
+		}
+		if value, ok := manifestScalar(line, "- id:"); ok {
+			id = value
+			continue
+		}
+		if strings.HasPrefix(line, "- ") {
+			id = ""
+		}
+		if value, ok := manifestScalar(line, "size_bytes:"); ok && id != "" {
+			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n > 0 {
+				sizes[id] += n
+			}
+		}
+	}
+	return sizes, scanner.Err()
 }
 
 // manifestScalar returns the value of "key value" with any quotes removed.

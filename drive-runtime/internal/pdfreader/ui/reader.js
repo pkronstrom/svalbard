@@ -28,9 +28,11 @@ async function openDocument() {
   const page = get("page"), zoom = get("zoom");
   page.max = doc.numPages;
   get("total").textContent = "of " + doc.numPages;
+  // The dashboard keeps the page on the drive; this origin changes per launch.
   function currentPage() {
     page.value = viewer.currentPageNumber;
     try {sessionStorage.setItem(position,page.value);} catch {}
+    if (parent !== window) parent.postMessage({svalbardReader: {page: viewer.currentPageNumber, pages: doc.numPages}}, "*");
     get("previous").disabled = viewer.currentPageNumber <= 1;
     get("next").disabled = viewer.currentPageNumber >= doc.numPages;
   }
@@ -75,6 +77,46 @@ async function openDocument() {
   }).observe(get("pages"));
   links.setDocument(doc);
   viewer.setDocument(doc);
+  showOutline(await doc.getOutline().catch(() => null), links);
+}
+
+// The document's own bookmarks, as a collapsible margin beside the pages.
+function showOutline(outline, links) {
+  if (!outline?.length) return;
+  const nav = get("outline"), toggle = get("outline-toggle");
+  function list(items, depth) {
+    const ol = document.createElement("ol");
+    for (const entry of items.slice(0, 2000)) {
+      const li = document.createElement("li");
+      if (entry.dest) {
+        const go = document.createElement("button");
+        go.type = "button";
+        go.textContent = entry.title || "Untitled";
+        go.onclick = () => {
+          links.goToDestination(entry.dest);
+          if (matchMedia("(max-width: 640px)").matches) setOpen(false);
+        };
+        li.append(go);
+      } else {
+        const label = document.createElement("span");
+        label.className = "label";
+        label.textContent = entry.title || "";
+        li.append(label);
+      }
+      if (entry.items?.length && depth < 4) li.append(list(entry.items, depth + 1));
+      ol.append(li);
+    }
+    return ol;
+  }
+  nav.append(list(outline, 0));
+  function setOpen(open) {
+    nav.hidden = !open;
+    document.body.classList.toggle("outline-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+  }
+  toggle.hidden = false;
+  toggle.onclick = () => setOpen(nav.hidden);
+  setOpen(matchMedia("(min-width: 900px)").matches);
 }
 
 openDocument().catch(() => {

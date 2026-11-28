@@ -38,6 +38,7 @@ type dashboard struct {
 	archives       map[string]string // installed ZIM filename to its dashboard service key
 	kiwix          *browse.Library
 	mu             sync.Mutex
+	readingMu      sync.Mutex
 	jobs           map[string]*job
 	workers        sync.WaitGroup
 	wiki           wikiService
@@ -189,6 +190,8 @@ func (d *dashboard) handler(host string) http.Handler {
 	mux.HandleFunc("GET /api/preferences", d.preferences)
 	mux.HandleFunc("POST /api/preferences", d.preferences)
 	mux.HandleFunc("GET /api/ebook", d.ebook)
+	mux.HandleFunc("GET /api/reading", d.reading)
+	mux.HandleFunc("POST /api/reading", d.reading)
 	mux.HandleFunc("GET /api/dataset", d.dataset)
 	mux.HandleFunc("GET /api/download", d.download)
 	mux.HandleFunc("GET /api/source", d.serveSource)

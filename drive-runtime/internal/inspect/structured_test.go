@@ -334,3 +334,38 @@ func TestDatabasesListsGeoPackages(t *testing.T) {
 		t.Errorf("database sources = %+v, want the GeoPackage", sources)
 	}
 }
+
+func TestReadManifestSizesTotalsEachRecipe(t *testing.T) {
+	dir := t.TempDir()
+	manifest := `version: 2
+desired:
+    items:
+        - id: not-an-entry
+          size_bytes: 9
+realized:
+    entries:
+        - id: osm
+          size_bytes: 100
+        - id: osm
+          size_bytes: "20"
+        - id: wikem
+          relative_path: zim/wikem.zim
+          size_bytes: 48676248
+        - type: zim
+          size_bytes: 5
+        - id: unsized
+          filename: a.pdf
+`
+	path := filepath.Join(dir, "manifest.yaml")
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := inspect.ReadManifestSizes(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int64{"osm": 120, "wikem": 48676248}
+	if len(got) != len(want) || got["osm"] != 120 || got["wikem"] != 48676248 {
+		t.Fatalf("ReadManifestSizes() = %v, want %v", got, want)
+	}
+}

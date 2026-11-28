@@ -151,9 +151,80 @@ func archiveLayout(n *html.Node, attrs map[string]string) {
 		}
 	}
 }
+func hasClass(n *html.Node, class string) bool {
+	return slices.Contains(strings.Fields(attr(n, "class")), class)
+}
+
+func textOf(n *html.Node) string {
+	var b strings.Builder
+	for d := range n.Descendants() {
+		if d.Type == html.TextNode {
+			b.WriteString(d.Data)
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+func firstWith(n *html.Node, match func(*html.Node) bool) *html.Node {
+	for d := range n.Descendants() {
+		if d.Type == html.ElementNode && match(d) {
+			return d
+		}
+	}
+	return nil
+}
+
+// stackPost is one question or answer of a Stack Exchange archive page.
+type stackPost struct {
+	answer, accepted bool
+	votes, tags      string
+	body             *html.Node
+}
+
+// stackPosts finds the question and its answers on a sotoki question page.
+// Listing pages, users and tags have no post bodies and stay in the original.
+func stackPosts(doc *html.Node) []stackPost {
+	var posts []stackPost
+	for n := range doc.Descendants() {
+		if n.Type != html.ElementNode || n.Data != "div" {
+			continue
+		}
+		question := attr(n, "id") == "question" || hasClass(n, "question")
+		answer := hasClass(n, "answer")
+		if !question && !answer {
+			continue
+		}
+		body := firstWith(n, func(d *html.Node) bool { return hasClass(d, "js-post-body") })
+		if body == nil || (question && len(posts) > 0) {
+			continue
+		}
+		post := stackPost{answer: answer, accepted: hasClass(n, "accepted-answer"), body: body}
+		if votes := firstWith(n, func(d *html.Node) bool { return hasClass(d, "js-vote-count") }); votes != nil {
+			post.votes = textOf(votes)
+		}
+		if question {
+			if list := firstWith(n, func(d *html.Node) bool { return hasClass(d, "post-taglist") }); list != nil {
+				var tags []string
+				for d := range list.Descendants() {
+					if d.Type == html.ElementNode && d.Data == "a" {
+						tags = append(tags, textOf(d))
+					}
+				}
+				post.tags = strings.Join(tags, ", ")
+			}
+		}
+		posts = append(posts, post)
+	}
+	if len(posts) == 0 || posts[0].answer {
+		return nil
+	}
+	return posts
+}
+
 func adaptArticle(doc *html.Node, page, root *url.URL) adaptedArticle {
 	out := adaptedArticle{}
 	var body *html.Node
+	var heading string
 	for n := range doc.Descendants() {
 		if n.Type != html.ElementNode {
 			continue
@@ -172,16 +243,37 @@ func adaptArticle(doc *html.Node, page, root *url.URL) adaptedArticle {
 			if n.FirstChild != nil {
 				out.Title = n.FirstChild.Data
 			}
+		case "h1":
+			if heading == "" && n.Parent != nil && attr(n.Parent, "id") == "question-header" {
+				heading = textOf(n)
+			}
 		}
-		if body == nil && slices.Contains(strings.Fields(attr(n, "class")), "mw-parser-output") {
+		if body == nil && hasClass(n, "mw-parser-output") {
 			body = n
 		}
 	}
+	var posts []stackPost
 	if body == nil {
-		return out
+		if posts = stackPosts(doc); posts == nil {
+			return out
+		}
+		if heading != "" {
+			out.Title = heading
+		}
 	}
-	for n := range body.Descendants() {
-		if n.Type == html.ElementNode && slices.Contains([]string{"canvas", "iframe", "video", "audio", "form", "object", "embed", "math", "svg"}, n.Data) {
+	unsafe := func(n *html.Node) bool {
+		for d := range n.Descendants() {
+			if d.Type == html.ElementNode && slices.Contains([]string{"canvas", "iframe", "video", "audio", "form", "object", "embed", "math", "svg"}, d.Data) {
+				return true
+			}
+		}
+		return false
+	}
+	if body != nil && unsafe(body) {
+		return adaptedArticle{}
+	}
+	for _, post := range posts {
+		if unsafe(post.body) {
 			return adaptedArticle{}
 		}
 	}
@@ -240,8 +332,44 @@ func adaptArticle(doc *html.Node, page, root *url.URL) adaptedArticle {
 		}
 		return []articleNode{node}
 	}
-	for child := range body.ChildNodes() {
-		out.Nodes = append(out.Nodes, convert(child, 0)...)
+	if body != nil {
+		for child := range body.ChildNodes() {
+			out.Nodes = append(out.Nodes, convert(child, 0)...)
+		}
+	}
+	answers := 0
+	for _, post := range posts {
+		if post.answer {
+			answers++
+		}
+	}
+	for i, post := range posts {
+		if i == 1 {
+			label := strconv.Itoa(answers) + " answers"
+			if answers == 1 {
+				label = "1 answer"
+			}
+			out.Nodes = append(out.Nodes, articleNode{Tag: "h2", Children: []articleNode{{Text: label}}})
+		}
+		meta := []string{"Question"}
+		if post.answer {
+			meta[0] = "Answer"
+		}
+		if post.votes != "" {
+			meta = append(meta, post.votes+" votes")
+		}
+		if post.accepted {
+			meta = append(meta, "Accepted")
+		}
+		if post.tags != "" {
+			meta = append(meta, post.tags)
+		}
+		section := articleNode{Tag: "section", Attrs: map[string]string{"layout": "post"}}
+		section.Children = append(section.Children, articleNode{Tag: "p", Attrs: map[string]string{"layout": "post-meta"}, Children: []articleNode{{Text: strings.Join(meta, " · ")}}})
+		for child := range post.body.ChildNodes() {
+			section.Children = append(section.Children, convert(child, 0)...)
+		}
+		out.Nodes = append(out.Nodes, section)
 	}
 	if truncated {
 		return adaptedArticle{}

@@ -52,6 +52,19 @@ func TestInteriorReadersUseInstalledFiles(t *testing.T) {
 	requestBody(t, client, origin+"/api/ebook?source=books/field.epub&file=Book/intro.xhtml", 200)
 	requestBody(t, client, origin+"/api/ebook?source=books/field.epub&file=META-INF/container.xml", 404)
 	requestBody(t, client, origin+"/api/ebook?source=books/other.epub", 404)
+	if got := requestBody(t, client, origin+"/api/reading?source=books/field.epub", 200); strings.TrimSpace(got) != "null" {
+		t.Fatalf("unread book position = %s", got)
+	}
+	postToDashboard(t, client, origin, "/api/reading?source=books/field.epub", origin, `{"chapter":"Book/intro.xhtml","block":7,"percent":42}`, 204)
+	if got := requestBody(t, client, origin+"/api/reading?source=books/field.epub", 200); !strings.Contains(got, `"block":7`) || !strings.Contains(got, `"percent":42`) {
+		t.Fatalf("saved position = %s", got)
+	}
+	if saved, err := os.ReadFile(filepath.Join(root, ".svalbard", "reading.json")); err != nil || !strings.Contains(string(saved), "books/field.epub") {
+		t.Fatalf("reading.json = %q, %v", saved, err)
+	}
+	postToDashboard(t, client, origin, "/api/reading?source=books/field.epub", origin, `{"chapter":"../escape","block":1,"percent":1}`, 400)
+	postToDashboard(t, client, origin, "/api/reading?source=books/other.epub", origin, `{"chapter":"a.xhtml","block":1,"percent":1}`, 404)
+	postToDashboard(t, client, origin, "/api/reading?source=books/field.epub", "http://elsewhere.test", `{"chapter":"a.xhtml","block":1,"percent":1}`, 403)
 	var sample struct{ Rows [][]string }
 	readResponse(t, requestBody(t, client, origin+"/api/dataset?id=data/observations.csv", 200), &sample)
 	if len(sample.Rows) != 20 {
@@ -77,5 +90,23 @@ func TestInteriorReadersUseInstalledFiles(t *testing.T) {
 	}
 	if got := requestBody(t, client, origin+"/api/preferences", 200); !strings.Contains(got, `"value":"fast"`) {
 		t.Fatal(got)
+	}
+}
+
+func TestRecipeSizesFillResourcesWithoutOwnFile(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "manifest.yaml", "realized:\n    entries:\n        - id: basemap\n          size_bytes: 4096\n")
+	writeFile(t, root, "maps/water.pmtiles", strings.Repeat("x", 300))
+	groups := []group{{Label: "Maps", Items: []entry{
+		{ID: "basemap", Icon: "maps"}, {ID: "water", Icon: "maps"}, {ID: "kept", Bytes: 7},
+		{ID: "lib/js/a.zip/x", Kind: "source", Icon: "library"},
+	}}}
+	addRecipeSizes(root, groups)
+	got := []int64{}
+	for _, e := range groups[0].Items {
+		got = append(got, e.Bytes)
+	}
+	if fmt.Sprint(got) != "[4096 300 7 0]" {
+		t.Fatalf("sizes = %v, want [4096 300 7 0]", got)
 	}
 }

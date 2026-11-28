@@ -1,9 +1,10 @@
-:root { color-scheme: light; color: #202a28; background: #edeae1; font: 14px Georgia, serif; }
+:root { color-scheme: light; color: #171b1c; background: #edeae1; font: 15px "EB Garamond", Georgia, serif; }
 * { box-sizing: border-box; }
 body { margin: 0; height: 100dvh; display: flex; flex-direction: column; }
-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px 12px; padding: 7px 12px; background: #f7f6ef; border-block: 1px solid #a6afa5; font: 12px ui-monospace, monospace; }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px 12px; padding: 7px 12px; background: #f7f7f2; border-block: 1px solid #c1c9c3; font: 12px "Plex Mono", ui-monospace, monospace; }
 .group { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
-button, select, input { border: 1px solid #b7bfb6; color: #294449; background: #faf9f3; min-height: 32px; font: inherit; padding: 3px 7px; }
+button, select, input { border: 1px solid #c1c9c3; border-radius: 0; color: #29474b; background: #f7f7f2; min-height: 32px; font: inherit; padding: 3px 8px; }
+button:hover:not(:disabled) { background: #e4ebe6; }
 input { width: 4.4em; text-align: center; }
 button { cursor: pointer; } button:disabled { opacity: .45; }
 :focus-visible { outline: 2px solid #36585d; outline-offset: 1px; }
@@ -14,3 +15,16 @@ main { position: relative; flex: 1; min-height: 0; }
 
 #pdf-find { flex-basis: 100%; }
 #query { width: min(16em, 58%); }
+
+#outline { position: absolute; inset: 0 auto 0 0; z-index: 2; width: 17rem; overflow: auto; padding: 8px 6px 16px; border-right: 1px solid #c1c9c3; background: #f7f7f2; }
+.outline-open #pages { left: 17rem; }
+#outline ol { margin: 0; padding: 0 0 0 .9em; list-style: none; }
+#outline > ol { padding-left: 0; }
+#outline li { margin: 0; }
+#outline button { display: block; width: 100%; min-height: 28px; padding: 4px 6px; border: 0; background: transparent; color: #171b1c; font: 15px/1.25 "EB Garamond", Georgia, serif; text-align: start; }
+#outline button:hover { background: #e4ebe6; }
+#outline .label { display: block; padding: 8px 6px 2px; color: #4c5a59; font: 11px/1.4 "Plex Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+@media (max-width: 640px) {
+  #outline { width: 100%; }
+  .outline-open #pages { left: 0; }
+}

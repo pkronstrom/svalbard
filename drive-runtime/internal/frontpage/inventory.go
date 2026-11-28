@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/inspect"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/llamaserve"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/mcp"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/workspace"
@@ -172,7 +173,30 @@ func buildInventory(root string, cfg config.RuntimeConfig) (inventory, map[strin
 	if datasets := datasetGroup(root, metadata); len(datasets.Items) > 0 {
 		inv.Groups = append(inv.Groups, datasets)
 	}
+	addRecipeSizes(root, inv.Groups)
 	return inv, services
+}
+
+// addRecipeSizes gives a resource without its own file the size its recipe
+// installed, as the realized manifest records it. A map tileset named after
+// its recipe stands in on a vault without a manifest.
+func addRecipeSizes(root string, groups []group) {
+	sizes, _ := inspect.ReadManifestSizes(filepath.Join(root, "manifest.yaml"))
+	for g := range groups {
+		for i := range groups[g].Items {
+			e := &groups[g].Items[i]
+			if e.Bytes > 0 || e.ID == "" || e.Kind == "source" {
+				continue
+			}
+			if n := sizes[e.ID]; n > 0 {
+				e.Bytes = n
+			} else if e.Icon == "maps" && filepath.IsLocal(e.ID) {
+				if info, err := os.Stat(filepath.Join(root, "maps", e.ID+".pmtiles")); err == nil && info.Mode().IsRegular() {
+					e.Bytes = info.Size()
+				}
+			}
+		}
+	}
 }
 
 func specFor(action config.BuiltinActionConfig) serviceSpec {
