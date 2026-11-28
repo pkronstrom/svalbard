@@ -200,6 +200,17 @@ func showTray(d drive, cleanup func()) error {
 		menu.AddSubmenu("Services", services)
 	}
 	menu.AddSeparator()
+	menu.Add("Quit Tray", act("Quitting tray…", func() error {
+		quit()
+		return nil
+	}))
+	menu.Add("Stop Svalbard and Quit", act("Stopping dashboard…", func() error {
+		if err := d.prepareAndStop(false); err != nil {
+			return err
+		}
+		quit()
+		return nil
+	}))
 	if vol, err := mountedVolume(d.root); err == nil {
 		menu.Add("Unmount Drive and Quit", act("Unmounting drive…", func() error {
 			if err := d.prepareAndStop(true); err != nil {
@@ -216,13 +227,6 @@ func showTray(d drive, cleanup func()) error {
 			return nil
 		}))
 	}
-	menu.Add("Stop Dashboard and Quit", act("Stopping dashboard…", func() error {
-		if err := d.prepareAndStop(false); err != nil {
-			return err
-		}
-		quit()
-		return nil
-	}))
 	updateMenu(d, status, items, &action)
 	tray.SetMenu(menu).Show()
 	go func() {

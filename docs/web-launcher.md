@@ -25,7 +25,8 @@ A drive prepared with `make build` and the web-launcher recipe includes a small 
 
 - **Open Frontpage** opens the active drive in the browser.
 - **Services** lists installed readers and local apps. A checked item is active. Click to serve or stop it.
-- **Stop Dashboard and Quit** drains the dashboard and closes the tray.
+- **Quit Tray** closes the menu-bar app. The dashboard and its services keep running.
+- **Stop Svalbard and Quit** stops the dashboard and its services, then closes the tray. The drive stays mounted.
 - **Unmount Drive and Quit** appears for a recognized mounted disk. It checks for open handles, stops the dashboard and asks the OS to unmount that volume. On Linux it uses `findmnt` and `udisksctl`. The menu stays open if the operation is blocked.
 
 Set `SVALBARD_NO_TRAY=1` before running a wrapper to open the browser by itself. The tray runs from a temporary host-local copy so it can unmount its own drive. A fresh `make build` embeds the helper in the host CLI for installing or updating the recipe. The wrapper download stays small and uses the tray helper already installed on the drive.
