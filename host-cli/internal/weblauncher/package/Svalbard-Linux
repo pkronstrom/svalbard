@@ -1,0 +1,22 @@
+#!/bin/sh
+root=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P) || exit 1
+case "$(uname -m)" in
+    x86_64) arch=x86_64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *) arch=unsupported ;;
+esac
+binary="$root/.svalbard/runtime/linux-$arch/svalbard-drive"
+if [ -x "$binary" ]; then
+    message=$(DRIVE_ROOT="$root" "$binary" launch 2>&1) && exit 0
+else
+    message="Cannot run $binary. Check the vault architecture and executable permissions. If this mount disallows execution, open Svalbard Files.html or copy the vault to a trusted local directory."
+fi
+printf '%s\n' "$message" >&2
+if command -v zenity >/dev/null 2>&1; then
+    zenity --error --title=Svalbard --no-markup --text="$message"
+elif command -v kdialog >/dev/null 2>&1; then
+    kdialog --title Svalbard --error "$message"
+elif command -v notify-send >/dev/null 2>&1; then
+    notify-send Svalbard "$message"
+fi
+exit 1

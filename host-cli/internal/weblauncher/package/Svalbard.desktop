@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Svalbard
+Comment=Open this vault in your browser
+Exec=/bin/sh -c "exec \\"\\$(dirname -- \\"\\$1\\")/Svalbard-Linux\\"" sh %k
+Icon=drive-removable-media
+Terminal=false
+Categories=Utility;

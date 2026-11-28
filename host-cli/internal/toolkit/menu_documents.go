@@ -18,7 +18,7 @@ var documentTypes = map[string]bool{"pdf": true, "epub": true}
 
 // reservedRunNames are the `./run` words the runtime answers before it looks
 // at the menu.
-var reservedRunNames = []string{"mcp", "settings"}
+var reservedRunNames = []string{"mcp", "settings", "launch"}
 
 // MenuSpecs is the menu spec of each recipe as writeActionsConfig takes it:
 // a recipe without a menu label is labelled with its description.

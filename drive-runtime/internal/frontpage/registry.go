@@ -146,6 +146,7 @@ func (d *dashboard) lifecycle(w http.ResponseWriter, r *http.Request) {
 	d.mu.Lock()
 	if input.Action == "resume" {
 		d.draining = false
+		d.prepared = false
 		d.mu.Unlock()
 		writeJSON(w, map[string]string{"message": "New launches are enabled."})
 		return
@@ -154,6 +155,17 @@ func (d *dashboard) lifecycle(w http.ResponseWriter, r *http.Request) {
 	if view.Version != input.Version {
 		d.mu.Unlock()
 		http.Error(w, "Services changed. Review the current selection and try again.", 409)
+		return
+	}
+	if input.Action == "close" && d.desktop != nil && d.draining && d.prepared && d.terminals == 0 {
+		d.mu.Unlock()
+		writeJSON(w, map[string]string{"message": "Dashboard closed. Use the operating system’s Eject command."})
+		d.desktop.mu.Lock()
+		stop := d.desktop.stop
+		d.desktop.mu.Unlock()
+		if stop != nil {
+			stop()
+		}
 		return
 	}
 	var keys []string
@@ -171,6 +183,7 @@ func (d *dashboard) lifecycle(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			d.draining = true
+			d.prepared = false
 		}
 	case "stop", "restart":
 		for _, record := range view.Records {
@@ -253,6 +266,17 @@ func (d *dashboard) lifecycle(w http.ResponseWriter, r *http.Request) {
 		}
 		d.searchMu.Unlock()
 		message = removalStatus(ctx, d.root)
+		d.mu.Lock()
+		d.prepared = true
+		d.mu.Unlock()
+		if d.desktop != nil {
+			message = strings.ReplaceAll(message, "Stop ./run web", "Close the dashboard")
+			writeJSON(w, struct {
+				Message  string `json:"message"`
+				CanClose bool   `json:"canClose"`
+			}{message, true})
+			return
+		}
 	}
 	writeJSON(w, map[string]string{"message": message})
 }

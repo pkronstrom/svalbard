@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/pkronstrom/svalbard/host-cli/internal/weblauncher"
 	"gopkg.in/yaml.v3"
 )
 
@@ -232,6 +233,12 @@ func LoadFromFS(recipesFS fs.FS, presetsFS fs.FS) (*Catalog, error) {
 		if item.ID == "" {
 			base := filepath.Base(path)
 			item.ID = strings.TrimSuffix(base, ".yaml")
+		}
+		if item.ID == "web-launcher" && item.Build != nil && item.Build.Family == "web-launcher" {
+			if item.Build.Config == nil {
+				item.Build.Config = map[string]string{}
+			}
+			item.Build.Config["package_sha256"] = weblauncher.Fingerprint()
 		}
 		c.recipes[item.ID] = item
 		return nil

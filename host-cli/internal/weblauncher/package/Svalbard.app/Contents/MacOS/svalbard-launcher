@@ -1,0 +1,24 @@
+#!/bin/sh
+# Finder can launch a shell wrapper under Rosetta. Select the vault's Mach-O
+# for the actual hardware even when this process reports an Intel uname.
+root=$(CDPATH= cd -P -- "$(dirname -- "$0")/../../.." && pwd -P) || exit 1
+runtime="$root/.svalbard/runtime"
+binary="$runtime/macos-x86_64/svalbard-drive"
+if [ "$(/usr/sbin/sysctl -in hw.optional.arm64)" = "1" ] ||
+   [ "$(/usr/sbin/sysctl -in sysctl.proc_translated)" = "1" ] ||
+   [ "$(/usr/bin/uname -m)" = "arm64" ]; then
+    if [ -x "$runtime/macos-arm64/svalbard-drive" ]; then
+        binary="$runtime/macos-arm64/svalbard-drive"
+    fi
+fi
+if [ -x "$binary" ]; then
+    message=$(DRIVE_ROOT="$root" "$binary" launch 2>&1) && exit 0
+else
+    message="The Mac runtime is missing or cannot execute. Keep Svalbard.app alongside the vault’s run file. Use a vault package for this Mac. If macOS isolated the app, open a trusted local copy of the complete vault."
+fi
+/usr/bin/osascript - "$message" <<'APPLESCRIPT'
+on run argv
+    display alert "Svalbard could not open" message (item 1 of argv) as critical
+end run
+APPLESCRIPT
+exit 1

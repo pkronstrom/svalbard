@@ -11,6 +11,7 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
+	"github.com/pkronstrom/svalbard/host-cli/internal/weblauncher"
 )
 
 // DocumentPlan says what the next apply does to one document collection.
@@ -54,6 +55,9 @@ func BuildPlan(m manifest.Manifest, cat *catalog.Catalog) (planner.Plan, []Docum
 				documents = append(documents, DocumentPlan{ID: id, Problem: "definition not found here or on the vault; updates paused"})
 			}
 			continue
+		}
+		if id == "web-launcher" && len(entries) > 0 && !weblauncher.MatchesPlatforms(entries, m.Desired.Options.HostPlatforms) {
+			plan.ToDownload = append(plan.ToDownload, id)
 		}
 		if !recipe.IsCollection() {
 			continue

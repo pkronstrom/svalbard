@@ -40,13 +40,19 @@ async function controlServices(action,record) {
   const affected=record ? registry.records.filter(other=>other.keys.some(k=>record.keys.includes(k))) : registry.records.filter(isActive);
   const names=[...new Set(affected.flatMap(r=>r.resources))].join(", ");
   const warning=affected.some(r=>r.inference) ? " Active inference or chat requests may be interrupted." : "";
-  if(action!=="resume" && (action==="stop-all" || action==="prepare" || warning || affected.some(r=>r.keys.length>1) || affected.length>1)) {
+  if(action!=="resume" && action!=="close" && (action==="stop-all" || action==="prepare" || warning || affected.some(r=>r.keys.length>1) || affected.length>1)) {
     const verb=action==="restart"?"Restart":action==="prepare"?"Prepare the drive and stop":"Stop";
     if(!confirm(verb+" the managed services for "+(names || "this drive")+"?"+warning+" Other tabs using these services will lose access.")) return;
   }
   try {
     const response=await request("/api/lifecycle",{action,id:record?.id || "",version:registry.version});
     registryMessage(response.message);
+    if (response.canClose) {
+      for (const id of ["service-feedback", "drawer-feedback"]) {
+        byId(id).append(" ",button("Close dashboard","quiet-button",()=>controlServices("close")));
+      }
+    }
+    if (action==="close") return;
   } catch(error) {registryMessage(error.message,true);}
   await poll();
 }

@@ -1,6 +1,7 @@
 package frontpage
 
 import (
+	"archive/zip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -150,6 +151,7 @@ func startDashboard(t *testing.T, root string, cfg config.RuntimeConfig) (*http.
 
 func startDashboardLink(t *testing.T, root string, cfg config.RuntimeConfig) (*http.Client, string, func()) {
 	t.Helper()
+	installTestAtlas(t, root)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	address, done := make(chan string, 1), make(chan error, 1)
@@ -280,5 +282,26 @@ func assertReaderFramePolicy(t *testing.T, client *http.Client, address, origin 
 	policy := response.Header.Get("Content-Security-Policy")
 	if !strings.HasSuffix(policy, "frame-ancestors "+origin) {
 		t.Fatalf("reader policy = %q; want framing limited to %s", policy, origin)
+	}
+}
+
+func installTestAtlas(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, ".svalbard"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := os.Create(filepath.Join(root, ".svalbard", "web-launcher.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := zip.NewWriter(out)
+	if err := archive.AddFS(os.DirFS("../../../host-cli/internal/weblauncher/ui")); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

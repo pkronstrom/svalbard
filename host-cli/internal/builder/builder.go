@@ -17,6 +17,7 @@ import (
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
+	"github.com/pkronstrom/svalbard/host-cli/internal/weblauncher"
 )
 
 const (
@@ -75,6 +76,10 @@ func Dispatch(recipe catalog.Item) (Func, bool) {
 		return buildRasterSheets, true
 	case "osm-extract":
 		return buildOSMExtract, true
+	case "web-launcher":
+		return func(root string, recipe catalog.Item, _ *catalog.Catalog, opts Options) ([]manifest.RealizedEntry, error) {
+			return weblauncher.Install(root, recipe.ID, recipe.Type, opts.Platforms)
+		}, true
 	case "embedded":
 		return buildEmbedded, true
 	}

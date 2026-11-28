@@ -108,6 +108,9 @@ func run() error {
 		return runMCP(drive, opts)
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "launch" {
+		return runDesktop(os.Args[2:])
+	}
 	driveRoot, err := resolveDriveRoot()
 	if err != nil {
 		return err

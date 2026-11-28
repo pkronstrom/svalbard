@@ -1,0 +1,14 @@
+id: web-launcher
+type: web-launcher
+display_group: tools
+description: Open the offline atlas dashboard in your browser from macOS Finder or a Linux desktop
+tags: [computing]
+size_gb: 0.001
+file_count: 11
+strategy: build
+build:
+  family: web-launcher
+  version: "1"
+license:
+  id: GPL-3.0-only
+  attribution: Svalbard contributors and the bundled assets' named authors

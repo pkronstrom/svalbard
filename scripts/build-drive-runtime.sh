@@ -22,7 +22,7 @@ for entry in "${PLATFORMS[@]}"; do
     mkdir -p "$outdir"
     echo "  $platform (GOOS=$goos GOARCH=$goarch)"
     (cd "$DRIVE_SRC" && CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-        go build -ldflags="-s -w" -o "$outdir/svalbard-drive" \
+        go build -trimpath -ldflags="-s -w" -o "$outdir/svalbard-drive" \
         ./cmd/svalbard-drive)
 done
 

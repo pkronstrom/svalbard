@@ -2,10 +2,10 @@
 package frontpage
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,10 +26,9 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/workspace"
 )
 
-//go:embed ui/*
-var assets embed.FS
-
 type dashboard struct {
+	ui             fs.FS
+	desktop        *desktopSession
 	ctx            context.Context
 	root           string
 	port           int
@@ -45,6 +44,7 @@ type dashboard struct {
 	settingsMu     sync.Mutex
 	lifecycleMu    sync.Mutex
 	draining       bool
+	prepared       bool
 	terminals      int
 	resourceLabels map[string][]string
 	terminalKey    string
@@ -75,9 +75,23 @@ type job struct {
 }
 
 func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConfig, open func(string) error) error {
+	return runDashboard(ctx, out, root, cfg, open, nil)
+}
+
+func runDashboard(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConfig, open func(string) error, desktop *desktopSession) error {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return err
+	}
+	archive, err := zip.OpenReader(filepath.Join(root, ".svalbard", "web-launcher.zip"))
+	if err != nil {
+		return fmt.Errorf("open dashboard assets: %w. Add web-launcher with the Svalbard host and apply it to this vault", err)
+	}
+	defer archive.Close()
+	for _, name := range []string{"index.html", "frontpage.js", "style.css", "vendor/atlas/mono.woff2"} {
+		if _, err := fs.Stat(archive, name); err != nil {
+			return fmt.Errorf("the dashboard package is missing %s. Update web-launcher on this vault", name)
+		}
 	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -89,7 +103,7 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 
 	inv, specs := buildInventory(root, cfg)
 	d := &dashboard{
-		ctx: ctx, root: root, port: listener.Addr().(*net.TCPAddr).Port,
+		ui: archive, desktop: desktop, ctx: ctx, root: root, port: listener.Addr().(*net.TCPAddr).Port,
 		inv: inv, specs: specs, previews: installedPreviewFiles(inv), jobs: make(map[string]*job),
 		archives: make(map[string]string), kiwix: browse.NewLibrary(root), terminalKey: rand.Text(),
 	}
@@ -118,10 +132,20 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 
 	exited := make(chan error, 1)
 	go func() { exited <- server.Serve(listener) }()
-	address := "http://" + host + "/#terminal-key=" + d.terminalKey
-	fmt.Fprintf(out, "Svalbard frontpage: %s\nPress Ctrl+C to stop the dashboard and its services.\n", address)
-	if open != nil {
-		_ = open(address)
+	address := "http://" + host + "/"
+	if desktop != nil {
+		if err := desktop.ready(ctx, address, d.terminalKey, cancel); err != nil {
+			_ = server.Close()
+			return err
+		}
+		defer desktop.close()
+	}
+	if desktop == nil || desktop.foreground {
+		address += "#terminal-key=" + d.terminalKey
+		fmt.Fprintf(out, "Svalbard frontpage: %s\nPress Ctrl+C to stop the dashboard and its services.\n", address)
+		if open != nil {
+			_ = open(address)
+		}
 	}
 	select {
 	case err = <-exited:
@@ -147,8 +171,10 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 
 func (d *dashboard) handler(host string) http.Handler {
 	mux := http.NewServeMux()
-	ui, _ := fs.Sub(assets, "ui")
-	mux.Handle("GET /", http.FileServerFS(ui))
+	mux.Handle("GET /", http.FileServerFS(d.ui))
+	if d.desktop != nil {
+		mux.HandleFunc("POST /browser-launch", d.desktop.redeem)
+	}
 	mux.HandleFunc("GET /api/inventory", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, d.inv)
 	})
@@ -205,7 +231,7 @@ func (d *dashboard) handler(host string) http.Handler {
 		// Pages served by an app or in the workspace have their own origins.
 		// Requiring the dashboard's origin and a request header keeps those
 		// pages and external websites from starting calls through a form.
-		if r.Method == http.MethodPost &&
+		if r.Method == http.MethodPost && !(d.desktop != nil && r.URL.Path == "/browser-launch") &&
 			(r.Header.Get("Origin") != "http://"+host || r.Header.Get("X-Svalbard-Request") != "1") {
 			http.Error(w, "This action requires the dashboard", http.StatusForbidden)
 			return

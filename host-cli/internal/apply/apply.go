@@ -27,6 +27,7 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/planner"
 	"github.com/pkronstrom/svalbard/host-cli/internal/resolver"
 	"github.com/pkronstrom/svalbard/host-cli/internal/toolkit"
+	"github.com/pkronstrom/svalbard/host-cli/internal/weblauncher"
 	"github.com/pkronstrom/svalbard/tui"
 )
 
@@ -121,7 +122,11 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	// keeping each installed tree until its new one is built.
 	previous := make(map[string][]manifest.RealizedEntry, len(plan.ToUpdate))
 	updating := make(map[string]bool, len(plan.ToUpdate))
-	for _, id := range plan.ToUpdate {
+	updates := slices.Clone(plan.ToUpdate)
+	if slices.Contains(plan.ToDownload, "web-launcher") && realizedID(m.Realized.Entries, "web-launcher") {
+		updates = append(updates, "web-launcher")
+	}
+	for _, id := range updates {
 		updating[id] = true
 		if recipe, ok := cat.RecipeByID(id); ok && (recipe.Type == "python-package" || recipe.Type == "python-venv") {
 			continue
@@ -133,6 +138,11 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 		}
 	}
 
+	if old := previous["web-launcher"]; len(old) > 0 {
+		if err := weblauncher.CheckUpdate(root, old); err != nil {
+			return err
+		}
+	}
 	var applyErrors []error
 
 	// Process removals first (free up space), checkpointing before completion.
@@ -143,6 +153,12 @@ func RunWithCheckpoint(ctx context.Context, root string, m *manifest.Manifest, p
 	}
 	for _, e := range m.Realized.Entries {
 		if _, ok := removeSet[e.ID]; ok {
+			if e.Type == "web-launcher" {
+				if err := weblauncher.Remove(root, e); err != nil {
+					return fmt.Errorf("removing launcher file: %w", err)
+				}
+				continue
+			}
 			path := filepath.Join(root, e.RelativePath)
 			// A binary archive's tree, unpacked here or on first use; the
 			// .unpacked directory belongs to its archive whatever the type.
@@ -578,6 +594,11 @@ func (s updateSwap) run(root, id string, job func() downloadResult) downloadResu
 		}
 		if err := os.RemoveAll(bintree.UnpackedDir(path) + asideSuffix); err != nil {
 			slog.Warn("removing the previous unpacked tree", "id", id, "error", err)
+		}
+	}
+	if id == "web-launcher" && len(old) > 0 {
+		if err := weblauncher.CleanBundle(root); err != nil {
+			slog.Warn("removing empty launcher bundle", "error", err)
 		}
 	}
 	return result

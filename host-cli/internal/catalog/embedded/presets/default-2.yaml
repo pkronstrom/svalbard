@@ -3,6 +3,7 @@ description: Universal bugout kit — core survival, medical, and reference for 
 target_size_gb: 2
 region: default
 sources:
+- web-launcher
 # ── Tools ──
 - kiwix-serve
 - sqlite3

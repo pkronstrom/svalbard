@@ -411,7 +411,7 @@ func TestGenerateToolsAlwaysPresent(t *testing.T) {
 	for _, it := range cfg.Groups[0].Items {
 		ids = append(ids, it.ID)
 	}
-	want := []string{"mcp-serve", "drive-frontpage", "inspect-drive", "activate-shell"}
+	want := []string{"mcp-serve", "inspect-drive", "activate-shell"}
 	if strings.Join(ids, ",") != strings.Join(want, ",") {
 		t.Errorf("tools items = %v, want %v", ids, want)
 	}

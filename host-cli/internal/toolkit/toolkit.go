@@ -284,13 +284,14 @@ var typeDefaults = map[string]typeDefault{
 
 // driveState captures what content is on the drive for capability conditions.
 type driveState struct {
-	HasLibrary   bool
-	HasMaps      bool
-	HasChat      bool
-	HasToolchain bool
-	HasChecksums bool
-	HasOpenWebUI bool
-	HasWiki      bool
+	HasLibrary     bool
+	HasMaps        bool
+	HasChat        bool
+	HasToolchain   bool
+	HasChecksums   bool
+	HasOpenWebUI   bool
+	HasWiki        bool
+	HasWebLauncher bool
 }
 
 // wikiRecipeID is the recipe that installs the wiki's server. Keep in sync
@@ -314,7 +315,7 @@ type builtinCapability struct {
 var builtinCapabilities = []builtinCapability{
 	{ID: "drive-frontpage", Group: "tools", Subheader: "Drive", Label: "Open Browser Dashboard",
 		Description: "Browse and launch installed content from the browser.", Order: 490, ActionID: "web",
-		Aliases: []string{"web"}},
+		Aliases: []string{"web"}, Condition: func(s driveState) bool { return s.HasWebLauncher }},
 	// Search
 	{ID: "search-all", Group: "search", Label: "Search all content",
 		Description: "Query the on-drive search index.", Order: 100, ActionID: "search",
@@ -410,6 +411,8 @@ func writeActionsConfig(root string, entries []manifest.RealizedEntry, presetNam
 			state.HasChecksums = true
 		}
 		switch e.Type {
+		case "web-launcher":
+			state.HasWebLauncher = true
 		case "zim", "pdf":
 			state.HasLibrary = true
 		case "pmtiles":

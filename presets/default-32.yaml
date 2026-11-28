@@ -5,6 +5,7 @@ region: default
 extends:
   - tools-base
 sources:
+- web-launcher
 # ── Reference ──
 - wikipedia-en-top-nopic
 - natural-earth

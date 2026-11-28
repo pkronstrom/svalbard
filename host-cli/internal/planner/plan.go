@@ -24,17 +24,16 @@ func Build(m manifest.Manifest) Plan {
 		desired[id] = struct{}{}
 	}
 
-	realized := make(map[string]struct{}, len(m.Realized.Entries))
-	for _, e := range m.Realized.Entries {
-		realized[e.ID] = struct{}{}
-	}
-
 	var p Plan
-
-	// Entries present in realized but not in desired need removal.
-	for _, e := range m.Realized.Entries {
-		if _, ok := desired[e.ID]; !ok {
-			p.ToRemove = append(p.ToRemove, e.ID)
+	realized := make(map[string]struct{}, len(m.Realized.Entries))
+	// Multi-file recipes own several records but appear once in the plan.
+	for _, entry := range m.Realized.Entries {
+		if _, seen := realized[entry.ID]; seen {
+			continue
+		}
+		realized[entry.ID] = struct{}{}
+		if _, wanted := desired[entry.ID]; !wanted {
+			p.ToRemove = append(p.ToRemove, entry.ID)
 		}
 	}
 

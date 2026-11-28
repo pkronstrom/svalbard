@@ -25,7 +25,8 @@ import (
 // reachedThrough names the built-in row that stands for every recipe of a
 // type, by row id.
 var reachedThrough = map[string]string{
-	"toolchain": "embedded-shell",
+	"toolchain":    "embedded-shell",
+	"web-launcher": "drive-frontpage",
 }
 
 // noEntryYet marks what a user would want to reach and cannot yet: a gap,
