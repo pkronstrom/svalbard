@@ -9,17 +9,26 @@
 <script src="{{.PMTilesJSPath}}"></script>
 <style>
 * { box-sizing: border-box }
-body { margin:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(164px,21%); background:#f7f7f2; color:#171b1c; font:15px/1.4 Georgia,serif; }
+body { margin:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(172px,21%); background:#f7f7f2; color:#171b1c; font:16px/1.4 "EB Garamond",Georgia,serif; }
 #map { width:100%; height:100vh; height:100dvh; }
-aside { overflow:auto; padding:12px; border-left:1px solid #77827e; max-height:100dvh; }
-summary { cursor:pointer; font:12px/1.6 monospace; text-transform:uppercase; letter-spacing:.08em; }
-label { display:block; padding:8px 0; border-bottom:1px solid #c1c9c3; }
+aside { overflow:auto; padding:12px 14px; border-left:1px solid #687774; max-height:100dvh; }
+summary { min-height:28px; cursor:pointer; font:12px/1.6 "Plex Mono",ui-monospace,monospace; text-transform:uppercase; letter-spacing:.1em; }
+label { display:flex; gap:8px; align-items:baseline; padding:8px 0; border-bottom:1px solid #c1c9c3; }
 input { accent-color:#35585e; }
-#fit-layer { margin-top:8px; padding:5px 8px; color:#294449; border:1px solid #77827e; background:transparent; cursor:pointer; }
-#basemap-note { font:italic 14px/1.3 Georgia,serif; }
-#coordinates { display:block; margin-top:16px; font:12px/1.6 monospace; }
-#errors { color:#883e34; overflow-wrap:anywhere; }
-@media(max-width:580px){body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto;height:100dvh}#map{height:100%}aside{max-height:28dvh;border-left:0;border-top:1px solid #77827e;padding:6px 12px}#coordinates{margin:4px 0}}
+#fit-layer { min-height:32px; margin-top:10px; padding:5px 10px; color:#29474b; border:1px solid #687774; border-radius:0; background:transparent; font:13px/1.2 "Plex Mono",ui-monospace,monospace; cursor:pointer; }
+#fit-layer:hover { background:#e4ebe6; }
+#fit-layer:disabled { opacity:.6; cursor:default; }
+#basemap-note { margin:12px 0 0; color:#4c5a59; font:italic 15px/1.35 "EB Garamond",Georgia,serif; }
+#coordinates { display:block; margin-top:16px; font:12px/1.6 "Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+#errors { color:#913d3a; font:12px/1.5 "Plex Mono",ui-monospace,monospace; overflow-wrap:anywhere; }
+/* Map controls sit on the edge as square instruments, not floating cards. */
+.maplibregl-ctrl-group { border-radius:0 !important; box-shadow:none !important; border:1px solid #687774; background:#f7f7f2 !important; }
+.maplibregl-ctrl-group button + button { border-top:1px solid #c1c9c3 !important; }
+.maplibregl-ctrl-group button:hover { background:#e4ebe6 !important; }
+.maplibregl-ctrl-scale { border-color:#171b1c !important; background:rgb(247 247 242 / .85) !important; color:#171b1c; font:11px/1.3 "Plex Mono",ui-monospace,monospace; }
+.maplibregl-ctrl-attrib { background:rgb(247 247 242 / .85) !important; font:11px/1.4 "Plex Mono",ui-monospace,monospace; }
+.maplibregl-ctrl-attrib a { color:#4c5a59; }
+@media(max-width:580px){body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto;height:100dvh}#map{height:100%}aside{max-height:30dvh;border-left:0;border-top:1px solid #687774;padding:6px 12px}#coordinates{margin:4px 0}}
 </style>
 </head>
 <body>
@@ -29,7 +38,7 @@ input { accent-color:#35585e; }
 {{range $i, $l := .Layers}}<label><input id="layer-{{$i}}" type="{{if eq $l.Category "basemap"}}radio{{else}}checkbox{{end}}" {{if eq $l.Category "basemap"}}name="basemap"{{end}} disabled> {{$l.Name}}</label>
 {{end}}
 </details>
-<p id="basemap-note" hidden>No basemap installed.</p>
+<p id="basemap-note" hidden>No basemap on this drive, so overlays show on plain paper. Add a basemap such as an OpenStreetMap extract with the Svalbard host.</p>
 <button id="fit-layer" type="button" disabled>Fit visible layers</button>
 <output id="coordinates" aria-label="Map center"></output>
 <div id="errors" role="status"></div>

@@ -11,7 +11,11 @@
   <script src="/archive-reader.js" defer></script>
   <script src="/service-register.js" defer></script>
   <script src="/collection-index.js" defer></script>
+  <script src="/source-reader.js" defer></script>
+  <script src="/search-reader.js" defer></script>
+  <script src="/reading.js" defer></script>
   <script src="/frontpage.js" defer></script>
+  <script src="/shell-panel.js" defer></script>
 </head>
 <body class="rail">
   <a class="skip" href="#main">Skip to workspace</a>
@@ -44,7 +48,7 @@
       <h2 id="margin-heading">Collections</h2><ol class="index-groups" id="margin-collections"></ol><h2 id="system-heading">System</h2><ul class="index-groups" id="system-collections"></ul>
       <a class="all-collections" href="#overview">Full catalogue →</a>
     </nav>
-    <footer class="margin-foot"><a href="#services" id="service-summary">Services</a><span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span><button type="button" class="text-button" id="refresh" disabled>Refresh saved apps</button><p id="workspace-status" role="status" hidden></p></footer>
+    <footer class="margin-foot"><a href="#services" id="service-summary">Services</a><span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span></footer>
     <div id="index-resize" role="separator" tabindex="0" aria-label="Index width" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="340" aria-valuenow="232"></div>
   </aside>
   <button type="button" id="dismiss-sidebar" class="sidebar-scrim" aria-label="Close drive index" tabindex="-1"></button>
@@ -54,13 +58,6 @@
     <footer><a id="full-register" href="#services">Full register →</a><button class="button quiet-button" data-bulk="stop-all">Stop all</button></footer><p id="drawer-feedback" role="status" hidden></p>
   </dialog>
   <main id="main" class="main" tabindex="-1">
-    <header class="top">
-      <div class="top-location">
-        <button type="button" id="menu" class="button quiet-button mobile-menu" aria-controls="sidebar" aria-expanded="false" aria-label="Open drive index">Index</button>
-      </div>
-      <span id="location" hidden></span><button type="button" id="mobile-search" class="text-button">Search</button>
-    </header>
-
     <nav id="crumbs" class="leaf-running" aria-label="Breadcrumb" hidden>
       <div class="cover-running"><a href="#cover" title="Return to the cover">Svalbard</a><span class="leaf-path"><a id="catalogue-crumb" href="#overview">Catalogue</a><a id="crumb-leaf" hidden></a></span></div>
     </nav>
@@ -94,18 +91,22 @@
         </header>
         <div id="home-content" class="catalog-controls" role="group" aria-label="Catalog filters" hidden>
           <input id="overview-filter" class="catalog-filter" type="search" aria-label="Filter catalog by name, description, or tag" placeholder="Find an entry…">
-          <select id="overview-type" aria-label="Content type"><option value="">All types</option></select>
+          <select id="overview-type" aria-label="Collection"><option value="">All collections</option></select>
           <select id="overview-subject" aria-label="Subject"><option value="">All subjects</option></select>
           <select id="overview-format" aria-label="Format"><option value="">All formats</option></select>
           <select id="overview-order" aria-label="Catalog order">
-            <option value="grouped">Grouped by type</option>
+            <option value="grouped">By collection</option>
             <option value="name">A–Z</option>
           </select>
         </div>
-        <button type="button" id="clear-filters" class="text-button" hidden>Clear filters</button>
-        <p id="overview-results" class="quiet catalog-count" role="status" hidden></p>
+        <div class="catalog-notes">
+          <p id="overview-results" class="catalog-count" role="status" hidden></p>
+          <button type="button" id="clear-filters" class="text-button" hidden>Clear filters</button>
+          <button type="button" class="text-button" id="refresh" disabled>Refresh saved apps</button>
+          <p id="workspace-status" class="catalog-count" role="status" hidden></p>
+        </div>
         <a id="article-search" class="all-collections" href="#search" hidden>Search inside articles and documents →</a>
-        <div class="register-labels" aria-hidden="true"><span>Accession</span><span>Title</span><span>Type</span><span>Size</span></div>
+        <div class="register-labels" aria-hidden="true"><span>Accession</span><span>Title</span><span>Format</span><span>Size</span></div>
         <div id="home-links" class="overview-list"></div>
         <noscript><p>Enable JavaScript to browse this dashboard, or open <code>./run</code> in a terminal.</p></noscript>
       </section>
@@ -144,7 +145,7 @@
             <p id="item-recipe" class="item-recipe quiet" hidden></p>
           </div>
         </header>
-        <div id="item-controls"></div>
+        <div class="resource-toolbar"><div id="reader-tools"></div><div id="item-controls"></div></div>
         <section id="source-view" hidden aria-label="Source reader"></section>
         <p id="item-status" role="status" hidden></p>
         <pre id="item-output" hidden></pre>
@@ -170,12 +171,15 @@
       </section>
 
       <section id="reader" class="reader" aria-label="Content viewer" hidden>
-        <div class="reader-bar work-margin" id="reader-bar" hidden>
+        <div class="reader-bar" id="reader-bar" hidden>
           <button type="button" id="back-to-search" class="text-button">← Results</button>
           <h1 id="reader-title" tabindex="-1"></h1>
-          <div class="reader-actions">
-            <a id="reader-link" class="button secondary" target="_blank" rel="noopener noreferrer">Open original ↗</a>
-            <span id="search-disclosure" class="service-slot"></span>
+          <div class="resource-toolbar">
+            <div id="article-tools"></div>
+            <div class="reader-actions">
+              <a id="reader-link" class="button secondary" target="_blank" rel="noopener noreferrer">New tab ↗</a>
+              <span id="search-disclosure"></span>
+            </div>
           </div>
           <p id="reader-status" role="status" hidden></p>
         </div>

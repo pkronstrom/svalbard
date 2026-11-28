@@ -9,9 +9,12 @@ function registerState(status) { return ({unknown:"Unknown",done:"Finished",stop
 function showRegisterRecord(record, compact) {
   const row=node("li","service-row"), info=node("div"), heading=node("strong","service-title",serviceTitle(record));
   info.append(heading,node("small","service-state",registerState(serviceUnknown?"unknown":record.status)));
-  info.append(node("p","service-resources",record.resources.join(" · ")));
-  for (const endpoint of record.endpoints || []) info.append(node("small","service-address",endpoint));
-  if (record.status==="running") info.append(node("small","service-address","Active for "+Math.max(0,Math.floor((Date.now()-Date.parse(record.started))/60000))+" min"));
+  info.append(node("p","service-resources",record.resources.map(label=>label.split(/\s+[—–]\s+/)[0]).join(" · ")));
+  for (const endpoint of record.endpoints || []) {
+    const address=node("small","service-address",endpoint.replace(/^https?:\/\//,""));
+    address.title=endpoint;info.append(address);
+  }
+  if (record.status==="running") info.append(node("small","service-address",runningFor(record.started)));
   row.append(info);
   if(!compact) {
     const details=node("details","service-info");
@@ -32,6 +35,11 @@ function showRegisterRecord(record, compact) {
   }
   row.append(controls);
   return row;
+}
+function runningFor(started) {
+  const minutes=Math.max(0,Math.floor((Date.now()-Date.parse(started))/60000));
+  if(!Number.isFinite(minutes) || minutes<1) return "Started just now";
+  return "Running for "+(minutes<60 ? minutes+" min" : Math.floor(minutes/60)+" h "+minutes%60+" min");
 }
 function registryMessage(message, error=false) {
   for(const id of ["service-feedback","drawer-feedback"]) note(byId(id),message,error);
@@ -59,11 +67,11 @@ async function controlServices(action,record) {
 function renderServices(force=false) {
   const running=registry.records.filter(r=>r.status==="running");
   const count=serviceUnknown?"?":String(running.length);
-  byId("rail-count").hidden=false;
+  byId("rail-count").hidden=count==="0";
   byId("rail-count").textContent=count;
   const label=serviceUnknown?"Service status unknown":count+" running service"+(count==="1"?"":"s");
   byId("services-nav").setAttribute("aria-label","Service activity, "+label);
-  byId("service-summary").textContent="Services · "+count;
+  byId("service-summary").textContent=count==="0"?"Services":"Services · "+count+" running";
   byId("drawer-title").textContent="Service activity";
   const full=route==="services",drawer=byId("service-drawer").open;
   const signature=[registry.version,serviceUnknown,full,drawer,registry.draining,Math.floor(Date.now()/60000)].join("|");

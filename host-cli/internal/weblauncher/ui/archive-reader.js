@@ -45,7 +45,7 @@ async function adaptArchive(item, frame, url) {
   const modes=node("label","archive-style");
   const toggle=node("input");toggle.type="checkbox";toggle.setAttribute("role","switch");
   toggle.disabled=true;
-  modes.append(toggle,document.createTextNode("Original style"));tools.prepend(modes);
+  modes.append(toggle,document.createTextNode("Original layout"));tools.prepend(modes);
   const preference="svalbard-original:"+inventory.drive+":"+item.source;
   let preferOriginal=false;
   try {preferOriginal=sessionStorage.getItem(preference)==="1";} catch {}
@@ -79,13 +79,21 @@ async function adaptArchive(item, frame, url) {
     available=true;toggle.disabled=false;
     if(data.lang)article.lang=data.lang;
     if(["rtl","ltr","auto"].includes(data.dir))article.dir=data.dir;
-    if(data.title)article.append(node("h2","",data.title));
-    for(const child of data.nodes)article.append(buildReadingNode(child,item,current));
-    const headings=article.querySelectorAll("h2[id],h3[id]");
+    const body=node("div","archive-body");
+    if(data.title)body.append(node("h1","archive-title",data.title));
+    for(const child of data.nodes)body.append(buildReadingNode(child,item,current));
+    article.append(body);
+    const headings=body.querySelectorAll("h2[id],h3[id]");
     if(headings.length>1){
+      // A contents margin beside the article on wide screens, a fold above it otherwise.
       const contents=node("details","article-contents");contents.append(node("summary","","Contents"));
-      const list=node("ul");
-      for(const heading of headings){const row=node("li"),go=node("button","text-button",heading.textContent);go.onclick=()=>heading.scrollIntoView();row.append(go);list.append(row);}
+      contents.open=matchMedia("(min-width:1200px)").matches;
+      const list=node("ol");
+      for(const heading of headings){
+        const row=node("li",heading.tagName==="H3"?"sub":""),go=node("button","text-button",heading.textContent);
+        go.onclick=()=>{heading.scrollIntoView({block:"start"});if(!matchMedia("(min-width:1200px)").matches)contents.open=false;};
+        row.append(go);list.append(row);
+      }
       contents.append(list);article.prepend(contents);
     }
     switchView(preferOriginal);

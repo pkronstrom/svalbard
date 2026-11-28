@@ -19,32 +19,174 @@ export function prose(text, markdown = true) {
   return fragment;
 }
 
+// The reading position and text size live in this browser, per drive and book.
+const ebookScales = [0.9, 1, 1.1, 1.2, 1.35, 1.5];
+const blockSelector = "p,h1,h2,h3,h4,h5,h6,li,blockquote,pre,figure,table,hr,dt,dd";
+
 export async function ebook(item, panel) {
   const base = "/api/ebook?" + new URLSearchParams({ source: item.source });
-  const result = await request(base);
+  const book = await request(base);
   if (selection !== item) return;
-  if (!result.chapters?.length) throw Error("This edition has no readable chapters. Use the original file.");
-  const paths = result.chapters.map((part) => part.path);
-  const picker = node("select");
-  picker.setAttribute("aria-label", "Chapter");
-  paths.forEach((path, i) => picker.add(new Option(i + 1 + " · " + path.split("/").pop(), String(i))));
-  const article = node("article", "prose");
-  const toolbar = node("div", "source-tabs");
-  const previous = button("← Previous", "quiet-button", () => load(picker.selectedIndex - 1));
-  const next = button("Next →", "quiet-button", () => load(picker.selectedIndex + 1));
-  toolbar.append(previous, picker, next);
-  panel.replaceChildren(toolbar, article);
-  const key = "epub:" + item.source;
+  const chapters = book.chapters || [];
+  if (!chapters.length) throw Error("This edition has no readable chapters. Use the original file.");
+  const paths = chapters.map((part) => part.path);
+  const sizes = chapters.map((part) => Math.max(1, part.bytes || 1));
+  const total = sizes.reduce((sum, size) => sum + size, 0);
+  const contents = book.contents?.length
+    ? book.contents
+    : chapters.map((part, i) => ({ label: "Section " + (i + 1), path: part.path, depth: 0 }));
+  const chapterTitle = (index) =>
+    (contents.find((entry) => entry.path === paths[index] && !entry.anchor) ||
+      contents.find((entry) => entry.path === paths[index]))?.label || "Section " + (index + 1);
+  const positionKey = "svalbard-epub:" + inventory.drive + ":" + item.source;
+  const scaleKey = "svalbard-epub-scale";
+  const stored = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
+  const store = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
+
+  const root = node("div", "ebook");
+  const bar = node("div", "ebook-bar");
+  const toggle = button("Contents", "quiet-button ebook-toggle", () => {
+    const open = root.classList.toggle("contents-open");
+    toggle.setAttribute("aria-expanded", String(open));
+    if (open) toc.querySelector("[aria-current]")?.focus();
+  });
+  toggle.setAttribute("aria-expanded", "false");
+  const previous = button("←", "quiet-button", () => open(current - 1));
+  previous.setAttribute("aria-label", "Previous chapter");
+  const next = button("→", "quiet-button", () => open(current + 1));
+  next.setAttribute("aria-label", "Next chapter");
+  const place = node("p", "ebook-place");
+  place.setAttribute("aria-live", "polite");
+  const smaller = button("A−", "quiet-button", () => scale(-1));
+  smaller.setAttribute("aria-label", "Smaller text");
+  const larger = button("A+", "quiet-button", () => scale(1));
+  larger.setAttribute("aria-label", "Larger text");
+  const sizing = node("div", "ebook-sizing");
+  sizing.append(smaller, larger);
+  const meter = node("div", "ebook-meter");
+  const fill = node("span");
+  meter.append(fill);
+  meter.setAttribute("aria-hidden", "true");
+  bar.append(toggle, previous, next, place, sizing, meter);
+
+  const toc = node("nav", "ebook-contents");
+  toc.setAttribute("aria-label", "Book contents");
+  const tocList = node("ol");
+  for (const entry of contents) {
+    const row = node("li");
+    row.style.setProperty("--depth", String(Math.min(entry.depth || 0, 4)));
+    const go = node("a", "", entry.label);
+    go.href = "#" + item.route;
+    go.dataset.path = entry.path;
+    go.onclick = (event) => {
+      event.preventDefault();
+      root.classList.remove("contents-open");
+      toggle.setAttribute("aria-expanded", "false");
+      open(paths.indexOf(entry.path), { anchor: entry.anchor });
+    };
+    row.append(go);
+    tocList.append(row);
+  }
+  toc.append(tocList);
+
+  const resume = node("p", "ebook-resume");
+  resume.hidden = true;
+  const article = node("article", "prose ebook-text");
+  if (book.language) article.lang = book.language;
+  const turn = node("div", "ebook-turn");
+  const body = node("div", "ebook-body");
+  const column = node("div", "ebook-column");
+  column.append(resume, article, turn);
+  body.append(toc, column);
+  root.append(bar, body);
+  panel.replaceChildren(root);
+
+  let current = -1;
   let revision = 0;
-  async function load(index, anchor = "") {
-    const current = ++revision;
-    picker.selectedIndex = index;
+  let scaleIndex = ebookScales.indexOf(stored(scaleKey));
+  if (scaleIndex < 0) scaleIndex = 1;
+  function scale(step) {
+    const block = visibleBlock();
+    scaleIndex = Math.min(ebookScales.length - 1, Math.max(0, scaleIndex + step));
+    article.style.setProperty("--ebook-scale", String(ebookScales[scaleIndex]));
+    smaller.disabled = scaleIndex === 0;
+    larger.disabled = scaleIndex === ebookScales.length - 1;
+    store(scaleKey, ebookScales[scaleIndex]);
+    if (step) reveal(block);
+  }
+  scale(0);
+
+  function blocks() { return article.querySelectorAll(blockSelector); }
+  function barBottom() { return Math.max(0, bar.getBoundingClientRect().bottom); }
+  function visibleBlock() {
+    const top = barBottom() + 4;
+    const all = blocks();
+    for (let i = 0; i < all.length; i++) if (all[i].getBoundingClientRect().bottom > top) return i;
+    return 0;
+  }
+  function reveal(index) {
+    const target = blocks()[index];
+    if (!target) return;
+    window.scrollTo(0, Math.max(0, target.getBoundingClientRect().top + window.scrollY - barBottom() - 12));
+  }
+  function progress() {
+    const rect = article.getBoundingClientRect();
+    const read = Math.min(1, Math.max(0, (barBottom() - rect.top) / Math.max(1, rect.height - innerHeight / 2)));
+    const done = sizes.slice(0, current).reduce((sum, size) => sum + size, 0) + read * sizes[current];
+    return Math.round((done / total) * 100);
+  }
+  function mark() {
+    const percent = progress();
+    fill.style.width = percent + "%";
+    place.textContent = chapterTitle(current) + " · " + percent + "%";
+    return percent;
+  }
+
+  // The drive keeps the position so it survives a new launch on any computer;
+  // this browser keeps a copy for read-only drives.
+  let saveTimer, unsaved = null;
+  function persist(keepalive = false) {
+    if (!unsaved) return;
+    const position = unsaved;
+    unsaved = null;
+    fetch("/api/reading?" + new URLSearchParams({ source: item.source }), {
+      method: "POST", keepalive,
+      headers: { "Content-Type": "application/json", "X-Svalbard-Request": "1" },
+      body: JSON.stringify({ chapter: position.chapter, block: position.block, percent: position.percent })
+    }).catch(() => {});
+  }
+  function remember() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!root.isConnected || current < 0) return;
+      unsaved = { chapter: paths[current], block: visibleBlock(), percent: mark(), at: Date.now() };
+      store(positionKey, unsaved);
+      persist();
+    }, 1200);
+  }
+  const listening = new AbortController();
+  window.addEventListener("scroll", () => {
+    if (!root.isConnected) return listening.abort();
+    mark();
+    remember();
+  }, { passive: true, signal: listening.signal });
+  document.addEventListener("keydown", (event) => {
+    if (!root.isConnected) return listening.abort();
+    if (event.altKey || event.ctrlKey || event.metaKey || event.target.closest?.("input,select,textarea,[contenteditable]")) return;
+    if (event.key === "ArrowRight" && current < paths.length - 1) { event.preventDefault(); open(current + 1); }
+    if (event.key === "ArrowLeft" && current > 0) { event.preventDefault(); open(current - 1); }
+  }, { signal: listening.signal });
+  window.addEventListener("pagehide", () => persist(true), { signal: listening.signal });
+
+  async function open(index, { anchor = "", block = 0, initial = false } = {}) {
+    if (index < 0 || index >= paths.length) return;
+    const attempt = ++revision;
     previous.disabled = index === 0;
     next.disabled = index === paths.length - 1;
-    article.textContent = "Opening chapter…";
+    article.setAttribute("aria-busy", "true");
     try {
       const data = await request(base + "&file=" + encodeURIComponent(paths[index]));
-      if (current !== revision || !article.isConnected) return;
+      if (attempt !== revision || !article.isConnected) return;
       const fragment = prose(data.text, false);
       const local = new URL("/" + paths[index], "https://book.invalid");
       for (const element of fragment.querySelectorAll("img[src],a[href]")) {
@@ -57,30 +199,50 @@ export async function ebook(item, panel) {
           continue;
         }
         const file = decodeURIComponent(address.pathname.slice(1));
-        if (image) element.src = base + "&file=" + encodeURIComponent(file);
-        else if (paths.includes(file)) {
+        if (image) {
+          element.src = base + "&file=" + encodeURIComponent(file);
+          element.loading = "lazy";
+        } else if (paths.includes(file)) {
+          element.removeAttribute("target");
           element.href = "#" + item.route;
           element.onclick = (event) => {
             event.preventDefault();
-            load(paths.indexOf(file), decodeURIComponent(address.hash.slice(1)));
+            open(paths.indexOf(file), { anchor: decodeURIComponent(address.hash.slice(1)) });
           };
         }
       }
+      current = index;
       article.replaceChildren(fragment);
-      if (anchor) article.querySelector("#" + CSS.escape(anchor))?.scrollIntoView({ block: "start" });
-      try {
-        sessionStorage.setItem(key, String(index));
-      } catch {}
+      article.removeAttribute("aria-busy");
+      for (const link of tocList.querySelectorAll("a")) {
+        if (link.dataset.path === paths[index]) link.setAttribute("aria-current", "true");
+        else link.removeAttribute("aria-current");
+      }
+      turn.replaceChildren();
+      if (index < paths.length - 1) turn.append(button("Next · " + chapterTitle(index + 1) + " →", "secondary", () => open(index + 1)));
+      else turn.append(node("p", "ebook-end", "End of the book"));
+      const target = anchor && article.querySelector("#" + CSS.escape(anchor));
+      if (target) window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY - barBottom() - 12);
+      else if (block) reveal(block);
+      else if (!initial) window.scrollTo(0, Math.max(0, root.getBoundingClientRect().top + window.scrollY - 8));
+      mark();
+      remember();
     } catch (error) {
-      if (current === revision) note(article, error.message, true);
+      if (attempt === revision) note(article, error.message, true);
     }
   }
-  picker.onchange = () => load(picker.selectedIndex);
-  let index = 0;
-  try {
-    index = Number(sessionStorage.getItem(key));
-  } catch {}
-  await load(Number.isInteger(index) && index >= 0 && index < paths.length ? index : 0);
+
+  const local = stored(positionKey);
+  const onDrive = await request("/api/reading?" + new URLSearchParams({ source: item.source })).catch(() => null);
+  if (selection !== item || !root.isConnected) return;
+  const saved = (onDrive?.at || 0) >= (local?.at || 0) ? onDrive || local : local;
+  const start = Math.max(0, paths.indexOf(saved?.chapter));
+  if (saved && (start > 0 || saved.block > 0)) {
+    resume.hidden = false;
+    resume.append("Continuing at " + chapterTitle(start) + (Number.isFinite(saved.percent) ? ", " + saved.percent + "% through. " : ". "));
+    resume.append(button("Start from the beginning", "text-button", () => { resume.hidden = true; open(0); }));
+  }
+  await open(start, { block: saved?.chapter === paths[start] ? saved.block : 0, initial: true });
 }
 
 export async function preferences(item, panel, key) {

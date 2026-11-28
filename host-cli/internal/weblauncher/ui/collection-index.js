@@ -52,7 +52,9 @@ function renderIndex(available,items) {
     for (const collection of available.filter(c => ["Tools","Settings"].includes(c.name) === system)) {
       const children = items.filter(item => collection.types.includes(overviewType(item))).sort((a,b)=>nameOrder.compare(a.label,b.label));
       const line = node("li","index-collection");
-      const link=node("a","collection-label",collection.name);
+      const link=node("a","collection-label");
+      const position=available.indexOf(collection);
+      link.append(node("span","collection-numeral",(romanNumerals[position] || position+1)+"."),node("span","collection-title",collection.name),node("small","collection-count",String(children.length).padStart(2,"0")));
       link.href=collectionURL(collection); link.dataset.collection=collectionFilter(collection);
       const list=node("ul","index-resources");
       const toggle=node("button","index-expand");

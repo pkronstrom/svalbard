@@ -13,14 +13,17 @@ const collections = [
 const legacyRoutes = new Map();
 let indexCollapsed;
 function collectionFilter(collection) {
-  return collection.types.length > 1 ? "collection:" + collection.name : collection.types[0];
+  return "collection:" + collection.name;
 }
+function collectionOf(type) {
+  return collections.find(collection => collection.types.includes(type));
+}
+const romanNumerals = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
 function collectionURL(collection) {
   return "#overview?" + new URLSearchParams({type:collectionFilter(collection)});
 }
 const startLabels = {wiki: "Start Wiki", chat: "Start Open WebUI", settings: "Show details"};
 const readerKinds = new Set(["browse", "documents", "apps", "maps", "workspace"]);
-const overviewTypes = ["Maps", "Archives", "Documents", "Apps", "Saved apps", "Local AI", "Tools", "Settings"];
 const itemTypes = {
   browse: "Archives", documents: "Documents", maps: "Maps",
   apps: "Apps", wiki: "Apps", chat: "Local AI"
@@ -46,8 +49,6 @@ let shownQuery = "";
 let queuedLaunch;
 const shellItem = {label: "Terminal", group: "Tools", icon: "terminal", terminal: true,
   description: "Open your shell in the vault folder."};
-let terminalKey = readTerminalKey();
-const terminals = {regular: {}, sb: {}};
 
 function node(tag, css, text) {
   const element = document.createElement(tag);
@@ -129,8 +130,22 @@ function itemPreview(item, css) {
   return preview;
 }
 
-const formats = {browse:"ZIM", documents:"Document", apps:"HTML", workspace:"HTML", maps:"Map", wiki:"Wiki", chat:"Model", library:"Library", skill:"Skill", terminal:"CLI", settings:"Action", share:"Service"};
-function formatOf(item) { return item.format || formats[item.icon] || overviewType(item); }
+// One short code per row, as a bibliographic register would print it.
+const formats = {browse:"ZIM", documents:"DOC", apps:"HTML", workspace:"HTML", maps:"MAP", wiki:"WIKI", chat:"MODEL", library:"LIB", skill:"SKILL", dataset:"DATA", terminal:"TOOL", settings:"TOOL", share:"TOOL"};
+function formatOf(item) { return item.format || formats[item.icon] || "—"; }
+// The label's remainder after a dash is a subtitle; installer boilerplate and
+// summaries that only repeat the title are not.
+function itemSubtitle(item) {
+  const title = displayTitle(item);
+  const remainder = item.label?.slice(title.length).replace(/^[\s—–-]+/, "") || "";
+  let summary = (item.summary || item.description || "").trim();
+  if (summary.startsWith(title)) summary = summary.slice(title.length).replace(/^[\s—–:,-]+/, "");
+  // "Browse the X archive." or "Open X." only restate the label.
+  const restated = summary.replace(/^(browse|open|start)\s+(the\s+)?/i, "").replace(/(\s+(archive|map|app|document))?\.?$/i, "").toLowerCase();
+  if (restated !== summary.toLowerCase() && [title, item.label].some(text => text?.toLowerCase() === restated)) summary = "";
+  const text = /\p{L}/u.test(summary) ? summary : remainder;
+  return text && text[0].toUpperCase() + text.slice(1);
+}
 const sizeNumber = new Intl.NumberFormat(undefined, {maximumFractionDigits:1});
 function sizeOf(item) {
   if (!item.bytes) return "—";
@@ -141,15 +156,15 @@ function overviewRow(item, grouped) {
   const row = node("li", "overview-row");
   const link = node("a", "register-link");
   link.href = "#" + item.route;
-  const accession = item.id || item.savedPath || "—";
-  const id = node("span", "register-id", accession.length>22 ? accession.slice(0,12)+"…"+accession.slice(-6) : accession);
+  const accession = item.id || item.savedPath?.replace(/\/index\.html?$/i, "") || "—";
+  const id = node("span", "register-id", accession.length>18 ? accession.slice(0,10)+"…"+accession.slice(-7) : accession);
   id.title = accession;
   const content = node("div", "overview-copy");
   const copy = node("div");
   const title = node(grouped ? "h3" : "h2", "overview-name", displayTitle(item));
   copy.append(title);
-  const summary = item.summary || item.description;
-  if (summary && summary !== item.label) copy.append(node("p", "overview-summary", summary));
+  const summary = itemSubtitle(item);
+  if (summary) copy.append(node("p", "overview-summary", summary));
   if(item.missing) copy.append(node("p","error","File missing from drive"));
   content.append(copy);
 
@@ -201,19 +216,16 @@ function syncOverviewTypes() {
   }
   const control = byId("overview-type");
   const selected = control.value;
-  const available = new Set(Array.from(entries.values(), overviewType));
-  const types = overviewTypes.filter(type => available.delete(type));
-  types.push(...Array.from(available).sort(nameOrder.compare));
-  control.replaceChildren(new Option("All types", ""), ...types.map(type => new Option(type, type)));
-  const group = node("optgroup");
-  group.label = "Collections";
-  for (const collection of collections) {
-    if (collection.types.length > 1 && collection.types.some(type => types.includes(type))) {
-      group.append(new Option(collection.name, "collection:" + collection.name));
-    }
-  }
-  if (group.childElementCount) control.append(group);
+  control.replaceChildren(new Option("All collections", ""), ...availableCollections(items).map(c => new Option(c.name, collectionFilter(c))));
   if ([...control.options].some(option => option.value === selected)) control.value = selected;
+}
+
+// Collections in cover order; a type no collection claims becomes its own.
+function availableCollections(items) {
+  const types = new Set(items.map(overviewType));
+  const known = new Set(collections.flatMap(collection => collection.types));
+  const additional = [...types].filter(type => !known.has(type)).sort(nameOrder.compare).map(name => ({name, types:[name]}));
+  return [...collections, ...additional].filter(collection => collection.types.some(type => types.has(type)));
 }
 
 function renderCollections(items) {
@@ -222,9 +234,7 @@ function renderCollections(items) {
     const type = overviewType(item);
     counts.set(type, (counts.get(type) || 0) + 1);
   }
-  const knownTypes = new Set(collections.flatMap(collection => collection.types));
-  const additional = [...counts.keys()].filter(type => !knownTypes.has(type)).map(name => ({name, types:[name]}));
-  const available = [...collections, ...additional].filter(collection => collection.types.some(type => counts.has(type)));
+  const available = availableCollections(items);
   byId("collections").replaceChildren(...available.map(collection => {
     const {name, types, description} = collection;
     const count = types.reduce((sum,type) => sum + (counts.get(type) || 0),0);
@@ -251,9 +261,10 @@ function renderHome() {
   articles.hidden = !inventory?.hasSearch || !query;
   articles.href = "#search?" + new URLSearchParams({q:query});
   const selected = byId("overview-type").value;
-  const collection = collections.find(group => selected === "collection:" + group.name);
+  const shown = availableCollections(items);
+  const collection = shown.find(group => selected === collectionFilter(group));
   const visible = items.filter(item => {
-    if (selected && !(collection ? collection.types.includes(overviewType(item)) : overviewType(item) === selected)) return false;
+    if (collection && !collection.types.includes(overviewType(item))) return false;
     if (byId("overview-subject").value && !item.tags?.includes(byId("overview-subject").value)) return false;
     if (byId("overview-format").value && formatOf(item) !== byId("overview-format").value) return false;
     const description = query ? itemSearchText(item) : "";
@@ -263,28 +274,28 @@ function renderHome() {
   const output = byId("home-links");
   output.replaceChildren();
   const resultCount = visible.length;
-  const chapter = collections.find(group => collectionFilter(group) === selected);
-  byId("home-title").textContent = chapter?.name || selected || "Catalogue";
-  note(byId("collection-description"), chapter?.description || "");
+  byId("home-title").textContent = collection?.name || "Catalogue";
+  note(byId("collection-description"), collection?.description || "");
+  byId("refresh").hidden = collection?.name !== "Instruments";
   note(byId("inventory-summary"), count ? resultCount + (resultCount === 1 ? " entry" : " entries") : "Empty catalogue");
-  byId("clear-filters").hidden = !selected && !query && !byId("overview-format").value && !byId("overview-subject").value;
+  byId("clear-filters").hidden = !collection && !query && !byId("overview-format").value && !byId("overview-subject").value;
   const filtered = query || byId("overview-format").value || byId("overview-subject").value;
   note(byId("overview-results"), filtered && !resultCount ? "No matches. Try another term or clear a filter." : "");
 
-  const grouped = byId("overview-order").value === "grouped";
-  const types = grouped ? Array.from(byId("overview-type").options, option => option.value).filter(type => type && !type.startsWith("collection:")) : [""];
-  for (const type of types) {
-    const rows = grouped ? visible.filter(item => overviewType(item) === type) : visible;
+  const grouped = byId("overview-order").value === "grouped" && !collection;
+  for (const [position, group] of (grouped ? shown : [null]).entries()) {
+    const rows = group ? visible.filter(item => group.types.includes(overviewType(item))) : visible;
     if (!rows.length) continue;
-    const section = grouped ? node("section", "register-group") : output;
-    if (grouped) {
-      const heading = node("h2", "overview-heading", type);
+    const section = group ? node("section", "register-group") : output;
+    if (group) {
+      const heading = node("h2", "overview-heading");
+      heading.append(node("span", "overview-numeral", (romanNumerals[position] || position + 1) + "."), group.name);
       section.append(heading);
       output.append(section);
     }
     const list = node("ul", "overview-rows");
     list.setAttribute("role", "list");
-    list.append(...rows.map(item => overviewRow(item, grouped)));
+    list.append(...rows.map(item => overviewRow(item, Boolean(group))));
     section.append(list);
   }
 }
@@ -292,12 +303,13 @@ function renderHome() {
 function markSelection() {
   for(const link of document.querySelectorAll(".resource-link[aria-current]")) if(link.hash!=="#"+selection?.route) link.removeAttribute("aria-current");
   const type = selection ? overviewType(selection) : byId("overview-type").value;
-  const current = collections.find(c => collectionFilter(c) === type || c.types.includes(type));
+  const current = collections.find(c => collectionFilter(c) === type) || collectionOf(type);
   for (const link of document.querySelectorAll(".collection-label")) {
     if ((selection || route === "overview") && link.dataset.collection === (current ? collectionFilter(current) : type)) link.setAttribute("aria-current","location");
     else link.removeAttribute("aria-current");
   }
-  const view = articleOpen ? "search" : selection && route !== "terminal" ? "overview" : route;
+  const fromSearch = articleOpen && (route === "read" || history.state?.fromSearch);
+  const view = fromSearch ? "search" : selection && route !== "terminal" ? "overview" : route;
   for (const link of byId("work-nav").querySelectorAll("a")) {
     if (link.hash === "#" + view) link.setAttribute("aria-current", route === view ? "page" : "location");
     else link.removeAttribute("aria-current");
@@ -480,7 +492,9 @@ function showReader(label, address, kind, fromSearch = false) {
     const archivedPDF = pdf && kind === "browse" && archiveFrameURL(url);
     if (pdf && (kind === "documents" || archivedPDF)) {
       embedded = new URL("/.svalbard-reader/", archivedPDF || url);
-      embedded.searchParams.set("file", url.pathname + url.hash);
+      const resume = !url.hash && !fromSearch && pdfStartPage(selection);
+      embedded.searchParams.set("file", url.pathname + (resume ? "#page=" + resume : url.hash));
+      if (resume) frame.dataset.resumed = "1";
     } else if (!pdf) {
       frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-downloads");
       if (kind === "browse" && url.pathname === "/viewer" && url.hash) {
@@ -506,17 +520,18 @@ function showReader(label, address, kind, fromSearch = false) {
 function archiveToolbar(item, frame, fromSearch) {
   const tools = node("form", "archive-tools");
   tools.id = "archive-tools";
-  const home = node("a", "button quiet-button", "Archive home");
+  const home = node("a", "button quiet-button", "Contents");
   home.href = "#" + item.route;
   const field = node("input");
   field.type = "search"; field.required = true; field.maxLength = 500;
-  field.placeholder = "Search this archive…"; field.setAttribute("aria-label", "Search this archive");
+  field.placeholder = "Search " + displayTitle(item) + "…"; field.setAttribute("aria-label", "Search this archive");
   const submit = node("button", "button secondary", "Search");
   submit.type = "submit";
   tools.append(home, field, submit);
   const results = node("div", "archive-results");
   results.id = "archive-results";
-  byId("reader").append(tools, results);
+  (fromSearch ? byId("article-tools") : byId("reader-tools")).append(tools);
+  byId("reader").append(results);
   home.onclick = event => {
     if (location.hash === home.hash) { event.preventDefault(); renderRoute(); }
   };
@@ -553,206 +568,9 @@ function archiveToolbar(item, frame, fromSearch) {
   }).catch(error => note(results, error.message, true));
 }
 
-// Colour a bounded opening excerpt; long minified bundles stay cheap to display.
-function highlightSource(body, text) {
-  const first = text.slice(0, 16000);
-  const pattern = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|\b(?:async|await|break|case|class|const|default|else|export|false|for|function|if|import|let|new|null|return|throw|true|typeof|var|while)\b/g;
-  const fragments = document.createDocumentFragment();
-  let offset = 0;
-  for (const match of first.matchAll(pattern)) {
-    fragments.append(first.slice(offset, match.index), node("span", match[1] ? "literal" : match[2] ? "comment" : "keyword", match[0]));
-    offset = match.index + match[0].length;
-  }
-  fragments.append(text.slice(offset));
-  body.replaceChildren(fragments);
-}
-
-function sourceSection(part) {
-  if (part.label.startsWith("Examples/")) return "Examples";
-  if (part.label.startsWith("references/")) return "References";
-  if (part.label.startsWith("scripts/") || part.label === "Source") return "Files";
-  return part.label;
-}
-async function renderSource(item, section, selectedPart) {
-  const panel = byId("source-view");
-  const sections = [...new Set([...(item.icon === "library" ? ["Overview"] : []), ...item.parts.map(sourceSection)])];
-  section ??= sections[0];
-  const parts = item.parts.filter(part=>sourceSection(part)===section);
-  const active = selectedPart || parts[0];
-  const tabs = node("nav", "source-tabs");
-  tabs.setAttribute("aria-label", "Resource views");
-  for (const name of sections) {
-    const tab = button(name, "secondary", () => renderSource(item,name));
-    tab.setAttribute("aria-pressed", String(name === section));
-    tabs.append(tab);
-  }
-  panel.hidden=false;
-  panel.replaceChildren(tabs);
-  if (!active) {
-    const overview=node("article","prose");
-    overview.append(node("h2","",item.label),node("p","",item.description || item.note),node("p","quiet","No overview document is installed with this package."));
-    panel.append(overview);
-    return;
-  }
-  if (item.icon==="library" && section==="Files") {
-    const tree=node("details","source-tree");tree.append(node("summary","","Package files"));
-    for(const part of parts)tree.append(button(part.path,"quiet-button",()=>renderSource(item,section,part)));
-    panel.append(tree);
-  } else if(parts.length>1) {
-    const picker=node("select");picker.setAttribute("aria-label","File");
-    parts.forEach((part,i)=>picker.add(new Option(part.path,String(i))));
-    picker.selectedIndex=parts.indexOf(active);
-    picker.onchange=()=>renderSource(item,section,parts[picker.selectedIndex]);
-    panel.append(picker);
-  }
-  const file = node("p", "item-recipe", active.path);
-  const isMarkdown=/\.md$/i.test(active.path);
-  const body = node(isMarkdown ? "article" : "pre", isMarkdown ? "prose" : "source-text", "Loading…");
-  panel.append(file,body);
-  try {
-    const data = await request("/api/source?" + new URLSearchParams({id:item.id, view:active.label}));
-    if (!body.isConnected) return;
-    body.tabIndex = 0;
-    if (/\.(m?js|json|cjs)$/.test(active.path)) highlightSource(body, data.text);
-    else if (isMarkdown) {
-      const {prose}=await import("/views.js");
-      const fragment=prose(data.text);
-      const base=new URL("/"+active.path,"https://source.invalid");
-      for(const link of fragment.querySelectorAll("a[href]")) {
-        const address=new URL(link.getAttribute("href"),base);
-        if(address.origin!==base.origin)continue;
-        const path=decodeURIComponent(address.pathname.slice(1));
-        const part=item.parts.find(part=>part.path===path);
-        link.removeAttribute("target");
-        if(part){
-          link.href="#"+item.route;
-          link.onclick=event=>{event.preventDefault();if(part===active && address.hash) body.querySelector("#"+CSS.escape(decodeURIComponent(address.hash.slice(1))))?.scrollIntoView();else renderSource(item,sourceSection(part),part);};
-        }else link.removeAttribute("href");
-      }
-      body.replaceChildren(fragment);
-      if(item.format==="MD"||item.icon==="skill"){
-        const headings=[...body.querySelectorAll("h2,h3")];
-        if(headings.length>1) {
-          const contents=node("details","article-contents");contents.append(node("summary","","Contents"));
-          for(const heading of headings)contents.append(button(heading.textContent,"quiet-button",()=>heading.scrollIntoView()));
-          body.prepend(contents);
-        }
-      }
-      const raw=button("Original text","quiet-button",()=>{body.replaceChildren(node("pre","source-text",data.text));raw.remove();});
-      tabs.append(raw);
-      const example=[...body.querySelectorAll("h2,h3")].find(heading=>/^examples?$/i.test(heading.textContent.trim()));
-      if(example && !sections.includes("Examples")) tabs.append(button("Examples","secondary",()=>{example.tabIndex=-1;example.focus();}));
-    } else body.textContent = data.text;
-    if (section==="Examples" && /\.html?$/i.test(active.path) && !data.truncated) {
-      const preview=button("Preview markup","secondary",()=>{
-        const frame=node("iframe","example-frame");
-        frame.setAttribute("sandbox","");frame.title=active.path;
-        frame.srcdoc='<meta http-equiv="Content-Security-Policy" content="default-src &apos;none&apos;; style-src &apos;unsafe-inline&apos;">'+data.text;
-        body.after(frame);preview.remove();
-      });
-      tabs.append(preview);
-    }
-    if (data.truncated) file.append(" · First 256 KiB");
-    const copy = button("Copy text", "quiet-button", async () => {
-      try { await navigator.clipboard.writeText(data.text); copy.textContent = "Copied"; }
-      catch { body.focus(); }
-    });
-    tabs.append(copy);
-  } catch (error) {note(body, error.message, true);}
-}
 function savedAddress(item, base) {
   const path = item.savedPath.split("/").map(encodeURIComponent).join("/");
   return new URL(path, base).href;
-}
-
-function readTerminalKey() {
-  const hash = location.hash.slice(1);
-  const key = hash.startsWith("terminal-key=") ? hash.slice("terminal-key=".length) : "";
-  if (key) history.replaceState(null, "", location.pathname + location.search);
-  try {
-    if (key) sessionStorage.setItem("svalbard-terminal-key", key);
-    return key || sessionStorage.getItem("svalbard-terminal-key") || "";
-  } catch {
-    return key;
-  }
-}
-
-function selectedTerminal() {
-  return terminals[selection?.terminalMode === "sb" ? "sb" : "regular"];
-}
-
-function renderTerminal() {
-  const state = selectedTerminal();
-  const command = byId("terminal-command");
-  const start = byId("terminal-start");
-  command.textContent = selection?.command || "";
-  command.hidden = !command.textContent || Boolean(state.session);
-  start.textContent = state === terminals.sb ? "Start sb shell" : "Start terminal";
-  start.hidden = !terminalKey || Boolean(state.session);
-  byId("terminal-unlock").hidden = Boolean(terminalKey);
-  start.disabled = !terminalKey || state.loading;
-  byId("terminal-stop").hidden = !state.session;
-  byId("terminal-paste").hidden = !state.session || !selection?.command;
-  for (const terminal of Object.values(terminals)) {
-    if (terminal.screen) terminal.screen.hidden = state !== terminal;
-  }
-  const message = terminalKey ? state.message : "";
-  note(byId("terminal-status"), message || "", state.failed);
-}
-
-byId("terminal-unlock").addEventListener("submit", async event => {
-  event.preventDefault();
-  const input = byId("launch-link");
-  try {
-    const link = new URL(input.value.trim());
-    const key = new URLSearchParams(link.hash.slice(1)).get("terminal-key");
-    if (link.origin !== location.origin || !key) throw Error();
-    const res = await fetch("/api/unlock", {method:"POST", headers:{"X-Svalbard-Request":"1", "X-Svalbard-Key":key}});
-    if (!res.ok) throw Error();
-    terminalKey = key;
-    input.value = "";
-    try { sessionStorage.setItem("svalbard-terminal-key", key); } catch {}
-    note(byId("unlock-error"), "");
-    renderRoute();
-    byId("terminal-start").focus();
-  } catch {
-    note(byId("unlock-error"), "Use the private link printed by the current ./run web session.", true);
-    input.select();
-  }
-});
-
-async function startTerminal() {
-  const state = selectedTerminal();
-  if (!terminalKey || state.loading || state.session) return;
-  const mode = selection?.terminalMode;
-  const prefill = selection?.command || "";
-  state.loading = true;
-  state.failed = false;
-  state.message = "Connecting…";
-  renderTerminal();
-  try {
-    const {openShell} = await import("/terminal.js");
-    state.previous?.dispose();
-    state.previous = undefined;
-    if (!state.screen) {
-      state.screen = node("div", "terminal-screen");
-      byId("terminal-screens").append(state.screen);
-    }
-    state.session = openShell(state.screen, terminalKey, mode, prefill, connected => {
-      state.message = connected ? "" : "Terminal disconnected.";
-      if (!connected) {
-        state.previous = state.session;
-        state.session = undefined;
-      }
-      renderTerminal();
-    });
-  } catch (error) {
-    state.message = error.message;
-    state.failed = true;
-  } finally {
-    state.loading = false;
-    renderTerminal();
-  }
 }
 
 function renderItem() {
@@ -811,7 +629,7 @@ function renderItem() {
       }
       const address = item.savedPath ? savedAddress(item, link.url) : link.url;
       if (!reading && readerKinds.has(item.icon)) reading = showReader(item.label, address, item.icon);
-      const label = reading ? "Open original" : link.label;
+      const label = reading ? "New tab" : link.label;
       controls.append(externalLink(label, address));
     }
   }
@@ -842,10 +660,8 @@ function toggleSidebar(open) {
   byId("viewport").inert=open;
   byId("crumbs").inert=open;
   document.querySelector(".skip").inert=open;
-  byId("mobile-search").hidden=open;
   document.body.classList.toggle("sidebar-open", open);
-  byId("menu").setAttribute("aria-expanded", String(open));
-  byId("menu").setAttribute("aria-label", open ? "Close drive index" : "Open drive index");
+  if (matchMedia("(max-width:768px)").matches) byId("rail-toggle").setAttribute("aria-expanded", String(open));
 }
 
 function updateRail(collapsed) {
@@ -888,7 +704,9 @@ function renderRoute() {
   if (route === "overview") {
     for (const field of ["subject","format"]) byId("overview-"+field).value = params.get(field) || "";
     byId("overview-filter").value = params.get("q") || "";
-    byId("overview-type").value = params.get("type") || "";
+    const type = params.get("type") || "";
+    const legacy = type && !type.startsWith("collection:") && collectionOf(type);
+    byId("overview-type").value = legacy ? collectionFilter(legacy) : type;
     byId("overview-order").value = params.get("order") === "name" ? "name" : "grouped";
     renderHome();
   }
@@ -914,11 +732,13 @@ function renderRoute() {
   const details = byId("details");
   details.hidden = !selection || articleOpen;
   details.classList.toggle("terminal-page", Boolean(selection?.terminal));
+  // Readers open into a compact running header straight away, so the page
+  // does not jump when the service becomes ready.
+  details.classList.toggle("reader-item", Boolean(selection && (["EPUB","MD"].includes(selection.format) || (selection.service && readerKinds.has(selection.icon)))));
   byId("overview").hidden = route !== "overview";
   byId("services-panel").hidden = route !== "services";
   if (route === "services") { renderServices(); schedulePoll(0); }
   byId("search-panel").hidden = route !== "search";
-  note(byId("location"), parent?.name || "");
   markSelection();
   toggleSidebar(false);
 
@@ -947,9 +767,10 @@ function renderRoute() {
 
   if (selection) {
     revealResource(selection);
+    loadPDFPosition(selection);
     byId("item-title").textContent = displayTitle(selection);
     byId("item-kind").textContent = [formatOf(selection),selection.bytes && sizeOf(selection)].filter(Boolean).join(" · ");
-    byId("item-description").textContent = displayTitle(selection) !== selection.label ? selection.label.slice(displayTitle(selection).length).replace(/^[\s—–-]+/,"") : selection.summary || selection.description || "";
+    byId("item-description").textContent = itemSubtitle(selection);
     note(byId("item-recipe"), "");
     const preview = byId("item-preview");
     preview.hidden = !previewURL(selection);
@@ -976,7 +797,7 @@ function renderRoute() {
   }
 }
 
-async function refreshPages() {
+async function refreshPages(event) {
   const refresh = byId("refresh");
   const status = byId("workspace-status");
   refresh.disabled = true;
@@ -985,13 +806,13 @@ async function refreshPages() {
     for (const [route, entry] of entries) if (entry.savedPath) entries.delete(route);
     for (const page of pages) {
       const entry = {
-        route: "saved/" + encodeURIComponent(page.path), label: page.name, note: page.path,
+        route: "saved/" + encodeURIComponent(page.path), label: page.name.charAt(0).toUpperCase() + page.name.slice(1), note: page.path,
         group: "Saved apps", icon: "workspace", kind: "launch", service: inventory.workspace,
         savedPath: page.path
       };
       entries.set(entry.route, entry);
     }
-    note(status, pages.length ? "" : "No saved HTML apps yet.");
+    note(status, pages.length || !event ? "" : "No saved HTML apps yet. Save an .html file under workspace/ on the drive.");
     syncOverviewTypes();
     if (route === "overview") renderRoute();
     if (location.hash.startsWith("#saved/") && (!selection || !entries.has(route))) renderRoute();
@@ -1003,114 +824,9 @@ async function refreshPages() {
   }
 }
 
-function searchResult(item, position) {
-  const row = node("li");
-  const title = node("a", "result-link", item.title || item.label);
-  const owner = [...entries.values()].find(entry=>entry.source===item.source || (entry.source?.endsWith(".zim") && item.source.startsWith(entry.source+"/")));
-  const params = new URLSearchParams({source:item.source,path:item.path,label:item.title || item.label});
-  title.href = "#" + (owner?.route || "read") + "?" + params;
-  title.onclick = event => {
-    if(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;
-    event.preventDefault();
-    history.replaceState({query:shownQuery,position,scroll:scrollY},"","#search?"+new URLSearchParams({q:shownQuery}));
-    history.pushState({query:shownQuery,position,fromSearch:true},"",title.hash);
-    window.scrollTo(0,0);renderRoute();
-  };
-  row.append(title, node("p", "quiet", item.label));
-  if (item.snippet) row.append(node("p", "", item.snippet));
-  return row;
-}
-
-async function openArticle(params,revision) {
-  const label=params.get("label") || params.get("source");
-  byId("reader").hidden=false;
-  byId("reader-bar").hidden=false;
-  byId("reader-title").textContent=label;
-  byId("reader-title").focus({preventScroll:true});
-  byId("reader-link").hidden=true;
-  byId("back-to-search").textContent=(history.state?.fromSearch || history.state?.fromArchiveSearch) ? "← Results" : "← Catalogue";
-  byId("search-disclosure").replaceChildren();
-  note(byId("reader-status"),"Opening original…");
-  try {
-    const source=params.get("source");
-    const link=await request("/api/read",{source,path:params.get("path")});
-    if(revision!==searchRead)return;
-    if(!showReader(label,link.url,source.startsWith("books/")?"documents":"browse",true))throw Error("The result has no local reader address.");
-    articleService=link.service;
-    if (link.service && unavailableReader(states.get(link.service))) states.delete(link.service);
-    byId("reader-link").hidden=false;
-    if (link.service) {
-      const stop = button("Stop serving", "quiet-button", event => stopSearchReader(event.currentTarget));
-      byId("search-disclosure").append(focusControl());
-      serviceDisclosure(byId("search-disclosure"), "search-inspector-panel", {status:"running"}, stop);
-      schedulePoll(250);
-    }
-    note(byId("reader-status"),"");
-  } catch(error) { if(revision===searchRead)note(byId("reader-status"),error.message,true); }
-}
-function leaveArticle() {
-  if(history.state?.fromSearch || history.state?.fromArchiveSearch) history.back();
-  else location.hash=selection?.route || "overview";
-}
-
-function unavailableReader(state) {
-  return ["stopping", "stopped", "failed"].includes(state?.status);
-}
-
-async function stopSearchReader(stop) {
-  const service = articleService;
-  if (!service) return;
-  stop.disabled = true;
-  try {
-    const state = await request("/api/services/" + service + "/stop", {});
-    showState(service, state);
-  } catch (error) {
-    if (articleService === service) note(byId("reader-status"), error.message, true);
-  } finally {
-    stop.disabled = false;
-  }
-}
-
-async function runSearch() {
-  ++searchRead;
-  const query = byId("query").value.trim();
-  const submitted = ++searchRequest;
-  shownQuery = query;
-  if (route === "search" && history.state?.query !== query) {
-    history.replaceState({query}, "", "#search?" + new URLSearchParams({q:query}));
-  }
-  const button = byId("search-form").querySelector("button");
-  const results = byId("search-results");
-  const status = byId("search-status");
-  button.disabled = true;
-  results.hidden = true;
-  note(status, "Searching…");
-  try {
-    const data = await request("/api/search", {query});
-    if (submitted !== searchRequest) return;
-    results.replaceChildren(...data.hits.map(searchResult));
-    results.hidden = !data.hits.length;
-    const count = data.hits.length;
-    const summary = count ? "Showing " + count + (count === 1 ? " result" : " results") : "No matching articles or documents.";
-    note(status, data.status || summary);
-  } catch (error) {
-    if (submitted === searchRequest) {
-      shownQuery = "";
-      note(status, error.message, true);
-    }
-  } finally {
-    if (submitted === searchRequest) button.disabled = false;
-  }
-}
-
-byId("menu").addEventListener("click", event => {
-  const open = !document.body.classList.contains("sidebar-open");
-  toggleSidebar(open);
-  if (open && !event.detail) byId("work-nav").querySelector("a").focus({preventScroll: true});
-});
 byId("dismiss-sidebar").addEventListener("click", () => {
   toggleSidebar(false);
-  (drawerOpener || byId("menu")).focus();
+  (drawerOpener || byId("rail-toggle")).focus();
 });
 byId("work-nav").addEventListener("click", event => {
   const link = event.target.closest("a");
@@ -1140,7 +856,6 @@ function openGlobalSearch() {
   }
   byId(target === "search" ? "query" : "overview-filter").focus();
 }
-byId("mobile-search").addEventListener("click",openGlobalSearch);
 matchMedia("(max-width:768px)").addEventListener("change",()=>toggleSidebar(false));
 byId("search-shortcut").textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl K";
 byId("cover-search").addEventListener("submit", event => {
@@ -1154,14 +869,14 @@ document.addEventListener("keydown", event => {
     openGlobalSearch();
   }
   if(event.key==="Tab" && document.body.classList.contains("sidebar-open")) {
-    const controls=[byId("menu"), ...document.querySelectorAll(".spine a,.spine button, #sidebar a, #sidebar button:not(:disabled)")].filter(el=>el.getClientRects().length && !el.hidden);
+    const controls=[...document.querySelectorAll(".spine a,.spine button, #sidebar a, #sidebar button:not(:disabled)")].filter(el=>el.getClientRects().length && !el.hidden);
     const index=controls.indexOf(document.activeElement);
     event.preventDefault();
     controls[(index+(event.shiftKey?-1:1)+controls.length)%controls.length].focus();
   }
   if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
     toggleSidebar(false);
-    (drawerOpener || byId("menu")).focus();
+    (drawerOpener || byId("rail-toggle")).focus();
   }
 });
 document.querySelector(".skip").addEventListener("click", event => {
@@ -1173,12 +888,6 @@ byId("clear-filters").onclick=()=>{for (const id of ["filter","type","subject","
 byId("overview-filter").addEventListener("input", syncCatalogueURL);
 byId("overview-type").addEventListener("change", syncCatalogueURL);
 byId("overview-order").addEventListener("change", syncCatalogueURL);
-byId("terminal-start").addEventListener("click", startTerminal);
-byId("terminal-stop").addEventListener("click", () => selectedTerminal().session?.disconnect());
-byId("terminal-paste").addEventListener("click", () => selectedTerminal().session?.paste(selection.command));
-window.addEventListener("pagehide", () => {
-  for (const state of Object.values(terminals)) state.session?.disconnect();
-});
 byId("refresh").addEventListener("click", refreshPages);
 byId("back-to-search").addEventListener("click",leaveArticle);
 byId("search-form").addEventListener("submit", event => {
