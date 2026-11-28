@@ -8,7 +8,7 @@
 
 Build the drive while you’re online. Everything on it then works offline.
 
-> **Alpha (v0.7.1).** Svalbard is under active development. Presets, datasets and curation still change, so expect rough edges.
+> **Alpha (v0.8.0).** Svalbard is under active development. Presets, datasets and curation still change, so expect rough edges.
 
 ## Ask the drive
 
