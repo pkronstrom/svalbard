@@ -122,7 +122,24 @@ func launchTray(d drive) error {
 	return cmd.Process.Release()
 }
 
+// If a disk is unmounted or replaced at the same path, retire this tray.
+func sameVault(root string, original os.FileInfo) bool {
+	current, err := os.Stat(root)
+	if err != nil {
+		return !errors.Is(err, os.ErrNotExist)
+	}
+	return os.SameFile(original, current)
+}
+
 func showTray(d drive, cleanup func()) error {
+	original, err := os.Stat(d.root)
+	if err != nil {
+		return err
+	}
+	quit := func() {
+		cleanup()
+		os.Exit(0)
+	}
 	if err := checkDesktop(); err != nil {
 		return err
 	}
@@ -142,6 +159,10 @@ func showTray(d drive, cleanup func()) error {
 			}
 			status.SetLabel(label)
 			go func() {
+				if !sameVault(d.root, original) {
+					quit()
+					return
+				}
 				err := fn()
 				action.finish(err)
 				if err != nil {
@@ -191,8 +212,7 @@ func showTray(d drive, cleanup func()) error {
 			if err := unmount(vol); err != nil {
 				return err
 			}
-			cleanup()
-			os.Exit(0)
+			quit()
 			return nil
 		}))
 	}
@@ -200,8 +220,7 @@ func showTray(d drive, cleanup func()) error {
 		if err := d.prepareAndStop(false); err != nil {
 			return err
 		}
-		cleanup()
-		os.Exit(0)
+		quit()
 		return nil
 	}))
 	updateMenu(d, status, items, &action)
@@ -210,6 +229,10 @@ func showTray(d drive, cleanup func()) error {
 		t := time.NewTicker(3 * time.Second)
 		defer t.Stop()
 		for range t.C {
+			if !sameVault(d.root, original) {
+				quit()
+				return
+			}
 			updateMenu(d, status, items, &action)
 		}
 	}()
@@ -264,15 +287,16 @@ func updateMenu(d drive, status *systray.MenuItem, items map[serviceEntry]*systr
 			count++
 		}
 	}
-	text := fmt.Sprintf("Svalbard · %d running", count)
+	name := filepath.Base(d.root)
+	text := fmt.Sprintf("%s · %d running", name, count)
 	if origin == "" {
-		text = "Svalbard · Dashboard stopped"
+		text = name + " · Dashboard stopped"
 	}
 	if err != nil {
-		text = "Svalbard · Dashboard unavailable"
+		text = name + " · Dashboard unavailable"
 	}
 	if current.Draining {
-		text = "Svalbard · Preparing for removal"
+		text = name + " · Preparing for removal"
 	}
 	if message := action.message(); message != "" {
 		text = message

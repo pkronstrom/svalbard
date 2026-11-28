@@ -90,6 +90,7 @@ func TestLaunchersMatchTheVaultOSSelection(t *testing.T) {
 }
 
 func TestLinuxWrapperUsesDriveRun(t *testing.T) {
+	t.Setenv("SVALBARD_NO_TRAY", "1")
 	root := filepath.Join(t.TempDir(), "Vault Å")
 	if err := os.Mkdir(root, 0755); err != nil {
 		t.Fatal(err)
@@ -112,6 +113,7 @@ func TestLinuxWrapperUsesDriveRun(t *testing.T) {
 }
 
 func TestMacBundleSelectsInstalledARMRuntimeUnderRosetta(t *testing.T) {
+	t.Setenv("SVALBARD_NO_TRAY", "1")
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		t.Skip("requires Apple silicon")
 	}

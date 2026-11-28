@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -73,5 +75,32 @@ func TestActionsDoNotWaitForStatusPolls(t *testing.T) {
 	action.finish(nil)
 	if action.message() != "" {
 		t.Fatal("completed action still showing")
+	}
+}
+
+func TestTrayQuitsWhenItsVaultIsGoneOrReplaced(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "vault")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameVault(root, initial) {
+		t.Fatal("the original vault was rejected")
+	}
+	if err := os.Rename(root, filepath.Join(parent, "removed")); err != nil {
+		t.Fatal(err)
+	}
+	if sameVault(root, initial) {
+		t.Fatal("the removed vault appears attached")
+	}
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if sameVault(root, initial) {
+		t.Fatal("a different vault took over the old tray")
 	}
 }
