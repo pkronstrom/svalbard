@@ -301,3 +301,50 @@ func fakeServe(args []string) error {
 	})
 	return http.ListenAndServe(options["--address"]+":"+options["--port"], mux)
 }
+
+func TestConcurrentArchivesRecoverAfterOwnedProcessExits(t *testing.T) {
+	library := NewLibrary(fixtureLibraryDrive(t, true))
+	t.Cleanup(library.Close)
+	ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
+	defer cancel()
+	type outcome struct {
+		book *Archive
+		err  error
+	}
+	results := make(chan outcome, 2)
+	for _, file := range []string{"first.zim", "second.zim"} {
+		go func() {
+			book, err := library.Acquire(ctx, file)
+			results <- outcome{book, err}
+		}()
+	}
+	first, second := <-results, <-results
+	if first.err != nil || second.err != nil {
+		t.Fatal(first.err, second.err)
+	}
+	if first.book.Exited != second.book.Exited {
+		t.Fatal("concurrent requests opened separate listeners")
+	}
+	first.book.Close()
+	library.StopIdle()
+	requireContentStatus(t, second.book, http.StatusOK)
+	// Signal the child handle owned by this test fixture.
+	if err := library.process.cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-second.book.Exited:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	reopened := mustAcquire(t, library, ctx, "second.zim")
+	second.book.Close()
+	requireContentStatus(t, reopened, http.StatusOK)
+	reopened.Close()
+	library.StopIdle()
+	select {
+	case <-reopened.Exited:
+	default:
+		t.Fatal("empty listener still running")
+	}
+}

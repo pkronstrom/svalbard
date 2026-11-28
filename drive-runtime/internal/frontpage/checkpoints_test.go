@@ -146,3 +146,47 @@ func TestRemovalDetectsUnownedOpenFileAndLeavesItAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRemovalWaitsForSettingsWriter(t *testing.T) {
+	d := dashboard{ctx: t.Context(), root: t.TempDir()}
+	payload, err := json.Marshal(map[string]string{"action": "prepare", "version": d.registryLocked().Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.settingsMu.Lock()
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		d.lifecycle(w, httptest.NewRequest(http.MethodPost, "/api/lifecycle", strings.NewReader(string(payload))))
+		done <- w
+	}()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		d.mu.Lock()
+		draining := d.draining
+		d.mu.Unlock()
+		if draining {
+			break
+		}
+		if time.Now().After(deadline) {
+			d.settingsMu.Unlock()
+			t.Fatal("preparation did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-done:
+		d.settingsMu.Unlock()
+		t.Fatal("removal completed during a settings write")
+	default:
+	}
+	d.settingsMu.Unlock()
+	select {
+	case w := <-done:
+		if w.Code != 200 {
+			t.Fatal(w.Code)
+		}
+	case <-time.After(7 * time.Second):
+		t.Fatal("removal did not resume")
+	}
+}

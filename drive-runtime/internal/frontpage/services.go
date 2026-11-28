@@ -33,6 +33,8 @@ func (d *dashboard) runService(ctx context.Context, spec serviceSpec, model stri
 	}
 	switch spec.name {
 	case "browse":
+		// Release this job's archive leases before checking for an empty listener.
+		defer d.kiwix.StopIdle()
 		if spec.target != "" && (!isFileName(spec.target) || !strings.EqualFold(path.Ext(spec.target), ".zim")) {
 			return "", fmt.Errorf("invalid archive: %s", spec.target)
 		}

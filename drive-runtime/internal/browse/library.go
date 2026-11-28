@@ -208,7 +208,7 @@ func (l *Library) unlock() {
 	<-l.gate
 }
 
-// Close cancels in-flight work, reaps Kiwix and removes its temporary catalog.
+// StopIdle reaps the listener only when no archive leases remain.
 func (l *Library) StopIdle() {
 	l.gate <- struct{}{}
 	defer l.unlock()
@@ -217,6 +217,7 @@ func (l *Library) StopIdle() {
 	}
 }
 
+// Close cancels in-flight work, reaps Kiwix and removes its temporary catalog.
 func (l *Library) Close() {
 	l.cancel()
 	l.gate <- struct{}{}
