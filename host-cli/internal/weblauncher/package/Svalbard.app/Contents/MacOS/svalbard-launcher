@@ -2,22 +2,31 @@
 # Finder can start this script under Rosetta. Give the drive's run script
 # the architecture of its available runtime.
 root=$(CDPATH= cd -P -- "$(dirname -- "$0")/../../.." && pwd -P) || exit 1
+arch=x86_64
+runtime="$root/.svalbard/runtime"
+if [ "$(/usr/sbin/sysctl -in hw.optional.arm64)" = "1" ] ||
+   [ "$(/usr/sbin/sysctl -in sysctl.proc_translated)" = "1" ] ||
+   [ "$(/usr/bin/uname -m)" = "arm64" ]; then
+    if [ -x "$runtime/macos-arm64/svalbard-drive" ]; then
+        arch=arm64
+    fi
+fi
 launch() (
     cd "$root" || exit 1
-    if [ "$(/usr/sbin/sysctl -in hw.optional.arm64)" = "1" ] ||
-       [ "$(/usr/sbin/sysctl -in sysctl.proc_translated)" = "1" ] ||
-       [ "$(/usr/bin/uname -m)" = "arm64" ]; then
-        runtime="$root/.svalbard/runtime"
-        if [ -x "$runtime/macos-arm64/svalbard-drive" ]; then
-            exec /usr/bin/arch -arm64 /bin/sh -c 'exec ./run launch'
-        elif [ -x "$runtime/macos-x86_64/svalbard-drive" ]; then
-            exec /usr/bin/arch -x86_64 /bin/sh -c 'exec ./run launch'
-        fi
-    fi
-    exec ./run launch
+    exec /usr/bin/arch "-$arch" /bin/sh -c 'exec ./run launch'
 )
+open_tray() {
+    [ "${SVALBARD_NO_TRAY:-}" != 1 ] || return 0
+    tray="$root/.svalbard/tray/macos-$arch/svalbard-tray"
+    if [ -x "$tray" ]; then
+        "$tray" -root "$root" -runtime "$runtime/macos-$arch/svalbard-drive" >/dev/null 2>&1 || :
+    fi
+}
 if [ -x "$root/run" ]; then
-    message=$(launch 2>&1) && exit 0
+    if message=$(launch 2>&1); then
+        open_tray
+        exit 0
+    fi
     case "$message" in
         *"unknown command: launch"*) message="This drive has an older runtime. Try ./run web from the vault folder, or update the drive runtime and apply the web-launcher recipe with the Svalbard host." ;;
         *"/svalbard-drive:"*) message="The Mac drive runtime could not run. Apply the web-launcher recipe for this Mac. $message" ;;

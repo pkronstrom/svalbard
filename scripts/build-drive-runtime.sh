@@ -6,6 +6,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DRIVE_SRC="$REPO_ROOT/drive-runtime"
 EMBED_DIR="$REPO_ROOT/host-cli/internal/toolkit/embedded"
+TRAY_DIR="$REPO_ROOT/host-cli/internal/weblauncher/traybins"
 
 PLATFORMS=(
     "darwin:arm64:macos-arm64"
@@ -19,12 +20,15 @@ echo "Building svalbard-drive for ${#PLATFORMS[@]} platforms..."
 for entry in "${PLATFORMS[@]}"; do
     IFS=: read -r goos goarch platform <<< "$entry"
     outdir="$EMBED_DIR/$platform"
-    mkdir -p "$outdir"
+    mkdir -p "$outdir" "$TRAY_DIR/$platform"
     echo "  $platform (GOOS=$goos GOARCH=$goarch)"
     (cd "$DRIVE_SRC" && CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
         go build -trimpath -ldflags="-s -w" -o "$outdir/svalbard-drive" \
         ./cmd/svalbard-drive)
+    (cd "$DRIVE_SRC" && CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+        go build -buildvcs=false -trimpath -ldflags="-s -w" -o "$TRAY_DIR/$platform/svalbard-tray" \
+        ./cmd/svalbard-tray)
 done
 
 echo "Done. Binaries in $EMBED_DIR"
-ls -lh "$EMBED_DIR"/*/svalbard-drive
+ls -lh "$EMBED_DIR"/*/svalbard-drive "$TRAY_DIR"/*/svalbard-tray

@@ -3,8 +3,8 @@ type: web-launcher
 display_group: tools
 description: Open the offline atlas dashboard in your browser from macOS Finder or a Linux desktop
 tags: [computing]
-size_gb: 0.001
-file_count: 11
+size_gb: 0.033
+file_count: 12
 strategy: build
 build:
   family: web-launcher

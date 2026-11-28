@@ -20,7 +20,7 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
-//go:embed package ui
+//go:embed package ui all:traybins
 var payload embed.FS
 
 const atlasPath = ".svalbard/web-launcher.zip"
@@ -81,6 +81,18 @@ func Install(dir, id, kind string, platforms []string) ([]manifest.RealizedEntry
 	}
 	mac, linux := selectedOS(platforms)
 	files = slices.DeleteFunc(files, func(f asset) bool { return !includePath(f.name, mac, linux) })
+	trayFiles, err := builtTrayFiles(platforms)
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, trayFiles...)
+	if len(trayFiles) > 0 {
+		notice, err := payload.ReadFile("traybins/NOTICES.txt")
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, asset{trayDir + "/NOTICES.txt", notice, 0644})
+	}
 	present := map[string]bool{}
 	for _, f := range files {
 		if err := checkParents(root, f.name); err != nil {
@@ -298,6 +310,35 @@ func includePath(name string, mac, linux bool) bool {
 	}
 }
 
+const trayDir = ".svalbard/tray"
+
+func builtTrayFiles(platforms []string) ([]asset, error) {
+	if len(platforms) == 0 {
+		osName := runtime.GOOS
+		if osName == "darwin" {
+			osName = "macos"
+		}
+		arch := runtime.GOARCH
+		if arch == "amd64" {
+			arch = "x86_64"
+		}
+		platforms = []string{osName + "-" + arch}
+	}
+	var files []asset
+	for _, platform := range platforms {
+		rel := platform + "/svalbard-tray"
+		data, err := payload.ReadFile("traybins/" + rel)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, asset{trayDir + "/" + rel, data, 0755})
+	}
+	return files, nil
+}
+
 // MatchesPlatforms lets the planner reconcile a later change in host targets.
 func MatchesPlatforms(entries []manifest.RealizedEntry, platforms []string) bool {
 	mac, linux := selectedOS(platforms)
@@ -306,7 +347,20 @@ func MatchesPlatforms(entries []manifest.RealizedEntry, platforms []string) bool
 		hasMac = hasMac || strings.HasPrefix(entry.RelativePath, "Svalbard.app/")
 		hasLinux = hasLinux || entry.RelativePath == "Svalbard-Linux"
 	}
-	return mac == hasMac && linux == hasLinux
+	if mac != hasMac || linux != hasLinux {
+		return false
+	}
+	want, err := builtTrayFiles(platforms)
+	if err != nil {
+		return false
+	}
+	var have []string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.RelativePath, trayDir+"/") && strings.HasSuffix(entry.RelativePath, "/svalbard-tray") {
+			have = append(have, entry.RelativePath)
+		}
+	}
+	return len(have) == len(want) && !slices.ContainsFunc(want, func(f asset) bool { return !slices.Contains(have, f.name) })
 }
 
 // CleanBundle removes empty app directories after an update drops macOS.

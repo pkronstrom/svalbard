@@ -20,6 +20,16 @@ If a managed launcher has an update, run `svalbard --vault /path/to/vault update
 
 Standard default and Finland presets select the recipe. Clear it in the wizard or pass `--remove web-launcher` during vault creation for terminal-only use. Existing saved selections remain authoritative.
 
+## System tray
+A drive prepared with `make build` and the web-launcher recipe includes a small tray helper for the chosen Mac or Linux architectures. Opening the graphical wrapper opens the frontpage and leaves a Svalbard icon in the menu bar or system tray. The click wrappers also work on older drives and Linux desktops without a tray.
+
+- **Open Frontpage** opens the active drive in the browser.
+- **Services** lists installed readers and local apps. A checked item is active. Click to serve or stop it.
+- **Stop Dashboard and Quit** drains the dashboard and closes the tray.
+- **Unmount Drive and Quit** appears for a recognized mounted disk. It checks for open handles, stops the dashboard and asks the OS to unmount that volume. On Linux it uses `findmnt` and `udisksctl`. The menu stays open if the operation is blocked.
+
+Set `SVALBARD_NO_TRAY=1` before running a wrapper to open the browser by itself. The tray runs from a temporary host-local copy so it can unmount its own drive. A fresh `make build` embeds the helper in the host CLI for installing or updating the recipe. The wrapper download stays small and uses the tray helper already installed on the drive.
+
 ## Close or remove the launcher
 
 In the Service Register, choose **Prepare for removal**. Read the reported processes and handles, close any remaining users of the drive, then choose **Close dashboard**. Use the operating system’s Eject command before unplugging the drive.

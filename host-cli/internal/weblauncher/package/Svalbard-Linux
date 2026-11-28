@@ -1,5 +1,11 @@
 #!/bin/sh
 root=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P) || exit 1
+case "$(uname -m)" in
+    x86_64) arch=x86_64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *) arch=unsupported ;;
+esac
+runtime="$root/.svalbard/runtime/linux-$arch/svalbard-drive"
 launch() (
     cd "$root" || exit 1
     # Older drives shipped a Bash dispatcher. Keep those drives usable on
@@ -7,20 +13,25 @@ launch() (
     if ! command -v bash >/dev/null 2>&1; then
         IFS= read -r interpreter < ./run
         if [ "$interpreter" = '#!/usr/bin/env bash' ]; then
-            case "$(uname -m)" in
-                x86_64) arch=x86_64 ;;
-                aarch64|arm64) arch=arm64 ;;
-                *) printf 'Unsupported architecture: %s\n' "$(uname -m)" >&2; exit 1 ;;
-            esac
+            if [ "$arch" = unsupported ]; then
+                printf 'Unsupported architecture: %s\n' "$(uname -m)" >&2
+                exit 1
+            fi
             DRIVE_ROOT="$root"
             export DRIVE_ROOT
-            exec "$root/.svalbard/runtime/linux-$arch/svalbard-drive" launch
+            exec "$runtime" launch
         fi
     fi
     exec ./run launch
 )
 if [ -x "$root/run" ]; then
-    message=$(launch 2>&1) && exit 0
+    if message=$(launch 2>&1); then
+        tray="$root/.svalbard/tray/linux-$arch/svalbard-tray"
+        if [ "${SVALBARD_NO_TRAY:-}" != 1 ] && [ -x "$tray" ]; then
+            "$tray" -root "$root" -runtime "$runtime" >/dev/null 2>&1 || :
+        fi
+        exit 0
+    fi
     case "$message" in
         *"unknown command: launch"*) message="This drive has an older runtime. Try ./run web from the vault folder, or update the drive runtime and apply the web-launcher recipe with the Svalbard host." ;;
         *"/svalbard-drive:"*) message="The Linux drive runtime could not run. Apply the web-launcher recipe for this Linux architecture. $message" ;;

@@ -15,7 +15,15 @@ func TestOwnedLauncherSurvivesRetryAndLeavesNeighbors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 7 {
+	trays, err := builtTrayFiles([]string{"macos-arm64", "linux-x86_64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := 7 + len(trays)
+	if len(trays) > 0 {
+		expected++
+	}
+	if len(entries) != expected {
 		t.Fatalf("unexpected file set: %v", entries)
 	}
 	// Simulate a lost checkpoint before the last write.

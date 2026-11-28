@@ -10,6 +10,9 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
 	github.com/evanw/esbuild v0.28.2
+	github.com/go-webgpu/goffi v0.6.3
+	github.com/godbus/dbus/v5 v5.2.2
+	github.com/gogpu/systray v0.2.2
 	github.com/mark3labs/mcp-go v1.6.0
 	github.com/ncruces/go-sqlite3 v0.38.0
 	github.com/pkronstrom/svalbard/bintree v0.0.0-00010101000000-000000000000
