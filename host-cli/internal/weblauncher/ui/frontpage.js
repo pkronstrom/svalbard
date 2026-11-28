@@ -477,8 +477,9 @@ function showReader(label, address, kind, fromSearch = false) {
     frame.referrerPolicy = "no-referrer";
     const pdf = url.pathname.toLowerCase().endsWith(".pdf");
     let embedded = url;
-    if (kind === "documents" && pdf) {
-      embedded = new URL("/.svalbard-reader/", url);
+    const archivedPDF = pdf && kind === "browse" && archiveFrameURL(url);
+    if (pdf && (kind === "documents" || archivedPDF)) {
+      embedded = new URL("/.svalbard-reader/", archivedPDF || url);
       embedded.searchParams.set("file", url.pathname + url.hash);
     } else if (!pdf) {
       frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-downloads");

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,10 +23,11 @@ type articleNode struct {
 	Children []articleNode     `json:"children,omitempty"`
 }
 type adaptedArticle struct {
-	Title string        `json:"title"`
-	Lang  string        `json:"lang,omitempty"`
-	Dir   string        `json:"dir,omitempty"`
-	Nodes []articleNode `json:"nodes"`
+	FileCatalogue bool          `json:"fileCatalogue,omitempty"`
+	Title         string        `json:"title"`
+	Lang          string        `json:"lang,omitempty"`
+	Dir           string        `json:"dir,omitempty"`
+	Nodes         []articleNode `json:"nodes"`
 }
 
 func attr(n *html.Node, name string) string {
@@ -115,6 +117,40 @@ func (d *dashboard) archiveContent(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, adaptArticle(doc, resp.Request.URL, root))
 }
+
+// Preserve useful MediaWiki layout hints without applying an archive's CSS in
+// the dashboard document. Percentages belong to tables, pixel sizes to images.
+func archiveLayout(n *html.Node, attrs map[string]string) {
+	classes := strings.Fields(attr(n, "class"))
+	for _, class := range []string{"mw-halign-right", "mw-halign-left", "mw-halign-center", "thumb", "tright", "tleft", "wikitable", "toccolours", "infobox"} {
+		if slices.Contains(classes, class) {
+			attrs["layout"] = strings.TrimSpace(attrs["layout"] + " " + class)
+		}
+	}
+	if n.Data == "table" && attr(n, "border") == "0" {
+		attrs["layout"] = strings.TrimSpace(attrs["layout"] + " columns")
+	}
+	if n.Data == "table" || n.Data == "td" || n.Data == "th" {
+		if width := attr(n, "width"); strings.HasSuffix(width, "%") {
+			if value, err := strconv.Atoi(strings.TrimSuffix(width, "%")); err == nil && value > 0 && value <= 100 {
+				attrs["width"] = strconv.Itoa(value) + "%"
+			}
+		}
+		if v := attr(n, "align"); slices.Contains([]string{"left", "center", "right"}, v) {
+			attrs["align"] = v
+		}
+		if v := attr(n, "valign"); slices.Contains([]string{"top", "middle", "bottom"}, v) {
+			attrs["valign"] = v
+		}
+	}
+	if n.Data == "img" {
+		for _, key := range []string{"width", "height"} {
+			if value, err := strconv.Atoi(attr(n, key)); err == nil && value > 0 && value <= 16000 {
+				attrs[key] = strconv.Itoa(value)
+			}
+		}
+	}
+}
 func adaptArticle(doc *html.Node, page, root *url.URL) adaptedArticle {
 	out := adaptedArticle{}
 	var body *html.Node
@@ -123,6 +159,12 @@ func adaptArticle(doc *html.Node, page, root *url.URL) adaptedArticle {
 			continue
 		}
 		switch n.Data {
+		case "script":
+			if src, err := page.Parse(attr(n, "src")); err == nil {
+				if rel, ok := archiveRelative(src, root); ok && rel == "nautilus.js" {
+					out.FileCatalogue = true
+				}
+			}
 		case "html":
 			out.Lang = attr(n, "lang")
 			out.Dir = attr(n, "dir")
@@ -136,7 +178,7 @@ func adaptArticle(doc *html.Node, page, root *url.URL) adaptedArticle {
 		}
 	}
 	if body == nil {
-		return adaptedArticle{}
+		return out
 	}
 	for n := range body.Descendants() {
 		if n.Type == html.ElementNode && slices.Contains([]string{"canvas", "iframe", "video", "audio", "form", "object", "embed", "math", "svg"}, n.Data) {
@@ -159,6 +201,14 @@ func adaptArticle(doc *html.Node, page, root *url.URL) adaptedArticle {
 		if n.Type != html.ElementNode || slices.Contains([]string{"script", "style", "template", "noscript", "link", "meta", "button", "input"}, n.Data) {
 			return nil
 		}
+		if n.Data == "hr" && attr(n, "width") == "0" {
+			return nil
+		}
+		// A plain MediaWiki file has a hidden metadata caption. Thumbnails
+		// and framed files have visible captions in the original.
+		if n.Data == "figcaption" && n.Parent != nil && slices.Contains(strings.Fields(attr(n.Parent, "typeof")), "mw:File") {
+			return nil
+		}
 		node := articleNode{Tag: n.Data, Attrs: map[string]string{}}
 		for child := range n.ChildNodes() {
 			node.Children = append(node.Children, convert(child, depth+1)...)
@@ -166,6 +216,7 @@ func adaptArticle(doc *html.Node, page, root *url.URL) adaptedArticle {
 		if !strings.Contains(allowed, " "+n.Data+" ") {
 			return node.Children
 		}
+		archiveLayout(n, node.Attrs)
 		for _, name := range []string{"id", "lang", "dir", "alt", "title", "colspan", "rowspan"} {
 			if v := attr(n, name); v != "" {
 				node.Attrs[name] = v

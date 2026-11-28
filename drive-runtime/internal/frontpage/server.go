@@ -217,7 +217,13 @@ func (d *dashboard) handler(host string) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /api/terminal", d.serveTerminal)
+	archiveHost := fmt.Sprintf("localhost:%d", d.port)
+	archiveFrames := d.archiveFrameHandler("http://" + host)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == archiveHost {
+			archiveFrames.ServeHTTP(w, r)
+			return
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		// xterm.js calculates dynamic font and cell styles in its DOM renderer.
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'self' ws://"+host+"; frame-src http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
