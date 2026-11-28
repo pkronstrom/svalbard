@@ -96,7 +96,7 @@ func newSession(ctx context.Context, driveRoot string, opener func(string) error
 	}
 	var nativeCount int
 	for _, group := range groups {
-		nativeCount += len(group)
+		nativeCount += len(group.Books)
 	}
 	return &Session{
 		driveRoot: driveRoot,

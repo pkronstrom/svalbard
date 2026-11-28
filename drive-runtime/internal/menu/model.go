@@ -96,6 +96,7 @@ type Model struct {
 	archiveFilterOpen  bool
 	searchArchives     []search.Archive
 	excludedArchives   []string
+	originalExclusions []string
 	archiveCursor      int
 }
 
@@ -208,13 +209,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.searchSelected = firstNew
 			m.ensureSearchVisible()
-			m.searchStatus = fmt.Sprintf("%d results", len(m.searchResults))
+			m.searchStatus = msg.response.Status
 			return m, nil
 		}
 		m.searchResults = msg.response.Results
 		m.searchSelected = 0
 		m.searchScrollOffset = 0
-		m.searchResultsFocus = len(m.searchResults) > 0
+		m.searchResultsFocus = len(m.searchResults) > 0 && strings.TrimSpace(m.searchQuery.Value()) == msg.query
 		if m.searchResultsFocus {
 			m.searchQuery.Blur()
 		} else {
@@ -226,7 +227,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case len(m.searchResults) == 0:
 			m.searchStatus = fmt.Sprintf("No results for %q", msg.query)
 		default:
-			m.searchStatus = fmt.Sprintf("%d results", len(m.searchResults))
+			m.searchStatus = ""
 		}
 		return m, nil
 	case searchOpenMsg:
@@ -328,7 +329,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.archiveFilterOpen {
-		return m.updateArchiveFilter(msg), nil
+		return m.updateArchiveFilter(msg)
 	}
 	switch msg.String() {
 	case "ctrl+f":
@@ -345,7 +346,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.searchStatus = fmt.Sprintf("Mode: %s", m.searchMode)
 			m.searchErr = nil
-			m.searchHasMore = false
+			return m.refreshSearch()
 		}
 		return m, nil
 	case "m", "M":
@@ -428,6 +429,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.searchQuery.Value() != "" {
 			m.searchQuery.SetValue("")
 			m.searchResults = nil
+			m.searchPageQuery = ""
 			m.searchHasMore = false
 			m.searchLoading = false
 			m.searchToken++
@@ -459,12 +461,30 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) refreshSearch() (tea.Model, tea.Cmd) {
+	query := strings.TrimSpace(m.searchQuery.Value())
+	if query == "" || m.searchSession == nil {
+		m.searchResults = nil
+		m.searchHasMore = false
+		m.searchPageQuery = ""
+		return m, nil
+	}
+	return m.startSearch(query, searchPageSize, false)
+}
+
 func (m Model) startSearch(query string, limit int, more bool) (tea.Model, tea.Cmd) {
 	m.searchToken++
 	token := m.searchToken
 	mode, session, excluded := m.searchMode, m.searchSession, m.excludedArchives
 	m.searchLoading = true
 	m.searchErr = nil
+	if !more {
+		m.searchResults = nil
+		m.searchHasMore = false
+		m.searchResultsFocus = false
+		m.searchSelected, m.searchScrollOffset = 0, 0
+		m.searchQuery.Focus()
+	}
 	switch {
 	case more:
 		m.searchStatus = "Loading more results..."
@@ -522,6 +542,7 @@ func (m *Model) closeSearchSession() {
 	m.searchQuery.SetValue("")
 	m.searchQuery.Blur()
 	m.searchResults = nil
+	m.searchPageQuery = ""
 	m.searchSelected = 0
 	m.searchScrollOffset = 0
 	m.searchResultsFocus = false
@@ -532,16 +553,13 @@ func (m *Model) closeSearchSession() {
 	m.activeGroup = ""
 }
 
-// searchMaxVisible reserves space for both scroll indicators and the longest
-// snippet so moving the selection keeps the result viewport stable.
+// searchMaxVisible reserves space for the detail pane, including a three-line
+// snippet, so moving the selection keeps the result viewport stable.
 func (m Model) searchMaxVisible() int {
 	if m.height <= 0 {
 		return 3
 	}
-	reserved := 14 + searchSnippetMaxLines
-	if m.searchInfo.HybridEnabled {
-		reserved++
-	}
+	reserved := 12 + searchSnippetMaxLines
 	return tui.MaxVisibleRows(m.height, reserved, 1)
 }
 
@@ -563,6 +581,7 @@ func (m *Model) ensureSearchVisible() {
 	if m.searchSelected >= m.searchScrollOffset+maxVis {
 		m.searchScrollOffset = m.searchSelected - maxVis + 1
 	}
+	m.searchScrollOffset = min(m.searchScrollOffset, max(0, len(m.searchResults)-maxVis))
 }
 
 func (m Model) activateItem(item config.MenuItem) (tea.Model, tea.Cmd) {

@@ -262,7 +262,7 @@ func TestEnterOnSearchItemOpensSearchSession(t *testing.T) {
 	}
 }
 
-func TestSearchArchiveCheckboxFiltersNextQuery(t *testing.T) {
+func TestSearchArchiveCheckboxRerunsQueryOnApply(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "zim"), 0o755); err != nil {
 		t.Fatal(err)
@@ -292,15 +292,39 @@ func TestSearchArchiveCheckboxFiltersNextQuery(t *testing.T) {
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
 	m = updated.(Model)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("no search submitted after changing the archive filter")
+	if cmd == nil || m.archiveFilterOpen || !m.searchLoading {
+		t.Fatal("applying the archive filter did not rerun the query")
 	}
 	cmd()
 	if !slices.Equal(fake.excluded, []string{"wikipedia_en.zim", "wiktionary_en.zim"}) {
 		t.Fatalf("excluded archives = %v", fake.excluded)
+	}
+}
+
+func TestSearchModeChangeRerunsVisibleQueryWithExclusions(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	fake := &fakeSearchSession{
+		info:     search.SessionInfo{BestMode: search.ModeHybrid, HybridEnabled: true},
+		response: search.SearchResponse{EffectiveMode: search.ModeKeyword},
+	}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	if err := m.openSearchSession(); err != nil {
+		t.Fatal(err)
+	}
+	m.searchQuery.SetValue("perunan viljely")
+	m.excludedArchives = []string{"wikipedia_en.zim"}
+	m.searchResults = []search.Result{{Title: "Old result"}}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(Model)
+	if cmd == nil || len(m.searchResults) != 0 || !m.searchLoading {
+		t.Fatal("mode switch did not refresh the visible search")
+	}
+	cmd()
+	if !slices.Equal(fake.searches, []string{"keyword:perunan viljely"}) ||
+		!slices.Equal(fake.excluded, []string{"wikipedia_en.zim"}) {
+		t.Fatalf("mode switch searched %v with exclusions %v", fake.searches, fake.excluded)
 	}
 }
 
@@ -417,7 +441,7 @@ func TestSearchMenuLoadsMoreAndKeepsExistingNumbers(t *testing.T) {
 		!slices.EqualFunc(m.searchResults[:20], first, sameResult) || m.searchResults[m.searchSelected].Path != "/seeds" {
 		t.Fatalf("pagination lost existing rows or their numbers: limits %v, rows %v, selected %d", fake.limits, m.searchResults, m.searchSelected)
 	}
-	if view := m.View(); !strings.Contains(view, "21 loaded") || !strings.Contains(view, "farming") || strings.Contains(view, "M load more") {
+	if view := m.View(); !strings.Contains(view, "of 21 loaded") || !strings.Contains(view, "farming") || strings.Contains(view, "M load more") {
 		t.Fatalf("last page did not show the new row and hide the load-more control:\n%s", view)
 	}
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -709,7 +733,7 @@ func TestPaletteViewRendersWhenActive(t *testing.T) {
 	}
 }
 
-func TestSearchViewHighlightsSelectedTitleText(t *testing.T) {
+func TestSearchViewHighlightsEntireSelectedRow(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	fake := &fakeSearchSession{
 		info: search.SessionInfo{BestMode: search.ModeKeyword},
@@ -732,13 +756,37 @@ func TestSearchViewHighlightsSelectedTitleText(t *testing.T) {
 	got := updated.(Model)
 
 	view := got.View()
-	selectedTitle := tui.DefaultTheme().SelectedRow.Render("Linux")
-	if !strings.Contains(view, selectedTitle) {
-		t.Fatalf("View() missing selected-row background on title text: %q", view)
+	row := renderSearchResultLine(got, 1, got.searchResults[0], true)
+	if !strings.Contains(view, row) || !strings.Contains(row, "› 01  Linux") {
+		t.Fatalf("View() missing selected result marker and row: %q", view)
 	}
-	row := renderSearchResultLine(got, 1, "wiki.zim", "Linux", true)
 	if title, source := strings.Index(row, "Linux"), strings.Index(row, "wiki"); title < 0 || source < title {
 		t.Fatalf("result title should precede its source: %q", row)
+	}
+}
+
+func TestSearchPreviewMovesTowardQueryTerms(t *testing.T) {
+	lines := []string{
+		"An introduction",
+		"and some background",
+		"about the history.",
+		"To plant potatoes",
+		"start with seed tubers.",
+		"End notes.",
+	}
+	got := visibleSearchSnippet(lines, []string{"plant", "potato"}, nil, 30)
+	if !slices.Equal(got, []string{"…and some background", "about the history.", "To plant potatoes…"}) {
+		t.Fatalf("preview did not move to the match: %q", got)
+	}
+}
+
+func TestSearchLabelsShowArticleAndArchiveSeparately(t *testing.T) {
+	result := search.Result{Filename: "100r.co_en_all_2026-11.zim", Title: "100R", Path: "/-/100r.co/site/grinder.html"}
+	if title, source := searchResultTitle(result), searchDisplaySource(result.Filename); title != "grinder" || source != "100R (EN)" {
+		t.Fatalf("generic article title displayed as %q from %q", title, source)
+	}
+	if source := searchDisplaySource("wikipedia_fi_all_maxi_2026-09.zim"); source != "Wikipedia (FI)" {
+		t.Fatalf("Wikipedia archive displayed as %q", source)
 	}
 }
 

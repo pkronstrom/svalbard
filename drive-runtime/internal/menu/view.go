@@ -2,6 +2,9 @@ package menu
 
 import (
 	"fmt"
+	"path"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -64,102 +67,74 @@ func (m Model) renderStatus() string {
 
 func renderSearchView(m Model) string {
 	var b strings.Builder
+	width := m.searchViewWidth()
 
-	title := "⌕ Search"
-	modeLabel := fmt.Sprintf("[%s]", strings.ToUpper(string(m.searchMode[:1]))+string(m.searchMode[1:]))
-	b.WriteString(m.theme.Title.Render(title))
-	b.WriteString(" ")
-	b.WriteString(m.theme.Section.Render(modeLabel))
-	b.WriteString("\n")
-
-	if m.searchInfo.HybridEnabled {
-		b.WriteString(m.theme.Muted.Render("hybrid search available"))
-		b.WriteString("\n")
-	}
+	mode := string(m.searchMode)
+	modeLabel := "[" + strings.ToUpper(mode[:1]) + mode[1:] + "]"
+	fmt.Fprintln(&b, m.theme.Title.Render("⌕ Search"), m.theme.Section.Render(modeLabel))
 
 	status := m.searchStatus
-	if status == "" {
+	if status == "" && m.searchPageQuery == "" {
 		status = fmt.Sprintf("%d sources • %d articles", m.searchInfo.SourceCount, m.searchInfo.ArticleCount)
 		if m.searchInfo.NativeZIMCount > 0 {
 			status = fmt.Sprintf("%d sources • %d embedded indexes • %d SQLite entries",
 				m.searchInfo.SourceCount, m.searchInfo.NativeZIMCount, m.searchInfo.ArticleCount)
 		}
 	}
-	if m.searchLoading {
-		status = "Working... " + status
-	}
 	if m.searchErr != nil {
-		b.WriteString(m.theme.Error.Render(status + ": " + m.searchErr.Error()))
-	} else {
-		b.WriteString(m.theme.Muted.Render(status))
+		fmt.Fprintln(&b, m.theme.Error.Render(shortSearchText(status+": "+m.searchErr.Error(), width)))
+	} else if status != "" {
+		fmt.Fprintln(&b, m.theme.Muted.Render(shortSearchText(status, width)))
 	}
-	b.WriteString("\n")
 
-	b.WriteString("> ")
-	b.WriteString(m.searchQuery.View())
-	b.WriteString("\n")
+	fmt.Fprintln(&b, "> "+m.searchQuery.View())
 	filterHelp := "Ctrl+F archives"
 	if count := len(m.excludedArchives); count > 0 {
 		filterHelp += fmt.Sprintf(" (%d excluded)", count)
 	}
-	b.WriteString(m.theme.Help.Render(filterHelp))
-	b.WriteString("\n\n")
-
-	shown := len(m.searchResults)
-	b.WriteString(m.theme.Section.Render(fmt.Sprintf("Results (%d loaded)", shown)))
-	if m.searchHasMore && m.searchResultsFocus && !m.searchLoading {
-		b.WriteString(m.theme.Help.Render("  •  M load more"))
+	if m.searchInfo.HybridEnabled {
+		filterHelp += " · Tab mode"
 	}
-	b.WriteString("\n")
+	fmt.Fprintln(&b, m.theme.Help.Render(shortSearchText(filterHelp, width)))
+	b.WriteByte('\n')
+
+	help := "Enter search · Esc clear/back"
+	shown := len(m.searchResults)
 	if shown == 0 {
-		b.WriteString(m.theme.Help.Render("No results yet. Type a query and press Enter."))
-		b.WriteString("\n")
+		if !m.searchLoading {
+			fmt.Fprintln(&b, m.theme.Help.Render(shortSearchText(help, width)))
+		}
 		return b.String()
 	}
-
-	maxVis := m.searchMaxVisible()
 	start := m.searchScrollOffset
-	end := start + maxVis
-	if end > len(m.searchResults) {
-		end = len(m.searchResults)
+	end := min(start+m.searchMaxVisible(), shown)
+	label := fmt.Sprintf("Results %d–%d of %d loaded", start+1, end, shown)
+	if m.searchPageQuery != "" && strings.TrimSpace(m.searchQuery.Value()) != m.searchPageQuery {
+		label += fmt.Sprintf(" for %q", m.searchPageQuery)
 	}
-	if start > 0 {
-		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  ↑ %d more", start)))
-		b.WriteString("\n")
+	if m.searchHasMore && m.searchResultsFocus && !m.searchLoading {
+		hint := " · M load more"
+		b.WriteString(m.theme.Section.Render(shortSearchText(label, max(1, width-lipgloss.Width(hint)))))
+		fmt.Fprintln(&b, m.theme.Help.Render(hint))
+	} else {
+		fmt.Fprintln(&b, m.theme.Section.Render(shortSearchText(label, width)))
 	}
 	for idx := start; idx < end; idx++ {
-		result := m.searchResults[idx]
-		line := renderSearchResultLine(m, idx+1, result.Filename, result.Title, idx == m.searchSelected)
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	if end < len(m.searchResults) {
-		b.WriteString(m.theme.Muted.Render(fmt.Sprintf("  ↓ %d more", len(m.searchResults)-end)))
-		b.WriteString("\n")
+		fmt.Fprintln(&b, renderSearchResultLine(m, idx+1, m.searchResults[idx], idx == m.searchSelected))
 	}
 
-	if m.searchSelected >= len(m.searchResults) {
-		return b.String()
-	}
 	selected := m.searchResults[m.searchSelected]
-	b.WriteString("\n")
-	b.WriteString(m.theme.Section.Render("Selected Result"))
-	b.WriteString("\n")
-	width := m.searchViewWidth()
-	b.WriteString(m.theme.Muted.Render(shortSearchText("  Source: "+selected.Filename, width)))
-	b.WriteString("\n")
-	b.WriteString(m.theme.Muted.Render(shortSearchText("  Path:   "+selected.Path, width)))
-	b.WriteString("\n")
-	renderSearchSnippet(&b, m, selected.Snippet)
+	b.WriteByte('\n')
+	fmt.Fprintln(&b, m.theme.Section.Render(shortSearchText(searchResultTitle(selected), width)))
+	fmt.Fprintln(&b, m.theme.Muted.Render(shortSearchText("  Source: "+selected.Filename, width)))
+	fmt.Fprintln(&b, m.theme.Muted.Render(shortSearchText("  Path:   "+selected.Path, width)))
+	renderSearchSnippet(&b, m, selected)
 
-	b.WriteString("\n")
-	help := "Enter search/open • ↑↓ move • PgUp/PgDn • Esc back"
-	if m.searchInfo.HybridEnabled {
-		help += " • Tab mode"
+	b.WriteByte('\n')
+	if m.searchResultsFocus {
+		help = "Enter open · Esc edit query · ↑↓ move · PgUp/PgDn"
 	}
-	b.WriteString(m.theme.Help.Render(shortSearchText(help, width)))
-	b.WriteString("\n")
-
+	fmt.Fprintln(&b, m.theme.Help.Render(shortSearchText(help, width)))
 	return b.String()
 }
 
@@ -177,31 +152,86 @@ func sourceColor(filename string) lipgloss.Color {
 	return palette[sum%len(palette)]
 }
 
-func renderResultNumber(m Model, index int, filename string, selected bool) string {
-	style := m.theme.Muted.Foreground(sourceColor(filename))
-	if selected {
-		style = m.theme.Selected.Foreground(sourceColor(filename)).Background(m.theme.SelectedRow.GetBackground())
-	}
-	return style.Render(fmt.Sprintf("%02d", index))
-}
-
-func renderSearchResultLine(m Model, index int, filename, title string, selected bool) string {
-	number := renderResultNumber(m, index, filename, selected)
+func renderSearchResultLine(m Model, index int, result search.Result, selected bool) string {
+	number := fmt.Sprintf("%02d", index)
 	width := m.searchViewWidth()
 	const separator = " │ "
-	room := width - lipgloss.Width(number) - 2 - lipgloss.Width(separator)
-	sourceWidth := min(36, max(1, room/3))
+	room := width - len(number) - 4 - lipgloss.Width(separator)
+	sourceWidth := min(30, max(1, room/3))
+	source := shortSearchText(searchDisplaySource(result.Filename), sourceWidth)
+	titleWidth := max(1, room-sourceWidth)
+	title := shortSearchText(strings.Join(strings.Fields(searchResultTitle(result)), " "), titleWidth)
+	padding := strings.Repeat(" ", max(0, titleWidth-lipgloss.Width(title)))
+	if selected {
+		row := "› " + number + "  " + title + padding + separator + source
+		return m.theme.SelectedRow.Width(width).Render(shortSearchText(row, width))
+	}
+	number = lipgloss.NewStyle().Foreground(sourceColor(result.Filename)).Render(number)
+	return "  " + number + "  " + title + padding + m.theme.Muted.Render(separator+source)
+}
+
+func searchDisplaySource(filename string) string {
 	if archive, _, ok := engine.EmbeddedArchive(filename); ok {
 		filename = archive
 	}
-	source := shortSearchText(search.SourceLabel(filename), sourceWidth)
-	titleWidth := max(1, room-sourceWidth)
-	title = shortSearchText(strings.Join(strings.Fields(title), " "), titleWidth)
-	padding := strings.Repeat(" ", max(0, titleWidth-lipgloss.Width(title)))
-	if selected {
-		title = m.theme.SelectedRow.Render(title)
+	if !strings.EqualFold(path.Ext(filename), ".zim") {
+		return path.Base(filename)
 	}
-	return number + "  " + title + padding + m.theme.Muted.Render(separator+source)
+	label := strings.TrimSuffix(filename, path.Ext(filename))
+	name, metadata, found := strings.Cut(label, "_")
+	if !found {
+		return label
+	}
+	switch name {
+	case "wikipedia":
+		name = "Wikipedia"
+	case "wiktionary":
+		name = "Wiktionary"
+	case "wikibooks":
+		name = "Wikibooks"
+	case "gutenberg":
+		name = "Project Gutenberg"
+	case "solar.lowtechmagazine.com":
+		name = "Low-tech Magazine"
+	case "100r.co":
+		name = "100R"
+	case "appropedia":
+		name = "Appropedia"
+	}
+	language, variant, _ := strings.Cut(metadata, "_")
+	if len(language) < 2 || len(language) > 3 {
+		return label
+	}
+	collection, _, _ := strings.Cut(variant, "_")
+	switch {
+	case strings.HasPrefix(collection, "lcc-"):
+		name += " " + strings.ToUpper(strings.TrimPrefix(collection, "lcc-"))
+	case collection != "" && collection != "all" && !strings.HasPrefix(collection, "20"):
+		name += " " + collection
+	}
+	return name + " (" + strings.ToUpper(language) + ")"
+}
+
+func searchResultTitle(result search.Result) string {
+	title := strings.TrimSpace(result.Title)
+	source, _, _ := strings.Cut(searchDisplaySource(result.Filename), " (")
+	if title != "" && !strings.EqualFold(title, source) {
+		return title
+	}
+	if _, heading, ok := strings.Cut(result.ChunkHeader, " > "); ok && heading != "" {
+		return heading
+	}
+	entry := path.Base(result.Path)
+	if strings.EqualFold(entry, "index.html") {
+		entry = path.Base(path.Dir(result.Path))
+	}
+	if strings.EqualFold(path.Ext(entry), ".html") {
+		entry = strings.TrimSuffix(entry, path.Ext(entry))
+	}
+	if entry == "." || entry == "/" || entry == "" {
+		return title
+	}
+	return strings.NewReplacer("_", " ", "-", " ").Replace(entry)
 }
 
 func (m Model) searchViewWidth() int {
@@ -211,26 +241,82 @@ func (m Model) searchViewWidth() int {
 	return 80
 }
 
-func renderSearchSnippet(b *strings.Builder, m Model, snippet string) {
+func renderSearchSnippet(b *strings.Builder, m Model, result search.Result) {
+	snippet := ansi.Strip(result.Snippet)
+	if !result.Native {
+		snippet = strings.NewReplacer("»", "", "«", "").Replace(snippet)
+	}
 	snippet = strings.Join(strings.Fields(snippet), " ")
 	if snippet == "" {
 		return
 	}
 	const label = "  Snippet: "
 	width := m.searchViewWidth()
-	room := max(1, width-len(label))
-	lines := strings.Split(ansi.Wrap(snippet, room, ""), "\n")
-	if len(lines) > searchSnippetMaxLines {
-		lines = lines[:searchSnippetMaxLines]
-		last := len(lines) - 1
-		lines[last] = shortSearchText(lines[last]+"…", room)
+	if width <= len(label) {
+		return
 	}
+	room := width - len(label)
+	terms := engine.QueryWords(m.searchPageQuery)
+	alternative := search.GrowingQuery(terms)
+	lines := strings.Split(ansi.Wrap(snippet, room, ""), "\n")
+	lines = visibleSearchSnippet(lines, terms, alternative, room)
+
+	highlightTerms := append(terms, alternative...)
 	prefix := label
 	for _, line := range lines {
-		b.WriteString(m.theme.Muted.Render(shortSearchText(prefix+line, width)))
-		b.WriteString("\n")
+		b.WriteString(m.theme.Muted.Render(prefix))
+		renderSearchSnippetLine(b, m, line, highlightTerms)
+		b.WriteByte('\n')
 		prefix = strings.Repeat(" ", len(label))
 	}
+}
+
+// visibleSearchSnippet keeps the three lines with the best query coverage,
+// favoring the initial context when later lines offer no stronger evidence.
+func visibleSearchSnippet(lines, terms, alternative []string, width int) []string {
+	if len(lines) <= searchSnippetMaxLines {
+		return lines
+	}
+	bestStart, bestScore := 0, -1
+	for start := 0; start+searchSnippetMaxLines <= len(lines); start++ {
+		text := strings.Join(lines[start:start+searchSnippetMaxLines], " ")
+		score := func(words []string) int {
+			matched, nearby := search.PassageEvidence(text, words)
+			if nearby {
+				matched++
+			}
+			return matched
+		}
+		if weight := max(score(terms), score(alternative)); weight > bestScore {
+			bestStart, bestScore = start, weight
+		}
+	}
+	end := bestStart + searchSnippetMaxLines
+	visible := lines[bestStart:end]
+	if bestStart > 0 {
+		visible[0] = "…" + shortSearchText(visible[0], width-1)
+	}
+	if end < len(lines) {
+		last := len(visible) - 1
+		visible[last] = shortSearchText(visible[last]+"…", width)
+	}
+	return visible
+}
+
+var searchWordPattern = regexp.MustCompile("[" + "\\pL\\pN" + "]+")
+
+func renderSearchSnippetLine(b *strings.Builder, m Model, line string, terms []string) {
+	last := 0
+	for _, span := range searchWordPattern.FindAllStringIndex(line, -1) {
+		word := line[span[0]:span[1]]
+		if !slices.ContainsFunc(terms, func(term string) bool { return search.MatchesQueryWord(word, term) }) {
+			continue
+		}
+		b.WriteString(m.theme.Base.Render(line[last:span[0]]))
+		b.WriteString(m.theme.Focus.Render(word))
+		last = span[1]
+	}
+	b.WriteString(m.theme.Base.Render(line[last:]))
 }
 
 func shortSearchText(text string, width int) string {

@@ -18,14 +18,24 @@ func (m *Model) openArchiveFilter() {
 	}
 	m.searchArchives = archives
 	m.archiveCursor = 0
+	m.originalExclusions = slices.Clone(m.excludedArchives)
 	m.archiveFilterOpen = true
 }
 
-func (m Model) updateArchiveFilter(msg tea.KeyMsg) Model {
+func (m Model) updateArchiveFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := len(m.searchArchives)
 	switch msg.String() {
-	case "esc", "enter", "ctrl+f":
+	case "esc":
+		m.excludedArchives = m.originalExclusions
 		m.archiveFilterOpen = false
+	case "enter", "ctrl+f":
+		m.archiveFilterOpen = false
+		if len(m.originalExclusions) != len(m.excludedArchives) ||
+			slices.ContainsFunc(m.excludedArchives, func(name string) bool {
+				return !slices.Contains(m.originalExclusions, name)
+			}) {
+			return m.refreshSearch()
+		}
 	case "up", "k":
 		m.archiveCursor = max(0, m.archiveCursor-1)
 	case "down", "j":
@@ -43,25 +53,12 @@ func (m Model) updateArchiveFilter(msg tea.KeyMsg) Model {
 			} else {
 				excluded = append(excluded, filename)
 			}
-			m.applyArchiveFilter(excluded)
+			m.excludedArchives = excluded
 		}
 	case "w":
-		m.applyArchiveFilter(search.ToggleWikiArchives(m.excludedArchives, m.searchArchives))
+		m.excludedArchives = search.ToggleWikiArchives(m.excludedArchives, m.searchArchives)
 	}
-	return m
-}
-
-func (m *Model) applyArchiveFilter(excluded []string) {
-	if slices.Equal(m.excludedArchives, excluded) {
-		return
-	}
-	m.excludedArchives = excluded
-	m.searchResults = nil
-	m.searchHasMore = false
-	m.searchResultsFocus = false
-	m.searchSelected, m.searchScrollOffset = 0, 0
-	m.searchStatus, m.searchErr = "", nil
-	m.searchQuery.Focus()
+	return m, nil
 }
 
 func (m Model) archiveVisibleRows() int {
@@ -99,6 +96,6 @@ func (m Model) renderArchiveFilter() string {
 	if total > 0 {
 		fmt.Fprintln(&b, m.theme.Muted.Render(fmt.Sprintf("Showing %d–%d of %d", start+1, end, total)))
 	}
-	fmt.Fprintln(&b, m.theme.Help.Render("Space toggle • W toggle Wikipedia and Wiktionary • Enter back"))
+	fmt.Fprintln(&b, m.theme.Help.Render("Space toggle • W toggle wikis • Enter apply • Esc cancel"))
 	return b.String()
 }
