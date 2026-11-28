@@ -13,8 +13,11 @@ if [ "$(/usr/sbin/sysctl -in hw.optional.arm64)" = "1" ] ||
 fi
 if [ -x "$binary" ]; then
     message=$(DRIVE_ROOT="$root" "$binary" launch 2>&1) && exit 0
+    case "$message" in
+        *"unknown command: launch"*) message="This drive has an older runtime. Try ./run web from the vault folder, or update the drive runtime and apply the web-launcher recipe with the Svalbard host." ;;
+    esac
 else
-    message="The Mac runtime is missing or cannot execute. Keep Svalbard.app alongside the vault’s run file. Use a vault package for this Mac. If macOS isolated the app, open a trusted local copy of the complete vault."
+    message="Keep Svalbard.app beside the existing vault’s run file. This vault needs its Mac runtime and web-launcher recipe. Add the recipe with the Svalbard host and apply it to this vault. If macOS isolated the app, use a trusted local copy of the complete vault."
 fi
 /usr/bin/osascript - "$message" <<'APPLESCRIPT'
 on run argv

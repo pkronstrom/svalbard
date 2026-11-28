@@ -1,49 +1,49 @@
 #!/usr/bin/env bash
-# Package a fresh, empty vault built by the same host CLI used for real media.
-# A single-target archive carries only that target's shared native runtime.
+# Publish the same graphical wrappers installed by the optional recipe.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd -P)
-out=${1:?usage: package-web-launcher.sh output-directory [all|macos-arm64|macos-x86_64|linux-arm64|linux-x86_64]}
-target=${2:-all}
-case "$target" in all|macos-arm64|macos-x86_64|linux-arm64|linux-x86_64) ;; *) echo "Unsupported platform $target" >&2; exit 2;; esac
-if [[ ! -x $root/bin/svalbard ]]; then echo "Run make build first." >&2; exit 1; fi
+out=${1:?usage: package-web-launcher.sh output-directory}
+if [[ $# != 1 ]]; then echo "Usage: package-web-launcher.sh output-directory" >&2; exit 2; fi
 mkdir -p "$out"
 out=$(cd "$out" && pwd -P)
 stage=$(mktemp -d "$out/.launcher-package.XXXXXXXX")
 trap 'rm -rf "$stage"' EXIT
-"$root/bin/svalbard" init "$stage/Svalbard" --add web-launcher --platform "$target" --apply
-cp "$root/docs/web-launcher.md" "$stage/Svalbard/Launcher guide.md"
-cp "$root/LICENSE" "$root/THIRD-PARTY-NOTICES.md" "$stage/Svalbard/"
-python3 - "$stage" "$out" "$target" <<'PY'
-import hashlib
-from pathlib import Path
-import sys
-import zipfile
+source_dir="$root/host-cli/internal/weblauncher/package"
+contents="Svalbard.app/Contents"
 
-stage, out = map(Path, sys.argv[1:3])
-target = sys.argv[3]
-name = f"Svalbard-Launcher-{target}.zip"
-archive = stage / name
-vault = stage / "Svalbard"
-with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as bundle:
-    for file in sorted(vault.rglob("*")):
-        if not file.is_file():
-            continue
-        parts = file.relative_to(vault).parts
-        # Even an empty index pass opens the provisioner's writer lock.
-        if parts == ("data", "index.lock") or file.name == ".DS_Store":
-            continue
-        if parts[:2] == (".svalbard", "runtime") and target != "all" and parts[2] != target:
-            continue
-        bundle.write(file, file.relative_to(stage))
-with zipfile.ZipFile(archive) as bundle:
-    bad = bundle.testzip()
-    if bad:
-        raise RuntimeError(f"Archive verification failed for {bad}")
-with archive.open("rb") as data:
-    digest = hashlib.file_digest(data, "sha256").hexdigest()
-archive.replace(out / name)
-line = f"{digest}  {name}\n"
-(out / (name+".sha256")).write_text(line)
-print(line, end="")
+mkdir -p "$stage/$contents/MacOS" "$stage/$contents/Resources"
+install -m 644 "$source_dir/$contents/Info.plist" "$stage/$contents/"
+install -m 755 "$source_dir/$contents/MacOS/svalbard-launcher" "$stage/$contents/MacOS/"
+install -m 644 "$source_dir/$contents/Resources/svalbard.icns" "$stage/$contents/Resources/"
+install -m 755 "$source_dir/Svalbard-Linux" "$source_dir/Svalbard.desktop" "$stage/"
+
+# Stable member order, UTC times and permissions make the transport ZIP
+# byte-identical when the three recipe files have not changed.
+export TZ=UTC
+touch -t 200001010000.00 "$stage/$contents/Info.plist" "$stage/$contents/MacOS/svalbard-launcher" "$stage/$contents/Resources/svalbard.icns"
+(cd "$stage" && zip -q -X Svalbard-macOS.zip "$contents/Info.plist" "$contents/MacOS/svalbard-launcher" "$contents/Resources/svalbard.icns" &&
+    unzip -tq Svalbard-macOS.zip &&
+    shasum -a 256 Svalbard-macOS.zip Svalbard-Linux Svalbard.desktop > SHA256SUMS)
+
+# A packaging destination can already hold a previous release. Never replace
+# an unrelated application or a personal bundle with extra files.
+if [[ -e "$out/Svalbard.app" ]]; then
+    python3 - "$out/Svalbard.app" <<'PY'
+import plistlib, sys
+from pathlib import Path
+app = Path(sys.argv[1])
+expected = {"Contents/Info.plist", "Contents/MacOS/svalbard-launcher", "Contents/Resources/svalbard.icns"}
+actual = {p.relative_to(app).as_posix() for p in app.rglob("*") if p.is_file() or p.is_symlink()}
+if app.is_symlink() or actual != expected or plistlib.loads((app/"Contents/Info.plist").read_bytes()).get("CFBundleIdentifier") != "net.bembu.svalbard.launcher":
+    raise SystemExit("Choose an output directory that does not contain a different Svalbard.app")
 PY
+    mv "$out/Svalbard.app" "$stage/previous.app"
+fi
+if ! mv "$stage/Svalbard.app" "$out/Svalbard.app"; then
+    if [[ -d "$stage/previous.app" ]]; then mv "$stage/previous.app" "$out/Svalbard.app"; fi
+    exit 1
+fi
+for file in Svalbard-macOS.zip Svalbard-Linux Svalbard.desktop SHA256SUMS; do
+    mv "$stage/$file" "$out/$file"
+done
+(cd "$out" && shasum -a 256 -c SHA256SUMS)

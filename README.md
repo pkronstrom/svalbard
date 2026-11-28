@@ -88,7 +88,7 @@ Download the host binary for your Mac or Linux computer, extract it, and put `sv
 
 Open the vault folder in a terminal and run `./run` to launch its keyboard-driven menu. **Library** opens installed archives through Kiwix. **Search** looks across indexed articles. **Maps** opens installed maps. With the SilverBullet recipe, **Wiki** is a notebook on the drive that the assistant can read and, once you allow it in **Settings**, write to. **Workspace** opens the pages the assistant saved. On a phone or tablet, a compatible reader such as Kiwix can open the ZIM files directly.
 
-Standard presets include the optional **web-launcher** recipe. Double-click **Svalbard.app** on macOS or **Svalbard.desktop** on Linux to open the atlas. It starts installed viewers and services on demand. **Saved apps** lists HTML created in `workspace/`. The terminal menu remains available through `./run`, and `./run web` starts a foreground dashboard. [Launcher, removal and packaging guide](docs/web-launcher.md)
+Standard presets include the optional **web-launcher** recipe. Double-click **Svalbard.app** on macOS or **Svalbard.desktop** on Linux to open the atlas. The small graphical wrappers can also be copied beside `run` on an existing atlas-enabled drive. They use the same vault runtime as `./run launch`. The terminal menu remains available through `./run`, and `./run web` starts a foreground dashboard. [Launcher, removal and packaging guide](docs/web-launcher.md)
 
 For browser chat, choose **Open WebUI** under **Local AI** and select your installed model if prompted. The drive starts the model and its vault tools locally and opens the chat in your browser. Small models answer better when you ask them to search first and read the pages they found before they answer.
 

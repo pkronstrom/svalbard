@@ -8,8 +8,11 @@ esac
 binary="$root/.svalbard/runtime/linux-$arch/svalbard-drive"
 if [ -x "$binary" ]; then
     message=$(DRIVE_ROOT="$root" "$binary" launch 2>&1) && exit 0
+    case "$message" in
+        *"unknown command: launch"*) message="This drive has an older runtime. Try ./run web from the vault folder, or update the drive runtime and apply the web-launcher recipe with the Svalbard host." ;;
+    esac
 else
-    message="Cannot run $binary. Check the vault architecture and executable permissions. If this mount disallows execution, open Svalbard Files.html or copy the vault to a trusted local directory."
+    message="Cannot run $binary. Place Svalbard-Linux beside the existing vault’s run file and apply the web-launcher recipe for this Linux architecture. Check executable permissions. If this mount disallows execution, use a trusted local copy of the complete vault."
 fi
 printf '%s\n' "$message" >&2
 if command -v zenity >/dev/null 2>&1; then

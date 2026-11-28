@@ -1,60 +1,54 @@
-# Open a Svalbard vault
+# Open the atlas on a Svalbard drive
 
-Extract the complete Svalbard folder to a location where you can run trusted applications. On macOS, double-click **Svalbard.app**. On Linux, open **Svalbard.desktop** in a file manager that supports desktop entries. Both open the atlas in your default browser. You can close the tab and reopen the launcher to return to the same running vault. Resource readers and inference start when you use them.
+**macOS:** Copy **Svalbard.app** beside your drive’s existing `run` file, then double-click the app. If you downloaded **Svalbard-macOS.zip**, extract the app first.
 
-For directly readable files, open **Svalbard Files.html**. It links to the vault directory and explains where to find installed books and standalone HTML. Search, archives, server-backed viewers and local AI use the dashboard. The standalone launcher package starts as an empty vault. Add the resources you want with the Svalbard host CLI.
+**Linux:** Copy **Svalbard-Linux** beside `run` and open it. For a desktop entry, put **Svalbard.desktop** in the same folder and open that instead. If the copy lost its executable permission, run `chmod +x Svalbard-Linux Svalbard.desktop` in the vault folder. Omit the desktop filename if you copied only the shell launcher.
 
-On a restricted desktop, use the launcher's trusted local folder copy or open the static files. GNOME and KDE distributions vary in how they handle desktop files on removable media. Linux graphical launch requires the host’s browser, POSIX shell and `xdg-open`. The executable wrapper `Svalbard-Linux` selects the installed native Linux binary. An existing trusted terminal on a Linux host can run `./Svalbard-Linux` directly. The portable `./run` menu uses Bash.
+The click wrappers invoke the drive’s existing `svalbard-drive launch`, the same command as `./run launch`. It starts or reuses the loopback dashboard, waits for readiness, and opens the default browser. The atlas displays this drive’s resources. Reader and inference services start on demand. Closing a tab leaves the dashboard available to reopen.
 
-The macOS bundle dispatches to the native drive binary. Keep the app beside the vault’s `run` file. The bundle is unsigned and unnotarized. A quarantined or translocated app can lose access to the rest of the vault. Use a trusted local copy according to your administrator’s policy. The release targets Apple silicon and Intel macOS, and arm64 and x86_64 Linux. Windows is outside this package.
+## Prepare an existing drive
 
-## Close the drive
-
-In the Service Register, choose **Prepare for removal**. Read the reported processes and open handles, close any remaining users of the drive, then choose **Close dashboard**. Use the operating system’s Eject command before unplugging the drive.
-
-From the vault’s folder, these commands provide the same controls.
+Drives provisioned with the **web-launcher** recipe already have the atlas assets, runtime and matching wrappers. If the wrapper reports missing assets or an older runtime, use the Svalbard host CLI with the existing vault path:
 
 ```sh
-./run                         # terminal menu
-./run web --no-open           # foreground dashboard
-./run launch --no-open        # start or reuse a detached dashboard
-./run launch status           # show its local address
-./run launch stop             # stop it and wait for its services
-```
-
-Browser launch uses a private, short-lived host-local file to unlock the terminal in that browser tab. A plain dashboard URL can be used to browse the catalogue. Relaunch to open a trusted terminal tab. Failed browser opens show the address and private log path. The log and lock directory is under `/tmp/svalbard-desktop-<uid>/` on the host. Reading a vault uses its existing files. Content-editing features need a writable vault.
-
-## Choose the recipe
-
-Standard default and Finland presets select **web-launcher**. Clear it in the creation wizard’s item selection to make a terminal-only vault. Saved selections from earlier versions retain their contents. Owners of an existing vault can add the launcher explicitly. Stop a running dashboard before replacing or removing its files.
-
-```sh
-# Create a standard vault with terminal-only access
-svalbard init /path/to/vault --preset default-32 --remove web-launcher
-
-# Add the launcher to an existing vault
 svalbard --vault /path/to/vault add web-launcher
 svalbard --vault /path/to/vault plan
 svalbard --vault /path/to/vault apply
-
-# Review or install an updated launcher
-svalbard --vault /path/to/vault update
-svalbard --vault /path/to/vault update web-launcher
-
-# Remove the launcher, then apply the saved selection
-svalbard --vault /path/to/vault remove web-launcher
-svalbard --vault /path/to/vault apply
 ```
 
-The recipe owns individual wrappers, the static file and the atlas archive. The manifest records their paths, SHA-256 checksums and acquisition identity. Removal preserves personal HTML, extra bundle files, modified replacements and the shared drive runtimes. Reapplying a saved terminal-only vault keeps its selection. New launcher assets conflict safely with unrelated files at the same names.
+If a managed launcher has an update, run `svalbard --vault /path/to/vault update web-launcher`. Prior drives with the foreground dashboard can also use `./run web`. The optional recipe installs the atlas, fonts, viewer scripts, static **Svalbard Files.html** and wrappers. The download contains only the graphical entry points. Copying one onto a prepared drive leaves its manifest, settings and personal files intact.
 
-## Build a portable copy
+Standard default and Finland presets select the recipe. Clear it in the wizard or pass `--remove web-launcher` during vault creation for terminal-only use. Existing saved selections remain authoritative.
 
-From the repository, run the following commands. Packaging uses the freshly built CLI to install only this recipe, then compresses the resulting vault. It requires Python 3.11 or later on the build host. The extracted vault includes the compiled drive runtime.
+## Close or remove the launcher
+
+In the Service Register, choose **Prepare for removal**. Read the reported processes and handles, close any remaining users of the drive, then choose **Close dashboard**. Use the operating system’s Eject command before unplugging the drive.
+
+From the vault folder, these commands provide terminal access.
 
 ```sh
-make build
-scripts/package-web-launcher.sh dist/launcher macos-arm64
-scripts/package-web-launcher.sh dist/launcher all
-(cd dist/launcher && shasum -a 256 -c Svalbard-Launcher-macos-arm64.zip.sha256)
+./run                       # terminal menu
+./run web --no-open         # foreground dashboard
+./run launch --no-open      # start or reuse a detached dashboard
+./run launch status         # show its local address
+./run launch stop           # stop and wait for the services
 ```
+
+Delete a manually copied wrapper to remove that graphical entry point. For a recipe-managed installation, stop the dashboard, run `svalbard --vault /path/to/vault remove web-launcher`, then apply. The recipe tracks each installed file. Removal preserves personal HTML, modified replacements, shared runtimes and the terminal menu.
+
+## Platform notes
+
+The macOS wrapper selects the drive’s available native binary for Apple silicon or Intel, including a Finder shell running under Rosetta. The bundle is unsigned and unnotarized. A quarantined or translocated app can lose access to the vault around it. If host policy permits, use a trusted local copy of the complete vault.
+
+Linux uses the drive’s x86_64 or arm64 executable, POSIX shell and `xdg-open`. File managers and removable-media trust policies vary. A headless host can use `./run launch --no-open`. The static **Svalbard Files.html** page works when native execution is unavailable. The original `./run` script uses Bash. Windows is outside this package.
+
+## Package the click wrappers
+
+From the source checkout:
+
+```sh
+scripts/package-web-launcher.sh dist/launcher
+(cd dist/launcher && shasum -a 256 -c SHA256SUMS)
+```
+
+The output contains the recipe’s **Svalbard.app**, a ZIP carrying just that app, **Svalbard-Linux**, **Svalbard.desktop** and their checksums. The Mac bundle contains its launch script, Info.plist and survey icon.
