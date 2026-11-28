@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Document reader</title>
+<link rel="stylesheet" href="vendor/web/pdf_viewer.css"><link rel="stylesheet" href="reader.css"><script type="module" src="reader.js"></script></head>
+<body><header aria-label="Document controls">
+<div class="group"><button id="previous" aria-label="Previous page" disabled>←</button><label>Page <input id="page" type="number" min="1" value="1" disabled></label><span id="total"></span><button id="next" aria-label="Next page" disabled>→</button></div>
+<select id="zoom" aria-label="Zoom" disabled><option value="page-width">Fit width</option><option value="page-fit">Fit page</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option></select>
+<button id="find" aria-expanded="false" aria-controls="pdf-find" disabled>Find</button>
+<form id="pdf-find" hidden><input type="search" id="query" aria-label="Find in document" placeholder="Find in document…"><button id="prev-match" type="button" aria-label="Previous match">↑</button><button aria-label="Next match">↓</button><output id="matches"></output></form>
+</header><main><div id="pages" tabindex="0" aria-label="Document pages"><div class="pdfViewer"></div></div></main><p id="status" role="status">Opening document…</p></body></html>

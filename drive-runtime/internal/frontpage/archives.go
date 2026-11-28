@@ -3,8 +3,11 @@ package frontpage
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browse"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
@@ -40,12 +43,22 @@ func (d *dashboard) acquireArchiveGroup(ctx context.Context) (string, <-chan str
 }
 
 func (d *dashboard) archiveResultURL(ctx context.Context, key string, result search.Result) (string, error) {
+	viewer, err := d.readyURL(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	base := (&url.URL{Scheme: viewer.Scheme, Host: viewer.Host}).String()
+	return search.ArchiveResultURL(base, viewer.Fragment, result), nil
+}
+
+// readyURL waits for the shared dashboard job even when two tabs open it together.
+func (d *dashboard) readyURL(ctx context.Context, key string) (*url.URL, error) {
 	var j *job
 	for {
 		d.mu.Lock()
 		if err := d.ctx.Err(); err != nil {
 			d.mu.Unlock()
-			return "", err
+			return nil, err
 		}
 		j = d.launchLocked(key, d.specs[key], "")
 		stopping := j.Status == "stopping"
@@ -55,14 +68,14 @@ func (d *dashboard) archiveResultURL(ctx context.Context, key string, result sea
 		}
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return nil, ctx.Err()
 		case <-j.done:
 		}
 	}
 
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return nil, ctx.Err()
 	case <-j.ready:
 	}
 
@@ -70,15 +83,48 @@ func (d *dashboard) archiveResultURL(ctx context.Context, key string, result sea
 	snapshot := j.state
 	d.mu.Unlock()
 	if snapshot.Status == "failed" {
-		return "", fmt.Errorf("starting Kiwix: %s", snapshot.Text)
+		return nil, fmt.Errorf("starting reader: %s", snapshot.Text)
 	}
 	if len(snapshot.Links) == 0 {
-		return "", fmt.Errorf("the archive stopped before the result could open")
+		return nil, fmt.Errorf("the service stopped before the result could open")
 	}
 	viewer, err := url.Parse(snapshot.Links[0].URL)
 	if err != nil {
-		return "", fmt.Errorf("reading Kiwix viewer address: %w", err)
+		return nil, fmt.Errorf("reading service address: %w", err)
 	}
-	base := (&url.URL{Scheme: viewer.Scheme, Host: viewer.Host}).String()
-	return search.ArchiveResultURL(base, viewer.Fragment, result), nil
+	return viewer, nil
+}
+
+func (d *dashboard) searchArchive(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	spec, ok := d.specs[key]
+	if !ok || spec.name != "browse" || spec.target == "" {
+		http.NotFound(w, r)
+		return
+	}
+	var input struct{ Query string }
+	if !readJSON(w, r, &input) {
+		return
+	}
+	query := strings.TrimSpace(input.Query)
+	if query == "" || len(query) > 500 {
+		http.Error(w, "Enter a search of up to 500 bytes", http.StatusBadRequest)
+		return
+	}
+	viewer, err := d.readyURL(r.Context(), key)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	port, err := strconv.Atoi(viewer.Port())
+	if err != nil || viewer.Fragment == "" {
+		http.Error(w, "Use Open original to search this archive.", http.StatusServiceUnavailable)
+		return
+	}
+	results, err := search.KiwixKeyword(r.Context(), port, []string{viewer.Fragment}, query, 50)
+	if err != nil {
+		http.Error(w, "Archive search is unavailable. Open the original to browse its index.", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, results)
 }

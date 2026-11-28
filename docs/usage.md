@@ -27,9 +27,13 @@ cd /Volumes/MyDrive && ./run
 
 Run `./run web` from the vault for a browser dashboard. The sidebar lists installed actions and HTML pages under the vault's `workspace/`. In **Overview**, filter installed items by name, description, tag, or type and view them grouped by type or A–Z. Select a title to see details, or choose **Serve & open** to open an archive, document, map, or local app directly. **Wiki** opens the SilverBullet Markdown editor when installed. **Serve Everything** starts the vault's available services and provides a local link to browse drive files. **Share on Local Network** starts the file server on the network.
 
+Open **Services** from the navigation rail or the collection index to see active dashboard services, their addresses, and **Stop serving**. A shared viewer such as the saved-apps workspace has one stop control. A catalogue row marked **Serving** uses a running service. Closing a reader lets it keep serving other tabs.
+
+PDFs in the document collection open in the atlas reader with page, zoom and find controls. A single archive opens with an archive home link and its own Kiwix search. **Open original** opens the original viewer in a separate tab.
+
 Archives listed in Overview and their search hits open through the dashboard's shared Kiwix library when the bundled Kiwix tools are installed. **Stop serving** removes an archive after its last active service releases it. Use `./run web --no-open` to print the dashboard URL without opening a browser. Use Ctrl+C to stop the dashboard and its services.
 
-Open the private link printed by `./run web` and select **Terminal** to start your interactive shell in the vault folder. The shell runs as your local user. Opening it from **Settings** prefills `./run settings`. Press Enter to run it. **Activate sb Shell** opens a separate shell with the drive's `sb` command available. The terminal renders ANSI colors, including syntax highlighting provided by your shell or tools.
+Open the private link printed by `./run web` and select **Terminal** to start your interactive shell in the vault folder. If the dashboard is already open in another tab, paste the private link into **Unlock terminal** there. The key expires when the dashboard stops. The shell runs as your local user. Opening it from **Settings** prefills `./run settings`. Press Enter to run it. **Activate sb Shell** opens a separate shell with the drive's `sb` command available. The terminal renders ANSI colors, including syntax highlighting provided by your shell or tools.
 
 Everything the wizard and the TUI screens do has a command, so scripts and agents never need the TUI:
 

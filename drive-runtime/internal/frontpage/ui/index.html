@@ -27,6 +27,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6 9 3 3-3 3m6 0h4"/></svg>
         <span class="tab-label" aria-hidden="true">Terminal</span>
       </a>
+      <a href="#services" class="work-tab" id="services-nav" aria-label="Services">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M6 7h2m-2 10h2"/></svg>
+        <span id="rail-count" hidden></span><span class="tab-label" aria-hidden="true">Services</span>
+      </a>
     </nav>
     <a class="spine-title" href="#cover" aria-label="Return to the cover">Svalbard · Vol. I</a>
   </aside>
@@ -36,7 +40,7 @@
       <h2 id="margin-heading">Collections</h2><ol id="margin-collections"></ol>
       <a class="all-collections" href="#overview">Full catalogue →</a>
     </nav>
-    <footer class="margin-foot"><span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span><button type="button" class="text-button" id="refresh" disabled>Refresh saved apps</button><p id="workspace-status" role="status" hidden></p></footer>
+    <footer class="margin-foot"><a href="#services" id="service-summary">Services</a><span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span><button type="button" class="text-button" id="refresh" disabled>Refresh saved apps</button><p id="workspace-status" role="status" hidden></p></footer>
   </aside>
   <button type="button" id="dismiss-sidebar" class="sidebar-scrim" aria-label="Close drive index" tabindex="-1"></button>
 
@@ -96,6 +100,12 @@
         <noscript><p>Enable JavaScript to browse this dashboard, or open <code>./run</code> in a terminal.</p></noscript>
       </section>
 
+      <section id="services-panel" class="page" aria-labelledby="services-title" hidden>
+        <header class="folio-heading welcome"><h1 id="services-title" tabindex="-1">Services</h1></header>
+        <p id="services-status" role="status">Checking services…</p>
+        <ul id="services-list"></ul>
+      </section>
+
       <section id="search-panel" class="page" aria-labelledby="search-title" hidden>
         <header class="folio-heading welcome"><div><h1 id="search-title">Search the vault</h1><p class="leaf-subtitle">Indexed articles and documents</p></div><img class="chapter-plate" src="/engraving-telescope.webp" width="120" height="80" alt=""></header>
         <div class="search-toolbar">
@@ -125,6 +135,13 @@
         <p id="item-status" role="status" hidden></p>
         <pre id="item-output" hidden></pre>
         <section id="terminal-panel" class="terminal" aria-label="Drive terminal" hidden>
+          <form id="terminal-unlock" class="unlock-form" hidden>
+            <label for="launch-link">Private launch link</label>
+            <p id="unlock-help">Paste the link printed by <code>./run web</code> to use your local shell in this tab.</p>
+            <input id="launch-link" type="password" autocomplete="off" spellcheck="false" required aria-describedby="unlock-help">
+            <button class="button secondary" type="submit">Unlock terminal</button>
+            <span id="unlock-error" role="status" hidden></span>
+          </form>
           <div class="terminal-toolbar">
             <div class="terminal-actions">
               <code id="terminal-command" hidden></code>
@@ -144,7 +161,7 @@
           <h1 id="reader-title" tabindex="-1"></h1>
           <div class="reader-actions">
             <a id="reader-link" class="button secondary" target="_blank" rel="noopener noreferrer">Open original ↗</a>
-            <details id="search-inspector" hidden><summary>Inspector</summary><button type="button" id="stop-search-reader" class="button quiet-button" hidden>Stop serving</button></details>
+            <span id="search-disclosure" class="service-slot"></span>
           </div>
           <p id="reader-status" role="status" hidden></p>
         </div>

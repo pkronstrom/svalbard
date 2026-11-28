@@ -51,7 +51,7 @@ func DocumentsForDashboard(ctx context.Context, stdout io.Writer, driveRoot, rel
 	}
 	base := fmt.Sprintf("http://127.0.0.1:%d", listener.Addr().(*net.TCPAddr).Port)
 	address := workspace.URL(base, filepath.ToSlash(filepath.Clean(local)))
-	if info.IsDir() {
+	if info.IsDir() && local != "." {
 		address += "/"
 	}
 	// Only documents: a download leaves its record beside the file.

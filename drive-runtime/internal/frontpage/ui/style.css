@@ -558,8 +558,28 @@ body.rail { grid-template-columns: var(--rail-width) 0 minmax(0,1fr); }
   .catalog-controls { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 .catalog-controls select { max-width: 100%; padding-inline: 6px; }
-.service-inspector, #search-inspector { font: .8rem var(--mono); }
-.service-inspector summary, #search-inspector summary { padding: 8px 4px; cursor:pointer; }
+#service-summary { display: block; width: fit-content; margin-bottom: 8px; color: var(--accent); }
+#rail-count { position: absolute; right: 0; top: 1px; min-width: 15px; padding: 1px 3px; background: var(--canvas); color: var(--spine); font: .65rem/1.25 var(--mono); text-align: center; }
+.service-slot { display: contents; }
+.inspector-toggle { color: var(--accent); background: transparent; }
+.inspector-toggle::after { content: "⌄"; }
+.inspector-toggle[aria-expanded="true"]::after { content: "⌃"; }
+.service-panel { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 7px 12px; border-inline-start: 2px solid var(--rule); background: var(--tint); }
+.service-state,.service-address,.service-mark { color: var(--accent); font: .78rem/1.5 var(--mono); }
+.service-mark::before { content: "● "; }
+#services-list { padding: 0; margin-top: 18px; }
+.service-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 18px; padding-block: 12px; border-top: 1px solid var(--line); }
+.service-row div { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.service-title { font: 1.25rem var(--serif); }
+.service-row .service-state { margin-inline-start: 12px; }
+.service-address { display: block; color: var(--muted); }
+.unlock-form { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-block: 12px; }
+.unlock-form label,.unlock-form p { width: 100%; }
+.unlock-form input { min-width: 0; max-width: 100%; }
+.archive-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 0; border-block: 1px solid var(--line); background: var(--canvas); }
+.archive-tools input { min-width: 0; width: min(16rem, 100%); }
+.reader.archive { padding: 0 clamp(6px,1vw,14px) 12px; background: var(--canvas); border: 1px solid var(--line); }
+
 .viewport:fullscreen { background: var(--canvas); display:flex; height:100%; padding:6px; overflow:auto; }
 .viewport:fullscreen .reader { flex:1; }
 .viewport:fullscreen iframe { height:100%; min-height:60dvh; }

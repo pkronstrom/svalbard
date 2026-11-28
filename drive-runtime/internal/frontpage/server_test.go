@@ -115,7 +115,10 @@ func TestSearchOpensDocumentAtMatchingPage(t *testing.T) {
 	if len(results.Hits) != 1 || results.Hits[0].Title != "Water filters" {
 		t.Fatalf("search results = %+v", results)
 	}
-	var destination link
+	var destination struct {
+		link
+		Service string
+	}
 	hit := results.Hits[0]
 	request, err := json.Marshal(map[string]string{"source": hit.Source, "path": hit.Path})
 	if err != nil {
@@ -129,6 +132,11 @@ func TestSearchOpensDocumentAtMatchingPage(t *testing.T) {
 		t.Fatalf("document body = %q", body)
 	}
 	assertReaderFramePolicy(t, client, destination.URL, origin)
+	if destination.Service == "" {
+		t.Fatal("search reader has no dashboard stop control")
+	}
+	postToDashboard(t, client, origin, "/api/services/"+destination.Service+"/stop", origin, "{}", http.StatusOK)
+	waitForState(t, client, origin, destination.Service, "stopped")
 	stop()
 	requireClosed(t, client, destination.URL)
 }

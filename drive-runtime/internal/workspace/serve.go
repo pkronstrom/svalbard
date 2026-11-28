@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/pdfreader"
 )
 
 // contentSecurityPolicy keeps a generated page from reaching out. Inline
@@ -90,6 +92,10 @@ func (w *Workspace) handler(port int) http.Handler {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			header.Set("Allow", "GET, HEAD")
 			http.Error(rw, "read-only", http.StatusMethodNotAllowed)
+			return
+		}
+		if w.opts.DashboardPort > 0 && w.opts.Serves != nil && strings.HasPrefix(r.URL.Path, pdfreader.Prefix) {
+			pdfreader.Serve(rw, r, frameAncestor)
 			return
 		}
 		// Every failure is the same 404, so a request cannot probe what lies

@@ -474,3 +474,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
    See the License for the specific language governing permissions and
    limitations under the License.
 ```
+
+## Drive PDF reader
+
+The embedded document reader uses Mozilla PDF.js (`pdfjs-dist` 5.6.205, Apache-2.0). The unmodified runtime modules, worker and viewer assets are packaged in `drive-runtime/internal/pdfreader/pdfjs-5.6.205.zip`. The archive includes the upstream license and the notices distributed with its fonts, character maps and image decoders.

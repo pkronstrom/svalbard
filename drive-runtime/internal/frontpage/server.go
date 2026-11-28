@@ -4,6 +4,7 @@ package frontpage
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,8 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/browse"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/workspace"
 )
 
 //go:embed ui/*
@@ -87,6 +90,9 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 			d.archives[spec.target] = key
 		}
 	}
+	if inv.HasSearch {
+		d.specs["search-documents"] = serviceSpec{name: "documents", target: "."}
+	}
 	host := listener.Addr().String()
 	server := &http.Server{
 		Handler: d.handler(host), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
@@ -148,8 +154,16 @@ func (d *dashboard) handler(host string) http.Handler {
 	mux.HandleFunc("GET /api/services", d.states)
 	mux.HandleFunc("POST /api/services/{key}", d.start)
 	mux.HandleFunc("POST /api/services/{key}/stop", d.stop)
+	mux.HandleFunc("POST /api/archives/{key}/search", d.searchArchive)
 	mux.HandleFunc("POST /api/search", d.runSearch)
 	mux.HandleFunc("POST /api/read", d.readResult)
+	mux.HandleFunc("POST /api/unlock", func(w http.ResponseWriter, r *http.Request) {
+		if d.terminalKey == "" || subtle.ConstantTimeCompare([]byte(d.terminalKey), []byte(r.Header.Get("X-Svalbard-Key"))) != 1 {
+			http.Error(w, "Invalid launch link", http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("GET /api/terminal", d.serveTerminal)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -362,24 +376,55 @@ func (d *dashboard) readResult(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &input) {
 		return
 	}
-	d.withSearch(w, r, func(s *search.Session) error {
-		result := search.Result{Filename: input.Source, Path: input.Path}
-		service := d.archives[search.ArchiveSource(input.Source)]
-		var address string
-		var err error
-		if service == "" {
-			address, err = s.ResultURL(r.Context(), result)
-		} else {
-			address, err = d.archiveResultURL(r.Context(), service, result)
-		}
-		if err != nil {
-			return err
-		}
+	result := search.Result{Filename: input.Source, Path: input.Path}
+	respond := func(address, service string) {
 		writeJSON(w, struct {
 			link
 			Service string `json:"service,omitempty"`
 		}{link{Label: "Open result", URL: address}, service})
-		return nil
+	}
+	if key := d.archives[search.ArchiveSource(input.Source)]; key != "" {
+		address, err := d.archiveResultURL(r.Context(), key, result)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		respond(address, key)
+		return
+	}
+	if rel, ok := strings.CutPrefix(input.Source, "books/"); ok && fs.ValidPath(rel) && engine.IsDocumentFile(rel) {
+		key := "search-documents"
+		for id, spec := range d.specs {
+			if spec.name == "documents" && spec.target == rel {
+				key = id
+				break
+			}
+		}
+		if _, ok := d.specs[key]; !ok {
+			http.NotFound(w, r)
+			return
+		}
+		address, err := d.readyURL(r.Context(), key)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		link := address.String()
+		if key == "search-documents" {
+			link = workspace.URL(strings.TrimRight(link, "/"), rel)
+		}
+		if page, ok := engine.PageNumber(input.Path); ok && strings.HasSuffix(strings.ToLower(rel), ".pdf") {
+			link += fmt.Sprintf("#page=%d", page)
+		}
+		respond(link, key)
+		return
+	}
+	d.withSearch(w, r, func(s *search.Session) error {
+		address, err := s.ResultURL(r.Context(), result)
+		if err == nil {
+			respond(address, "")
+		}
+		return err
 	})
 }
 
