@@ -28,6 +28,13 @@ func (d *dashboard) preferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPost {
+		d.mu.Lock()
+		draining := d.draining
+		d.mu.Unlock()
+		if draining {
+			http.Error(w, "Drive is preparing for removal", 409)
+			return
+		}
 		if d.terminalKey == "" || subtle.ConstantTimeCompare([]byte(d.terminalKey), []byte(r.Header.Get("X-Svalbard-Key"))) != 1 {
 			http.Error(w, "Use the private link printed by ./run web to edit settings.", http.StatusForbidden)
 			return

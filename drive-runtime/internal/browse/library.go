@@ -41,6 +41,7 @@ type Library struct {
 // Archive is a lease on one book in a running library.
 // ContentName is the archive alias as advertised by Kiwix, for article URLs.
 type Archive struct {
+	PID         int
 	BaseURL     string
 	ViewerURL   string
 	ContentName string
@@ -162,6 +163,7 @@ func (l *Library) lease(process *libraryProcess, book *loadedArchive) *Archive {
 	book.leases++
 	viewer := url.URL{Path: "/viewer", Fragment: book.contentName}
 	return &Archive{
+		PID:         process.cmd.Process.Pid,
 		BaseURL:     process.baseURL,
 		ViewerURL:   process.baseURL + viewer.String(),
 		ContentName: book.contentName,
@@ -207,6 +209,14 @@ func (l *Library) unlock() {
 }
 
 // Close cancels in-flight work, reaps Kiwix and removes its temporary catalog.
+func (l *Library) StopIdle() {
+	l.gate <- struct{}{}
+	defer l.unlock()
+	if l.process != nil && len(l.process.books) == 0 {
+		l.stopProcess()
+	}
+}
+
 func (l *Library) Close() {
 	l.cancel()
 	l.gate <- struct{}{}
@@ -289,6 +299,8 @@ func (l *Library) start(ctx context.Context, target, filename string) (*libraryP
 	process.baseURL = fmt.Sprintf("http://localhost:%d", port)
 	runCtx, stop := context.WithCancel(l.ctx)
 	cmd := exec.CommandContext(runCtx, serve, "--address", "127.0.0.1", "--port", fmt.Sprint(port), "--library", process.libraryPath())
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 3 * time.Second
 	cmd.Stderr = &process.stderr
 	if err := cmd.Start(); err != nil {
 		release()

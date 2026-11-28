@@ -142,38 +142,29 @@ function overviewRow(item, grouped) {
   const link = node("a", "register-link");
   link.href = "#" + item.route;
   const accession = item.id || item.savedPath || "—";
-  const id = node("span", "register-id", accession);
+  const id = node("span", "register-id", accession.length>22 ? accession.slice(0,12)+"…"+accession.slice(-6) : accession);
   id.title = accession;
   const content = node("div", "overview-copy");
   const copy = node("div");
-  const title = node(grouped ? "h3" : "h2", "overview-name", item.label);
+  const title = node(grouped ? "h3" : "h2", "overview-name", displayTitle(item));
   copy.append(title);
-  if (item.service) {
-    const badge = node("small", "service-mark");
-    badge.dataset.service = item.service;
-    updateServiceMark(badge, states.get(item.service));
-    copy.append(badge);
-  }
   const summary = item.summary || item.description;
   if (summary && summary !== item.label) copy.append(node("p", "overview-summary", summary));
   if(item.missing) copy.append(node("p","error","File missing from drive"));
   content.append(copy);
-  if (previewURL(item)) content.append(itemPreview(item,"register-image"));
+
   link.setAttribute("aria-label", "Open " + item.label);
   link.append(id, content, node("span","register-format",formatOf(item)), node("span","register-size",sizeOf(item)));
+  if (item.service) link.lastElementChild.append(serviceMark(item.service));
   link.addEventListener("click", event => {
     if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     history.replaceState({...history.state, selected:item.route, scroll:window.scrollY}, "");
-    history.pushState(null, "", link.hash);
+    history.pushState({catalogue:location.hash,returnState:history.state}, "", link.hash);
     renderRoute();
     window.scrollTo(0,0);
     byId("item-title").focus({preventScroll:true});
-    if (!item.missing && !["EPUB","MD"].includes(item.format) && item.service && readerKinds.has(item.icon)) {
-      const state = states.get(item.service)?.status;
-      if (state === "stopping") queuedLaunch = item;
-      else if (state !== "running" && state !== "starting") act(item);
-    }
+
   });
   row.append(link);
   return row;
@@ -181,6 +172,7 @@ function overviewRow(item, grouped) {
 
 function buildNavigation(data) {
   inventory = data;
+  initIndex();
   byId("vault").textContent = data.drive + (data.preset ? " · " + data.preset : "");
   byId("search-nav").hidden = !data.hasSearch;
 
@@ -189,7 +181,7 @@ function buildNavigation(data) {
     if (!items.length) return;
     items.forEach((item, position) => {
       const legacy = "item-" + index + "-" + position;
-      const stable = item.id ? "resource/" + encodeURIComponent(group.id || group.label) + "/" + encodeURIComponent(item.id) : legacy;
+      const stable = "resource/" + encodeURIComponent(group.id || group.label) + "/" + encodeURIComponent(item.id || item.source || item.label);
       const entry = {...item, group: group.label, route: entries.has(stable) ? legacy : stable,
         terminal: item.terminal || (item.kind === "terminal" && Boolean(item.command))};
       legacyRoutes.set(legacy, entry.route);
@@ -244,16 +236,7 @@ function renderCollections(items) {
     line.append(link);
     return line;
   }));
-  byId("margin-collections").replaceChildren(...available.map(collection => {
-    const line = node("li");
-    const link = node("a");
-    link.href = collectionURL(collection);
-    link.dataset.collection = collectionFilter(collection);
-    const count = collection.types.reduce((sum,type) => sum + (counts.get(type) || 0),0);
-    link.append(node("span","",collection.name),node("small","",String(count).padStart(2,"0")));
-    line.append(link);
-    return line;
-  }));
+  renderIndex(available,items);
   byId("cover-total").textContent = items.length + (items.length === 1 ? " entry" : " entries") + " in the catalogue";
 }
 
@@ -284,6 +267,7 @@ function renderHome() {
   byId("home-title").textContent = chapter?.name || selected || "Catalogue";
   note(byId("collection-description"), chapter?.description || "");
   note(byId("inventory-summary"), count ? resultCount + (resultCount === 1 ? " entry" : " entries") : "Empty catalogue");
+  byId("clear-filters").hidden = !selected && !query && !byId("overview-format").value && !byId("overview-subject").value;
   const filtered = query || byId("overview-format").value || byId("overview-subject").value;
   note(byId("overview-results"), filtered && !resultCount ? "No matches. Try another term or clear a filter." : "");
 
@@ -306,9 +290,10 @@ function renderHome() {
 }
 
 function markSelection() {
+  for(const link of document.querySelectorAll(".resource-link[aria-current]")) if(link.hash!=="#"+selection?.route) link.removeAttribute("aria-current");
   const type = selection ? overviewType(selection) : byId("overview-type").value;
   const current = collections.find(c => collectionFilter(c) === type || c.types.includes(type));
-  for (const link of byId("margin-collections").querySelectorAll("a")) {
+  for (const link of document.querySelectorAll(".collection-label")) {
     if ((selection || route === "overview") && link.dataset.collection === (current ? collectionFilter(current) : type)) link.setAttribute("aria-current","location");
     else link.removeAttribute("aria-current");
   }
@@ -325,54 +310,31 @@ function isActive(state) {
 
 function updateServiceMark(mark, state) {
   mark.hidden = !isActive(state);
-  mark.textContent = state?.status === "running" ? "Serving" : serviceStatus[state?.status] || "";
+  const label = serviceUnknown ? "Unknown" : state?.status === "running" ? "Served" : serviceStatus[state?.status] || "";
+  mark.dataset.status=serviceUnknown?"unknown":state?.status || "stopped";
+  mark.textContent = label;
+  mark.title = label;
+  mark.setAttribute("aria-label", label);
 }
 
-function renderServices() {
-  const active = [...states].filter(([, state]) => isActive(state));
-  const count = active.length;
-  const summary = count === 1 ? "1 active service" : count + " active services";
-  byId("service-summary").textContent = "Services · " + count;
-  byId("rail-count").textContent = count;
-  byId("rail-count").hidden = !count;
-  byId("services-nav").setAttribute("aria-label", "Services, " + summary);
-  if (route !== "services") return;
-  const focused = document.activeElement?.dataset.stop;
-  const list = byId("services-list");
-  list.replaceChildren();
-  byId("services-status").textContent = count ? summary + " started by this dashboard." : "No services are running from this dashboard.";
-  for (const [key, state] of active) {
-    const items = [...entries.values()].filter(item => item.service === key);
-    const item = items.find(item => !item.savedPath) || items[0];
-    const label = key === inventory.workspace ? "Saved apps workspace" : item?.label || "Document reader";
-    const row = node("li", "service-row");
-    const info = node("div");
-    const title = node(item ? "a" : "strong", "service-title", label);
-    if (item) title.href = "#" + item.route;
-    info.append(title, node("small", "service-state", serviceStatus[state.status]));
-    for (const link of state.links || []) {
-      const target = node("small", "service-address", link.label + " · " + link.url);
-      info.append(target);
-    }
-    const stop = button("Stop serving", "quiet-button", async () => {
-      stop.disabled = true;
-      try {
-        showState(key, await request("/api/services/" + key + "/stop", {}));
-        schedulePoll(250);
-      } catch (error) {
-        stop.disabled = false;
-        note(byId("services-status"), error.message, true);
-      }
-    });
-    stop.setAttribute("aria-label", "Stop serving " + label);
-    stop.dataset.stop = key;
-    stop.disabled = state.status === "stopping";
-    row.append(info, stop);
-    list.append(row);
-  }
-  if (focused) (list.querySelector('[data-stop="' + CSS.escape(focused) + '"]:not(:disabled)') || byId("services-title")).focus({preventScroll:true});
+function focusControl() {
+  const el=button("Focus view","quiet-button",async()=>{
+    if(document.fullscreenElement) await document.exitFullscreen();
+    else if(document.body.classList.contains("reader-focus"))document.body.classList.remove("reader-focus");
+    else if(document.fullscreenEnabled) {
+      try {await byId("viewport").requestFullscreen();} catch {document.body.classList.add("reader-focus");}
+    } else document.body.classList.add("reader-focus");
+    syncFocusLabels();
+  });
+  el.dataset.focusView="";
+  el.textContent=document.fullscreenElement || document.body.classList.contains("reader-focus") ? "Exit focus view":"Focus view";
+  return el;
 }
-
+function syncFocusLabels() {
+  for(const el of document.querySelectorAll("[data-focus-view]"))el.textContent=document.fullscreenElement || document.body.classList.contains("reader-focus") ? "Exit focus view":"Focus view";
+}
+document.addEventListener("fullscreenchange",syncFocusLabels);
+document.addEventListener("keydown",event=>{if(event.key==="Escape" && document.body.classList.contains("reader-focus")){document.body.classList.remove("reader-focus");syncFocusLabels();}});
 function serviceDisclosure(container, id, state, stop) {
   const panel = node("div", "service-panel");
   panel.id = id;
@@ -384,15 +346,29 @@ function serviceDisclosure(container, id, state, stop) {
   toggle.setAttribute("aria-expanded", "false");
   toggle.setAttribute("aria-controls", id);
   toggle.setAttribute("aria-label", "Inspector");
-  panel.append(node("span", "service-state", "Service · " + serviceStatus[state.status]), stop);
+  const item=selection;
+  for(const [label,value] of [["Accession",item?.id || item?.savedPath],["Path",item?.source || item?.savedPath || item?.parts?.[0]?.path],["Format",item && formatOf(item)],["Size",item?.bytes && sizeOf(item)],["Recipe",item?.recipeId]]) {
+    if(value)panel.append(node("span","service-state",label+" · "+value));
+  }
+  if(item?.id)panel.append(button("Copy ID","quiet-button",async event=>{const el=event.currentTarget;try{await navigator.clipboard.writeText(item.id);el.textContent="Copied";}catch{el.textContent=item.id;}}));
+  if(state) {
+    panel.append(node("span", "service-state", "Service · " + registerState(state.status)));
+    const service=item?.service || articleService;
+    const records=registry.records.filter(r=>r.keys.includes(service));
+    const affected=[...new Set(records.flatMap(r=>r.resources))];
+    if(affected.length>1)panel.append(node("span","service-state","Shared by "+affected.join(", ")));
+    panel.append(node("span","service-state","Stopping interrupts other open views of this resource."));
+    if(stop)panel.append(stop);
+    if(records.length===1 && records[0].status==="running")panel.append(button("Restart service","quiet-button",()=>controlServices("restart",records[0])));
+    const register=node("a","button quiet-button","Service register");register.href="#services";panel.append(register);
+  }
   container.append(toggle, panel);
 }
 
 function showState(key, state) {
   if (JSON.stringify(states.get(key)) === JSON.stringify(state)) return;
   states.set(key, state);
-  for (const badge of byId("home-links").querySelectorAll('[data-service="' + CSS.escape(key) + '"]')) updateServiceMark(badge, state);
-  renderServices();
+  for (const badge of document.querySelectorAll('[data-service="' + CSS.escape(key) + '"]')) updateServiceMark(badge, state);
   if (selection?.service === key && !articleOpen) renderItem();
   if (state.status === "stopped" && queuedLaunch?.service === key) {
     const item = queuedLaunch;
@@ -400,7 +376,9 @@ function showState(key, state) {
     if (selection === item) act(item);
   }
   if (articleOpen && articleService === key && unavailableReader(state)) {
-    leaveArticle();
+    byId("reader-frame")?.remove();byId("archive-text")?.remove();byId("archive-tools")?.remove();
+    const message=byId("reader-status");note(message,"Service stopped. ");
+    message.append(button("Reopen","quiet-button",renderRoute));
   }
 }
 
@@ -413,18 +391,26 @@ async function poll() {
   if (polling || document.hidden) return;
   polling = true;
   const connection = byId("connection");
+  const previouslyUnknown=serviceUnknown;
   try {
-    const current = await request("/api/services");
-    for (const [key, state] of Object.entries(current)) showState(key, state);
+    registry = await request("/api/registry");
+    serviceUnknown = false;
+    for (const [key, state] of Object.entries(registry.jobs)) showState(key, state);
     connection.classList.remove("offline");
     connection.lastElementChild.textContent = "Local session";
   } catch {
+    serviceUnknown=true;
     connection.classList.add("offline");
     connection.lastElementChild.textContent = "Disconnected";
   } finally {
+    if(serviceUnknown!==previouslyUnknown) {
+      for(const badge of document.querySelectorAll("[data-service]"))updateServiceMark(badge,states.get(badge.dataset.service));
+      if(selection?.service && !articleOpen)renderItem();
+    }
+    renderServices();
     polling = false;
     const active = [...states.values()].some(isActive);
-    schedulePoll(active || route === "services" ? 1000 : 15000);
+    schedulePoll(active || route === "services" || byId("service-drawer").open ? 1000 : 10000);
   }
 }
 
@@ -457,6 +443,7 @@ function closeReader() {
   delete byId("viewport").dataset.reader;
   byId("reader-frame")?.remove();
   byId("archive-tools")?.remove();
+  byId("archive-text")?.remove();
   byId("archive-results")?.remove();
   byId("reader").classList.remove("archive");
   byId("search-disclosure").replaceChildren();
@@ -482,6 +469,7 @@ function showReader(label, address, kind, fromSearch = false) {
   if (frame?.dataset.original !== url.href) {
     frame?.remove();
     byId("archive-tools")?.remove();
+    byId("archive-text")?.remove();
     byId("archive-results")?.remove();
     frame = node("iframe");
     frame.id = "reader-frame";
@@ -501,7 +489,8 @@ function showReader(label, address, kind, fromSearch = false) {
     const archive = kind === "browse" && !pdf && selection?.source?.endsWith(".zim");
     byId("reader").classList.toggle("archive", Boolean(archive));
     if (archive) archiveToolbar(selection, frame, fromSearch);
-    frame.src = embedded.href;
+    if (!archive) frame.src = embedded.href;
+    else if(!frame.hidden) {frame.hidden=true;adaptArchive(selection,frame,url);}
     byId("reader").append(frame);
   }
   frame.title = label;
@@ -600,11 +589,15 @@ async function renderSource(item, section, selectedPart) {
   panel.replaceChildren(tabs);
   if (!active) {
     const overview=node("article","prose");
-    overview.append(node("h2","",item.label),node("p","",item.description || item.note));
+    overview.append(node("h2","",item.label),node("p","",item.description || item.note),node("p","quiet","No overview document is installed with this package."));
     panel.append(overview);
     return;
   }
-  if(parts.length>1) {
+  if (item.icon==="library" && section==="Files") {
+    const tree=node("details","source-tree");tree.append(node("summary","","Package files"));
+    for(const part of parts)tree.append(button(part.path,"quiet-button",()=>renderSource(item,section,part)));
+    panel.append(tree);
+  } else if(parts.length>1) {
     const picker=node("select");picker.setAttribute("aria-label","File");
     parts.forEach((part,i)=>picker.add(new Option(part.path,String(i))));
     picker.selectedIndex=parts.indexOf(active);
@@ -636,6 +629,14 @@ async function renderSource(item, section, selectedPart) {
         }else link.removeAttribute("href");
       }
       body.replaceChildren(fragment);
+      if(item.format==="MD"||item.icon==="skill"){
+        const headings=[...body.querySelectorAll("h2,h3")];
+        if(headings.length>1) {
+          const contents=node("details","article-contents");contents.append(node("summary","","Contents"));
+          for(const heading of headings)contents.append(button(heading.textContent,"quiet-button",()=>heading.scrollIntoView()));
+          body.prepend(contents);
+        }
+      }
       const raw=button("Original text","quiet-button",()=>{body.replaceChildren(node("pre","source-text",data.text));raw.remove();});
       tabs.append(raw);
       const example=[...body.querySelectorAll("h2,h3")].find(heading=>/^examples?$/i.test(heading.textContent.trim()));
@@ -763,13 +764,15 @@ function renderItem() {
   controls.replaceChildren();
   note(status, "");
   note(output, "");
-  if (item.missing) { note(status,"The installed file is missing. Restore it from the host, then reopen the drive.",true);return; }
-  if (item.icon === "library" || item.kind === "dataset" || ["EPUB","MD"].includes(item.format)) {
+  if (item.missing) { serviceDisclosure(controls,"item-inspector-panel"); note(status,"The installed file is missing. Restore it from the host, then reopen the drive.",true);return; }
+  if (item.icon === "library" || item.kind === "dataset" || ["EPUB","MD","PDF"].includes(item.format)) {
     const original=node("a","button secondary", item.icon === "library" ? "Download library archive" : "Download original");
     original.href="/api/download?"+new URLSearchParams({id:item.id});original.download="";controls.append(original);
   }
-  if (["EPUB","MD"].includes(item.format)) return;
+  if (["EPUB","MD"].includes(item.format)) {controls.append(focusControl());serviceDisclosure(controls,"item-inspector-panel");return;}
   if (!item.service) {
+    if (item.parts?.length || item.kind==="dataset")controls.append(focusControl());
+    serviceDisclosure(controls,"item-inspector-panel");
     if (item.terminal) {
       renderTerminal();
     } else if (item.command) {
@@ -779,7 +782,8 @@ function renderItem() {
     return;
   }
 
-  const state = states.get(item.service) || {};
+  const state = states.get(item.service) || {status:serviceUnknown?"unknown":"stopped"};
+  byId("item-kind").textContent=[formatOf(item),item.bytes && sizeOf(item),serviceUnknown?"Service unknown":state.status==="running"?"● Served":""].filter(Boolean).join(" · ");
   const active = ["starting", "running", "stopping"].includes(state.status);
   if (!active) {
     if (item.icon === "chat" && inventory.models?.length > 1) {
@@ -813,19 +817,27 @@ function renderItem() {
   if (!reading) closeReader();
 
   if (active) {
-    const stop = button(reading ? "Stop serving" : "Stop", "quiet-button", () => act(item, true));
+    const stop = button(reading ? "Stop serving" : "Stop", "quiet-button", () => {
+      const record=registry.records.find(r=>r.keys.includes(item.service));
+      if(record?.inference && !confirm("Stop this service and interrupt ongoing inference?"))return;
+      if(record?.keys.length>1 && !confirm("Release "+displayTitle(item)+"? Other views of this resource will be interrupted. Shared resources: "+record.resources.join(", ")))return;
+      act(item,true);
+    });
     stop.disabled = state.status === "stopping";
-    if(reading && document.fullscreenEnabled) controls.append(button("Focus view","quiet-button",()=>byId("viewport").requestFullscreen().catch(error=>note(status,error.message,true))));
+    if(reading) controls.append(focusControl());
 
     serviceDisclosure(controls, "item-inspector-panel", state, stop);
-    if (!reading) note(status, serviceStatus[state.status]);
+    if (!reading) note(status, state.status==="starting" && item.icon==="browse" ? "Opening archive…" : serviceStatus[state.status]);
   }
+  if (!active) serviceDisclosure(controls,"item-inspector-panel",state);
   if (state.status === "failed") note(status, state.text, true);
   if (state.status === "done") note(output, state.text);
   if (focused) controls.querySelector("button:not(:disabled), a, select")?.focus();
 }
 
+let drawerOpener;
 function toggleSidebar(open) {
+  if(open)drawerOpener=document.activeElement;
   byId("viewport").inert=open;
   byId("crumbs").inert=open;
   document.querySelector(".skip").inert=open;
@@ -842,10 +854,14 @@ function updateRail(collapsed) {
   toggle.title = collapsed ? "Expand catalogue margin" : "Collapse catalogue margin";
   toggle.setAttribute("aria-label", toggle.title);
 }
-byId("rail-toggle").addEventListener("click", () => {
-  if (matchMedia("(max-width:740px)").matches) { toggleSidebar(!document.body.classList.contains("sidebar-open")); return; }
+byId("rail-toggle").addEventListener("click", event => {
+  if (matchMedia("(max-width:768px)").matches) {
+    const open=!document.body.classList.contains("sidebar-open");toggleSidebar(open);
+    if(open && !event.detail)document.querySelector(".collection-label")?.focus();
+    return;
+  }
   indexCollapsed = !document.body.classList.contains("rail");
-  updateRail(indexCollapsed);
+  updateRail(indexCollapsed); storeIndex();
 });
 function syncCatalogueURL() {
   const params = new URLSearchParams();
@@ -860,9 +876,11 @@ function syncCatalogueURL() {
 
 function renderRoute() {
   if (!inventory) return;
+  const previousRoute = route;
   const returningFromResult = articleOpen;
   articleOpen=false;articleService="";
   const navigation = history.state;
+  byId("catalogue-crumb").href = navigation?.catalogue?.startsWith("#overview") ? navigation.catalogue : "#overview";
   const [hashRoute, options] = location.hash.slice(1).split("?");
   route = legacyRoutes.get(hashRoute) || hashRoute || "cover";
   const params = new URLSearchParams(options);
@@ -910,7 +928,8 @@ function renderRoute() {
   if (route === "search") {
     const focusResult = () => {
       if (returningFromResult && route === "search") {
-        byId("search-results").querySelectorAll("a")[navigation?.position]?.focus();
+        byId("search-results").querySelectorAll("a")[navigation?.position]?.focus({preventScroll:true});
+        window.scrollTo(0,navigation.scroll || 0);
       }
     };
     const searchQuery = params.get("q") ?? navigation?.query;
@@ -926,15 +945,21 @@ function renderRoute() {
   }
 
   if (selection) {
-    byId("item-title").textContent = selection.label;
-    byId("item-kind").textContent = [...new Set([selection.id,selection.format,selection.subheader,selection.note,selection.bytes && sizeOf(selection)].filter(Boolean))].join(" · ");
-    byId("item-description").textContent = selection.summary || selection.description || "";
-    note(byId("item-recipe"), selection.recipeId ? "Recipe · " + selection.recipeId : "");
+    revealResource(selection);
+    byId("item-title").textContent = displayTitle(selection);
+    byId("item-kind").textContent = [formatOf(selection),selection.bytes && sizeOf(selection)].filter(Boolean).join(" · ");
+    byId("item-description").textContent = displayTitle(selection) !== selection.label ? selection.label.slice(displayTitle(selection).length).replace(/^[\s—–-]+/,"") : selection.summary || selection.description || "";
+    note(byId("item-recipe"), "");
     const preview = byId("item-preview");
     preview.hidden = !previewURL(selection);
     if (!preview.hidden) preview.replaceChildren(itemPreview(selection, "detail-preview"));
     renderItem();
     const item = selection;
+    if (previousRoute !== route && !item.missing && !["EPUB","MD"].includes(item.format) && item.service && readerKinds.has(item.icon)) {
+      const status=states.get(item.service)?.status;
+      if(status==="stopping")queuedLaunch=item;
+      else if(status!=="running" && status!=="starting")act(item);
+    }
     const panel=byId("source-view");
     if (item.parts?.length) renderSource(item);
     else {
@@ -1015,6 +1040,7 @@ async function openArticle(params,revision) {
     byId("reader-link").hidden=false;
     if (link.service) {
       const stop = button("Stop serving", "quiet-button", event => stopSearchReader(event.currentTarget));
+      byId("search-disclosure").append(focusControl());
       serviceDisclosure(byId("search-disclosure"), "search-inspector-panel", {status:"running"}, stop);
       schedulePoll(250);
     }
@@ -1083,7 +1109,7 @@ byId("menu").addEventListener("click", event => {
 });
 byId("dismiss-sidebar").addEventListener("click", () => {
   toggleSidebar(false);
-  byId("menu").focus();
+  (drawerOpener || byId("menu")).focus();
 });
 byId("work-nav").addEventListener("click", event => {
   const link = event.target.closest("a");
@@ -1095,10 +1121,17 @@ byId("work-nav").addEventListener("click", event => {
   }
 });
 byId("nav").addEventListener("click", event => {
-  if (event.target.closest("a")?.hash === "#" + route) toggleSidebar(false);
+  if (event.target.closest("a")) toggleSidebar(false);
 });
+byId("catalogue-crumb").onclick=event=>{
+  const origin=history.state;
+  if(!origin?.catalogue?.startsWith("#overview") || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)return;
+  event.preventDefault();
+  history.pushState(origin.returnState,"",origin.catalogue);renderRoute();
+  const link=[...byId("home-links").querySelectorAll("a")].find(a=>a.hash.slice(1)===origin.returnState?.selected);
+  (link || byId("home-title")).focus({preventScroll:true});window.scrollTo(0,origin.returnState?.scroll||0);
+};
 function openGlobalSearch() {
-  if (route === "cover") { byId("cover-query").focus(); return; }
   const target = inventory?.hasSearch ? "search" : "overview";
   if (route !== target) {
     history.pushState(null, "", "#" + target);
@@ -1107,7 +1140,7 @@ function openGlobalSearch() {
   byId(target === "search" ? "query" : "overview-filter").focus();
 }
 byId("mobile-search").addEventListener("click",openGlobalSearch);
-matchMedia("(max-width:740px)").addEventListener("change",()=>toggleSidebar(false));
+matchMedia("(max-width:768px)").addEventListener("change",()=>toggleSidebar(false));
 byId("search-shortcut").textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl K";
 byId("cover-search").addEventListener("submit", event => {
   event.preventDefault();
@@ -1120,14 +1153,14 @@ document.addEventListener("keydown", event => {
     openGlobalSearch();
   }
   if(event.key==="Tab" && document.body.classList.contains("sidebar-open")) {
-    const controls=[byId("menu"), ...document.querySelectorAll(".spine a, #sidebar a, #sidebar button:not(:disabled)")].filter(el=>el.getClientRects().length && !el.hidden);
+    const controls=[byId("menu"), ...document.querySelectorAll(".spine a,.spine button, #sidebar a, #sidebar button:not(:disabled)")].filter(el=>el.getClientRects().length && !el.hidden);
     const index=controls.indexOf(document.activeElement);
     event.preventDefault();
     controls[(index+(event.shiftKey?-1:1)+controls.length)%controls.length].focus();
   }
   if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
     toggleSidebar(false);
-    byId("menu").focus();
+    (drawerOpener || byId("menu")).focus();
   }
 });
 document.querySelector(".skip").addEventListener("click", event => {
@@ -1135,6 +1168,7 @@ document.querySelector(".skip").addEventListener("click", event => {
   byId("main").focus();
 });
 for (const field of ["subject","format"]) byId("overview-"+field).addEventListener("change",syncCatalogueURL);
+byId("clear-filters").onclick=()=>{for (const id of ["filter","type","subject","format"])byId("overview-"+id).value="";syncCatalogueURL();byId("overview-filter").focus();};
 byId("overview-filter").addEventListener("input", syncCatalogueURL);
 byId("overview-type").addEventListener("change", syncCatalogueURL);
 byId("overview-order").addEventListener("change", syncCatalogueURL);
@@ -1166,6 +1200,7 @@ window.addEventListener("hashchange", () => {
 
 request("/api/inventory")
   .then(data => {
+    initServiceDrawer();
     buildNavigation(data);
     renderRoute();
     refreshPages();

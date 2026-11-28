@@ -8,6 +8,9 @@
   <link rel="icon" href="/survey.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/vendor/xterm/xterm.css">
   <link rel="stylesheet" href="/style.css">
+  <script src="/archive-reader.js" defer></script>
+  <script src="/service-register.js" defer></script>
+  <script src="/collection-index.js" defer></script>
   <script src="/frontpage.js" defer></script>
 </head>
 <body class="rail">
@@ -27,23 +30,29 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6 9 3 3-3 3m6 0h4"/></svg>
         <span class="tab-label" aria-hidden="true">Terminal</span>
       </a>
-      <a href="#services" class="work-tab" id="services-nav" aria-label="Services">
+
+    </nav>
+      <button type="button" aria-haspopup="dialog" class="work-tab" id="services-nav" aria-label="Services">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M6 7h2m-2 10h2"/></svg>
         <span id="rail-count" hidden></span><span class="tab-label" aria-hidden="true">Services</span>
-      </a>
-    </nav>
+      </button>
     <a class="spine-title" href="#cover" aria-label="Return to the cover">Svalbard · Vol. I</a>
   </aside>
   <aside class="sidebar" id="sidebar" aria-label="Collection index">
     <a class="brand" href="#cover"><img src="/survey.svg" alt="" width="34" height="34"><strong>Svalbard</strong><small id="vault">Drive</small></a>
     <nav id="nav" aria-labelledby="margin-heading">
-      <h2 id="margin-heading">Collections</h2><ol id="margin-collections"></ol>
+      <h2 id="margin-heading">Collections</h2><ol class="index-groups" id="margin-collections"></ol><h2 id="system-heading">System</h2><ul class="index-groups" id="system-collections"></ul>
       <a class="all-collections" href="#overview">Full catalogue →</a>
     </nav>
     <footer class="margin-foot"><a href="#services" id="service-summary">Services</a><span id="connection" class="local"><i aria-hidden="true"></i><span>Local session</span></span><button type="button" class="text-button" id="refresh" disabled>Refresh saved apps</button><p id="workspace-status" role="status" hidden></p></footer>
+    <div id="index-resize" role="separator" tabindex="0" aria-label="Index width" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="340" aria-valuenow="232"></div>
   </aside>
   <button type="button" id="dismiss-sidebar" class="sidebar-scrim" aria-label="Close drive index" tabindex="-1"></button>
 
+  <dialog id="service-drawer" aria-labelledby="drawer-title"><header><h2 id="drawer-title">Service activity</h2><button class="button quiet-button" id="drawer-close" type="button">Close</button></header>
+    <p id="drawer-status" role="status"></p><ul id="drawer-services"></ul>
+    <footer><a id="full-register" href="#services">Full register →</a><button class="button quiet-button" data-bulk="stop-all">Stop all</button></footer><p id="drawer-feedback" role="status" hidden></p>
+  </dialog>
   <main id="main" class="main" tabindex="-1">
     <header class="top">
       <div class="top-location">
@@ -53,7 +62,7 @@
     </header>
 
     <nav id="crumbs" class="leaf-running" aria-label="Breadcrumb" hidden>
-      <div class="cover-running"><a href="#cover" title="Return to the cover">Svalbard</a><span class="leaf-path"><a href="#overview">Catalogue</a><a id="crumb-leaf" hidden></a></span></div>
+      <div class="cover-running"><a href="#cover" title="Return to the cover">Svalbard</a><span class="leaf-path"><a id="catalogue-crumb" href="#overview">Catalogue</a><a id="crumb-leaf" hidden></a></span></div>
     </nav>
     <div id="viewport" class="viewport">
       <section id="cover" class="cover" aria-labelledby="masthead">
@@ -93,6 +102,7 @@
             <option value="name">A–Z</option>
           </select>
         </div>
+        <button type="button" id="clear-filters" class="text-button" hidden>Clear filters</button>
         <p id="overview-results" class="quiet catalog-count" role="status" hidden></p>
         <a id="article-search" class="all-collections" href="#search" hidden>Search inside articles and documents →</a>
         <div class="register-labels" aria-hidden="true"><span>Accession</span><span>Title</span><span>Type</span><span>Size</span></div>
@@ -104,6 +114,10 @@
         <header class="folio-heading welcome"><h1 id="services-title" tabindex="-1">Services</h1></header>
         <p id="services-status" role="status">Checking services…</p>
         <ul id="services-list"></ul>
+        <div class="service-actions"><button class="button quiet-button" data-bulk="stop-all">Stop all</button>
+        <button class="button quiet-button" data-bulk="prepare">Prepare for removal</button><button class="button quiet-button" data-bulk="resume" hidden>Resume launches</button></div>
+        <button class="text-button" type="button" id="drive-users-check">Check other processes using the drive</button>
+        <p id="drive-users" role="status" hidden></p><p id="service-feedback" role="status" hidden></p>
       </section>
 
       <section id="search-panel" class="page" aria-labelledby="search-title" hidden>

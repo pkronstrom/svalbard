@@ -30,22 +30,26 @@ import (
 var assets embed.FS
 
 type dashboard struct {
-	ctx         context.Context
-	root        string
-	port        int
-	inv         inventory
-	specs       map[string]serviceSpec
-	previews    map[string]bool
-	archives    map[string]string // installed ZIM filename to its dashboard service key
-	kiwix       *browse.Library
-	mu          sync.Mutex
-	jobs        map[string]*job
-	workers     sync.WaitGroup
-	wiki        wikiService
-	settingsMu  sync.Mutex
-	terminalKey string
-	searchMu    sync.Mutex
-	search      *search.Session
+	ctx            context.Context
+	root           string
+	port           int
+	inv            inventory
+	specs          map[string]serviceSpec
+	previews       map[string]bool
+	archives       map[string]string // installed ZIM filename to its dashboard service key
+	kiwix          *browse.Library
+	mu             sync.Mutex
+	jobs           map[string]*job
+	workers        sync.WaitGroup
+	wiki           wikiService
+	settingsMu     sync.Mutex
+	lifecycleMu    sync.Mutex
+	draining       bool
+	terminals      int
+	resourceLabels map[string][]string
+	terminalKey    string
+	searchMu       sync.Mutex
+	search         *search.Session
 }
 
 type link struct {
@@ -60,6 +64,10 @@ type state struct {
 }
 
 type job struct {
+	started time.Time
+	model   string
+	events  []string
+	pid     int
 	state
 	cancel context.CancelFunc
 	ready  chan struct{}
@@ -84,6 +92,14 @@ func Run(ctx context.Context, out io.Writer, root string, cfg config.RuntimeConf
 		ctx: ctx, root: root, port: listener.Addr().(*net.TCPAddr).Port,
 		inv: inv, specs: specs, previews: installedPreviewFiles(inv), jobs: make(map[string]*job),
 		archives: make(map[string]string), kiwix: browse.NewLibrary(root), terminalKey: rand.Text(),
+	}
+	d.resourceLabels = map[string][]string{}
+	for _, group := range inv.Groups {
+		for _, item := range group.Items {
+			if item.Service != "" {
+				d.resourceLabels[item.Service] = appendUnique(d.resourceLabels[item.Service], item.Label)
+			}
+		}
 	}
 	for key, spec := range specs {
 		if spec.name == "browse" && spec.target != "" {
@@ -152,8 +168,18 @@ func (d *dashboard) handler(host string) http.Handler {
 	mux.HandleFunc("GET /api/source", d.serveSource)
 	mux.HandleFunc("GET /api/previews/{file}", d.servePreview)
 	mux.HandleFunc("GET /api/services", d.states)
+	mux.HandleFunc("GET /api/registry", d.registry)
+	mux.HandleFunc("POST /api/lifecycle", d.lifecycle)
+	mux.HandleFunc("POST /api/drive-users", d.inspectDriveUsers)
 	mux.HandleFunc("POST /api/services/{key}", d.start)
 	mux.HandleFunc("POST /api/services/{key}/stop", d.stop)
+	mux.HandleFunc("GET /api/archives/{key}/{part}", func(w http.ResponseWriter, r *http.Request) {
+		if part := r.PathValue("part"); part != "article" && part != "image" {
+			http.NotFound(w, r)
+			return
+		}
+		d.archiveContent(w, r)
+	})
 	mux.HandleFunc("POST /api/archives/{key}/search", d.searchArchive)
 	mux.HandleFunc("POST /api/search", d.runSearch)
 	mux.HandleFunc("POST /api/read", d.readResult)
@@ -225,7 +251,7 @@ func (d *dashboard) start(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	d.mu.Lock()
-	if d.ctx.Err() != nil {
+	if d.ctx.Err() != nil || d.draining {
 		d.mu.Unlock()
 		http.Error(w, "The dashboard is stopping", http.StatusServiceUnavailable)
 		return
@@ -240,9 +266,10 @@ func (d *dashboard) launchLocked(key string, spec serviceSpec, model string) *jo
 	if j == nil || j.Status == "stopped" || j.Status == "failed" || j.Status == "done" {
 		ctx, cancel := context.WithCancel(d.ctx)
 		j = &job{
-			state: state{Status: "starting"}, cancel: cancel,
+			state: state{Status: "starting"}, cancel: cancel, started: time.Now().UTC(), model: model,
 			ready: make(chan struct{}), done: make(chan struct{}),
 		}
+		j.events = []string{j.started.Format(time.RFC3339Nano) + " · Start requested"}
 		d.jobs[key] = j
 		d.workers.Add(1)
 		go d.runJob(ctx, j, spec, model)
@@ -275,12 +302,15 @@ func (d *dashboard) runJob(ctx context.Context, j *job, spec serviceSpec, model 
 				j.Links = slices.DeleteFunc(links, func(link link) bool { return link.Label == label })
 			} else {
 				j.Links = append(links, link{Label: label, URL: url})
+				if j.Status != "running" {
+					j.events = append(j.events, time.Now().UTC().Format(time.RFC3339Nano)+" · Ready")
+				}
 				j.Status = "running"
 				j.signalReady()
 			}
 		}
 	}
-	message, err := d.runService(ctx, spec, model, report)
+	message, err := d.runService(ctx, spec, model, report, func(pid int) { d.mu.Lock(); j.pid = pid; d.mu.Unlock() })
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	switch {
@@ -293,6 +323,7 @@ func (d *dashboard) runJob(ctx context.Context, j *job, spec serviceSpec, model 
 	default:
 		j.state = state{Status: "done", Text: message}
 	}
+	j.events = append(j.events, time.Now().UTC().Format(time.RFC3339Nano)+" · "+j.Status)
 	j.signalReady()
 }
 
@@ -322,6 +353,13 @@ func (d *dashboard) withSearch(w http.ResponseWriter, r *http.Request, fn func(*
 	}
 	d.searchMu.Lock()
 	defer d.searchMu.Unlock()
+	d.mu.Lock()
+	draining := d.draining
+	d.mu.Unlock()
+	if draining {
+		http.Error(w, "Drive is preparing for removal", 409)
+		return
+	}
 	if r.Context().Err() != nil {
 		return
 	}

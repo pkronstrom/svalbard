@@ -39,14 +39,15 @@ func (d *dashboard) serveTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.mu.Lock()
-	if d.ctx.Err() != nil {
+	if d.ctx.Err() != nil || d.draining {
 		d.mu.Unlock()
 		http.Error(w, "The dashboard is stopping.", http.StatusServiceUnavailable)
 		return
 	}
 	d.workers.Add(1)
+	d.terminals++
 	d.mu.Unlock()
-	defer d.workers.Done()
+	defer func() { d.mu.Lock(); d.terminals--; d.mu.Unlock(); d.workers.Done() }()
 	server := websocket.Server{
 		Handshake: func(cfg *websocket.Config, _ *http.Request) error {
 			cfg.Protocol = []string{terminalProtocol}

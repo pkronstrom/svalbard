@@ -23,7 +23,7 @@ import (
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/share"
 )
 
-func (d *dashboard) runService(ctx context.Context, spec serviceSpec, model string, report func(string, string)) (string, error) {
+func (d *dashboard) runService(ctx context.Context, spec serviceSpec, model string, report func(string, string), process func(int)) (string, error) {
 	root := d.root
 	opener := func(label string) func(string) error {
 		return func(url string) error {
@@ -40,6 +40,7 @@ func (d *dashboard) runService(ctx context.Context, spec serviceSpec, model stri
 			archive, err := d.kiwix.Acquire(ctx, spec.target)
 			if err == nil {
 				defer archive.Close()
+				process(archive.PID)
 				report("Open in Kiwix", archive.ViewerURL)
 				select {
 				case <-ctx.Done():

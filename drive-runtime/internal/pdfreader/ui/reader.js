@@ -3,7 +3,10 @@ const get = id => document.getElementById(id);
 async function openDocument() {
   const file = new URL(new URLSearchParams(location.search).get("file") || "/", location.origin);
   if (file.origin !== location.origin || !file.pathname.toLowerCase().endsWith(".pdf")) throw Error();
-  const initialPage = Number(new URLSearchParams(file.hash.slice(1)).get("page")) || 1;
+  const explicit = Number(new URLSearchParams(file.hash.slice(1)).get("page"));
+  const position = "svalbard-page:"+file.pathname;
+  let initialPage = explicit || 1;
+  try { if(!explicit) initialPage=Number(sessionStorage.getItem(position)) || 1; } catch {}
   file.hash = "";
   const pdfjs = await import("./vendor/build/pdf.min.mjs");
   const { EventBus, PDFLinkService, PDFFindController, PDFViewer, LinkTarget } = await import("./vendor/web/pdf_viewer.mjs");
@@ -27,6 +30,7 @@ async function openDocument() {
   get("total").textContent = "of " + doc.numPages;
   function currentPage() {
     page.value = viewer.currentPageNumber;
+    try {sessionStorage.setItem(position,page.value);} catch {}
     get("previous").disabled = viewer.currentPageNumber <= 1;
     get("next").disabled = viewer.currentPageNumber >= doc.numPages;
   }

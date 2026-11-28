@@ -60,6 +60,10 @@ func (d *dashboard) readyURL(ctx context.Context, key string) (*url.URL, error) 
 			d.mu.Unlock()
 			return nil, err
 		}
+		if d.draining {
+			d.mu.Unlock()
+			return nil, fmt.Errorf("drive is preparing for removal")
+		}
 		j = d.launchLocked(key, d.specs[key], "")
 		stopping := j.Status == "stopping"
 		d.mu.Unlock()
