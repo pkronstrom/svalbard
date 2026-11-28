@@ -5,15 +5,19 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 	"github.com/pkronstrom/svalbard/tui"
 )
 
 const (
-	menuGutter     = ""
-	menuCaretSpace = "  "
-	menuCaret      = "> "
-	menuSubIndent  = "  "
+	menuGutter            = ""
+	menuCaretSpace        = "  "
+	menuCaret             = "> "
+	menuSubIndent         = "  "
+	searchSnippetMaxLines = 3
 )
 
 func renderView(m Model) string {
@@ -102,7 +106,10 @@ func renderSearchView(m Model) string {
 	b.WriteString("\n\n")
 
 	shown := len(m.searchResults)
-	b.WriteString(m.theme.Section.Render(fmt.Sprintf("Results (%d shown, max 20)", shown)))
+	b.WriteString(m.theme.Section.Render(fmt.Sprintf("Results (%d loaded)", shown)))
+	if m.searchHasMore && m.searchResultsFocus && !m.searchLoading {
+		b.WriteString(m.theme.Help.Render("  •  M load more"))
+	}
 	b.WriteString("\n")
 	if shown == 0 {
 		b.WriteString(m.theme.Help.Render("No results yet. Type a query and press Enter."))
@@ -138,17 +145,19 @@ func renderSearchView(m Model) string {
 	b.WriteString("\n")
 	b.WriteString(m.theme.Section.Render("Selected Result"))
 	b.WriteString("\n")
-	b.WriteString(m.theme.Muted.Render("  Source: " + selected.Filename))
+	width := m.searchViewWidth()
+	b.WriteString(m.theme.Muted.Render(shortSearchText("  Source: "+selected.Filename, width)))
 	b.WriteString("\n")
-	b.WriteString(m.theme.Muted.Render("  Path:   " + selected.Path))
+	b.WriteString(m.theme.Muted.Render(shortSearchText("  Path:   "+selected.Path, width)))
 	b.WriteString("\n")
-	if selected.Snippet != "" {
-		b.WriteString(m.theme.Muted.Render("  Snippet: " + selected.Snippet))
-		b.WriteString("\n")
-	}
+	renderSearchSnippet(&b, m, selected.Snippet)
 
 	b.WriteString("\n")
-	b.WriteString(m.theme.Help.Render("Enter search/open • Tab mode • j/k move • Esc clear/back"))
+	help := "Enter search/open • ↑↓ move • PgUp/PgDn • Esc back"
+	if m.searchInfo.HybridEnabled {
+		help += " • Tab mode"
+	}
+	b.WriteString(m.theme.Help.Render(shortSearchText(help, width)))
 	b.WriteString("\n")
 
 	return b.String()
@@ -178,16 +187,60 @@ func renderResultNumber(m Model, index int, filename string, selected bool) stri
 
 func renderSearchResultLine(m Model, index int, filename, title string, selected bool) string {
 	number := renderResultNumber(m, index, filename, selected)
-	if !selected {
-		return fmt.Sprintf("%s  %s", number, title)
+	width := m.searchViewWidth()
+	const separator = " │ "
+	room := width - lipgloss.Width(number) - 2 - lipgloss.Width(separator)
+	sourceWidth := min(36, max(1, room/3))
+	if archive, _, ok := engine.EmbeddedArchive(filename); ok {
+		filename = archive
 	}
-	selectedSpacerStyle := lipgloss.NewStyle().Background(m.theme.SelectedRow.GetBackground())
-	return lipgloss.JoinHorizontal(
-		lipgloss.Left,
-		number,
-		selectedSpacerStyle.Render("  "),
-		m.theme.SelectedRow.Render(title),
-	)
+	source := shortSearchText(search.SourceLabel(filename), sourceWidth)
+	titleWidth := max(1, room-sourceWidth)
+	title = shortSearchText(strings.Join(strings.Fields(title), " "), titleWidth)
+	padding := strings.Repeat(" ", max(0, titleWidth-lipgloss.Width(title)))
+	if selected {
+		title = m.theme.SelectedRow.Render(title)
+	}
+	return number + "  " + title + padding + m.theme.Muted.Render(separator+source)
+}
+
+func (m Model) searchViewWidth() int {
+	if m.width > 0 {
+		return m.width
+	}
+	return 80
+}
+
+func renderSearchSnippet(b *strings.Builder, m Model, snippet string) {
+	snippet = strings.Join(strings.Fields(snippet), " ")
+	if snippet == "" {
+		return
+	}
+	const label = "  Snippet: "
+	width := m.searchViewWidth()
+	room := max(1, width-len(label))
+	lines := strings.Split(ansi.Wrap(snippet, room, ""), "\n")
+	if len(lines) > searchSnippetMaxLines {
+		lines = lines[:searchSnippetMaxLines]
+		last := len(lines) - 1
+		lines[last] = shortSearchText(lines[last]+"…", room)
+	}
+	prefix := label
+	for _, line := range lines {
+		b.WriteString(m.theme.Muted.Render(shortSearchText(prefix+line, width)))
+		b.WriteString("\n")
+		prefix = strings.Repeat(" ", len(label))
+	}
+}
+
+func shortSearchText(text string, width int) string {
+	if lipgloss.Width(text) <= width {
+		return text
+	}
+	if width <= 1 {
+		return "…"
+	}
+	return lipgloss.NewStyle().MaxWidth(width-1).Render(text) + "…"
 }
 
 func renderSearchResultSnippet(m Model, snippet string, selected bool) string {

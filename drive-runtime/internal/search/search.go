@@ -180,7 +180,7 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 				return err
 			}
 			start := len(displayed)
-			displayed = appendUnseen(displayed, response.Results)
+			displayed = AppendUnseenResults(displayed, response.Results)
 			if len(displayed) == start {
 				fmt.Fprintln(stdout, "  No more results")
 				continue
@@ -213,9 +213,9 @@ func runSession(ctx context.Context, stdin io.Reader, stdout io.Writer, initialQ
 	}
 }
 
-// The larger search can reorder winners as its candidate pool grows.
-// Retain every displayed result at its original number.
-func appendUnseen(displayed, results []Result) []Result {
+// AppendUnseenResults retains every displayed result at its original number
+// when the larger search reorders hits as its candidate pool grows.
+func AppendUnseenResults(displayed, results []Result) []Result {
 	seen := make(map[[2]string]bool, len(displayed))
 	for _, result := range displayed {
 		seen[[2]string{result.Filename, result.Path}] = true
