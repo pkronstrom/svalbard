@@ -134,29 +134,31 @@ func showTray(d drive, cleanup func()) error {
 	menu := systray.NewMenu()
 	status := menu.Add("Svalbard", nil)
 	status.SetDisabled(true)
-	var guard sync.Mutex
-	act := func(fn func() error) func() {
+	var action menuAction
+	act := func(label string, fn func() error) func() {
 		return func() {
-			if !guard.TryLock() {
+			if !action.begin(label) {
 				return
 			}
+			status.SetLabel(label)
 			go func() {
-				defer guard.Unlock()
-				if err := fn(); err != nil {
+				err := fn()
+				action.finish(err)
+				if err != nil {
 					status.SetLabel(err.Error())
 					tray.ShowNotification("Svalbard", err.Error())
 				}
 			}()
 		}
 	}
-	menu.Add("Open Frontpage", act(func() error { _, err := d.command(); return err }))
+	menu.Add("Open Frontpage", act("Opening frontpage…", func() error { _, err := d.command(); return err }))
 	services := systray.NewMenu()
 	items := map[serviceEntry]*systray.MenuItem{}
 	if origin, _ := d.address(); origin != "" {
 		var inv inventory
 		if dashboardRequest(origin, "/api/inventory", nil, &inv) == nil {
 			for _, entry := range inv.localServices() {
-				items[entry] = services.AddCheckbox(entry.Label, false, act(func() error {
+				items[entry] = services.AddCheckbox(entry.Label, false, act("Updating "+entry.Label+"…", func() error {
 					origin, err := d.address()
 					if err != nil {
 						return err
@@ -178,7 +180,7 @@ func showTray(d drive, cleanup func()) error {
 	}
 	menu.AddSeparator()
 	if vol, err := mountedVolume(d.root); err == nil {
-		menu.Add("Unmount Drive and Quit", act(func() error {
+		menu.Add("Unmount Drive and Quit", act("Unmounting drive…", func() error {
 			if err := d.prepareAndStop(true); err != nil {
 				return err
 			}
@@ -194,7 +196,7 @@ func showTray(d drive, cleanup func()) error {
 			return nil
 		}))
 	}
-	menu.Add("Stop Dashboard and Quit", act(func() error {
+	menu.Add("Stop Dashboard and Quit", act("Stopping dashboard…", func() error {
 		if err := d.prepareAndStop(false); err != nil {
 			return err
 		}
@@ -202,17 +204,13 @@ func showTray(d drive, cleanup func()) error {
 		os.Exit(0)
 		return nil
 	}))
-	updateMenu(d, status, items)
+	updateMenu(d, status, items, &action)
 	tray.SetMenu(menu).Show()
 	go func() {
 		t := time.NewTicker(3 * time.Second)
 		defer t.Stop()
 		for range t.C {
-			if !guard.TryLock() {
-				continue
-			}
-			updateMenu(d, status, items)
-			guard.Unlock()
+			updateMenu(d, status, items, &action)
 		}
 	}()
 	defer tray.Remove()
@@ -223,7 +221,38 @@ func active(status string) bool {
 	return status == "starting" || status == "running" || status == "stopping"
 }
 
-func updateMenu(d drive, status *systray.MenuItem, items map[serviceEntry]*systray.MenuItem) {
+type menuAction struct {
+	mu    sync.Mutex
+	busy  bool
+	label string
+}
+
+func (a *menuAction) begin(label string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.busy {
+		return false
+	}
+	a.busy, a.label = true, label
+	return true
+}
+
+func (a *menuAction) finish(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.busy, a.label = false, ""
+	if err != nil {
+		a.label = err.Error()
+	}
+}
+
+func (a *menuAction) message() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.label
+}
+
+func updateMenu(d drive, status *systray.MenuItem, items map[serviceEntry]*systray.MenuItem, action *menuAction) {
 	origin, err := d.address()
 	var current registry
 	if err == nil && origin != "" {
@@ -244,6 +273,9 @@ func updateMenu(d drive, status *systray.MenuItem, items map[serviceEntry]*systr
 	}
 	if current.Draining {
 		text = "Svalbard · Preparing for removal"
+	}
+	if message := action.message(); message != "" {
+		text = message
 	}
 	status.SetLabel(text)
 	for entry, item := range items {

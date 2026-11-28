@@ -54,3 +54,24 @@ func TestDashboardClientRejectsRedirectsAndSendsMutationHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestActionsDoNotWaitForStatusPolls(t *testing.T) {
+	var action menuAction
+	if action.message() != "" || !action.begin("Opening frontpage…") {
+		t.Fatal("a menu click should start immediately")
+	}
+	if action.begin("Stopping dashboard…") || action.message() != "Opening frontpage…" {
+		t.Fatal("a second command should wait without clearing the current status")
+	}
+	action.finish(fmt.Errorf("Browser did not open"))
+	if action.message() != "Browser did not open" {
+		t.Fatal("a status refresh would hide the error")
+	}
+	if !action.begin("Stopping dashboard…") || action.message() != "Stopping dashboard…" {
+		t.Fatal("retry could not replace the error")
+	}
+	action.finish(nil)
+	if action.message() != "" {
+		t.Fatal("completed action still showing")
+	}
+}
