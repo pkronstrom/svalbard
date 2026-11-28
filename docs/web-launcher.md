@@ -4,7 +4,7 @@
 
 **Linux:** Copy **Svalbard-Linux** beside `run` and open it. For a desktop entry, put **Svalbard.desktop** in the same folder and open that instead. If the copy lost its executable permission, run `chmod +x Svalbard-Linux Svalbard.desktop` in the vault folder. Omit the desktop filename if you copied only the shell launcher.
 
-The click wrappers invoke the drive’s existing `svalbard-drive launch`, the same command as `./run launch`. It starts or reuses the loopback dashboard, waits for readiness, and opens the default browser. The atlas displays this drive’s resources. Reader and inference services start on demand. Closing a tab leaves the dashboard available to reopen.
+The click wrappers call the drive’s `./run launch`. That command starts or reuses the loopback dashboard, waits for readiness, and opens the default browser. The atlas displays this drive’s resources. Reader and inference services start on demand. Closing a tab leaves the dashboard available to reopen.
 
 ## Prepare an existing drive
 
@@ -40,7 +40,7 @@ Delete a manually copied wrapper to remove that graphical entry point. For a rec
 
 The macOS wrapper selects the drive’s available native binary for Apple silicon or Intel, including a Finder shell running under Rosetta. The bundle is unsigned and unnotarized. A quarantined or translocated app can lose access to the vault around it. If host policy permits, use a trusted local copy of the complete vault.
 
-Linux uses the drive’s x86_64 or arm64 executable, POSIX shell and `xdg-open`. File managers and removable-media trust policies vary. A headless host can use `./run launch --no-open`. The static **Svalbard Files.html** page works when native execution is unavailable. The original `./run` script uses Bash. Windows is outside this package.
+Linux uses the drive’s x86_64 or arm64 executable, POSIX shell and `xdg-open`. File managers and removable-media trust policies vary. A headless host can use `./run launch --no-open`. The static **Svalbard Files.html** page works when native execution is unavailable. Newly generated `run` scripts use a POSIX shell. On a Bash-free host with an older drive that shipped a Bash dispatcher, **Svalbard-Linux** can call the same drive runtime directly. Windows is outside this package.
 
 ## Package the click wrappers
 

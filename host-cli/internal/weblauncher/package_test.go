@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -80,6 +81,28 @@ func TestLaunchersMatchTheVaultOSSelection(t *testing.T) {
 	}
 }
 
+func TestLinuxWrapperUsesDriveRun(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "Vault Å")
+	if err := os.Mkdir(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(root, "web-launcher", "web-launcher", []string{"linux-x86_64"}); err != nil {
+		t.Fatal(err)
+	}
+	run := "#!/bin/sh\n[ \"$#\" -eq 1 ] && [ \"$1\" = launch ] && printf launch > \"$PWD/called\"\n"
+	if err := os.WriteFile(filepath.Join(root, "run"), []byte(run), 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("/bin/sh", filepath.Join(root, "Svalbard-Linux"))
+	cmd.Dir = "/"
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Linux launcher: %v\n%s", err, out)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "called")); err != nil || string(got) != "launch" {
+		t.Fatalf("drive run received %q, %v", got, err)
+	}
+}
+
 func TestMacBundleSelectsInstalledARMRuntimeUnderRosetta(t *testing.T) {
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		t.Skip("requires Apple silicon")
@@ -96,7 +119,11 @@ func TestMacBundleSelectsInstalledARMRuntimeUnderRosetta(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(dir, "svalbard-drive")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s' \"$1\" > \"$DRIVE_ROOT/selected\"\n"), 0755); err != nil {
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	run := "#!/bin/sh\nprintf '%s %s' \"$(/usr/bin/uname -m)\" \"$*\" > \"$PWD/selected\"\n"
+	if err := os.WriteFile(filepath.Join(root, "run"), []byte(run), 0755); err != nil {
 		t.Fatal(err)
 	}
 	wrapper := filepath.Join(root, "Svalbard.app", "Contents", "MacOS", "svalbard-launcher")
@@ -106,7 +133,7 @@ func TestMacBundleSelectsInstalledARMRuntimeUnderRosetta(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(root, "selected"))
-	if err != nil || string(got) != "launch" {
+	if err != nil || strings.TrimSpace(string(got)) != "arm64 launch" {
 		t.Fatalf("Rosetta launched %q, %v", got, err)
 	}
 }

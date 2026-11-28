@@ -1,23 +1,29 @@
 #!/bin/sh
-# Finder can launch a shell wrapper under Rosetta. Select the vault's Mach-O
-# for the actual hardware even when this process reports an Intel uname.
+# Finder can start this script under Rosetta. Give the drive's run script
+# the architecture of its available runtime.
 root=$(CDPATH= cd -P -- "$(dirname -- "$0")/../../.." && pwd -P) || exit 1
-runtime="$root/.svalbard/runtime"
-binary="$runtime/macos-x86_64/svalbard-drive"
-if [ "$(/usr/sbin/sysctl -in hw.optional.arm64)" = "1" ] ||
-   [ "$(/usr/sbin/sysctl -in sysctl.proc_translated)" = "1" ] ||
-   [ "$(/usr/bin/uname -m)" = "arm64" ]; then
-    if [ -x "$runtime/macos-arm64/svalbard-drive" ]; then
-        binary="$runtime/macos-arm64/svalbard-drive"
+launch() (
+    cd "$root" || exit 1
+    if [ "$(/usr/sbin/sysctl -in hw.optional.arm64)" = "1" ] ||
+       [ "$(/usr/sbin/sysctl -in sysctl.proc_translated)" = "1" ] ||
+       [ "$(/usr/bin/uname -m)" = "arm64" ]; then
+        runtime="$root/.svalbard/runtime"
+        if [ -x "$runtime/macos-arm64/svalbard-drive" ]; then
+            exec /usr/bin/arch -arm64 /bin/sh -c 'exec ./run launch'
+        elif [ -x "$runtime/macos-x86_64/svalbard-drive" ]; then
+            exec /usr/bin/arch -x86_64 /bin/sh -c 'exec ./run launch'
+        fi
     fi
-fi
-if [ -x "$binary" ]; then
-    message=$(DRIVE_ROOT="$root" "$binary" launch 2>&1) && exit 0
+    exec ./run launch
+)
+if [ -x "$root/run" ]; then
+    message=$(launch 2>&1) && exit 0
     case "$message" in
         *"unknown command: launch"*) message="This drive has an older runtime. Try ./run web from the vault folder, or update the drive runtime and apply the web-launcher recipe with the Svalbard host." ;;
+        *"/svalbard-drive:"*) message="The Mac drive runtime could not run. Apply the web-launcher recipe for this Mac. $message" ;;
     esac
 else
-    message="Keep Svalbard.app beside the existing vault’s run file. This vault needs its Mac runtime and web-launcher recipe. Add the recipe with the Svalbard host and apply it to this vault. If macOS isolated the app, use a trusted local copy of the complete vault."
+    message="Keep Svalbard.app beside the existing vault’s executable run file and apply the web-launcher recipe. If macOS isolated the app, use a trusted local copy of the complete vault."
 fi
 /usr/bin/osascript - "$message" <<'APPLESCRIPT'
 on run argv

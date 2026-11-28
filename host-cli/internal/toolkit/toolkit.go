@@ -678,10 +678,10 @@ func copyFile(sourcePath, destPath string, mode os.FileMode) error {
 }
 
 func runScriptContents() string {
-	return `#!/usr/bin/env bash
-set -euo pipefail
+	return `#!/bin/sh
+set -eu
 
-DRIVE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DRIVE_ROOT=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P)
 
 case "$(uname -s)" in
     Darwin*) os="macos" ;;
