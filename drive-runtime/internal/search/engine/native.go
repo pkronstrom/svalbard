@@ -8,9 +8,14 @@ import (
 	"strings"
 )
 
+type NativeZIMGroup struct {
+	Language string
+	Books    []string
+}
+
 // NativeZIMGroups lists the registered native sources in Kiwix-compatible
 // language groups. Pre-migration databases have no native_language column.
-func (e *Engine) NativeZIMGroups(ctx context.Context, scope string, excluded ...string) ([][]string, error) {
+func (e *Engine) NativeZIMGroups(ctx context.Context, scope string, excluded ...string) ([]NativeZIMGroup, error) {
 	if scope != "" && (!strings.EqualFold(filepath.Ext(scope), ".zim") || filepath.Base(scope) != scope) {
 		return nil, nil
 	}
@@ -21,23 +26,23 @@ func (e *Engine) NativeZIMGroups(ctx context.Context, scope string, excluded ...
 	for _, filename := range excluded {
 		delete(languages, strings.TrimSuffix(filename, filepath.Ext(filename)))
 	}
-	var groups [][]string
+	var groups []NativeZIMGroup
 	byLanguage := map[string]int{}
 	for _, book := range slices.Sorted(maps.Keys(languages)) {
 		lang := languages[book]
 		if lang == "und" || strings.Contains(lang, ",") {
 			// A missing or multilingual language may have a different
 			// Xapian stemmer. Keep it in its own request.
-			groups = append(groups, []string{book})
+			groups = append(groups, NativeZIMGroup{Language: lang, Books: []string{book}})
 			continue
 		}
 		i, seen := byLanguage[lang]
 		if !seen {
 			i = len(groups)
 			byLanguage[lang] = i
-			groups = append(groups, nil)
+			groups = append(groups, NativeZIMGroup{Language: lang})
 		}
-		groups[i] = append(groups[i], book)
+		groups[i].Books = append(groups[i].Books, book)
 	}
 	return groups, nil
 }

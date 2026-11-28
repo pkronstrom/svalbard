@@ -98,7 +98,7 @@ func newSession(ctx context.Context, driveRoot string, opener func(string) error
 	}
 	var nativeCount int
 	for _, group := range groups {
-		nativeCount += len(group)
+		nativeCount += len(group.Books)
 	}
 	return &Session{
 		driveRoot: driveRoot,
@@ -275,6 +275,13 @@ func ArchiveSource(filename string) string {
 // serves the archive. book is Kiwix's catalog alias, when available.
 func ArchiveResultURL(base, book string, result Result) string {
 	if engine.IsEmbeddedSource(result.Filename) {
+		// A video transcript hit opens the video at the spoken time.
+		if ms, ok := engine.VideoTime(result.Path); ok {
+			if book == "" {
+				return embeddedURL(base, result.Filename, 0) + videoFragment(ms)
+			}
+			return embeddedBookURL(base, book, result.Filename, 0) + videoFragment(ms)
+		}
 		page, _ := engine.PageNumber(result.Path)
 		if book == "" {
 			return embeddedURL(base, result.Filename, page)

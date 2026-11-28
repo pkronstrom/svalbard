@@ -39,21 +39,49 @@ func MergeZIMKeywords(ctx context.Context, eng *engine.Engine, start func(contex
 	// request per group and keep list order independent of response timing.
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	lists := make([][]Result, len(groups)+1)
+	type request struct {
+		books []string
+		query string
+	}
+	requests := make([]request, 0, len(groups)+1)
+	var alternative []string
+	if scope == "" {
+		alternative = GrowingQuery(words)
+	}
+	var englishBooks []string
+	pattern := strings.Join(words, " ")
+	for _, group := range groups {
+		requests = append(requests, request{group.Books, pattern})
+		if group.Language == "eng" || group.Language == "en" {
+			englishBooks = group.Books
+		}
+	}
+	alternativeList := -1
+	if len(alternative) > 0 && len(englishBooks) > 0 {
+		requests = append(requests, request{englishBooks, strings.Join(alternative, " ")})
+		alternativeList = len(requests)
+	}
+	lists := make([][]Result, len(requests)+1)
 	lists[0] = local
-	failures := make([]error, len(groups))
+	failures := make([]error, len(requests))
 	slots := make(chan struct{}, 4)
 	var wg sync.WaitGroup
-	for i, books := range groups {
+	for i, req := range requests {
 		wg.Go(func() {
 			select {
 			case slots <- struct{}{}:
 				defer func() { <-slots }()
 			case <-ctx.Done():
-				failures[i] = ctx.Err()
+				if i+1 != alternativeList {
+					failures[i] = ctx.Err()
+				}
 				return
 			}
-			lists[i+1], failures[i] = KiwixKeyword(ctx, port, books, strings.Join(words, " "), min(limit*4, 200))
+			hits, err := KiwixKeyword(ctx, port, req.books, req.query, min(limit*4, 200))
+			lists[i+1] = hits
+			if i+1 != alternativeList {
+				failures[i] = err
+			}
 		})
 	}
 	wg.Wait()
@@ -63,7 +91,7 @@ func MergeZIMKeywords(ctx context.Context, eng *engine.Engine, start func(contex
 	if !slices.ContainsFunc(lists[1:], func(hits []Result) bool { return len(hits) > 0 }) {
 		return local, true, errors.Join(failures...)
 	}
-	return blendKeywordResults(lists, words, scope, limit), true, errors.Join(failures...)
+	return blendKeywordResults(lists, words, alternative, alternativeList, scope, limit), true, errors.Join(failures...)
 }
 
 // KiwixKeyword searches the selected books served by a loopback Kiwix process.
@@ -131,38 +159,65 @@ func KiwixKeyword(ctx context.Context, port int, books []string, query string, l
 	return results, nil
 }
 
-func blendKeywordResults(lists [][]Result, words []string, scope string, limit int) []Result {
+func blendKeywordResults(lists [][]Result, words, alternative []string, alternativeList int, scope string, limit int) []Result {
 	type candidate struct {
 		hit    Result
 		weight float64
 		source string
 	}
 	var candidates []candidate
-	seen := make(map[[2]string]bool)
+	seen := make(map[[2]string]int)
 	query := strings.ToLower(strings.Join(words, " "))
-	for _, list := range lists {
+	for i, list := range lists {
+		terms := words
+		if i == alternativeList {
+			terms = alternative
+		}
 		for rank, hit := range list {
 			key := [2]string{hit.Filename, strings.TrimLeft(hit.Path, "/")}
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
 			// Xapian and SQLite scores use different units. Compare rank
 			// within each list and give extra weight to matches in the title.
 			titleWords := engine.QueryWords(hit.Title)
 			score := 1 / float64(4+rank)
-			for _, word := range words {
-				if slices.ContainsFunc(titleWords, func(titleWord string) bool { return strings.EqualFold(titleWord, word) }) {
-					score += 0.1 / float64(len(words))
+			titleMatches, titleNearby := PassageEvidence(hit.Title, terms)
+			score += 0.1 * float64(titleMatches) / float64(len(terms))
+			var snippetNearby bool
+			if scope == "" && len(terms) > 1 {
+				var snippetMatches int
+				snippetMatches, snippetNearby = PassageEvidence(hit.Snippet, terms)
+				score += 0.05 * float64(snippetMatches) / float64(len(terms))
+				if titleNearby {
+					score += 0.24
 				}
+				if snippetNearby {
+					score += 0.14
+				}
+			}
+			if i == alternativeList {
+				// A supplemental hit needs evidence for both terms before it
+				// competes with the original query.
+				if !titleNearby && !snippetNearby {
+					continue
+				}
+				score *= 0.85
 			}
 			if strings.ToLower(strings.Join(titleWords, " ")) == query {
 				score++
+			}
+			if scope == "" && isQuestionListing(hit) {
+				score *= 0.35
 			}
 			source, _, embedded := engine.EmbeddedArchive(hit.Filename)
 			if !embedded {
 				source = hit.Filename
 			}
+			if previous, ok := seen[key]; ok {
+				if score > candidates[previous].weight {
+					candidates[previous] = candidate{hit, score, source}
+				}
+				continue
+			}
+			seen[key] = len(candidates)
 			candidates = append(candidates, candidate{hit, score, source})
 		}
 	}
@@ -197,4 +252,12 @@ func blendKeywordResults(lists [][]Result, words []string, scope string, limit i
 		candidates = slices.Delete(candidates, best, best+1)
 	}
 	return results
+}
+
+func isQuestionListing(hit Result) bool {
+	if !strings.Contains(hit.Filename, ".stackexchange.com_") {
+		return false
+	}
+	path := strings.TrimLeft(hit.Path, "/")
+	return strings.HasPrefix(path, "questions/tagged/") || strings.HasPrefix(path, "users/")
 }

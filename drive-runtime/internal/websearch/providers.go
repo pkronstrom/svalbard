@@ -80,7 +80,8 @@ func duckDuckGoURL(href string) string {
 	return href
 }
 
-func parseSearXNG(body []byte, limit int) ([]Result, error) {
+// SearXNG and Tavily both return title, url and content in a results array.
+func parseJSONResults(body []byte, limit int) ([]Result, error) {
 	var response struct {
 		Results []struct {
 			Title   string `json:"title"`

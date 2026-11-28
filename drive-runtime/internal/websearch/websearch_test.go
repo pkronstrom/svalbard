@@ -89,6 +89,35 @@ func TestSearXNGResults(t *testing.T) {
 	}
 }
 
+func TestTavilyRequestsBasicSearchAndReturnsPublicLinks(t *testing.T) {
+	search := NewTavily("test-key")
+	search.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodPost || req.URL.String() != "https://api.tavily.com/search" {
+			t.Fatalf("unexpected request %s %s", req.Method, req.URL)
+		}
+		if req.Header.Get("Authorization") != "Bearer test-key" || req.Header.Get("Content-Type") != "application/json" {
+			t.Fatal("expected Bearer authentication and JSON content type")
+		}
+		var body map[string]any
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]any{"query": "snow & ice", "search_depth": "basic", "max_results": float64(3)}
+		if !reflect.DeepEqual(body, want) {
+			t.Fatalf("request = %v, want %v", body, want)
+		}
+		return response(http.StatusOK, `{"results":[
+			{"title":"Local","url":"http://localhost/test"},
+			{"title":"Snow & ice","url":"https://example.org/svalbard","content":"An Arctic overview."}
+		]}`), nil
+	})
+	got, err := search.Query(t.Context(), " snow & ice ", 0)
+	want := []Result{{Title: "Snow & ice", URL: "https://example.org/svalbard", Snippet: "An Arctic overview."}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("Query returned %#v, %v, want %#v", got, err, want)
+	}
+}
+
 func TestProviderUnavailable(t *testing.T) {
 	challenge := fixture(t, "duckduckgo-challenge.html")
 	const jsonEndpoint = "https://searx.example.org/search"

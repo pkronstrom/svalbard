@@ -1,6 +1,6 @@
 # ESP32 offline example
 
-Open the vault's Embedded Dev Shell (`./run embedded`). It provides Python,
+Open the vault's embedded dev shell (`./run embedded`). It provides Python,
 PlatformIO and the pinned ESP-IDF tool closure; no host Python/PIO is needed.
 Copy this entire example to a new directory on your computer before editing:
 

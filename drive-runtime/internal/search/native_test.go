@@ -59,7 +59,21 @@ func TestMergeZIMKeywordsUsesBothLanguagesAndSQLite(t *testing.T) {
 		t.Errorf("escaped HTML snippet was not rendered as plain text: %+v", got)
 	}
 	groups, err := engine.New(db).NativeZIMGroups(context.Background(), "", "north.zim")
-	if err != nil || !reflect.DeepEqual(groups, [][]string{{"south"}, {"suomi"}}) {
+	if err != nil || !reflect.DeepEqual(groups, []engine.NativeZIMGroup{{Language: "eng", Books: []string{"south"}}, {Language: "fin", Books: []string{"suomi"}}}) {
 		t.Errorf("native search with an excluded archive uses %v, error %v", groups, err)
+	}
+}
+
+func TestBlendPromotesCloseCultivationMatches(t *testing.T) {
+	for _, words := range [][]string{{"farming", "potatoes"}, {"potato", "farming"}} {
+		lists := [][]Result{
+			{{Filename: "magazine.zim", Title: "Vertical Farming", Snippet: "A farm powered by solar panels."}},
+			{{Filename: "garden.zim", Title: "Growing potatoes in tyres", Path: "/Tyres"},
+				{Filename: "guide.zim", Title: "Local food", Snippet: "A long note on animal feed."}},
+		}
+		got := blendKeywordResults(lists, words, GrowingQuery(words), 1, "", 10)
+		if len(got) != 2 || got[0].Title != "Growing potatoes in tyres" {
+			t.Fatalf("search %v returned %+v", words, got)
+		}
 	}
 }

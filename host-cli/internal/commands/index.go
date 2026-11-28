@@ -177,6 +177,19 @@ func indexVaultUnlocked(ctx context.Context, root string, force bool, w io.Write
 			present[name] = true
 		}
 	}
+	// Ordinary keyword indexing preserves optional video sources of an
+	// unchanged archive, including during a forced rebuild.
+	archives := make(map[string]searchdb.Source, len(plans))
+	for _, plan := range plans {
+		archives[plan.Filename] = plan
+	}
+	for _, source := range indexed {
+		if !isVideoTranscript(source) {
+			continue
+		}
+		archive, _, _ := strings.Cut(source.Filename, "/")
+		present[source.Filename] = source.IdentityCurrent(archives[archive])
+	}
 	if err := indexDocuments(ctx, root, documents, force, db, indexedByFilename, readers, w, notify); err != nil {
 		return err
 	}

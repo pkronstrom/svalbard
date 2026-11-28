@@ -260,6 +260,30 @@ Documents in zimgit-post-disaster_en_2024-05.zim:
 
 An EPUB that is the same book as an HTML page of the archive, as in Gutenberg ZIMs, is left out: its text is indexed already. An index built by an older `svalbard` picks the documents up at the next `index` or `apply`, which reads again only the archives that hold documents or web-app files.
 
+### Search inside archived videos
+
+Video indexing is optional on both `apply` and `index`. Import your own ZIM
+with `svalbard import <file.zim> --add --vault <path>` to place it among the
+vault's searchable archives.
+
+```bash
+svalbard apply --vault /Volumes/MyDrive --video-index captions
+svalbard apply --vault /Volumes/MyDrive --video-index transcribe \
+  --video-zim your-video-archive.zim --video-limit 1
+```
+
+`captions` indexes supported WebVTT and SRT tracks and timestamped chapter
+labels. `transcribe` also generates speech text for videos that lack usable
+captions. The first transcription builds a dedicated FFmpeg and Parakeet
+Docker image and caches the 465 MiB model download on the host. Later runs
+reuse the image, the model, and completed video entries in the vault.
+
+`--video-zim` selects one installed archive. `--video-limit` limits new
+transcriptions in a run, so you can continue with the same command. Use
+`SVALBARD_VIDEO_MODEL_DIR` to point at an already extracted Parakeet v3 int8
+model directory. Search hits link to the original video at the passage's
+timestamp.
+
 ## Your own documents
 
 A document collection puts your own PDFs on a vault and makes every page searchable: manuals, datasheets, guides, by URL or from your disk. You describe the collection in one small file; `svalbard apply` fetches what is missing and indexes it.
@@ -377,7 +401,7 @@ A drive built from a default preset has a wiki: a place for your own notes, next
 - **The wiki's page talks to the wiki only.** An image or script from another address in a page is not loaded.
 - **Settings**, under Wiki in the Settings screen or with `./run settings`: `silverbullet.open_browser` (on), `silverbullet.fs_watch` (`auto`; set `poll` if pages changed on the stick do not show up in the open wiki) and `silverbullet.live_pages` (on).
 - **The browser keeps nothing.** When you close the tab, no copy of your notes stays in that browser, so the wiki is safe to open on a borrowed computer. It indexes the pages again each time it is opened, which takes about a second for a few hundred pages.
-- **Serve Everything starts the wiki too, on this computer only**, whatever address the other services use: the wiki has no login. The files in `wiki/` are still part of the drive that Files shares read-only.
+- **Serve everything starts the wiki too, on this computer only**, whatever address the other services use: the wiki has no login. The files in `wiki/` are still part of the drive that Files shares read-only.
 
 The wiki is [SilverBullet](https://silverbullet.md) 3.0.1. It keeps nothing on the drive but the pages: its index and settings are rebuilt in a temporary folder on the computer at each start and removed when it stops.
 
@@ -396,7 +420,9 @@ Web search is off by default. Enable **Web search** under **Local AI** in the dr
 ./run web-search "Go release notes"
 ```
 
-The default sends the query to DuckDuckGo's public HTML search. If it refuses automated requests, set **SearXNG URL** to a server you use that has JSON search enabled. Both options work without a search API key. [SearXNG JSON search](https://docs.searxng.org/dev/search_api.html)
+Set **SearXNG URL** to use a server with JSON search enabled. With that setting empty, Svalbard uses Tavily Basic when the launch environment includes `TAVILY_API_KEY`. Otherwise it uses DuckDuckGo's public HTML search, which may refuse automated requests. [SearXNG JSON search](https://docs.searxng.org/dev/search_api.html) · [Tavily Search API](https://docs.tavily.com/documentation/api-reference/endpoint/search)
+
+Set the Tavily key in the host environment before starting the drive launcher. If you keep the key in the `secret` store, run `secret exec TAVILY_API_KEY -- ./run` and open your client from the menu. The drive settings store the web search toggle and the SearXNG URL.
 
 ## Builder Scripts
 

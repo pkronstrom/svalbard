@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"math"
+	"strings"
 	"testing"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -495,5 +496,29 @@ func TestHybridSearch(t *testing.T) {
 	}
 	if results[0].Body != "" {
 		t.Fatalf("hybrid metadata result body = %q, want uncaptured body", results[0].Body)
+	}
+}
+
+func TestHybridPreviewKeepsKeywordPassageAndUsesMatchedSection(t *testing.T) {
+	db := setupTestDB(t)
+	src := insertSource(t, db, "garden.zim")
+	keyword := insertArticle(t, db, src, "/Keyword", "Crop rotation",
+		strings.Repeat("Background and bibliography. ", 30)+"Leave space for potato seedlings.")
+	semantic := insertArticle(t, db, src, "/Semantic", "Spring planting", "Contents and a foreword.")
+	if _, err := db.Exec(`ALTER TABLE articles ADD COLUMN sections TEXT`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE articles SET sections = ? WHERE id = ?`,
+		`[{"heading":"Planting","body":"Space the tubers six inches apart."}]`, semantic); err != nil {
+		t.Fatal(err)
+	}
+	insertEmbedding(t, db, keyword, "Crop rotation", []float32{1, 0})
+	insertEmbedding(t, db, semantic, "Spring planting > Planting", []float32{0.9, 0.1})
+	got, err := New(db).SelectiveHybridContext(context.Background(), "potato", []float32{1, 0}, 5, "")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("hybrid = %+v, %v", got, err)
+	}
+	if !strings.Contains(got[0].Snippet, "»potato«") || !strings.Contains(got[1].Snippet, "Space the tubers") {
+		t.Fatalf("hybrid previews missed the matched content: %+v", got)
 	}
 }

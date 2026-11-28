@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -194,7 +195,7 @@ func (e *Engine) hybridContext(ctx context.Context, query string, queryVec []flo
 	}
 
 	// Fetch full article details for final results
-	return e.fetchDetails(deduped)
+	return e.fetchDetails(ctx, deduped, ftsResults)
 }
 
 // vectorSearchFiltered fetches embeddings only for the given article IDs.
@@ -422,28 +423,65 @@ func applyMMR(candidates []rrfEntry, vectors map[int][]float32, lambda float64, 
 	return selected
 }
 
-func (e *Engine) fetchDetails(entries []rrfEntry) ([]Result, error) {
+func (e *Engine) fetchDetails(ctx context.Context, entries []rrfEntry, keywords []Result) ([]Result, error) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
 
-	// Build a VALUES list for ordered retrieval
+	keywordHits := make(map[int]Result, len(keywords))
+	for _, hit := range keywords {
+		keywordHits[hit.ArticleID] = hit
+	}
+
+	// Older portable databases do not all have section text.
+	sectionExcerpt := "NULL"
+	for _, entry := range entries {
+		if entry.header == "" || strings.Contains(keywordHits[entry.articleID].Snippet, "»") {
+			continue
+		}
+		var hasSections int
+		fields, err := e.db.QueryContext(ctx, "SELECT count(*) FROM pragma_table_info('articles') WHERE name='sections'")
+		if err != nil {
+			return nil, err
+		}
+		if fields.Next() {
+			err = fields.Scan(&hasSections)
+		}
+		err = errors.Join(err, fields.Err(), fields.Close())
+		if err != nil {
+			return nil, err
+		}
+		if hasSections > 0 {
+			sectionExcerpt = `(SELECT substr(section.value ->> 'body', 1, 320)
+				FROM json_each(CASE WHEN json_valid(a.sections) THEN a.sections END) section
+				WHERE r.header = a.title || ' > ' || (CASE WHEN section.type = 'object' THEN section.value END ->> 'heading')
+				LIMIT 1)`
+		}
+		break
+	}
+
 	valueRows := make([]string, len(entries))
+	args := make([]any, 0, len(entries))
 	for i, entry := range entries {
-		valueRows[i] = fmt.Sprintf("(%d,%d)", entry.articleID, i)
+		header := entry.header
+		if strings.Contains(keywordHits[entry.articleID].Snippet, "»") {
+			header = ""
+		}
+		valueRows[i] = fmt.Sprintf("(%d,%d,?)", entry.articleID, i)
+		args = append(args, header)
 	}
 
 	query := fmt.Sprintf(
-		`WITH ranked(aid, pos) AS (VALUES %s)
-         SELECT a.id, src.filename, a.path, a.title, substr(a.body, 1, 200)
+		`WITH ranked(aid, pos, header) AS (VALUES %s)
+         SELECT a.id, src.filename, a.path, a.title, COALESCE(%s, substr(a.body, 1, 320))
          FROM ranked r
          JOIN articles a ON a.id = r.aid
          JOIN sources src ON src.id = a.source_id
          ORDER BY r.pos`,
-		strings.Join(valueRows, ","),
+		strings.Join(valueRows, ","), sectionExcerpt,
 	)
 
-	rows, err := e.db.Query(query)
+	rows, err := e.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("engine: fetch details: %w", err)
 	}
@@ -466,6 +504,12 @@ func (e *Engine) fetchDetails(entries []rrfEntry) ([]Result, error) {
 		}
 		if snippet.Valid {
 			r.Snippet = snippet.String
+		}
+		if hit, ok := keywordHits[r.ArticleID]; ok {
+			if strings.Contains(hit.Snippet, "»") {
+				r.Snippet = hit.Snippet
+			}
+			r.Partial, r.Matched = hit.Partial, hit.Matched
 		}
 		r.ChunkHeader = headerMap[r.ArticleID]
 		r.Score = scoreMap[r.ArticleID]

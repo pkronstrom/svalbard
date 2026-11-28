@@ -71,6 +71,20 @@ func embeddedBookURL(base, book, filename string, page int) string {
 	return address
 }
 
+// VideoURL opens the original archived media at a transcript passage.
+func VideoURL(base, filename, articlePath string) (string, bool) {
+	ms, ok := engine.VideoTime(articlePath)
+	if !ok || !engine.IsEmbeddedSource(filename) {
+		return "", false
+	}
+	return embeddedURL(base, filename, 0) + videoFragment(ms), true
+}
+
+// videoFragment is the media fragment that starts playback at ms.
+func videoFragment(ms int64) string {
+	return fmt.Sprintf("#t=%d.%03d", ms/1000, ms%1000)
+}
+
 // documentServer serves books/ on 127.0.0.1 until it is closed.
 type documentServer struct {
 	base   string // http://127.0.0.1:PORT

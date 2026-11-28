@@ -73,11 +73,11 @@ func builtinGroups(driveRoot string) []Group {
 			},
 			{
 				Owner: "ai", Name: "web_search", Type: TypeBool, Default: false,
-				Label: "Web search", Description: "Allow assistants to send public search queries to DuckDuckGo or your SearXNG server. Applies on the next launch.",
+				Label: "Web search", Description: "Allow assistants to send public search queries to the configured provider. Applies on the next launch.",
 			},
 			{
 				Owner: "ai", Name: "web_search_url", Type: TypeText, Default: "",
-				Label: "SearXNG URL", Description: "Optional server with JSON search enabled. Leave empty to use DuckDuckGo.",
+				Label: "SearXNG URL", Description: "Optional server with JSON search enabled. Leave empty for Tavily with an API key, or DuckDuckGo.",
 			},
 		},
 	}}

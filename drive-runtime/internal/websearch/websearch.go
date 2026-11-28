@@ -2,7 +2,9 @@
 package websearch
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +24,7 @@ import (
 const (
 	duckDuckGo    = "DuckDuckGo"
 	searXNG       = "SearXNG"
+	tavily        = "Tavily"
 	defaultLimit  = 3
 	maxLimit      = 5
 	maxQueryBytes = 512
@@ -43,21 +46,25 @@ type Search struct {
 	client   *http.Client
 	endpoint url.URL
 	provider string
+	apiKey   string
 }
 
-// New selects DuckDuckGo HTML or an operator's SearXNG search endpoint.
-func New(endpoint string) (*Search, error) {
-	search := &Search{
+func newSearch(provider string, endpoint url.URL) *Search {
+	return &Search{
 		client: &http.Client{
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
 		},
-		endpoint: url.URL{Scheme: "https", Host: "html.duckduckgo.com", Path: "/html/"},
-		provider: duckDuckGo,
+		endpoint: endpoint,
+		provider: provider,
 	}
+}
+
+// New selects DuckDuckGo HTML or an operator's SearXNG search endpoint.
+func New(endpoint string) (*Search, error) {
 	if endpoint == "" {
-		return search, nil
+		return newSearch(duckDuckGo, url.URL{Scheme: "https", Host: "html.duckduckgo.com", Path: "/html/"}), nil
 	}
 
 	address := strings.TrimSpace(endpoint)
@@ -70,9 +77,15 @@ func New(endpoint string) (*Search, error) {
 		target.Path = "/search"
 		target.RawPath = ""
 	}
-	search.endpoint = *target
-	search.provider = searXNG
-	return search, nil
+	return newSearch(searXNG, *target), nil
+}
+
+// NewTavily uses the fixed Tavily endpoint so the key is never sent to a
+// user-configured URL.
+func NewTavily(apiKey string) *Search {
+	search := newSearch(tavily, url.URL{Scheme: "https", Host: "api.tavily.com", Path: "/search"})
+	search.apiKey = apiKey
+	return search
 }
 
 func (s *Search) Provider() string { return s.provider }
@@ -88,24 +101,15 @@ func (s *Search) Query(ctx context.Context, query string, limit int) ([]Result, 
 	}
 	limit = min(limit, maxLimit)
 
-	target := s.endpoint
-	params := url.Values{"q": {query}}
-	accept := "text/html"
-	if s.provider == searXNG {
-		params.Set("format", "json")
-		accept = "application/json"
-	}
-	target.RawQuery = params.Encode()
 	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
 	defer cancel()
 	if ctx.Err() != nil {
 		return nil, s.requestFailed(ctx, "request cancelled")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	req, err := s.newRequest(ctx, query, limit)
 	if err != nil {
 		return nil, s.unavailable("invalid request")
 	}
-	req.Header.Set("Accept", accept)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, s.requestFailed(ctx, "request failed")
@@ -126,15 +130,50 @@ func (s *Search) Query(ctx context.Context, query string, limit int) ([]Result, 
 	}
 
 	var results []Result
-	if s.provider == searXNG {
-		results, err = parseSearXNG(body, limit)
-	} else {
+	if s.provider == duckDuckGo {
 		results, err = parseDuckDuckGo(body, limit)
+	} else {
+		results, err = parseJSONResults(body, limit)
 	}
 	if err != nil {
 		return nil, s.unavailable(err.Error())
 	}
 	return results, nil
+}
+
+func (s *Search) newRequest(ctx context.Context, query string, limit int) (*http.Request, error) {
+	target := s.endpoint
+	if s.provider == tavily {
+		payload, err := json.Marshal(struct {
+			Query       string `json:"query"`
+			SearchDepth string `json:"search_depth"`
+			MaxResults  int    `json:"max_results"`
+		}{Query: query, SearchDepth: "basic", MaxResults: limit})
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+s.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		return req, nil
+	}
+	params := url.Values{"q": {query}}
+	accept := "text/html"
+	if s.provider == searXNG {
+		params.Set("format", "json")
+		accept = "application/json"
+	}
+	target.RawQuery = params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", accept)
+	return req, nil
 }
 
 func (s *Search) requestFailed(ctx context.Context, detail string) error {

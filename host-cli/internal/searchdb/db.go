@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"strings"
 	"time"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -333,17 +334,31 @@ func (s Source) IdentityCurrent(candidate Source) bool {
 // ReplaceSource atomically replaces a source's articles and identity. It
 // deletes embeddings explicitly because older databases did not cascade them.
 func (d *DB) ReplaceSource(ctx context.Context, source Source, articles []Article) error {
-	return d.ReplaceSourceStream(ctx, source, func(yield func(Article, error) bool) {
+	return d.ReplaceSourceStream(ctx, source, articleSequence(articles))
+}
+
+// ReplaceTranscript preserves an existing selective semantic index when its
+// recorded coverage excludes this optional keyword source.
+func (d *DB) ReplaceTranscript(ctx context.Context, source Source, articles []Article) error {
+	return d.replaceSourceStream(ctx, source, articleSequence(articles), true)
+}
+
+func articleSequence(articles []Article) iter.Seq2[Article, error] {
+	return func(yield func(Article, error) bool) {
 		for _, article := range articles {
 			if !yield(article, nil) {
 				return
 			}
 		}
-	})
+	}
 }
 
 // ReplaceSourceStream rolls back when article extraction or insertion fails.
 func (d *DB) ReplaceSourceStream(ctx context.Context, source Source, articles iter.Seq2[Article, error]) error {
+	return d.replaceSourceStream(ctx, source, articles, false)
+}
+
+func (d *DB) replaceSourceStream(ctx context.Context, source Source, articles iter.Seq2[Article, error], transcript bool) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("searchdb: begin replacement: %w", err)
@@ -381,8 +396,10 @@ func (d *DB) ReplaceSourceStream(ctx context.Context, source Source, articles it
 	if err := insertArticles(ctx, tx, sourceID, articles); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE meta SET value = 'building' WHERE key = 'semantic_state' AND value = 'complete'`); err != nil {
-		return fmt.Errorf("searchdb: invalidate semantic state: %w", err)
+	if !transcript || !outsideSemanticSelection(ctx, tx, source.Filename) {
+		if _, err := tx.ExecContext(ctx, `UPDATE meta SET value = 'building' WHERE key = 'semantic_state' AND value = 'complete'`); err != nil {
+			return fmt.Errorf("searchdb: invalidate semantic state: %w", err)
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -391,6 +408,23 @@ func (d *DB) ReplaceSourceStream(ctx context.Context, source Source, articles it
 		return fmt.Errorf("searchdb: commit replacement: %w", err)
 	}
 	return nil
+}
+
+func outsideSemanticSelection(ctx context.Context, tx *sql.Tx, filename string) bool {
+	var raw string
+	var contract SemanticContract
+	var selectors []string
+	if err := tx.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = 'semantic_contract'").Scan(&raw); err != nil ||
+		json.Unmarshal([]byte(raw), &contract) != nil ||
+		json.Unmarshal([]byte(contract.SourceSelectors), &selectors) != nil || len(selectors) == 0 {
+		return false
+	}
+	for _, selector := range selectors {
+		if filename == selector || strings.HasSuffix(selector, "/") && strings.HasPrefix(filename, selector) {
+			return false
+		}
+	}
+	return true
 }
 
 // PruneSources removes every indexed source absent from present. Source removal
