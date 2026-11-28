@@ -8,7 +8,7 @@ sources:
 # Local AI — chat models + semantic-search embeddings
 - gemma-4-e2b-it
 - qwen-0.8b
-- nomic-embed-text-v1.5
+- granite-embedding-97m-multilingual-r2
 # Library — diverse tiny ZIMs for browse + FTS + semantic search
 - wikivoyage-fi
 - based-cooking

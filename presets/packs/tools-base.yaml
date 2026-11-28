@@ -10,7 +10,7 @@ target_size_gb: 1
 sources:
 - kiwix-serve
 - sqlite3
-- nomic-embed-text-v1.5
+- granite-embedding-97m-multilingual-r2
 - cyberchef
 - sqliteviz
 - duckdb-wasm
