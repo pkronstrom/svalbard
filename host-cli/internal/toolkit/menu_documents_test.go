@@ -89,6 +89,7 @@ func TestMenuListsEachDocumentRecipeOnceUnderDocuments(t *testing.T) {
 		{ID: "ifixit", Type: "zim", Filename: "ifixit.zim", RelativePath: "zim/ifixit.zim"},
 		{ID: "one-sheet", Type: "pdf", Filename: "sheet.pdf", RelativePath: "books/one-sheet/sheet.pdf"},
 		{ID: "who-basic-emergency-care", Type: "pdf", Filename: "WHO_Basic_Emergency_Care.pdf", RelativePath: "books/WHO_Basic_Emergency_Care.pdf"},
+		{ID: "army-tm-9-8000", Type: "pdf", Filename: "TM_9-8000.pdf", RelativePath: "books/TM_9-8000.pdf"},
 		{ID: "wikem", Type: "zim", Filename: "wikem.zim", RelativePath: "zim/wikem.zim"},
 	}
 	recipes := map[string]catalog.Item{
@@ -96,6 +97,7 @@ func TestMenuListsEachDocumentRecipeOnceUnderDocuments(t *testing.T) {
 			Documents: []catalog.DocumentSource{{URL: "https://example.org/honda.pdf"}}},
 		"who-basic-emergency-care": {ID: "who-basic-emergency-care", Type: "pdf", Description: "WHO Basic Emergency Care — open-access triage",
 			Menu: &catalog.MenuSpec{Label: "WHO Basic Emergency Care"}},
+		"army-tm-9-8000": {ID: "army-tm-9-8000", Type: "pdf", Description: "US Army TM 9-8000 Principles of Automotive Vehicles (1985) — engines, fuel and brakes"},
 		"ifixit": {ID: "ifixit", Type: "zim", Description: "Repair guides"},
 		"wikem":  {ID: "wikem", Type: "zim", Description: "Emergency medicine wiki"},
 	}
@@ -128,6 +130,12 @@ func TestMenuListsEachDocumentRecipeOnceUnderDocuments(t *testing.T) {
 		t.Errorf("single document label and description = %q, %q", who.Label, who.Desc)
 	}
 
+	// Without a menu label, the title the description leads with names the row.
+	army := oneRow(t, rows, "army-tm-9-8000")
+	if army.Label != "US Army TM 9-8000 Principles of Automotive Vehicles (1985)" || army.Desc != "US Army TM 9-8000 Principles of Automotive Vehicles (1985) — engines, fuel and brakes" {
+		t.Errorf("described document label and description = %q, %q", army.Label, army.Desc)
+	}
+
 	// The Library reads archives first, then the documents in one block.
 	var library []string
 	for _, row := range rows {
@@ -135,7 +143,7 @@ func TestMenuListsEachDocumentRecipeOnceUnderDocuments(t *testing.T) {
 			library = append(library, row.Subheader+"/"+row.ID)
 		}
 	}
-	wantOrder := []string{"Archives/ifixit", "Archives/wikem", "Documents/car-manuals", "Documents/one-sheet", "Documents/who-basic-emergency-care"}
+	wantOrder := []string{"Archives/ifixit", "Archives/wikem", "Documents/car-manuals", "Documents/one-sheet", "Documents/who-basic-emergency-care", "Documents/army-tm-9-8000"}
 	if !reflect.DeepEqual(library, wantOrder) {
 		t.Errorf("library = %v\nwant    %v", library, wantOrder)
 	}

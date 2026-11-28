@@ -379,7 +379,7 @@ A drive built from a default preset has a wiki: a place for your own notes, next
 - **The wiki's page talks to the wiki only.** An image or script from another address in a page is not loaded.
 - **Settings**, under Wiki in the Settings screen or with `./run settings`: `silverbullet.open_browser` (on), `silverbullet.fs_watch` (`auto`; set `poll` if pages changed on the stick do not show up in the open wiki) and `silverbullet.live_pages` (on).
 - **The browser keeps nothing.** When you close the tab, no copy of your notes stays in that browser, so the wiki is safe to open on a borrowed computer. It indexes the pages again each time it is opened, which takes about a second for a few hundred pages.
-- **Serve Everything starts the wiki too, on this computer only**, whatever address the other services use: the wiki has no login. The files in `wiki/` are still part of the drive that Files shares read-only.
+- **Serve everything starts the wiki too, on this computer only**, whatever address the other services use: the wiki has no login. The files in `wiki/` are still part of the drive that Files shares read-only.
 
 The wiki is [SilverBullet](https://silverbullet.md) 3.0.1. It keeps nothing on the drive but the pages: its index and settings are rebuilt in a temporary folder on the computer at each start and removed when it stops.
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pkronstrom/svalbard/host-cli/internal/catalog"
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
@@ -74,9 +75,10 @@ func (n runNames) claim(names ...string) []string {
 // documentItems is one Library entry per installed document recipe. A
 // collection, whose files are in books/<id>/, opens a listing of that folder
 // and notes how many documents it holds; a single-document recipe opens the
-// document. The label is the recipe's menu label or its humanized id, never
-// the description: that is the entry's description. `./run <id>` opens the
-// entry when no other entry has the name.
+// document. The label is the recipe's menu label, else the title its
+// description leads with ("Title — what it covers"), else its humanized id.
+// The whole description stays the entry's description. `./run <id>` opens
+// the entry when no other entry has the name.
 func documentItems(entries []manifest.RealizedEntry, recipes map[string]catalog.Item, names runNames) []menuItem {
 	type documents struct {
 		first      int // index of the recipe's first entry
@@ -132,6 +134,9 @@ func documentItems(entries []manifest.RealizedEntry, recipes map[string]catalog.
 		var aliases []string
 		if recipe, ok := recipes[id]; ok {
 			item.Description = recipe.Description
+			if title := descriptionTitle(recipe.Description); title != "" {
+				item.Label = title
+			}
 			if menu := recipe.Menu; menu != nil {
 				if menu.Label != "" {
 					item.Label = menu.Label
@@ -156,4 +161,15 @@ func documentItems(entries []manifest.RealizedEntry, recipes map[string]catalog.
 		items = append(items, item)
 	}
 	return items
+}
+
+// descriptionTitle is the title a description leads with before " — ", when
+// it is short enough to be a menu label.
+func descriptionTitle(description string) string {
+	title, _, found := strings.Cut(description, " — ")
+	title = strings.TrimSpace(title)
+	if !found || title == "" || utf8.RuneCountInString(title) > 80 {
+		return ""
+	}
+	return title
 }
