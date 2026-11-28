@@ -390,6 +390,17 @@ func TestSearchMenuLoadsMoreAndKeepsExistingNumbers(t *testing.T) {
 	if !strings.Contains(view, "M load more") || !strings.Contains(view, "garden") || strings.Contains(view, "max 20") {
 		t.Fatalf("first page did not show load-more control and source names:\n%s", view)
 	}
+	rows := m.searchMaxVisible()
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated.(Model)
+	if m.searchSelected != rows || m.searchScrollOffset != rows {
+		t.Fatalf("Page Down selected %d at offset %d, want %d", m.searchSelected, m.searchScrollOffset, rows)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(Model)
+	if m.searchSelected != 0 || m.searchScrollOffset != 0 || !m.searchResultsFocus {
+		t.Fatalf("Page Up selected %d at offset %d, results focused %t", m.searchSelected, m.searchScrollOffset, m.searchResultsFocus)
+	}
 
 	expanded := append([]search.Result(nil), first...)
 	slices.Reverse(expanded)
@@ -419,7 +430,7 @@ func TestSearchMenuLoadsMoreAndKeepsExistingNumbers(t *testing.T) {
 	}
 }
 
-func TestSearchQTypesIntoQueryInput(t *testing.T) {
+func TestSearchNavigationLettersTypeIntoQueryInput(t *testing.T) {
 	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
 	fake := &fakeSearchSession{info: search.SessionInfo{BestMode: search.ModeKeyword}}
 	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
@@ -427,14 +438,54 @@ func TestSearchQTypesIntoQueryInput(t *testing.T) {
 		t.Fatalf("openSearchSession() error = %v", err)
 	}
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	got := updated.(Model)
-	if got.searchQuery.Value() != "q" {
-		t.Fatalf("searchQuery = %q, want q", got.searchQuery.Value())
+	for _, letter := range "qjoki" {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{letter}})
+		m = updated.(Model)
 	}
-	if !got.searchActive {
+	if m.searchQuery.Value() != "qjoki" {
+		t.Fatalf("searchQuery = %q, want qjoki", m.searchQuery.Value())
+	}
+	if !m.searchActive {
 		t.Fatal("searchActive = false, want true")
 	}
+}
+
+func TestSearchViewWrapsSelectedSnippet(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	m.searchActive = true
+	m.searchMode = search.ModeKeyword
+	m.width, m.height = 64, 24
+	m.searchInfo.HybridEnabled = true
+	m.searchResults = make([]search.Result, 20)
+	m.searchSelected, m.searchScrollOffset = 5, 5
+	m.searchResults[5] = search.Result{
+		Filename: "garden.zim",
+		Title:    "Growing potatoes",
+		Snippet: "Plant potatoes in well-drained soil and water evenly. " +
+			"Hill up around the stems as the plants get taller. " +
+			"Harvest once the leaves die back, then let the tubers dry. " +
+			"Store them in a cool, dark place.",
+	}
+
+	lines := strings.Split(strings.TrimSuffix(m.View(), "\n"), "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(line, "  Snippet: ") {
+			continue
+		}
+		want := []string{
+			"  Snippet: Plant potatoes in well-drained soil and water evenly.",
+			"           Hill up around the stems as the plants get taller.",
+			"           Harvest once the leaves die back, then let the tuber…",
+		}
+		if !slices.Equal(lines[i:i+3], want) || lines[i+3] != "" {
+			t.Fatalf("unexpected snippet layout: %q", lines[i:])
+		}
+		if len(lines) > m.height {
+			t.Fatalf("rendered %d lines in a %d-line terminal", len(lines), m.height)
+		}
+		return
+	}
+	t.Fatal("selected result snippet is missing")
 }
 
 func TestSearchViewShowsTitleFirstAndSourceOnlyInMetadata(t *testing.T) {
@@ -684,6 +735,10 @@ func TestSearchViewHighlightsSelectedTitleText(t *testing.T) {
 	selectedTitle := tui.DefaultTheme().SelectedRow.Render("Linux")
 	if !strings.Contains(view, selectedTitle) {
 		t.Fatalf("View() missing selected-row background on title text: %q", view)
+	}
+	row := renderSearchResultLine(got, 1, "wiki.zim", "Linux", true)
+	if title, source := strings.Index(row, "Linux"), strings.Index(row, "wiki"); title < 0 || source < title {
+		t.Fatalf("result title should precede its source: %q", row)
 	}
 }
 

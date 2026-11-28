@@ -356,6 +356,9 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case "up", "k":
+		if msg.String() == "k" && !m.searchResultsFocus {
+			break
+		}
 		if m.searchResultsFocus {
 			if m.searchSelected > 0 {
 				m.searchSelected--
@@ -366,7 +369,16 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case "down", "j":
+	case "pgup":
+		if m.searchResultsFocus {
+			m.pageSearchResults(-1)
+		}
+		return m, nil
+	case "down", "j", "pgdown":
+		key := msg.String()
+		if key == "j" && !m.searchResultsFocus {
+			break
+		}
 		if len(m.searchResults) == 0 {
 			return m, nil
 		}
@@ -377,8 +389,12 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.searchSelected < len(m.searchResults)-1 {
-			m.searchSelected++
-			m.ensureSearchVisible()
+			if key == "pgdown" {
+				m.pageSearchResults(1)
+			} else {
+				m.searchSelected++
+				m.ensureSearchVisible()
+			}
 		} else if m.searchHasMore && !m.searchLoading {
 			return m.startSearch(m.searchPageQuery, m.searchPageLimit+searchPageSize, true)
 		}
@@ -516,16 +532,25 @@ func (m *Model) closeSearchSession() {
 	m.activeGroup = ""
 }
 
-// searchMaxVisible returns how many result rows fit on screen.
-// The search view uses ~8 lines for header/input/footer chrome plus ~5 for the
-// selected-result detail block at the bottom.
+// searchMaxVisible reserves space for both scroll indicators and the longest
+// snippet so moving the selection keeps the result viewport stable.
 func (m Model) searchMaxVisible() int {
-	const chrome = 13 // header, status, input, archive shortcut, section header, detail block, footer
-	avail := m.height - chrome
-	if avail < 3 {
+	if m.height <= 0 {
 		return 3
 	}
-	return avail
+	reserved := 14 + searchSnippetMaxLines
+	if m.searchInfo.HybridEnabled {
+		reserved++
+	}
+	return tui.MaxVisibleRows(m.height, reserved, 1)
+}
+
+func (m *Model) pageSearchResults(direction int) {
+	rows := m.searchMaxVisible()
+	step := direction * rows
+	m.searchSelected = min(len(m.searchResults)-1, max(0, m.searchSelected+step))
+	m.searchScrollOffset = min(max(0, len(m.searchResults)-rows), max(0, m.searchScrollOffset+step))
+	m.ensureSearchVisible()
 }
 
 // ensureSearchVisible adjusts searchScrollOffset so that searchSelected is in
