@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Svalbard catalog picks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;750&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: sticky control rail on top, sections of compact decision rows below. Ice-and-ink palette. */
+:root {
+  --bg: #f2f5f7;
+  --surface: #ffffff;
+  --ink: #14202b;
+  --muted: #5b6b78;
+  --line: #d6dee5;
+  --accent: #1f5f8b;
+  --want: #1d7a4f;
+  --maybe: #a86b00;
+  --skip: #8a3b3b;
+  --want-bg: #e3f3ea;
+  --maybe-bg: #fbf0da;
+  --skip-bg: #f6e4e4;
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e151c; --surface: #16202a; --ink: #e3ebf1; --muted: #93a4b2; --line: #26333f;
+    --accent: #6fb0dd; --want: #5fcf96; --maybe: #e6b24f; --skip: #e38a8a;
+    --want-bg: #15352a; --maybe-bg: #3a2c10; --skip-bg: #3b1d1f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e151c; --surface: #16202a; --ink: #e3ebf1; --muted: #93a4b2; --line: #26333f;
+  --accent: #6fb0dd; --want: #5fcf96; --maybe: #e6b24f; --skip: #e38a8a;
+  --want-bg: #15352a; --maybe-bg: #3a2c10; --skip-bg: #3b1d1f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 16px 64px; }
+header.intro { padding: 28px 0 12px; display: grid; gap: 8px; }
+h1 { font-family: var(--font-display); font-weight: 750; font-size: 28px; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+.intro p { margin: 0; color: var(--muted); max-width: 68ch; }
+.rail { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding: 10px 0; display: grid; gap: 8px; }
+.counts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
+.count { font-family: var(--font-mono); font-size: 13px; padding: 3px 9px; border-radius: 4px; border: 1px solid var(--line); background: var(--surface); }
+.count.want { color: var(--want); } .count.maybe { color: var(--maybe); } .count.skip { color: var(--skip); }
+.sync { font-size: 12px; color: var(--muted); margin-left: auto; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.chip:focus-visible, .pick:focus-visible, textarea:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn { font: inherit; font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+section.group { margin-top: 28px; }
+section.group > h2 { font-family: var(--font-display); font-size: 18px; font-weight: 750; margin: 0 0 4px; }
+section.group > p.lede { margin: 0 0 10px; color: var(--muted); font-size: 14px; max-width: 72ch; }
+.items { display: grid; gap: 8px; }
+.item { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; }
+.item.c-want { border-left-color: var(--want); }
+.item.c-maybe { border-left-color: var(--maybe); }
+.item.c-skip { border-left-color: var(--skip); opacity: 0.72; }
+.item h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.tag { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; white-space: nowrap; }
+.tag.cls-A { color: var(--want); } .tag.cls-B { color: var(--maybe); } .tag.cls-C { color: var(--skip); }
+.tag.eff { font-weight: 600; color: var(--ink); }
+.desc { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 14px; max-width: 80ch; }
+.verdict { grid-column: 1 / -1; margin: 0; font-size: 13.5px; max-width: 80ch; padding-left: 8px; border-left: 2px solid var(--line); }
+.verdict b { font-weight: 600; }
+.verdict.v-yes b { color: var(--want); } .verdict.v-maybe b { color: var(--maybe); } .verdict.v-no b { color: var(--skip); }
+.links { grid-column: 1 / -1; margin: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.links a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; }
+.links a:hover, .links a:focus-visible { border-bottom-color: var(--accent); }
+.picks { display: flex; gap: 4px; align-self: start; }
+.pick { font: inherit; font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.pick[data-v="want"][aria-pressed="true"] { background: var(--want-bg); color: var(--want); border-color: var(--want); }
+.pick[data-v="maybe"][aria-pressed="true"] { background: var(--maybe-bg); color: var(--maybe); border-color: var(--maybe); }
+.pick[data-v="skip"][aria-pressed="true"] { background: var(--skip-bg); color: var(--skip); border-color: var(--skip); }
+.note { grid-column: 1 / -1; }
+textarea { width: 100%; font: inherit; font-size: 13.5px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; resize: vertical; min-height: 32px; }
+textarea::placeholder { color: var(--muted); }
+.excluded { margin-top: 32px; }
+.excluded table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.excluded th, .excluded td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.excluded th { color: var(--muted); font-weight: 600; }
+.tablewrap { overflow-x: auto; }
+.toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.hidden { display: none !important; }
+@media (max-width: 560px) {
+  .item { grid-template-columns: 1fr; }
+  .picks { justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="intro">
+    <h1>Svalbard catalog picks</h1>
+    <p>Candidate recipes from the 2026-11-26 research, limited to what the 227-recipe catalog lacks. Each item has a description, links to where it lives, and Claude's verdict (Recommend, Depends or Probably not) with a reason. Mark each one Want, Maybe or Skip and add a note if you like. Your picks are saved and Claude reads them back to turn the Want items into recipes or tasks.</p>
+    <p>Legal class: <b>A</b> redistributable, <b>A-NC</b> redistributable but non-commercial, <b>B</b> each user fetches it, <b>C</b> uncertain. Effort is S/M/L/XL as in the repo.</p>
+  </header>
+
+  <div class="rail" role="region" aria-label="Filters and totals">
+    <div class="counts">
+      <span class="count want" id="n-want">0 want</span>
+      <span class="count maybe" id="n-maybe">0 maybe</span>
+      <span class="count skip" id="n-skip">0 skip</span>
+      <span class="count" id="n-open">0 undecided</span>
+      <button class="btn" id="copy" type="button">Copy picks</button>
+      <span class="sync" id="sync">Saving in this browser only</span>
+    </div>
+    <div class="filters" id="sec-filters" aria-label="Section"></div>
+    <div class="filters" id="state-filters" aria-label="Status"></div>
+  </div>
+
+  <main id="groups"></main>
+
+  <section class="excluded" aria-labelledby="ex-h">
+    <h2 id="ex-h">Left out on purpose</h2>
+    <p class="lede" style="color:var(--muted);font-size:14px">Recorded so nobody researches them again. They have no buttons.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Item</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td>Operation CHARM / LEMON car manuals</td><td>OEM service data, anonymous operators, no rights grant. Docs mention at most.</td></tr>
+        <tr><td>Park Tool</td><td>Terms forbid robots and mirroring, including local crawls.</td></tr>
+        <tr><td>EOX Sentinel-2 cloudless</td><td>CC BY-NC-SA; offline bundling needs the commercial licence. Use Sentinel-2 Global Mosaic or Blue Marble.</td></tr>
+        <tr><td>openAIP aviation data</td><td>Reported CC BY-NC, unconfirmed.</td></tr>
+        <tr><td>Traficom nautical charts</td><td>Navigational use needs a contract. An OSM seamark layer is the open route.</td></tr>
+        <tr><td>OmniVoice, jina-embeddings-v5, PFAF, FooDB</td><td>Non-commercial licences.</td></tr>
+        <tr><td>chandra-ocr-2, surya-ocr, OCRia-1, TranslateGemma, PLaMo translate</td><td>OpenRAIL, custom or Gemma-terms restrictions.</td></tr>
+        <tr><td>Qwen3.8-Flash-Next</td><td>Community licence, and larger than 64 GB.</td></tr>
+        <tr><td>NOMAD Creator Packs, w3schools scrape</td><td>Licence restricted to NOMAD; proprietary scrape.</td></tr>
+        <tr><td>RepeaterBook, RadioReference, Standard Ebooks bulk</td><td>Restrictive terms; bulk zips are for patrons only.</td></tr>
+        <tr><td>Kolibri-only channels (CK-12, Sikana)</td><td>Need a Python/Django server; use ZIM or PDF equivalents.</td></tr>
+        <tr><td>OpenSCAD, SatDump, SDR++, vosk, argos-translate</td><td>Stale or archived upstream.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const SECTIONS = [
+  ["top", "Add first", "Fifteen changes ranked by value per GB. About 6.8 GB together, each reusing an existing recipe shape."],
+  ["fix", "Fix existing recipes", "Defects found while comparing the research with the recipe files."],
+  ["infra", "Builder and pipeline work", "Engineering changes that unlock many recipes at once."],
+  ["core", "Core and tools-base", "Wikipedia ladder rungs, general reference and single-binary tools."],
+  ["med", "Survival and medical", "Government guidance, video sets, drug data and the medical PDF canon."],
+  ["home", "Homesteading", "Growing, cooking, nutrition and plant data."],
+  ["eng", "Engineering", "Energy video, naval science and CAD apps."],
+  ["sci", "Sciences", "Wikipedia subject sets, Stack Exchange and small structured datasets."],
+  ["comp", "Computing", "DevDocs, zimit doc sites and Stack Exchange."],
+  ["comms", "Communications", "The pack ships no radio or mesh software today."],
+  ["sec", "Cybersec", "Offline vulnerability intelligence and small tools."],
+  ["ai", "AI", "Models, embeddings, translation, OCR and voice. Most need the llama.cpp bump first."],
+  ["maps", "Maps (global)", "Terrain, routing and geocoding are the missing layers."],
+  ["fi", "Finland", "fi-survival, fi-reference and fi-maps gaps. Kapsi and SYKE layers are drop-in."],
+  ["veh", "Vehicle repair", "Generic primers can ship; owner's manuals are user-fetched."]
+];
+
+const K = f => ["Kiwix folder", "https://download.kiwix.org/zim/" + f + "/"];
+const GH = r => ["GitHub releases", "https://github.com/" + r + "/releases/latest"];
+const HF = r => ["Hugging Face", "https://huggingface.co/" + r];
+const ITEMS = [
+  // Add first
+  ["top","last-codex","The Last Codex ZIM","An illustrated, offline-first encyclopedia of how to rebuild key inventions from scratch: metallurgy, power, chemistry, medicine and tools, ordered by what depends on what. Submitted to Kiwix by its author in Nov 2026. A natural companion to Wikiciv. File: community/lastcodex.org_en_all_2026-10.zim","264 MB","A-NC","S","engineering, homesteading",[["Site","https://lastcodex.org/"],K("community"),["zim-request #1950","https://github.com/openzim/zim-requests/issues/1950"]]],
+  ["top","fi-prep-guides","suomi.fi and SPEK 72 tuntia preparedness PDFs","Official Finnish home preparedness guidance. The Interior Ministry's printable summary 'Varautunut pärjää paremmin' (16 languages incl. Swedish, English, Russian, Ukrainian, Sámi) covers power, water and heating outages, radiation and civil defence. SPEK's 'Varautuminen kotona' (2025) is the 72-hour home kit guide. Neither states a licence, so ship as user-fetched until confirmed.","~1.2 MB each + 2.9 MB","B","S","fi-survival",[["suomi.fi summaries","https://www.suomi.fi/oppaat/varautuminen/tulostettavat-ja-viittomakieliset-varautumisohjeet/varautumisohjeiden-tulostettavat-tiivistelmat"],["SPEK PDF","https://72tuntia.fi/wp-content/uploads/2025/01/spek_72_tuntia_varautuminen_kotona_2025_01_21_v01.pdf"],["72tuntia.fi","https://72tuntia.fi/"]]],
+  ["top","beready-uk","Be Ready UK ZIM","Snapshot of the UK government's 2025–26 preparedness campaign site: power cuts, flooding, severe weather, emergency kits and household plans. Short, practical and current; complements ready.gov.","158 MB","A","S","survival-medical",[["Site","https://beready.campaign.gov.uk/"],K("zimit")]],
+  ["top","ted-water-disaster","TED water + natural-disaster","Two curated TED talk collections as offline video ZIMs: water (supply, purification, scarcity) and natural disasters (earthquakes, floods, response). Same recipe shape as the existing ted-farming.","832 + 683 MB","A-NC","S ×2","survival-medical",[K("ted")]],
+  ["top","devdocs-bundle","DevDocs bundle (~20 small ZIMs)","Searchable API and manual references from devdocs.io for bash, fish, git, jq, gcc, cmake, docker, nginx, kubernetes, nix, postgresql, sqlite, redis, lua, zig, typescript, node, html, css, http, markdown and man pages. Each file is 0.3–28 MB; best generated from one list.","< 60 MB","A","S","computing",[["devdocs.io","https://devdocs.io/"],K("devdocs")]],
+  ["top","phet-en","PhET English","University of Colorado's interactive physics, chemistry, maths and biology simulations, in English. The catalog only has the Finnish build (phet-fi).","110 MB","A","S","sciences",[["PhET","https://phet.colorado.edu/"],K("phet")]],
+  ["top","simple-wiki-wikivoyage","Simple English Wikipedia + Wikivoyage EN nopic","Simple English Wikipedia (~250k articles in plain English, easy for non-native readers and kids) fills the gap between wikipedia_en_top and the full builds. Wikivoyage is the free travel guide: places, transport, phrasebooks, safety.","505–1,044 MiB + 260 MB","A","S ×2","core",[["Simple Wikipedia","https://simple.wikipedia.org/"],K("wikipedia"),K("wikivoyage")]],
+  ["top","gutenberg-lcc-uv","Gutenberg LCC U (Military) + V (Naval science)","Project Gutenberg books by Library of Congress class: U is military science (field-craft, logistics, fortification, manuals), V is naval science (seamanship, navigation, ship handling). Public domain, from the new /zim/books/ folder.","864 + 774 MB","A","S ×2","survival-medical, engineering",[K("books"),["LCC outline","https://www.loc.gov/catdir/cpso/lcco/"]]],
+  ["top","mml-ortho","MML orthophoto via kapsi TMS","National Land Survey colour (and false-colour infrared) aerial photographs of all of Finland, served as tiles by kapsi.fi. Lets the map viewer show real imagery of a region offline. Reuses the raster-tms builder unchanged; size depends on bbox and zoom.","bbox-dependent","A","S","fi-maps",[["kartat.kapsi.fi","https://kartat.kapsi.fi/"],["MML open data","https://www.maanmittauslaitos.fi/en/maps-and-spatial-data/datasets-and-interfaces/product-descriptions/orthophotos"]]],
+  ["top","syke-water-layers","SYKE shoreline, lake depth, river network, flood-risk","Finnish Environment Institute vector layers: Ranta10 shorelines for lakes, rivers and sea; lake depth contours and depth areas; the river network; and significant flood-risk areas. Useful for water sourcing, boating and evacuation planning. Same host and builder as pohjavesialueet.","112–341 MB raw each","A","S each","fi-maps",[["Ranta10 (avoindata)","https://avoindata.suomi.fi/data/fi/dataset/ranta10-rantaviiva-1-10-000"],["Example: ranta10jarvet.zip","https://wwwd3.ymparisto.fi/d3/gis_data/spesific/ranta10jarvet.zip"]]],
+  ["top","tools-tier1","Tier 1 single-binary tools","Ten small, maintained CLI tools that make the stick a working toolkit: pandoc, ripgrep, restic, Syncthing, LocalSend CLI, jq, pdfcpu, micro, Numbat, zim-tools. Each is listed individually under Core if you want only some.","< 250 MB total","A","S each","tools-base",[["awesome-cli-apps","https://github.com/agarrharr/awesome-cli-apps"]]],
+  ["top","army-auto-primers","Army automotive primers TM 9-8000 + TM 9-2700","US Army 'Principles of Automotive Vehicles' (1985, rev. 1988) and its 1947 predecessor: engines, fuel, cooling, electrics, transmissions, brakes, steering and suspension explained generically, not per model. The only openly redistributable car-repair textbooks found.","18 + 30 MB","A","S ×2","engineering",[["TM 9-8000 (archive.org)","https://archive.org/details/tm-9-8000-principles-of-automotive-vehicles-1985"],["TM 9-2700 (archive.org)","https://archive.org/details/TM9-2700"],["EverySpec","https://everyspec.com/ARMY/TM-Tech-Manual/TM_9-8000_CHG-1_48512/"]]],
+  ["top","learn-ai-anywhere","Learn AI Anywhere ZIM","A short offline course on how AI and LLMs work, their limits and safe use. A good companion to the vault's local models. Also available in 8 other languages.","96 MB","A-NC","S","ai",[K("community")]],
+  ["top","hy-mt3","Hy-MT3-1.8B translator (Finnish↔English)","Tencent's dedicated translation model (Apache-2.0, 102 languages; Finnish is new in v3). Runs in the existing llama-server, so it adds offline translation of any text in the vault. Finnish quality unmeasured; 7B variant is 5.15 GB.","1.35 GB","A","S (M with UI)","ai",[HF("tencent/Hy-MT3-1.8B")]],
+  ["top","kotus-suru-wordlist","Kotus Suomi–ruotsi dictionary + Nykysuomen sanalista","Institute for the Languages of Finland data: the large Finnish–Swedish dictionary (XML) and the official modern Finnish word list (~100k headwords with inflection classes, TSV). CC BY 4.0. The dictionary needs its own XML parser.","11.9 + 2.9 MB","A","M","fi-reference",[["Kotus downloads","https://kotus.fi/kotus/kieliaineistot/aineistot-verkossa/"],["Word list","https://kotus.fi/sanakirjat/kielitoimiston-sanakirja/nykysuomen-sana-aineistot/nykysuomen-sanalista/"]]],
+
+  // Fixes
+  ["fix","fix-usda","Relabel usda-nutrition as the home-canning guide","The recipe's description says USDA nutrient database, but the ZIM it fetches (usda-2015_en) is the USDA Complete Guide to Home Canning. Rewrite description and tags, move it to homesteading, keep the id so saved vaults don't break.","—","—","S","homesteading",[["USDA canning guide","https://nchfp.uga.edu/how/can_home.html"]]],
+  ["fix","fix-ready-gov","Fix ready-gov filename series","The url_pattern www.ready.gov_en_{date} stopped at 2024-12, so the recipe silently fetches a two-year-old file. The live series is ready.gov_en_all (2026-10, 1.9 GB).","—","—","S","survival-medical",[K("zimit")]],
+  ["fix","fix-gutenberg-books","Point Gutenberg LCC r/s/t and fi at /zim/books/","Kiwix moved Gutenberg rebuilds to /zim/books/ with a letter suffix (_2026-11a); the old /zim/gutenberg/ folder stops at 2026-03. The resolver already accepts the suffix, so it's a URL and size edit.","—","—","S","various",[K("books"),K("gutenberg")]],
+  ["fix","fix-llama-bump","Bump llama-server from b11146 to b12776+","The pinned build (2026-09-23) can't load Inkling 2 Mini, Raon-1-mini or Kokoro TTS. Upgrade, then re-run the MTP measurements behind the current Gemma and Qwen choices.","—","—","M","ai",[["llama.cpp v1.1.0","https://github.com/ggml-org/llama.cpp/releases/tag/v1.1.0"]]],
+  ["fix","fix-qwen-pin","Check Qwen3.8-27B pin drift","The three qwen-27b recipes pin revision 4ca72078…; the repo head is now 4af51b35…. Nothing is broken; diff the commits and re-pin only if quants or the chat template changed.","—","—","S","ai",[HF("unsloth/Qwen3.8-27B-GGUF")]],
+  ["fix","fix-mmproj","Ship vision projectors for chat models","The pinned Gemma 4 and Qwen repos already contain mmproj files (0.18–1.19 GB) that would let the models read images and scanned pages. Add optional companion recipes and pass --mmproj.","—","—","M","ai",[HF("unsloth/Qwen3.8-27B-GGUF/tree/main")]],
+
+  // Infra
+  ["infra","generic-table-builder","Generic reference-static table builder","reference-static currently only parses Fimea's XML. A mapper for CSV/TSV/JSON/XML into searchable tables would turn about ten M-sized datasets (openFDA, FoodData Central, GeoNames, place names, Kotus, WordNet, HYG, ChEBI, Fineli, remedy tables) into S recipes.","—","—","L","builders",[]],
+  ["infra","url-ci-check","CI HEAD-check over every url_pattern","A scheduled job that resolves and HEAD-checks every recipe URL, turning silent staleness (ready-gov, Gutenberg) into a failing check. Borrowed from Project NOMAD's validate-collection-urls workflow.","—","—","S","ci",[["NOMAD workflows","https://github.com/Crosstalk-Solutions/project-nomad/tree/main/.github/workflows"]]],
+  ["infra","appimage-convention","AppImage/dmg launch convention","The drive runtime can launch single binaries but not AppImages or macOS dmg/app bundles. Defining that unlocks GUI apps: KeePassXC, LibreCAD, FreeCAD, JS8Call, FreeDV, Cutter, Calibre, Stellarium. First app is L, then S each.","—","—","L","runtime",[["AppImage docs","https://docs.appimage.org/"]]],
+  ["infra","java-runtime","Java runtime dependency","Ship a portable JRE (e.g. Eclipse Temurin) so the stick can run BRouter routing, Photon geocoding and GraphHopper offline.","JRE ~50 MB","—","L","maps",[["Adoptium Temurin","https://adoptium.net/temurin/releases/"]]],
+  ["infra","pdfjs-viewer","pdf.js viewer in the drive runtime","Mozilla's browser PDF viewer as a static web app served by the runtime, so Survivor Library scans, MIY PDFs and imported manuals open on any phone.","6 MB","A","M","runtime",[GH("mozilla/pdf.js")]],
+  ["infra","folder-import","Folder import with shelf/tag","svalbard import accepts exactly one file and records no grouping. Accept a directory and a --shelf/--tag so a car, mower and chainsaw manual land together as a 'Vehicles' shelf.","—","—","M","host-cli",[]],
+  ["infra","size-delta-guard","Size-delta guard on updates","Survivor Library swung 235 GB → 2.7 GB → 205 GB between builds. Warn or require confirmation when an update changes an item's size drastically.","—","—","M","host-cli",[["zim-request #1690","https://github.com/openzim/zim-requests/issues/1690"]]],
+  ["infra","nc-licence-flag","Explicit NC/ND licence flag in recipe metadata","Kiwix's new community/ folder ships non-commercial and no-derivatives content. Carry the flag in recipes so presets meant for redistribution can exclude them.","—","—","S","catalog",[K("community")]],
+  ["infra","tier-per-pack","Essential/Standard/Comprehensive tiers inside packs","Project NOMAD tiers each category, with Essential under 500 MB. Adding tiers inside Svalbard packs would make small presets less arbitrary.","—","—","M","catalog",[["NOMAD collections","https://github.com/Crosstalk-Solutions/project-nomad/tree/main/collections"]]],
+  ["infra","wfs-dump-builder","WFS-dump builder","A builder that pages through an OGC WFS endpoint and saves the features. Unlocks SYKE springs (48,102 points) and FMI climate normals 1991–2020, which have no bulk file.","—","—","M","builders",[["FMI WFS","https://opendata.fmi.fi/wfs?service=WFS&request=GetCapabilities"]]],
+
+  // Core
+  ["core","wiki-en-top-mini","wikipedia_en_top_mini","Intro sections of the ~50k most-read English Wikipedia articles. A phone-sized rung below the existing top build.","283 MB","A","S","core",[K("wikipedia")]],
+  ["core","wiki-en-top1m-mini","wikipedia_en_top1m_mini","Intro sections of the top one million English articles. Sits between top-50k and the full English Wikipedia.","4.9 GB","A","S","core",[K("wikipedia"),["zim-request #1631","https://github.com/openzim/zim-requests/issues/1631"]]],
+  ["core","cia-factbook","CIA World Factbook","Country profiles: geography, people, government, economy, energy, communications, transport. Final 2020 edition of a discontinued publication, public domain.","410 MB","A","S","core",[K("other")]],
+  ["core","gutenberg-top2500","Gutenberg Top 2500","The 2,500 most-downloaded Project Gutenberg books in one ZIM: the classics people actually read. A few French and Spanish titles are mixed in.","6.8 GB","A","S","core",[K("community"),["zim-request #1985","https://github.com/openzim/zim-requests/issues/1985"]]],
+  ["core","onemorelibrary","One More Library","Curated public-domain books (classics, children's books, non-fiction) as a ZIM, with smaller per-language builds including Finnish.","3.7 GB","A","S","core",[["Site","https://onemorelibrary.com/"],K("zimit")]],
+  ["core","t-pandoc","pandoc 3.14","Universal document converter: Markdown, HTML, DOCX, ODT, EPUB, LaTeX and more. Turns anything in the vault into a readable or printable format.","26–41 MB","A","S","tools-base",[GH("jgm/pandoc"),["pandoc.org","https://pandoc.org/"]]],
+  ["core","t-ripgrep","ripgrep 16","Very fast recursive text search. Useful for grepping extracted documents, datasets and code on the stick.","~1 MB","A","S","tools-base",[GH("BurntSushi/ripgrep")]],
+  ["core","t-restic","restic 0.20","Encrypted, deduplicated backups to the stick, a LAN disk or rclone remote. Restore from a single binary.","10–12 MB","A","S","tools-base",[GH("restic/restic"),["restic.net","https://restic.net/"]]],
+  ["core","t-syncthing","Syncthing 2.1","Continuous peer-to-peer folder sync between devices on a LAN with no server or internet. Keeps the household's files mirrored.","12–14 MB","A","S","tools-base",[GH("syncthing/syncthing"),["syncthing.net","https://syncthing.net/"]]],
+  ["core","t-localsend","LocalSend CLI 1.19","AirDrop-style file transfer between laptops and phones on the same network. The GUI apps exist for every platform; the CLI is 3–4 MB.","3–4 MB","A","S","tools-base",[GH("localsend/localsend"),["localsend.org","https://localsend.org/"]]],
+  ["core","t-jq","jq 1.8","Command-line JSON processor for slicing the JSON dataset dumps (openFDA, Photon, CVE).","1–2 MB","A","S","tools-base",[GH("jqlang/jq")]],
+  ["core","t-pdfcpu","pdfcpu 0.16","PDF processor: split, merge, extract pages and images, repair and validate. Handy for the growing PDF shelf.","5–6 MB","A","S","tools-base",[GH("pdfcpu/pdfcpu")]],
+  ["core","t-micro-nvim","micro / Neovim","Two terminal editors: micro behaves like a normal GUI editor (Ctrl-S, mouse), Neovim for vim users.","4 / 10 MB","A","S","tools-base",[GH("zyedidia/micro"),GH("neovim/neovim")]],
+  ["core","t-numbat","Numbat 1.24","Calculator that understands physical units and converts between them. Good for dosage, electrical, fuel and cooking calculations.","~2 MB","A","S","tools-base",[GH("sharkdp/numbat"),["numbat.dev","https://numbat.dev/"]]],
+  ["core","t-duckdb","DuckDB CLI 2.0","In-process SQL database that queries multi-GB CSV, JSON and Parquet files directly, where the in-browser duckdb-wasm runs out of memory.","18–23 MB","A","S","tools-base",[GH("duckdb/duckdb"),["duckdb.org","https://duckdb.org/"]]],
+  ["core","t-zimtools","zim-tools 3.8","openZIM's zimdump, zimcheck, zimsearch and zimwriterfs: inspect ZIMs and build your own offline.","small","A","S","tools-base",[["download.openzim.org","https://download.openzim.org/release/zim-tools/"],["GitHub","https://github.com/openzim/zim-tools"]]],
+  ["core","t-monolith","monolith 2.12","Saves a complete web page, with images, CSS and JS inlined, as one HTML file. Useful for adding single pages to the vault.","5–7 MB","A","S","tools-base",[GH("Y2Z/monolith")]],
+  ["core","t-rclone","rclone 1.76","Sync files to 70+ storage backends, and serve the stick over WebDAV, DLNA or HTTP to other devices on the LAN.","27–34 MB","A","S","tools-base",[GH("rclone/rclone"),["rclone.org","https://rclone.org/"]]],
+  ["core","t-typst","Typst 0.15","Modern typesetting system: print-quality documents and forms without installing a TeX distribution.","13–16 MB","A","S","tools-base",[GH("typst/typst"),["typst.app","https://typst.app/"]]],
+  ["core","t-keepassxc","KeePassXC 2.8","Offline password manager using the KeePass format. Ships as AppImage/dmg, so it waits on the launch convention.","45–49 MB","A","S after L","tools-base",[GH("keepassxreboot/keepassxc"),["keepassxc.org","https://keepassxc.org/"]]],
+  ["core","t-tiddlywiki","TiddlyWiki 5.4","A personal wiki in a single HTML file. Read-only is S; saving back through dufs makes it M.","2.5 MB","A","S","tools-base",[GH("TiddlyWiki/TiddlyWiki5"),["tiddlywiki.com","https://tiddlywiki.com/"]]],
+  ["core","t-silverbullet","SilverBullet 3.0","Markdown notes and wiki server for the LAN, with links, queries and a browser UI that works offline.","17–20 MB","A","S","tools-base",[GH("silverbulletmd/silverbullet"),["silverbullet.md","https://silverbullet.md/"]]],
+
+  // Medical
+  ["med","ted-medicine-health","TED medicine, public-health, mental-health","Three TED topic collections as offline video: medicine (diagnosis, treatment, research), public health (epidemics, sanitation, vaccines) and mental health (stress, trauma, coping).","3.4 + 2.2 + 2.2 GB","A-NC","S ×3","survival-medical",[K("ted")]],
+  ["med","canadian-prepper-more","Canadian Prepper: bugoutroll, bugoutconcepts, preppingfood","Three more YouTube playlists from the Canadian Prepper channel as video ZIMs: bug-out roll and kit concepts, and food storage. Project NOMAD ships these; the catalog has only winterprepping.","0.8 + 2.7 + 2.0 GB","A-NC","S ×3","survival-medical",[K("videos")]],
+  ["med","wiki-knots","wikipedia_en_knots_maxi","Every Wikipedia article on knots, with illustrations. Complements the existing zimgit-knots rather than filling a gap.","13 MB","A","S","survival-medical",[K("wikipedia")]],
+  ["med","armypubs","US Army Publishing Directorate ZIM","Snapshot of armypubs.army.mil doctrine: field manuals (FM), ATPs and training circulars on field-craft, medicine, engineering, communications and logistics. Contents not inspected; best as a comprehensive-tier option.","7.7 GiB","A","S","survival-medical",[["armypubs.army.mil","https://armypubs.army.mil/"],K("zimit")]],
+  ["med","skin-of-color","Skin of Color dermatology ZIM","Skin of Color Society's image-rich dermatology reference for conditions on darker skin tones. Licence unverified.","1.41 GB","A?","S","survival-medical",[["Skin of Color Society","https://skinofcolorsociety.org/"],K("zimit")]],
+  ["med","mdwiki-all","mdwiki_en_all (full flavour)","WikiProjectMed's medical encyclopedia with full images and videos. The catalog has the 2.3 GB maxi; this is the complete build.","10.75 GB","A","S","survival-medical",[["mdwiki.org","https://mdwiki.org/"],K("other")]],
+  ["med","openfda-labels","openFDA drug labels → FTS table","Every US drug label (265,067 records): indications, dosage, contraindications, interactions, overdose. Public domain JSON. Built into a searchable table it complements Fimea for non-Finnish drugs. Needs a schema and a yearly refresh.","~1.8 GB zipped","A","L","survival-medical",[["openFDA downloads","https://open.fda.gov/data/downloads/"],["Part 1 zip","https://download.open.fda.gov/drug/label/drug-label-0001-of-0013.json.zip"]]],
+  ["med","nomad-remedies","Symptom → remedy tables (CDC, NIH, NCCIH)","Project NOMAD's small JSON tables of conditions, home remedies and herbal remedies, compiled from public-domain CDC, MedlinePlus and NCCIH 'Herbs at a Glance'. Good for search and for grounding the local AI.","small","A","M","survival-medical",[["NOMAD collections","https://github.com/Crosstalk-Solutions/project-nomad/tree/main/collections"]]],
+  ["med","niosh-erg","NIOSH Pocket Guide + Emergency Response Guidebook 2024","The two standard hazmat references: NIOSH's guide to 600+ chemicals (exposure limits, PPE, first aid) and the ERG used by first responders for spills and fires by UN number. Public domain PDFs; both blocked automated checks, so verify URLs by hand.","~5 + 10 MB","A","S ×2","survival-medical",[["NIOSH Pocket Guide","https://www.cdc.gov/niosh/npg/downloadable.html"],["ERG 2024 PDF","https://www.phmsa.dot.gov/sites/phmsa.dot.gov/files/2024-04/ERG2024-Eng-Web-a.pdf"]]],
+  ["med","medical-pdf-canon","Medical PDF canon (opt-in)","The classic austere-medicine books: Hesperian's Where There Is No Doctor (2025), MSF clinical guidelines, the WHO International Medical Guide for Ships, ICRC war surgery and IFRC first-aid guidelines. Free to download but not clearly redistributable, so user-fetched.","~1 GB","B","S–M","survival-medical",[["Hesperian","https://hesperian.org/books-and-resources/"],["MSF guidelines","https://medicalguidelines.msf.org/en"],["WHO ship guide","https://iris.who.int/handle/10665/43814"]]],
+
+  // Homesteading
+  ["home","ted-growing","TED gardening, plants, agriculture, food, weather","Five TED topic collections as offline video. Pick the ones you want in the note.","311 MB – 2.2 GB each","A-NC","S each","homesteading",[K("ted")]],
+  ["home","foss-cooking","foss.cooking + Public Domain Recipes","Two small community cookbooks with simple, ad-free recipes; Public Domain Recipes is Unlicense.","29 + 16 MB","A","S ×2","homesteading",[["foss.cooking","https://foss.cooking/"],["publicdomainrecipes.com","https://publicdomainrecipes.com/"],K("zimit")]],
+  ["home","se-homestead","Stack Exchange pets, lifehacks, coffee, vegetarianism","Small Q&A archives: animal care, practical household tricks, coffee, plant-based cooking.","9–83 MB","A","S each","homesteading",[K("stack_exchange")]],
+  ["home","usaid-archive","USAID evaluation archive","Archive of USAID development project evaluations: agriculture, water, health, energy programmes in low-resource settings. Relevance per GB unmeasured.","8.0 GB","A","S","homesteading",[K("books"),["zim-request #1897","https://github.com/openzim/zim-requests/issues/1897"]]],
+  ["home","fdc","USDA FoodData Central","The real USDA nutrient database: energy, macros, vitamins and minerals for thousands of foods. Public domain CSV. Needs a CSV path in reference-static.","458 MB zip","A","M","homesteading",[["FDC downloads","https://fdc.nal.usda.gov/download-datasets"]]],
+  ["home","openfoodfacts","Open Food Facts","Crowd-sourced database of packaged foods by barcode: ingredients, allergens, nutrition, origin. Raw file queried with DuckDB is S; an indexed table is L.","1.47 GB","A","S / L","homesteading",[["openfoodfacts.org","https://world.openfoodfacts.org/data"],["CSV export","https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz"]]],
+  ["home","plant-dbs","Plant references: Dr. Duke's, Kew WCVP, USDA PLANTS","Dr. Duke's phytochemical and ethnobotanical database (which plants contain what and their traditional uses, CC0), Kew's World Checklist of Vascular Plants (accepted names worldwide) and the USDA PLANTS checklist.","~100 MB","A","M each","homesteading",[["Dr. Duke's","https://catalog.data.gov/dataset/dr-dukes-phytochemical-and-ethnobotanical-databases"],["Kew WCVP","https://sftp.kew.org/pub/data-repositories/WCVP/"],["USDA PLANTS","https://plants.usda.gov/"]]],
+  ["home","climate-zones","Köppen-Geiger 1 km + WorldClim 2.1","Global climate classification maps (present and projected to 2099) and gridded climate normals, for choosing crops and planning a garden anywhere. WorldClim licence unverified.","~50–500 MB","A","M","homesteading",[["Köppen-Geiger (figshare)","https://figshare.com/articles/dataset/High-resolution_1_km_K_ppen-Geiger_maps_for_1901_2099_based_on_constrained_CMIP6_projections/21789074"],["WorldClim","https://www.worldclim.org/data/worldclim21.html"]]],
+
+  // Engineering
+  ["eng","ted-energy","TED solar, renewable, wind, nuclear energy, engineering","TED topic collections as offline video on energy systems and engineering.","166 MB – 2.7 GB each","A-NC","S each","engineering",[K("ted")]],
+  ["eng","army-welding-tms","Army welding and equipment TMs","Public-domain US Army manuals: TM 5-805-7 welding design and inspection, welding operations, plus generator and forklift maintenance TMs. Cherry-pick from archive.org's MManuals pack, which also holds non-PD commercial manuals.","small PDFs","A","S each","engineering",[["MManuals (archive.org)","https://archive.org/details/MManuals"],["Welding TM PDF","https://archive.org/download/MManuals/Tm5-805UsArmyWeldingDesignProceduresInspection1985.pdf"]]],
+  ["eng","cad-apps","LibreCAD, Qucs-S, OrcaSlicer, FreeCAD","Design apps: LibreCAD (2D drafting), Qucs-S (circuit simulation), OrcaSlicer (3D-print slicer), FreeCAD (parametric 3D CAD, comprehensive tier only). All GUI apps that wait on the AppImage/dmg convention.","41–780 MB","A","S after L","engineering",[GH("LibreCAD/LibreCAD"),GH("ra3xdh/qucs_s"),GH("SoftFever/OrcaSlicer"),GH("FreeCAD/FreeCAD")]],
+
+  // Sciences
+  ["sci","wiki-subjects","Wikipedia subject subsets","English Wikipedia cut to one subject, no pictures: chemistry, physics, mathematics, molecular and cell biology, astronomy, geography. Cheap depth without the full Wikipedia.","132–586 MB each","A","S each","sciences",[K("wikipedia")]],
+  ["sci","se-sciences","Stack Exchange astronomy, space, stats","Expert Q&A archives for astronomy, space exploration and statistics.","188 MB – 1.5 GB","A","S each","sciences",[K("stack_exchange")]],
+  ["sci","gutenberg-lcc-q","Gutenberg LCC Q Science","All public-domain Gutenberg books in LoC class Q: mathematics, astronomy, physics, chemistry, geology, natural history, biology. Comprehensive tier.","12 GB","A","S","sciences",[K("books")]],
+  ["sci","zimi-almanac","Zimi Almanac mini","A small astronomy almanac ZIM with the Yale Bright Star Catalogue and NASA imagery; a 4.5 GB maxi exists.","11 MB","A","S","sciences",[K("community"),["zim-request #1988","https://github.com/openzim/zim-requests/issues/1988"]]],
+  ["sci","sci-datasets","HYG stars, ChEBI, CODATA, periodic table","Small reference tables: the HYG star catalogue (~120k stars), ChEBI chemical entities, NIST CODATA physical constants and a periodic-table JSON. S each once a generic table builder exists.","< 50 MB","A","M each","sciences",[["HYG","https://github.com/astronexus/HYG-Database"],["ChEBI","https://www.ebi.ac.uk/chebi/"],["CODATA","https://physics.nist.gov/cuu/Constants/Table/allascii.txt"],["Periodic-Table-JSON","https://github.com/Bowserinator/Periodic-Table-JSON"]]],
+  ["sci","sci-apps","Avogadro 2, Stellarium","Avogadro 2 is a molecule editor and visualiser; Stellarium is a planetarium that shows the real sky for any place and time (useful for navigation). GUI apps; Stellarium has no Linux arm64 build.","91–571 MB","A","S after L","sciences",[GH("OpenChemistry/avogadrolibs"),GH("Stellarium/stellarium")]],
+
+  // Computing
+  ["comp","mdn","MDN web docs","Mozilla's complete reference for HTML, CSS, JavaScript and web APIs. CC BY-SA.","560 MB","A","S","computing",[["developer.mozilla.org","https://developer.mozilla.org/"],K("zimit")]],
+  ["comp","python-docs","docs.python.org full","The full official Python documentation: tutorial, library reference, language reference, HOWTOs. Larger than the DevDocs Python already in the catalog.","3.6 GB","A","S","computing",[["docs.python.org","https://docs.python.org/3/"],K("zimit")]],
+  ["comp","cs-books","Algorithms (Erickson), Open Data Structures, Go by Example","Three free CS resources: Jeff Erickson's Algorithms textbook (CC BY 4.0), Open Data Structures, and Go by Example's annotated programs.","493 + 111 MB + 323 KB","A","S each","computing",[["Algorithms","https://jeffe.cs.illinois.edu/teaching/algorithms/"],["Open Data Structures","https://opendatastructures.org/"],["Go by Example","https://gobyexample.com/"]]],
+  ["comp","freecodecamp-pmos","freeCodeCamp + postmarketOS wiki","freeCodeCamp's coding curriculum, and the postmarketOS wiki for running real Linux on old phones.","11 + 29 MB","A","S ×2","computing",[K("freecodecamp"),["postmarketOS wiki","https://wiki.postmarketos.org/"]]],
+  ["comp","lua-org","lua.org","Lua's manuals, reference and Programming in Lua material. Licence unverified.","362 MB","A?","S","computing",[["lua.org","https://www.lua.org/"],K("zimit")]],
+  ["comp","se-computing","Stack Exchange android, apple, retrocomputing, vi, emacs, hardwarerecs, softwarerecs, cs","Q&A archives for phones, Macs, old hardware, editors, hardware and software recommendations and computer science.","29 MB – 1.1 GB each","A","S each","computing",[K("stack_exchange")]],
+  ["comp","corey-schafer","Corey Schafer video courses","Well-regarded YouTube tutorials as video ZIMs: Python (2.4 GB), git (57 MB), SQL (22 MB). Comprehensive tier.","~2.5 GB","A-NC","S","computing",[K("videos")]],
+
+  // Comms
+  ["comms","pat-winlink","Pat (Winlink email over radio)","Cross-platform Winlink client: send and receive email over HF/VHF radio (ARDOP, VARA, AX.25, telnet) when the internet is down. MIT; macOS only as an amd64 pkg.","5–6 MB","A","S","communications",[GH("la5nta/pat"),["getpat.io","https://getpat.io/"]]],
+  ["comms","rtl433","rtl_433","Decodes 433/868 MHz sensors (weather stations, thermometers, tyre pressure, doorbells) with a cheap RTL-SDR dongle.","small","A","S","communications",[GH("merbanan/rtl_433")]],
+  ["comms","meshtastic-web","Meshtastic web client","Browser client for Meshtastic LoRa mesh radios. Served from the stick, any laptop can configure nodes and message without the internet.","small","A","S","communications",[GH("meshtastic/web"),["meshtastic.org","https://meshtastic.org/"]]],
+  ["comms","mesh-firmware","Meshtastic + MeshCore firmware","Firmware images for LoRa boards, so a fresh radio can be flashed offline. Fits the embedded pack.","small","A","S ×2","embedded",[GH("meshtastic/firmware"),GH("meshcore-dev/MeshCore")]],
+  ["comms","radio-guis","JS8Call-improved, FreeDV, Reticulum MeshChat, gqrx","Radio apps: JS8Call (keyboard messaging over weak HF signals), FreeDV (digital voice on HF), Reticulum MeshChat (messaging over Reticulum mesh), gqrx (SDR receiver). GUI apps that wait on the launch convention.","55–154 MB","A","S after L","communications",[GH("JS8Call-improved/JS8Call-improved"),GH("drowe67/freedv-gui"),GH("liamcottle/reticulum-meshchat"),GH("gqrx-sdr/gqrx")]],
+  ["comms","direwolf","Direwolf APRS/packet TNC","Software modem and TNC for APRS and AX.25 packet radio, the backbone of ham data networks. No prebuilt binaries; needs a source-build handler.","small","A","M","communications",[GH("wb2osz/direwolf")]],
+  ["comms","nebula","Nebula overlay network","Slack's encrypted mesh VPN. Gives devices stable addresses and encrypted links across a LAN or ad-hoc network with no internet.","15–32 MB","A","S","communications",[GH("slackhq/nebula")]],
+
+  // Cybersec
+  ["sec","sec-zims","TED cyber-security + online-privacy, Tor SE, incognitocat","Reference ZIMs: two TED collections, the Tor Stack Exchange and incognitocat.me's privacy guide.","9 – 492 MB","A-NC","S each","cybersec",[K("ted"),K("stack_exchange"),K("zimit")]],
+  ["sec","cloudflare-learning","Cloudflare Learning Center ZIM","Clear explainers on networking, DNS, TLS, DDoS and web security. Licence unverified.","182 MB","A?","S","cybersec",[["Learning Center","https://www.cloudflare.com/learning/"],K("zimit")]],
+  ["sec","cve-list","CVE List V5","The complete CVE record set as JSON, released daily. Pin by date like nuclei-templates.","643 MB","A","S","cybersec",[GH("CVEProject/cvelistV5")]],
+  ["sec","exploitdb","Exploit-DB","Offensive Security's archive of public exploits and searchsploit. The GitHub mirror is archived; GitLab is live.","~1 GB","A","S","cybersec",[["GitLab","https://gitlab.com/exploit-database/exploitdb"]]],
+  ["sec","attack-stix","MITRE ATT&CK STIX v20.1","The ATT&CK adversary tactics and techniques knowledge base in machine-readable STIX.","small","A","S","cybersec",[["GitHub","https://github.com/mitre-attack/attack-stix-data"]]],
+  ["sec","osv-dump","OSV all-ecosystems dump","Google's open-source vulnerability database for every package ecosystem. Optional and large.","2.94 GB","A","S","cybersec",[["osv.dev","https://osv.dev/"],["all.zip","https://osv-vulnerabilities.storage.googleapis.com/all.zip"]]],
+  ["sec","sec-tools","yara-x, gitleaks","yara-x: VirusTotal's Rust rewrite of YARA for malware pattern matching. gitleaks: finds secrets in git repos and files.","7–9 MB","A","S each","cybersec",[GH("VirusTotal/yara-x"),GH("gitleaks/gitleaks")]],
+  ["sec","trivy-grype","trivy or grype + pre-fetched vuln DB","Container, filesystem and SBOM vulnerability scanners. Offline use needs their vulnerability DB pre-fetched as a separate dated dataset.","45–51 MB + DB","A","M","cybersec",[GH("aquasecurity/trivy"),GH("anchore/grype")]],
+  ["sec","cutter","Cutter reverse-engineering GUI","Rizin-based disassembler and decompiler GUI that doesn't need a JDK, unlike Ghidra. AppImage/dmg.","~100 MB","A","S after L","cybersec",[GH("rizinorg/cutter")]],
+
+  // AI
+  ["ai","embeddinggemma2","EmbeddingGemma 2 (multilingual search)","Google's small embedding model covering 100+ languages including Finnish, truncatable to 256 dimensions. Would replace the English-centric nomic-embed so Finnish semantic search works. Every semantic index must be rebuilt.","0.31 GB","A","L","ai",[HF("ggml-org/embeddinggemma-2-GGUF"),HF("google/embeddinggemma-2")]],
+  ["ai","qwen3-reranker","Qwen3-Reranker-0.6B","Cross-encoder that re-scores the top search hits, improving result order. Runs through llama-server's reranking endpoint.","0.64 GB","A","M","ai",[HF("ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF")]],
+  ["ai","glm-ocr","GLM-OCR","Vision OCR model that runs in llama.cpp. Turns scanned PDFs (Survivor Library, old manuals) into searchable text.","0.95 + 0.48 GB","A","S","ai",[HF("ggml-org/GLM-OCR-GGUF")]],
+  ["ai","se-ai","Stack Exchange ai, datascience, genai","Q&A archives on AI, machine learning, data science and generative AI.","small–mid","A","S each","ai",[K("stack_exchange")]],
+  ["ai","finnish-voice","Finnish voice stack (STT + TTS)","Speech-to-text (parakeet-tdt-0.6b-v3, whisper large-v3-turbo or Qwen3-ASR, all with Finnish) plus Piper's fi_FI-harri text-to-speech voice. Enables talking to the vault hands-free. The runtime choice (sherpa-onnx vs llama.cpp) needs a design.","~0.6–2 GB","A","L","ai",[HF("nvidia/parakeet-tdt-0.6b-v3"),HF("ggml-org/Qwen3-ASR-1.7B-GGUF"),HF("rhasspy/piper-voices"),GH("k2-fsa/sherpa-onnx")]],
+  ["ai","inkling2-mini","Inkling 2 Mini (24 GB tier)","Thinking Machines' 26.4B mixture-of-experts model with only 3.4B active, vision and 1M context: fast for its quality. Its card notes weaker non-English output. Needs llama.cpp ≥ b12600.","15.7 GB","A","S + measure","ai",[HF("unsloth/Inkling-2-Mini-GGUF"),HF("thinkingmachines/Inkling-2-Mini")]],
+  ["ai","muse-glimmer","Muse Glimmer 30B (24 GB tier)","Dense 30B general model with vision.","15.9 + 2.0 GB","A","S + measure","ai",[HF("unsloth/Muse-Glimmer-30B-GGUF")]],
+  ["ai","mellum","Mellum2.1-12B-A2.5B (16 GB tier, coding)","JetBrains' small MoE coding model with thinking, sized for 16 GB machines.","8.07 GB","A","S + measure","ai",[HF("JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF")]],
+  ["ai","nanbeige","Nanbeige4.3-33B (64 GB tier, coding)","Dense 33B model; leads one independent Terminal-Bench ranking but trails Qwen3.8-27B on FrontierCode.","20.8 GB","A","S + measure","ai",[HF("bartowski/Nanbeige_Nanbeige4.3-33B-GGUF"),["gpuwerk ranking","https://gpuwerk.com/blog/best-open-weight-coding-models/"]]],
+  ["ai","raon","Raon-1-mini","KRAFTON's 28.8B MoE (4.3B active). Its card lists pi tool calling, relevant to the svalbard pi provider, but it is Korean-tuned and very new.","16.2 GB","A","S + measure","ai",[HF("KRAFTON/Raon-1-mini-gguf")]],
+
+  // Maps
+  ["maps","mapterhorn","Mapterhorn terrain (hillshade)","Global 30 m elevation tiles (Copernicus GLO-30) as PMTiles. Cut a Finland or region extract with pmtiles extract; MapLibre renders hillshade and 3D terrain from it. Finland extract size unmeasured.","bbox-dependent","A","M","maps",[["mapterhorn.com","https://mapterhorn.com/data-access/"]]],
+  ["maps","world-lowzoom","World low-zoom Protomaps extract","A z0–8 world basemap from the Protomaps daily planet build, so the viewer shows the whole world at country/city level beyond natural-earth.","~1 GB","A","S","maps",[["Protomaps downloads","https://docs.protomaps.com/basemaps/downloads"]]],
+  ["maps","landcover-gebco","VersaTiles landcover + GEBCO bathymetry","Global land-cover tiles (forest, farmland, wetland) and the GEBCO ocean depth and elevation grid. Larger optional layers.","4.1 + 7.5 GB","A","S–M","maps",[["VersaTiles sources","https://versatiles.org/sources/"],["GEBCO 2025","https://www.gebco.net/gebco2025-grid"]]],
+  ["maps","brouter-data","BRouter rd5 segments for Finland","Offline routing data for bike, foot and car, regenerated weekly. Ship as data for phone apps (BRouter Android, OsmAnd) as S; running the engine on the stick needs Java (L).","130–180 MB","A","S / L","maps",[["segments4","https://brouter.de/brouter/segments4/"],GH("abrensch/brouter")]],
+  ["maps","photon-fi","Photon Finland geocoder","Address and place search over OSM. Weekly Finland dump; run with Java 21 (L) or convert to an SQLite gazetteer (M).","244 MB","A","M / L","maps",[["Finland dump","https://download1.graphhopper.com/public/europe/finland/"],["GitHub","https://github.com/komoot/photon"]]],
+  ["maps","geonames","GeoNames gazetteer","Global place-name database (11M+ names, coordinates, population, alt names). cities500 is a small starter.","13–403 MB","A","M","maps",[["geonames.org","https://www.geonames.org/"],["Dump folder","https://download.geonames.org/export/dump/"]]],
+
+  // Finland
+  ["fi","hsy-water-posts","HSY public water posts","Locations of the Helsinki region's public water posts, the emergency water points during a mains outage. Tiny vector layer.","5 KB","A","S","fi-survival",[["avoindata","https://avoindata.suomi.fi/data/fi/dataset/paakaupunkiseudun-vesipostit"]]],
+  ["fi","fineli","Fineli food composition DB","THL's Finnish food composition database: nutrients for Finnish foods and dishes. The most valuable remaining Finnish dataset, but fineli.fi returned 403 to all requests, so URL and size are unconfirmed.","unknown","A?","M","fi-reference",[["Fineli open data","https://fineli.fi/fineli/fi/avoin-data"]]],
+  ["fi","kotus-more","Kotus: dialects, old literary Finnish, Karelian dictionaries","Suomen murteiden sanakirja, Vanhan kirjasuomen sanakirja and Karjalan kielen sanakirja as CC BY 4.0 XML, each needing its own parser.","17–48 MB each","A","M each","fi-reference",[["Kotus downloads","https://kotus.fi/kotus/kieliaineistot/aineistot-verkossa/"]]],
+  ["fi","finlex","Finlex key acts (pelastuslaki, valmiuslaki…)","Finnish consolidated legislation as daily XML. Filter to emergency-relevant acts (rescue, emergency powers, hunting, water, everyman's rights) into a searchable table.","4.4 GB source","A","L","fi-reference",[["Finlex open data","https://www.finlex.fi/fi/avoin-data/lataa-aineistoja"]]],
+  ["fi","fi-wiki-small","wikipedia_fi_top_mini, wikiversity_fi, wikiquote_fi","Cheap Finnish-language ZIMs: a phone-tier Finnish Wikipedia, Finnish Wikiversity and Wikiquote.","112 + 20 + 19 MB","A","S each","fi-reference",[K("wikipedia"),K("wikiversity"),K("wikiquote")]],
+  ["fi","wiki-fi-all-mini","wikipedia_fi_all_mini","All Finnish Wikipedia articles, intro sections only.","1.0 GB","A","S","fi-reference",[K("wikipedia")]],
+  ["fi","tatoeba-wiktionary","Tatoeba sentences + Finnish kaikki.org Wiktionary","Tatoeba's translated example sentences (incl. Finnish) and a machine-readable Finnish Wiktionary extract with inflections. Later options.","210 MB + ?","A","M","fi-reference",[["Tatoeba downloads","https://tatoeba.org/en/downloads"],["kaikki.org","https://kaikki.org/dictionary/Finnish/"]]],
+  ["fi","flood-hazard","SYKE flood hazard zones (regional clip)","Mapped flood zones for sea and inland waters at several return periods. Nationwide files are 5.6 GB each, so clip to a region.","clip-dependent","A","M","fi-maps",[["Sea zones zip","https://sykedata.ymparisto.fi/gisdata-1/tulva/tulvavaaravyohykkeet/tulvavaaravyohykkeet_meri.zip"]]],
+  ["fi","kuntajako","MML municipal boundaries 2026","Municipality boundaries as GeoPackage. vector-static only reads shapefiles today.","24 MB","A","M","fi-maps",[["kapsi","http://kartat.kapsi.fi/files/kuntajako/kuntajako_10k/etrs89/gpkg/"]]],
+  ["fi","placenames","MML place names (~800,000)","Every named place in Finland (villages, lakes, hills, islands) with coordinates. As a table it's M; as search in the map viewer, L.","53 MB","A","M / L","fi-maps",[["kapsi","http://kartat.kapsi.fi/files/nimisto_oapif/placenames/etrs89/gml/"]]],
+  ["fi","hillshade-fi","MML hillshade 32 m","Shaded relief for all of Finland as GeoTIFF tiles, to give the topo maps a 3D feel. L if the host needs GDAL for the first time.","total not summed","A","M","fi-maps",[["kapsi","http://kartat.kapsi.fi/files/vinovalovarjoste/hila_32m/"]]],
+  ["fi","dem-contours-fi","MML DEM 10 m / height contours","National elevation model and contour lines. Needs a GeoTIFF→terrarium builder (L) or an Uusimaa clip in the mml-topo family (M).","several GB","A","L","fi-maps",[["DEM 10 m","http://kartat.kapsi.fi/files/korkeusmalli/hila_10m/"],["Contours zip","http://kartat.kapsi.fi/files/maastotietokanta/geopackage_korkeus/"]]],
+  ["fi","gtfs-fi","HSL + VR rail GTFS","Public-transport timetables and stops for the Helsinki region and all VR trains. Raw is S; a stops layer is M. Rail licence unverified.","93 + 14 MB","A","S","fi-maps",[["HSL GTFS","https://infopalvelut.storage.hsldev.com/gtfs/hsl.zip"],["VR GTFS","https://rata.digitraffic.fi/api/v1/trains/gtfs-all.zip"]]],
+
+  // Vehicles
+  ["veh","owner-manual-hint","Owner's manuals via svalbard import + wizard hint","Ford, Toyota, Honda and VW publish owner's manuals free per VIN or model, but with no right to redistribute. Add a wizard hint and docs telling users to fetch their own and import it.","per manual","B","S","engineering",[["Toyota manuals","https://www.toyota.com/owners/warranty-owners-manuals/"],["Ford manuals","https://www.ford.com/support/owner-manuals/"]]],
+  ["veh","small-engine-manuals","Briggs & Stratton / Honda engine manuals","Free operator's manuals for common small engines (mowers, generators, pumps). An opt-in recipe that fetches each from the maker's own URL at apply time.","per manual","B","S each","homesteading",[["Honda engines","https://direct.powerequipment.honda.com/support/owners-manuals"],["Briggs & Stratton","https://www.briggsandstratton.com/na/en_us/support/manuals.html"]]],
+  ["veh","sheldon-brown","Sheldon Brown bicycle site (local build)","The best bicycle maintenance and repair reference online: gearing, wheels, brakes, old-bike parts. No licence stated, so build it locally like FarOutRide.","~?","B","S","engineering",[["sheldonbrown.com","https://www.sheldonbrown.com/"]]]
+];
+
+// id -> [verdict: yes | maybe | no, reason]
+const VERDICTS = {
+  "last-codex": ["yes","Unique 'rebuild from scratch' content nothing else in the catalog has, and small. Only snag: NC-ND, so flag it for anyone redistributing sticks."],
+  "fi-prep-guides": ["yes","Tiny, official and exactly what a Finnish household needs first in a crisis, in 16 languages. Ship as user-fetched until the ministry and SPEK confirm reuse."],
+  "beready-uk": ["maybe","Good, current guidance, but UK-specific and overlapping ready.gov and the Finnish guides. Worth it for English-speaking presets; low priority for finland-*."],
+  "ted-water-disaster": ["maybe","Video is engaging but low information per GB compared with text. Water is the stronger of the two; consider only for 256 GB+ presets."],
+  "devdocs-bundle": ["yes","Under 60 MB for the references you actually reach for when fixing a server or script offline. Best value per MB in the list."],
+  "phet-en": ["yes","Small, interactive and great for teaching kids; the Finnish build already proved the shape works."],
+  "simple-wiki-wikivoyage": ["yes","Simple Wikipedia gives broad coverage for small presets where the full build doesn't fit. Wikivoyage is cheap and useful when travelling or relocating."],
+  "gutenberg-lcc-uv": ["maybe","U has real field-craft value but much is dated 19th-century doctrine; V matters mainly if you sail. Fine for 512 GB+ presets."],
+  "mml-ortho": ["yes","Aerial photos answer questions topo maps can't (clearings, roads, buildings now). Zero new code; size control by bbox."],
+  "syke-water-layers": ["yes","Water access and flood risk are core survival questions in Finland, and these drop into an existing builder. Flood-risk areas are almost free."],
+  "tools-tier1": ["yes","Turns the stick into a working toolkit for little space; all maintained, all single binaries. Pick individually below if you want a subset."],
+  "army-auto-primers": ["yes","The only legal, generic car-repair textbooks; old but the mechanical principles hold. 48 MB."],
+  "learn-ai-anywhere": ["maybe","Nice onboarding for people new to the local models, but light on content. Cheap enough for the ai pack."],
+  "hy-mt3": ["yes","Offline Finnish↔English translation is a real capability gap and it reuses llama-server. Measure Finnish quality before making it default."],
+  "kotus-suru-wordlist": ["maybe","Useful for Swedish-speaking Finns and for spell/inflection help, but needs a parser. Worth doing alongside a generic table builder."],
+
+  "fix-usda": ["yes","The label is simply wrong; users who want nutrition data get canning advice. Five-minute fix."],
+  "fix-ready-gov": ["yes","The recipe silently ships a two-year-old file. Pure bug fix."],
+  "fix-gutenberg-books": ["yes","Same silent staleness, and the new R build is smaller. URL edit only."],
+  "fix-llama-bump": ["yes","Gates every new model below. Do it before adding any."],
+  "fix-qwen-pin": ["maybe","Not broken; only act if the diff shows better quants or a template fix."],
+  "fix-mmproj": ["yes","Vision lets the models read photos of labels, wounds, manuals and scans. The files are already in pinned repos."],
+
+  "generic-table-builder": ["yes","Highest-leverage engineering in the report: one L turns ten datasets into S recipes and gives the AI facts to cite."],
+  "url-ci-check": ["yes","Would have caught both silent failures found here. Small and permanent."],
+  "appimage-convention": ["maybe","Unlocks many GUI apps, but adds platform-specific launch logic. Worth it only if you want KeePassXC, CAD or radio apps on the stick."],
+  "java-runtime": ["maybe","Routing and geocoding are high value, but a JRE is a heavy dependency. Try the Java-free paths (SQLite gazetteer, rd5 for phone apps) first."],
+  "pdfjs-viewer": ["yes","PDFs are a growing share of the vault and phones are the likeliest reader in a crisis."],
+  "folder-import": ["yes","Makes the 'bring your own manuals' story usable; small change."],
+  "size-delta-guard": ["maybe","Protects against a broken upstream build eating the stick. Moderate value; not urgent."],
+  "nc-licence-flag": ["yes","Needed as soon as any NC/ND item lands, so sticks handed on stay clean."],
+  "tier-per-pack": ["maybe","Good idea for preset quality, but it's a catalog-wide redesign. Revisit after the next additions."],
+  "wfs-dump-builder": ["maybe","Only two known datasets need it. Wait for a third."],
+
+  "wiki-en-top-mini": ["yes","Gives the 32 GB tier and phones a Wikipedia that fits."],
+  "wiki-en-top1m-mini": ["maybe","Fills a real size gap, but Simple Wikipedia may cover the same need for less."],
+  "cia-factbook": ["maybe","Handy country reference, but frozen at 2020 and partly covered by Wikipedia."],
+  "gutenberg-top2500": ["maybe","A good reading library, but overlaps the full gutenberg recipe. Best as the smaller alternative in mid tiers."],
+  "onemorelibrary": ["no","Overlaps Gutenberg heavily for 3.7 GB. The small Finnish build is the only part worth considering."],
+  "t-pandoc": ["yes","Converts anything to anything; makes every document in the vault printable."],
+  "t-ripgrep": ["yes","1 MB, constantly useful."],
+  "t-restic": ["yes","Encrypted backups of family documents to the stick is a core use case."],
+  "t-syncthing": ["yes","Keeps devices in a household in sync without internet."],
+  "t-localsend": ["yes","Easiest way to get files from the stick onto phones."],
+  "t-jq": ["yes","Tiny; needed to work with the JSON datasets."],
+  "t-pdfcpu": ["maybe","Useful but niche next to pandoc and the PDF viewer."],
+  "t-micro-nvim": ["yes","An editor non-vim users can use is a basic need. micro alone is enough if space matters."],
+  "t-numbat": ["yes","Unit-aware maths prevents dosage and wiring mistakes; 2 MB."],
+  "t-duckdb": ["maybe","Powerful for the big datasets, but only if those land. Pair with Open Food Facts or openFDA."],
+  "t-zimtools": ["maybe","Lets power users verify and build ZIMs; most users won't."],
+  "t-monolith": ["maybe","Handy for saving pages, but you'd do that before going offline, not after."],
+  "t-rclone": ["maybe","Overlaps dufs for serving; sync is only useful with storage on the LAN."],
+  "t-typst": ["maybe","Nice for making forms and notices; low priority."],
+  "t-keepassxc": ["yes","An offline password vault is valuable when cloud logins are unreachable. Blocked on the AppImage convention."],
+  "t-tiddlywiki": ["maybe","A household notebook on the stick is appealing; useful only once saving works."],
+  "t-silverbullet": ["no","Overlaps TiddlyWiki and needs a running server. Pick one notes tool, and TiddlyWiki is lighter."],
+
+  "ted-medicine-health": ["no","7.8 GB of talks gives little actionable medical help compared with MedlinePlus or mdwiki."],
+  "canadian-prepper-more": ["maybe","Practical prepping video, but 5.5 GB and US/Canada-centric. Food storage is the most useful one."],
+  "wiki-knots": ["no","Already covered by zimgit-knots."],
+  "armypubs": ["maybe","Huge doctrine library with real field medicine and survival manuals, but 7.7 GiB of mostly military procedure. 1 TB+ presets only."],
+  "skin-of-color": ["maybe","Fills a real dermatology gap, but 1.4 GB and the licence is unverified."],
+  "mdwiki-all": ["no","The 2.3 GB maxi already holds the text; the extra 8 GB is mostly media."],
+  "openfda-labels": ["yes","Drug information for non-Finnish medicines, the gap Fimea can't fill. Large build effort; do it after the table builder."],
+  "nomad-remedies": ["maybe","Small and good for grounding the AI, but the content is shallow. Cheap once the table builder exists."],
+  "niosh-erg": ["yes","The standard hazmat references, tiny and public domain."],
+  "medical-pdf-canon": ["yes","Where There Is No Doctor is the single best austere-medicine book. Opt-in, user-fetched."],
+
+  "ted-growing": ["maybe","Gardening and plants are the most practical; skip food and weather."],
+  "foss-cooking": ["yes","Tiny, practical cooking references."],
+  "se-homestead": ["maybe","Pets is useful for animal care; the rest are marginal. All tiny."],
+  "usaid-archive": ["no","8 GB of project evaluations; little hands-on value."],
+  "fdc": ["yes","Real nutrient data for rationing and meal planning; fixes the usda-nutrition gap properly."],
+  "openfoodfacts": ["maybe","Barcode lookup of stored food is neat but 1.5 GB; low priority."],
+  "plant-dbs": ["maybe","Dr. Duke's is valuable for medicinal plants; the checklists are niche."],
+  "climate-zones": ["no","Interesting for planning a relocation, but marginal for a vault."],
+
+  "ted-energy": ["maybe","Solar and renewable are the relevant ones; video is low-density."],
+  "army-welding-tms": ["yes","Small, public domain, practical repair skills."],
+  "cad-apps": ["no","Big GUI apps few users will open offline; OrcaSlicer is the exception if you 3D-print."],
+
+  "wiki-subjects": ["maybe","Good for small presets that can't fit full Wikipedia; redundant in big ones."],
+  "se-sciences": ["no","Interesting, but low practical value per GB."],
+  "gutenberg-lcc-q": ["maybe","Huge and much is outdated; comprehensive tier only."],
+  "zimi-almanac": ["maybe","Tiny star almanac; nice for navigation and teaching."],
+  "sci-datasets": ["maybe","Small and useful, but only worth it after the generic table builder."],
+  "sci-apps": ["maybe","Stellarium is useful for night navigation and education; Avogadro is niche."],
+
+  "mdn": ["yes","The reference for anything web; the drive runtime itself is web-based."],
+  "python-docs": ["no","DevDocs Python is already in the catalog and much smaller."],
+  "cs-books": ["maybe","Good textbooks; niche audience."],
+  "freecodecamp-pmos": ["maybe","Small; postmarketOS is useful for reviving old phones."],
+  "lua-org": ["no","Niche, licence unverified."],
+  "se-computing": ["maybe","Android and Apple help users fix their own devices; the rest are niche."],
+  "corey-schafer": ["no","Good tutorials, but 2.5 GB of video for topics already covered in text."],
+
+  "pat-winlink": ["yes","Email over radio is a real off-grid communication path, and the binary is tiny."],
+  "rtl433": ["maybe","Fun and occasionally useful with an SDR; niche."],
+  "meshtastic-web": ["yes","Meshtastic is the most popular off-grid mesh; a browser client on the stick removes the need for a phone app."],
+  "mesh-firmware": ["yes","Being able to flash a radio offline matters when you can't download firmware."],
+  "radio-guis": ["maybe","JS8Call is the strongest; all blocked on the AppImage convention."],
+  "direwolf": ["maybe","Key for APRS and packet, but needs a source-build path."],
+  "nebula": ["no","Useful for networkers, but overkill for most households."],
+
+  "sec-zims": ["no","Light content compared with the existing cybersec reference packs."],
+  "cloudflare-learning": ["maybe","Clear explainers, but licence unverified."],
+  "cve-list": ["yes","Core dataset for offline security work; fits the existing dated-pin pattern."],
+  "exploitdb": ["yes","Standard pentest reference; small."],
+  "attack-stix": ["yes","Tiny and standard."],
+  "osv-dump": ["no","Overlaps the CVE list for 3 GB."],
+  "sec-tools": ["yes","Small, standard tools."],
+  "trivy-grype": ["maybe","Useful for scanning offline, but the DB goes stale fast."],
+  "cutter": ["maybe","A Ghidra alternative without a JDK; blocked on the launch convention."],
+
+  "embeddinggemma2": ["yes","Without it, Finnish semantic search is weak. Requires an index rebuild, so plan it as one migration."],
+  "qwen3-reranker": ["maybe","Better search ordering; measure before shipping."],
+  "glm-ocr": ["yes","Makes scanned PDFs searchable; small and MIT."],
+  "se-ai": ["no","Marginal value."],
+  "finnish-voice": ["maybe","Hands-free use is compelling, but needs a runtime design first."],
+  "inkling2-mini": ["yes","Fast MoE with vision; likely the best 24 GB pick once measured. Weaker in Finnish."],
+  "muse-glimmer": ["maybe","Alternative to Inkling; measure both and keep one."],
+  "mellum": ["maybe","A coding option for 16 GB; only if coding matters there."],
+  "nanbeige": ["maybe","Possible coding upgrade at 64 GB; benchmarks are mixed."],
+  "raon": ["no","Korean-tuned and brand new; wait."],
+
+  "mapterhorn": ["yes","Terrain makes maps readable in the wilderness; reuses existing tools."],
+  "world-lowzoom": ["yes","A cheap world overview fills an obvious gap."],
+  "landcover-gebco": ["no","Large and niche."],
+  "brouter-data": ["yes","Offline routing for phones for under 200 MB; ship the data now, the engine later."],
+  "photon-fi": ["maybe","Address search is valuable, but MML place names or GeoNames may be enough."],
+  "geonames": ["maybe","Good global gazetteer; overlaps MML place names in Finland."],
+
+  "hsy-water-posts": ["yes","Exactly the information you need in a Helsinki-region water outage, and it's 5 KB."],
+  "fineli": ["yes","Finnish food composition is the Finnish counterpart to FDC; retry the download from another network."],
+  "kotus-more": ["no","Scholarly dictionaries with little practical use."],
+  "finlex": ["maybe","Knowing your rights and duties in an emergency is valuable, but it needs design work."],
+  "fi-wiki-small": ["yes","Cheap Finnish content for small presets."],
+  "wiki-fi-all-mini": ["maybe","Good middle tier; check against the Finnish Wikipedia build already in presets."],
+  "tatoeba-wiktionary": ["no","Language learning extras; low priority."],
+  "flood-hazard": ["maybe","Valuable for coastal and river areas, but needs a clip builder."],
+  "kuntajako": ["maybe","Useful context layer; needs GeoPackage support."],
+  "placenames": ["yes","Offline place search in Finland is a big usability win for the maps."],
+  "hillshade-fi": ["maybe","Nicer maps; Mapterhorn may cover it more cheaply."],
+  "dem-contours-fi": ["no","Large; the MML topo maps already show contours."],
+  "gtfs-fi": ["no","Timetables are unlikely to hold during a crisis."],
+
+  "owner-manual-hint": ["yes","The legal way to get your own car's manual onto the stick; mostly docs."],
+  "small-engine-manuals": ["maybe","Useful for generators and pumps, but per-model; a docs hint may be enough."],
+  "sheldon-brown": ["yes","Bicycles are the fallback transport, and this is the best reference."]
+};
+
+const $ = s => document.querySelector(s);
+const state = {};          // id -> {choice, note}
+let db = null;
+let secFilter = "all", stateFilter = "all";
+const STORE_KEY = "svalbard-picks-v1";
+
+function loadLocal() {
+  try { const raw = localStorage.getItem(STORE_KEY); if (raw) Object.assign(state, JSON.parse(raw)); } catch (e) {}
+}
+function saveLocal() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+function el(tag, attrs, text) {
+  const n = document.createElement(tag);
+  if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function build() {
+  const sf = $("#sec-filters");
+  sf.append(chip("All sections", "all", "sec"));
+  for (const [key, name] of SECTIONS) sf.append(chip(name, key, "sec"));
+  const st = $("#state-filters");
+  for (const [k, n] of [["all","Any status"],["open","Undecided"],["want","Want"],["maybe","Maybe"],["skip","Skip"]]) st.append(chip(n, k, "state"));
+
+  const main = $("#groups");
+  for (const [key, name, lede] of SECTIONS) {
+    const sec = el("section", { class: "group", "data-sec": key, id: "s-" + key });
+    sec.append(el("h2", null, name), el("p", { class: "lede" }, lede));
+    const list = el("div", { class: "items" });
+    for (const it of ITEMS.filter(i => i[0] === key)) list.append(card(it));
+    sec.append(list);
+    main.append(sec);
+  }
+}
+
+function chip(label, value, kind) {
+  const b = el("button", { class: "chip", type: "button", "aria-pressed": value === "all" ? "true" : "false" }, label);
+  b.addEventListener("click", () => {
+    if (kind === "sec") secFilter = value; else stateFilter = value;
+    b.parentElement.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === b ? "true" : "false"));
+    applyFilters();
+  });
+  return b;
+}
+
+function card(it) {
+  const [sec, id, title, desc, size, cls, eff, pack, links] = it;
+  const [verdict, why] = VERDICTS[id] || [null, ""];
+  const c = el("article", { class: "item", id: "i-" + id, "data-id": id });
+  const head = el("div");
+  head.append(el("h3", null, title));
+  const meta = el("div", { class: "meta" });
+  meta.append(el("span", { class: "tag eff" }, eff));
+  if (cls !== "—") meta.append(el("span", { class: "tag cls-" + cls[0] }, cls));
+  if (size !== "—") meta.append(el("span", { class: "tag" }, size));
+  meta.append(el("span", { class: "tag" }, pack));
+  head.append(meta);
+  const picks = el("div", { class: "picks", role: "group", "aria-label": "Decision for " + title });
+  for (const [v, label] of [["want","Want"],["maybe","Maybe"],["skip","Skip"]]) {
+    const b = el("button", { class: "pick", type: "button", "data-v": v, "aria-pressed": "false" }, label);
+    b.addEventListener("click", () => setChoice(id, state[id]?.choice === v ? null : v));
+    picks.append(b);
+  }
+  c.append(head, picks);
+  if (desc) c.append(el("p", { class: "desc" }, desc));
+  if (verdict) {
+    const v = el("p", { class: "verdict v-" + verdict });
+    v.append(el("b", null, { yes: "Recommend", maybe: "Depends", no: "Probably not" }[verdict] + ": "), document.createTextNode(why));
+    c.append(v);
+  }
+  if (links && links.length) {
+    const lw = el("p", { class: "links" });
+    links.forEach(([label, url]) => lw.append(el("a", { href: url, target: "_blank", rel: "noopener" }, label + " ↗")));
+    c.append(lw);
+  }
+  const noteWrap = el("div", { class: "note" });
+  const ta = el("textarea", { id: "n-" + id, rows: "1", placeholder: "Note (optional): why, which variant, tier…", "aria-label": "Note for " + title });
+  let timer = null;
+  ta.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => setNote(id, ta.value), 800); });
+  ta.addEventListener("blur", () => { clearTimeout(timer); setNote(id, ta.value); });
+  noteWrap.append(ta);
+  c.append(noteWrap);
+  return c;
+}
+
+function paint(id) {
+  const c = document.getElementById("i-" + id); if (!c) return;
+  const s = state[id] || {};
+  c.classList.remove("c-want", "c-maybe", "c-skip");
+  if (s.choice) c.classList.add("c-" + s.choice);
+  c.querySelectorAll(".pick").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === s.choice ? "true" : "false"));
+  const ta = c.querySelector("textarea");
+  if (document.activeElement !== ta && ta.value !== (s.note || "")) ta.value = s.note || "";
+}
+
+function paintAll() { ITEMS.forEach(i => paint(i[1])); counts(); applyFilters(); }
+
+function counts() {
+  const n = { want: 0, maybe: 0, skip: 0, open: 0 };
+  for (const it of ITEMS) { const ch = state[it[1]]?.choice; n[ch || "open"]++; }
+  $("#n-want").textContent = n.want + " want";
+  $("#n-maybe").textContent = n.maybe + " maybe";
+  $("#n-skip").textContent = n.skip + " skip";
+  $("#n-open").textContent = n.open + " undecided";
+}
+
+function applyFilters() {
+  document.querySelectorAll("section.group").forEach(sec => {
+    const secOk = secFilter === "all" || sec.dataset.sec === secFilter;
+    let shown = 0;
+    sec.querySelectorAll(".item").forEach(c => {
+      const ch = state[c.dataset.id]?.choice || "open";
+      const ok = secOk && (stateFilter === "all" || ch === stateFilter);
+      c.classList.toggle("hidden", !ok);
+      if (ok) shown++;
+    });
+    sec.classList.toggle("hidden", shown === 0);
+  });
+}
+
+const writing = {};
+async function persist(id) {
+  saveLocal();
+  if (!db) return;
+  if (writing[id]) { writing[id] = "again"; return; }
+  writing[id] = true;
+  const it = ITEMS.find(i => i[1] === id);
+  const s = state[id] || {};
+  try {
+    if (!s.choice && !s.note) await db.collection("picks").doc(id).delete();
+    else await db.collection("picks").doc(id).set({ choice: s.choice || null, note: s.note || "", title: it[2], section: it[0], updatedAt: new Date().toISOString() });
+  } catch (e) {
+    toast(e && e.code === "invalid_argument" ? "You can view but not save picks here." : "Couldn't save just now. Your pick is kept in this browser.");
+  }
+  const again = writing[id] === "again";
+  writing[id] = false;
+  if (again) persist(id);
+}
+
+function setChoice(id, v) {
+  state[id] = Object.assign({}, state[id], { choice: v });
+  paint(id); counts(); applyFilters(); persist(id);
+}
+function setNote(id, text) {
+  if ((state[id]?.note || "") === text) return;
+  state[id] = Object.assign({}, state[id], { note: text });
+  counts(); persist(id);
+}
+
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2400);
+}
+
+$("#copy").addEventListener("click", async () => {
+  const lines = [];
+  for (const [ch, label] of [["want","Want"],["maybe","Maybe"],["skip","Skip"]]) {
+    const rows = ITEMS.filter(i => state[i[1]]?.choice === ch);
+    if (!rows.length) continue;
+    lines.push("## " + label);
+    for (const i of rows) { const n = state[i[1]].note; lines.push("- " + i[2] + " [" + i[1] + "]" + (n ? " — " + n : "")); }
+    lines.push("");
+  }
+  const text = lines.join("\n") || "No picks yet.";
+  try { await navigator.clipboard.writeText(text); toast("Picks copied as Markdown."); }
+  catch (e) { toast("Copy was blocked by the browser."); }
+});
+
+loadLocal();
+build();
+paintAll();
+
+(async () => {
+  if (!window.claude || !window.claude.use) return;
+  const d = await window.claude.use("db");
+  if (!d) return;
+  db = d;
+  const sync = $("#sync");
+  sync.textContent = "Connecting…";
+  const timer = setTimeout(() => { sync.textContent = "Saved picks can't be reached yet; using this browser's copy"; }, 10000);
+  let first = true;
+  db.collection("picks").onSnapshot(snap => {
+    if (!snap.metadata.fromCache) { clearTimeout(timer); sync.textContent = "Picks saved for Claude"; }
+    const remote = {};
+    snap.docs.forEach(doc => { const v = doc.data(); if (v) remote[doc.id] = { choice: typeof v.choice === "string" ? v.choice : null, note: typeof v.note === "string" ? v.note : "" }; });
+    if (first && !snap.metadata.fromCache) {
+      first = false;
+      // Push picks made before the store connected, if the store has none for that item.
+      for (const id in state) if (!remote[id] && (state[id].choice || state[id].note)) persist(id);
+    }
+    for (const id in remote) { if (!writing[id]) state[id] = remote[id]; }
+    saveLocal();
+    paintAll();
+  }, () => { clearTimeout(timer); sync.textContent = "Saved picks unavailable; using this browser's copy"; });
+})();
+</script>
+</body>
+</html>
