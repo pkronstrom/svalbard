@@ -3,6 +3,7 @@ package menu
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -208,6 +209,7 @@ type fakeSearchSession struct {
 	searchErr error
 	openErr   error
 	searches  []string
+	limits    []int
 	excluded  []string
 	opened    []search.Result
 	closed    bool
@@ -217,8 +219,9 @@ func (f *fakeSearchSession) Info() search.SessionInfo {
 	return f.info
 }
 
-func (f *fakeSearchSession) Search(_ context.Context, mode search.Mode, query string, _ int, excluded ...string) (search.SearchResponse, error) {
+func (f *fakeSearchSession) Search(_ context.Context, mode search.Mode, query string, limit int, excluded ...string) (search.SearchResponse, error) {
 	f.searches = append(f.searches, string(mode)+":"+query)
+	f.limits = append(f.limits, limit)
 	f.excluded = excluded
 	return f.response, f.searchErr
 }
@@ -362,6 +365,57 @@ func TestSearchEnterRunsQueryAndShowsResults(t *testing.T) {
 	}
 	if len(fake.searches) != 1 || fake.searches[0] != "keyword:linux" {
 		t.Fatalf("searches = %v", fake.searches)
+	}
+}
+
+func TestSearchMenuLoadsMoreAndKeepsExistingNumbers(t *testing.T) {
+	m := NewModel(sampleGroupedConfig(), "/tmp/drive")
+	first := make([]search.Result, 20)
+	for i := range first {
+		first[i] = search.Result{Filename: "garden.zim", Path: fmt.Sprintf("/culture-%d", i+1), Title: "Growing potatoes"}
+	}
+	fake := &fakeSearchSession{
+		info:     search.SessionInfo{BestMode: search.ModeKeyword},
+		response: search.SearchResponse{EffectiveMode: search.ModeKeyword, Results: first},
+	}
+	m.searchFactory = func(string) (searchSession, error) { return fake, nil }
+	if err := m.openSearchSession(); err != nil {
+		t.Fatal(err)
+	}
+	m.searchQuery.SetValue("potato")
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.(Model).Update(cmd())
+	m = updated.(Model)
+	view := m.View()
+	if !strings.Contains(view, "M load more") || !strings.Contains(view, "garden") || strings.Contains(view, "max 20") {
+		t.Fatalf("first page did not show load-more control and source names:\n%s", view)
+	}
+
+	expanded := append([]search.Result(nil), first...)
+	slices.Reverse(expanded)
+	expanded = append(expanded, search.Result{Filename: "farming.zim", Path: "/seeds", Title: "Planting seed potatoes"})
+	fake.response.Results = expanded
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	if cmd == nil {
+		t.Fatal("load more did not request another page")
+	}
+	updated, _ = updated.(Model).Update(cmd())
+	m = updated.(Model)
+	sameResult := func(a, b search.Result) bool { return a.Filename == b.Filename && a.Path == b.Path }
+	if !slices.Equal(fake.limits, []int{20, 40}) || len(m.searchResults) != 21 ||
+		!slices.EqualFunc(m.searchResults[:20], first, sameResult) || m.searchResults[m.searchSelected].Path != "/seeds" {
+		t.Fatalf("pagination lost existing rows or their numbers: limits %v, rows %v, selected %d", fake.limits, m.searchResults, m.searchSelected)
+	}
+	if view := m.View(); !strings.Contains(view, "21 loaded") || !strings.Contains(view, "farming") || strings.Contains(view, "M load more") {
+		t.Fatalf("last page did not show the new row and hide the load-more control:\n%s", view)
+	}
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("could not open the first result on the new page")
+	}
+	cmd()
+	if len(fake.opened) != 1 || fake.opened[0].Path != "/seeds" {
+		t.Fatalf("opened %v, want the newly loaded result", fake.opened)
 	}
 }
 

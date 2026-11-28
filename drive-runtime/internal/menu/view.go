@@ -6,6 +6,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/config"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 	"github.com/pkronstrom/svalbard/tui"
 )
 
@@ -102,7 +104,10 @@ func renderSearchView(m Model) string {
 	b.WriteString("\n\n")
 
 	shown := len(m.searchResults)
-	b.WriteString(m.theme.Section.Render(fmt.Sprintf("Results (%d shown, max 20)", shown)))
+	b.WriteString(m.theme.Section.Render(fmt.Sprintf("Results (%d loaded)", shown)))
+	if m.searchHasMore && m.searchResultsFocus && !m.searchLoading {
+		b.WriteString(m.theme.Help.Render("  •  M load more"))
+	}
 	b.WriteString("\n")
 	if shown == 0 {
 		b.WriteString(m.theme.Help.Render("No results yet. Type a query and press Enter."))
@@ -138,12 +143,17 @@ func renderSearchView(m Model) string {
 	b.WriteString("\n")
 	b.WriteString(m.theme.Section.Render("Selected Result"))
 	b.WriteString("\n")
-	b.WriteString(m.theme.Muted.Render("  Source: " + selected.Filename))
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	b.WriteString(m.theme.Muted.Render(shortSearchText("  Source: "+selected.Filename, width)))
 	b.WriteString("\n")
-	b.WriteString(m.theme.Muted.Render("  Path:   " + selected.Path))
+	b.WriteString(m.theme.Muted.Render(shortSearchText("  Path:   "+selected.Path, width)))
 	b.WriteString("\n")
 	if selected.Snippet != "" {
-		b.WriteString(m.theme.Muted.Render("  Snippet: " + selected.Snippet))
+		snippet := strings.Join(strings.Fields(selected.Snippet), " ")
+		b.WriteString(m.theme.Muted.Render(shortSearchText("  Snippet: "+snippet, width)))
 		b.WriteString("\n")
 	}
 
@@ -178,16 +188,33 @@ func renderResultNumber(m Model, index int, filename string, selected bool) stri
 
 func renderSearchResultLine(m Model, index int, filename, title string, selected bool) string {
 	number := renderResultNumber(m, index, filename, selected)
-	if !selected {
-		return fmt.Sprintf("%s  %s", number, title)
+	width := m.width
+	if width <= 0 {
+		width = 80
 	}
-	selectedSpacerStyle := lipgloss.NewStyle().Background(m.theme.SelectedRow.GetBackground())
-	return lipgloss.JoinHorizontal(
-		lipgloss.Left,
-		number,
-		selectedSpacerStyle.Render("  "),
-		m.theme.SelectedRow.Render(title),
-	)
+	const separator = " │ "
+	room := width - lipgloss.Width(number) - 2 - lipgloss.Width(separator)
+	sourceWidth := min(36, max(1, room/3))
+	if archive, _, ok := engine.EmbeddedArchive(filename); ok {
+		filename = archive
+	}
+	source := shortSearchText(search.SourceLabel(filename), sourceWidth)
+	source = m.theme.Muted.Width(sourceWidth).Render(source)
+	title = shortSearchText(strings.Join(strings.Fields(title), " "), max(1, room-sourceWidth))
+	if selected {
+		title = m.theme.SelectedRow.Render(title)
+	}
+	return number + "  " + source + m.theme.Muted.Render(separator) + title
+}
+
+func shortSearchText(text string, width int) string {
+	if lipgloss.Width(text) <= width {
+		return text
+	}
+	if width <= 1 {
+		return "…"
+	}
+	return lipgloss.NewStyle().MaxWidth(width-1).Render(text) + "…"
 }
 
 func renderSearchResultSnippet(m Model, snippet string, selected bool) string {

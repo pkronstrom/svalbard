@@ -57,6 +57,7 @@ func (m *Model) applyArchiveFilter(excluded []string) {
 	}
 	m.excludedArchives = excluded
 	m.searchResults = nil
+	m.searchHasMore = false
 	m.searchResultsFocus = false
 	m.searchSelected, m.searchScrollOffset = 0, 0
 	m.searchStatus, m.searchErr = "", nil
