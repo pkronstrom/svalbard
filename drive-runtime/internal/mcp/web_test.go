@@ -55,3 +55,42 @@ func TestWebSearchRejectsInvalidSavedProvider(t *testing.T) {
 		}
 	}
 }
+
+func TestWebSearchSelectsTavilyWhenEnabledAndNoSearXNGURL(t *testing.T) {
+	t.Setenv("TAVILY_API_KEY", "test-key")
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".svalbard"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	prefs, err := settings.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if search, err := WebSearchForSettings(prefs); err != nil || search != nil {
+		t.Fatalf("web search activated without opt-in: %v, %v", search != nil, err)
+	}
+	if err := prefs.Set(settings.KeyWebSearch, "true"); err != nil {
+		t.Fatal(err)
+	}
+	assertProvider := func(want string) {
+		t.Helper()
+		search, err := WebSearchForSettings(prefs)
+		if err != nil || search == nil {
+			t.Fatalf("expected %s, got no web search: %v", want, err)
+		}
+		if got := search.Provider(); got != want {
+			t.Errorf("provider = %q, want %q", got, want)
+		}
+	}
+	assertProvider("Tavily")
+
+	if err := prefs.Set(settings.KeyWebSearchURL, "https://search.example.org"); err != nil {
+		t.Fatal(err)
+	}
+	assertProvider("SearXNG")
+	if err := prefs.Set(settings.KeyWebSearchURL, ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TAVILY_API_KEY", "")
+	assertProvider("DuckDuckGo")
+}

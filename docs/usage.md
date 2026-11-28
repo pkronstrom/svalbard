@@ -374,7 +374,9 @@ Web search is off by default. Enable **Web search** under **Local AI** in the dr
 ./run web-search "Go release notes"
 ```
 
-The default sends the query to DuckDuckGo's public HTML search. If it refuses automated requests, set **SearXNG URL** to a server you use that has JSON search enabled. Both options work without a search API key. [SearXNG JSON search](https://docs.searxng.org/dev/search_api.html)
+Set **SearXNG URL** to use a server with JSON search enabled. With that setting empty, Svalbard uses Tavily Basic when the launch environment includes `TAVILY_API_KEY`. Otherwise it uses DuckDuckGo's public HTML search, which may refuse automated requests. [SearXNG JSON search](https://docs.searxng.org/dev/search_api.html) · [Tavily Search API](https://docs.tavily.com/documentation/api-reference/endpoint/search)
+
+Set the Tavily key in the host environment before starting the drive launcher. If you keep the key in the `secret` store, run `secret exec TAVILY_API_KEY -- ./run` and open your client from the menu. The drive settings store the web search toggle and the SearXNG URL.
 
 ## Builder Scripts
 

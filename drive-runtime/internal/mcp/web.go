@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/settings"
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/websearch"
@@ -16,7 +18,11 @@ func WebSearchForSettings(prefs *settings.Store) (*websearch.Search, error) {
 	if prefs.Problem(settings.KeyWebSearchURL) != "" {
 		return nil, fmt.Errorf("SearXNG URL setting must be text")
 	}
-	return websearch.New(prefs.String(settings.KeyWebSearchURL))
+	endpoint := prefs.String(settings.KeyWebSearchURL)
+	if apiKey := strings.TrimSpace(os.Getenv("TAVILY_API_KEY")); endpoint == "" && apiKey != "" {
+		return websearch.NewTavily(apiKey), nil
+	}
+	return websearch.New(endpoint)
 }
 
 type WebCapability struct {
