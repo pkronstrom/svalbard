@@ -268,6 +268,9 @@ func driveUsers(ctx context.Context, root string) ([]driveProcess, bool) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "lsof", "-nP", "-F", "pc", "+D", filepath.Clean(root))
+	// A Finder launch or ./run web may leave our working directory on the drive.
+	// Keep the scanner and its helpers from becoming holders themselves.
+	cmd.Dir = string(filepath.Separator)
 	out, err := cmd.Output()
 	var users []driveProcess
 	for _, line := range strings.Split(string(out), "\n") {

@@ -147,6 +147,18 @@ func TestRemovalDetectsUnownedOpenFileAndLeavesItAlone(t *testing.T) {
 	}
 }
 
+func TestRemovalScannerDoesNotHoldItsOwnVault(t *testing.T) {
+	if _, err := exec.LookPath("lsof"); err != nil {
+		t.Skip("lsof unavailable")
+	}
+	root := t.TempDir()
+	t.Chdir(root)
+	users, complete := driveUsers(t.Context(), root)
+	if !complete || len(users) != 0 {
+		t.Fatalf("unexpected processes during an idle scan: complete=%v users=%v", complete, users)
+	}
+}
+
 func TestRemovalWaitsForSettingsWriter(t *testing.T) {
 	d := dashboard{ctx: t.Context(), root: t.TempDir()}
 	payload, err := json.Marshal(map[string]string{"action": "prepare", "version": d.registryLocked().Version})
