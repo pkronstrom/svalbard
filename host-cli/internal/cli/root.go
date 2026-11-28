@@ -242,6 +242,10 @@ func NewRootCommand() *cobra.Command {
 		Use:   "apply",
 		Short: "Execute reconciliation plan and update realized state",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			videos, err := videoOptions(cmd)
+			if err != nil {
+				return err
+			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			vaultFlag, _ := cmd.Flags().GetString("vault")
@@ -257,14 +261,19 @@ func NewRootCommand() *cobra.Command {
 			if m, err := manifest.Load(filepath.Join(vaultRoot, "manifest.yaml")); err == nil {
 				commands.WriteSkipped(cmd.ErrOrStderr(), cat, m)
 			}
-			return applyAndIndex(ctx, vaultRoot, cat, cmd.OutOrStdout())
+			return applyAndIndex(ctx, vaultRoot, cat, cmd.OutOrStdout(), videos)
 		},
 	}
+	addVideoOptions(applyCmd)
 
 	indexCmd := &cobra.Command{
 		Use:   "index",
 		Short: "Build the search index from ZIM files and documents in the vault",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			videos, err := videoOptions(cmd)
+			if err != nil {
+				return err
+			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			vaultFlag, _ := cmd.Flags().GetString("vault")
@@ -285,8 +294,14 @@ func NewRootCommand() *cobra.Command {
 				if len(selectors) > 0 || model != "" {
 					return fmt.Errorf("--source and --model require --type semantic")
 				}
+				if videos.Enabled() {
+					return commands.RunConfiguredIndexWithVideos(ctx, vaultRoot, "keyword", out, keywordProgress, nil, videos)
+				}
 				return commands.IndexVaultContext(ctx, vaultRoot, false, out, keywordProgress)
 			case "semantic":
+				if videos.Enabled() {
+					return fmt.Errorf("--video-index requires keyword or full indexing")
+				}
 				progress := func(p commands.SemanticProgress) {
 					if p.Status == "starting" || p.Status == "done" {
 						if p.File != "" {
@@ -300,7 +315,7 @@ func NewRootCommand() *cobra.Command {
 				if len(selectors) > 0 || model != "" {
 					return fmt.Errorf("--source and --model require --type semantic")
 				}
-				return commands.RunConfiguredIndex(ctx, vaultRoot, "full", out, keywordProgress, nil)
+				return commands.RunConfiguredIndexWithVideos(ctx, vaultRoot, "full", out, keywordProgress, nil, videos)
 			default:
 				return fmt.Errorf("unknown index type %q; use keyword, semantic or full", kind)
 			}
@@ -309,6 +324,7 @@ func NewRootCommand() *cobra.Command {
 	indexCmd.Flags().String("type", "keyword", "what to build: keyword, semantic (needs an embedding model on the vault) or full (both)")
 	indexCmd.Flags().StringArray("source", nil, "indexed filename or directory prefix ending in / to embed (repeatable)")
 	indexCmd.Flags().String("model", "", "embedding GGUF filename under models/embed/")
+	addVideoOptions(indexCmd)
 
 	root.AddCommand(
 		newInitCommand(),

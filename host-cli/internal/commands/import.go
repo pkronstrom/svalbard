@@ -10,12 +10,17 @@ import (
 	"github.com/pkronstrom/svalbard/host-cli/internal/manifest"
 )
 
-// ImportAndMaybeAdd imports a local file into the workspace library.
+// ImportAndMaybeAdd imports a local file into the workspace library or a
+// selected ZIM into the vault's archive directory.
 // If add is true it also appends the resulting id to the vault manifest's
 // desired items list and records a realized entry for it, so plan/apply
 // treat the import as reconciled instead of an unknown recipe to download.
 func ImportAndMaybeAdd(workspace string, source string, outputName string, add bool, vaultRoot string) (string, error) {
-	id, destPath, err := importer.ImportLocalFile(workspace, source, outputName)
+	target, copyFile := workspace, importer.ImportLocalFile
+	if add && strings.EqualFold(filepath.Ext(source), ".zim") {
+		target, copyFile = vaultRoot, importer.ImportZIM
+	}
+	id, destPath, err := copyFile(target, source, outputName)
 	if err != nil {
 		return "", err
 	}
@@ -34,9 +39,7 @@ func ImportAndMaybeAdd(workspace string, source string, outputName string, add b
 		if err != nil {
 			return "", fmt.Errorf("stat imported file: %w", err)
 		}
-		// Both call sites pass workspace == vaultRoot; Rel against workspace
-		// keeps the path clean ("library/<file>") either way.
-		rel, err := filepath.Rel(workspace, destPath)
+		rel, err := filepath.Rel(target, destPath)
 		if err != nil {
 			return "", err
 		}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/pkronstrom/svalbard/drive-runtime/internal/search"
+	"github.com/pkronstrom/svalbard/drive-runtime/internal/search/engine"
 )
 
 func (c *SearchCapability) searchArchive(ctx context.Context, book, query, detail string, limit int) (ActionResult, error) {
@@ -47,6 +48,24 @@ func (c *SearchCapability) handleArchiveLink(ctx context.Context, params map[str
 	filename, err := c.resolveSource(ctx, source, true)
 	if err != nil {
 		return ActionResult{}, err
+	}
+	if strings.Contains(path, "/time/") {
+		if doc, segment, ok := c.documentInArchive(ctx, filename, path); ok {
+			filename, path = doc, segment
+		}
+	}
+	if archive, _, ok := engine.EmbeddedArchive(filename); ok {
+		if _, ok := engine.VideoTime(path); ok {
+			if _, err := c.indexedBody(filename, strings.TrimPrefix(path, "/")); err != nil {
+				return ActionResult{}, err
+			}
+			port, err := c.ensureKiwix(sourceName(archive))
+			if err != nil {
+				return ActionResult{}, err
+			}
+			link, _ := search.VideoURL(fmt.Sprintf("http://localhost:%d", port), filename, path)
+			return ActionResult{Data: map[string]string{"url": link, "source": filename, "path": path}}, nil
+		}
 	}
 	if !strings.EqualFold(filepath.Ext(filename), ".zim") {
 		return ActionResult{}, fmt.Errorf("search_link serves ZIM articles. Use the file reference returned by search for document pages")

@@ -128,6 +128,16 @@ func PageNumber(path string) (int, bool) {
 	return number, err == nil && number > 0
 }
 
+// VideoTime reads a transcript passage's original video offset in milliseconds.
+func VideoTime(articlePath string) (int64, bool) {
+	value, ok := strings.CutPrefix(strings.TrimPrefix(articlePath, "/"), "time/")
+	if !ok {
+		return 0, false
+	}
+	ms, err := strconv.ParseInt(value, 10, 64)
+	return ms, err == nil && ms >= 0
+}
+
 // Document is what the index holds about one document.
 type Document struct {
 	Filename string

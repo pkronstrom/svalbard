@@ -222,8 +222,12 @@ func (s *Session) OpenResult(result Result) error {
 		if err := s.ensureKiwix(context.Background()); err != nil {
 			return err
 		}
+		base := fmt.Sprintf("http://localhost:%d", s.kiwixPort)
+		if address, ok := VideoURL(base, result.Filename, result.Path); ok {
+			return s.opener(address)
+		}
 		page, _ := engine.PageNumber(result.Path)
-		return s.opener(embeddedURL(fmt.Sprintf("http://localhost:%d", s.kiwixPort), result.Filename, page))
+		return s.opener(embeddedURL(base, result.Filename, page))
 	}
 
 	// A document opens in the browser's own PDF viewer at the page of the

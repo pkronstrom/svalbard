@@ -82,21 +82,25 @@ func applyLines(w io.Writer) apply.ProgressFunc {
 
 // applyAndIndex reconciles the vault and then runs its configured indexing,
 // the same two steps the wizard and the TUI plan screen run.
-func applyAndIndex(ctx context.Context, vaultRoot string, cat *catalog.Catalog, out io.Writer) error {
+func applyAndIndex(ctx context.Context, vaultRoot string, cat *catalog.Catalog, out io.Writer, videos ...commands.VideoIndexOptions) error {
 	if err := commands.ApplyVault(ctx, vaultRoot, cat, applyLines(out)); err != nil {
 		return err
 	}
-	return indexAfter(ctx, vaultRoot, "Apply", out)
+	return indexAfter(ctx, vaultRoot, "Apply", out, videos...)
 }
 
 // indexAfter runs the vault's configured indexing after a completed apply or
 // update, named by what, and reports the whole operation done.
-func indexAfter(ctx context.Context, vaultRoot, what string, out io.Writer) error {
+func indexAfter(ctx context.Context, vaultRoot, what string, out io.Writer, videos ...commands.VideoIndexOptions) error {
 	m, err := manifest.Load(filepath.Join(vaultRoot, "manifest.yaml"))
 	if err != nil {
 		return fmt.Errorf("loading applied manifest: %w", err)
 	}
-	if err := commands.RunConfiguredIndex(ctx, vaultRoot, m.Desired.Options.IndexStrategy, out, nil, nil); err != nil {
+	var video commands.VideoIndexOptions
+	if len(videos) > 0 {
+		video = videos[0]
+	}
+	if err := commands.RunConfiguredIndexWithVideos(ctx, vaultRoot, m.Desired.Options.IndexStrategy, out, nil, nil, video); err != nil {
 		return fmt.Errorf("%s completed but indexing failed: %w", strings.ToLower(what), err)
 	}
 	fmt.Fprintln(out, what+" complete")

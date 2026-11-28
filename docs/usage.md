@@ -238,6 +238,30 @@ Documents in zimgit-post-disaster_en_2024-05.zim:
 
 An EPUB that is the same book as an HTML page of the archive, as in Gutenberg ZIMs, is left out: its text is indexed already. An index built by an older `svalbard` picks the documents up at the next `index` or `apply`, which reads again only the archives that hold documents or web-app files.
 
+### Search inside archived videos
+
+Video indexing is optional on both `apply` and `index`. Import your own ZIM
+with `svalbard import <file.zim> --add --vault <path>` to place it among the
+vault's searchable archives.
+
+```bash
+svalbard apply --vault /Volumes/MyDrive --video-index captions
+svalbard apply --vault /Volumes/MyDrive --video-index transcribe \
+  --video-zim your-video-archive.zim --video-limit 1
+```
+
+`captions` indexes supported WebVTT and SRT tracks and timestamped chapter
+labels. `transcribe` also generates speech text for videos that lack usable
+captions. The first transcription builds a dedicated FFmpeg and Parakeet
+Docker image and caches the 465 MiB model download on the host. Later runs
+reuse the image, the model, and completed video entries in the vault.
+
+`--video-zim` selects one installed archive. `--video-limit` limits new
+transcriptions in a run, so you can continue with the same command. Use
+`SVALBARD_VIDEO_MODEL_DIR` to point at an already extracted Parakeet v3 int8
+model directory. Search hits link to the original video at the passage's
+timestamp.
+
 ## Your own documents
 
 A document collection puts your own PDFs on a vault and makes every page searchable: manuals, datasheets, guides, by URL or from your disk. You describe the collection in one small file; `svalbard apply` fetches what is missing and indexes it.

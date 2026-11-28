@@ -768,3 +768,30 @@ func TestSourceNoteIsStoredReplacedAndMigrated(t *testing.T) {
 		t.Fatalf("source after replacement = %+v", sources[0])
 	}
 }
+
+func TestTranscriptPreservesAnUnrelatedSelectiveSemanticIndex(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	id := seedSource(t, db, "books/guide.pdf", "Guide", []Article{{Path: "page/1", Title: "Guide", Body: "Topic"}})
+	contract := SemanticContract{Version: 1, Model: "models/embed/a.gguf", ModelSHA256: "model", Dimensions: 2, SourceSelectors: "[\"books/\"]"}
+	if _, err := db.BeginSemanticContract(ctx, contract, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.InsertChunkEmbeddings([]ChunkEmbedding{{ArticleID: id, Header: "Guide", Vector: make([]byte, 8)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CompleteSemanticContract(ctx, contract, SemanticCompletionMetadata{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ReplaceTranscript(ctx, Source{Filename: "a.zim/video.webm", Title: "Video"},
+		[]Article{{Path: "time/0", Title: "Video", Body: "Transcript"}}); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := db.SemanticState(); err != nil || state != "complete" {
+		t.Fatalf("semantic state = %q, %v, want complete", state, err)
+	}
+}

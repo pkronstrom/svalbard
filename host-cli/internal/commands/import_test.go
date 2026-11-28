@@ -97,3 +97,27 @@ func TestImportAndMaybeAddWithAdd(t *testing.T) {
 		t.Errorf("unexpected realized entry metadata: %+v", e)
 	}
 }
+
+func TestImportAndAddZIMUsesSearchableArchiveDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := manifest.Save(filepath.Join(root, "manifest.yaml"), manifest.New("test")); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "videos.zim")
+	if err := os.WriteFile(source, []byte("fixture"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ImportAndMaybeAdd(root, source, "", true, root); err != nil {
+		t.Fatal(err)
+	}
+	m, err := manifest.Load(filepath.Join(root, "manifest.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Realized.Entries) != 1 || m.Realized.Entries[0].RelativePath != "zim/videos.zim" {
+		t.Fatalf("realized import = %+v", m.Realized.Entries)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "zim", "videos.zim")); err != nil || string(data) != "fixture" {
+		t.Fatalf("installed archive = %q, %v", data, err)
+	}
+}

@@ -59,11 +59,20 @@ func embeddedURL(base, filename string, page int) string {
 	for i, segment := range segments {
 		segments[i] = url.PathEscape(segment)
 	}
-	address := base + "/content/" + url.PathEscape(strings.TrimSuffix(archive, ".zim")) + "/" + strings.Join(segments, "/")
+	address := base + "/content/" + url.PathEscape(strings.TrimSuffix(archive, path.Ext(archive))) + "/" + strings.Join(segments, "/")
 	if page > 0 && strings.EqualFold(path.Ext(entry), ".pdf") {
 		address += fmt.Sprintf("#page=%d", page)
 	}
 	return address
+}
+
+// VideoURL opens the original archived media at a transcript passage.
+func VideoURL(base, filename, articlePath string) (string, bool) {
+	ms, ok := engine.VideoTime(articlePath)
+	if !ok || !engine.IsEmbeddedSource(filename) {
+		return "", false
+	}
+	return embeddedURL(base, filename, 0) + fmt.Sprintf("#t=%d.%03d", ms/1000, ms%1000), true
 }
 
 // documentServer serves books/ on 127.0.0.1 until it is closed.

@@ -92,10 +92,10 @@ func (c *SearchCapability) handleRead(ctx context.Context, params map[string]any
 	}
 	rawPath := getString(params, "path")
 	if engine.IsDocumentSource(source) {
-		return c.readDocument(ctx, source, rawPath, offset)
+		return c.readDocumentOrVideo(ctx, source, rawPath, offset)
 	}
 	if document, page, ok := c.documentInArchive(ctx, source, rawPath); ok {
-		return c.readDocument(ctx, document, page, offset)
+		return c.readDocumentOrVideo(ctx, document, page, offset)
 	}
 	if engine.IsSkillSource(source) {
 		return c.readSkillSource(ctx, source, rawPath, offset)
